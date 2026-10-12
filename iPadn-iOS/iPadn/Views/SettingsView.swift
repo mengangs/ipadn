@@ -35,7 +35,7 @@ struct SettingsView: View {
                         }
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button("移除") { store.settings.versionSources.removeAll { $0.id == source.id } }.tint(.red)
+                        Button("移除") { let id = source.id; withAnimation { store.settings.versionSources.removeAll { $0.id == id } } }.tint(.red)
                     }
                 } header: { if source.id == store.settings.versionSources.first?.id { Text("可扩展版本来源") } }
             }

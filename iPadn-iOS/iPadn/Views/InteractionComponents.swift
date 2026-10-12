@@ -20,14 +20,13 @@ struct ActionConfirmationView: View {
                     Text(confirmTitle).font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 24)
                 }.buttonStyle(MonochromeButtonStyle()).accessibilityIdentifier("confirmation.confirm")
                 if showsCancel {
-                    Button { dismiss() } label: { Text("取消").frame(maxWidth: .infinity, minHeight: 48) }
+                    Button { dismiss() } label: { Text("取消").frame(maxWidth: .infinity, minHeight: 48).contentShape(Rectangle()) }
                         .buttonStyle(.plain).accessibilityIdentifier("confirmation.cancel")
                 }
             }
         }.padding(24).frame(maxWidth: 560, alignment: .leading).frame(maxWidth: .infinity)
             .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.height(showsCancel ? 320 : 280), .large])
             .presentationDragIndicator(.visible).presentationCornerRadius(28)
-            .accessibilityIdentifier("confirmation.panel")
     }
 }
 

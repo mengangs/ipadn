@@ -258,6 +258,7 @@ enum AppleLoginResponse {
 #if DEBUG
 extension AppleService {
     func prepareAccountPreview() {
+        accountStorageError = nil
         accounts = [AppleAccount(id: "demo@example.com", name: "示例账号", password: "", cookie: "", dsid: "", passwordToken: "", storeFront: "", fullStoreFront: ""), AppleAccount(id: "second@example.com", name: "另一个账号", password: "", cookie: "", dsid: "", passwordToken: "", storeFront: "", fullStoreFront: "")]
         activeID = accounts.first?.id
     }
