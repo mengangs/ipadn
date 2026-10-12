@@ -37,19 +37,7 @@ struct DownloadsView: View {
                     VStack(alignment: .leading, spacing: 4) { summary }
                 }.font(.footnote).foregroundStyle(.secondary)
                 if !manager.jobs.isEmpty { SearchInput(text: $term, placeholder: "搜索名称、版本或 Bundle ID") }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(DownloadFilter.allCases) { item in
-                            Button { filter = item; UX.feedback() } label: {
-                                Text("\(item.rawValue) \(manager.jobs.filter { item.includes($0.status) }.count)")
-                                    .font(.subheadline.weight(filter == item ? .semibold : .regular))
-                                    .padding(.horizontal, 14).frame(minHeight: 44)
-                                    .foregroundStyle(filter == item ? UX.onAccent : Color.primary)
-                                    .background(filter == item ? UX.buttonTint : Color(.tertiarySystemFill), in: Capsule())
-                            }.buttonStyle(.plain).accessibilityAddTraits(filter == item ? .isSelected : [])
-                        }
-                    }.padding(.vertical, 4)
-                }
+                DownloadFilterBar(selection: $filter, jobs: manager.jobs)
                 }.padding(.vertical, 4)
             }.listRowSeparator(.hidden)
             if let error = manager.storageError { Section { InlineIssue(message: error) } }
@@ -60,12 +48,17 @@ struct DownloadsView: View {
                     })
                 }
             } else {
-                Section {
-                    ForEach(visible) { job in
+                ForEach(visible) { job in
+                    Section {
                         DownloadTaskRow(job: job, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
                             if let file = manager.fileURL(job) { share = SharedFile(url: file) }
                         })
                         .tag(job.id)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if job.status != .processing && job.status != .pausing {
+                                Button { askDelete([job.id]) } label: { Label("删除", systemImage: "trash") }.tint(.red)
+                            }
+                        }
                         .contextMenu {
                             Button("任务详情", systemImage: "info.circle") { inspecting = job }
                             if let file = manager.fileURL(job) {
@@ -83,12 +76,14 @@ struct DownloadsView: View {
                                 Button("删除任务及文件", systemImage: "trash", role: .destructive) { askDelete([job.id]) }
                             }
                         }
+                    } header: {
+                        if job.id == visible.first?.id { Text("\(visible.count) 项任务") }
                     }
-                    .onDelete { offsets in askDelete(Set(offsets.map { visible[$0].id })) }
-                    .onMove(perform: filter == .all && term.isEmpty ? { manager.move(from: $0, to: $1) } : nil)
-                } header: { Text("\(visible.count) 项任务") } footer: { Text("点应用名称查看详情；长按可安装、复制链接或删除。") }
+                }
+                .onMove(perform: filter == .all && term.isEmpty ? { manager.move(from: $0, to: $1) } : nil)
             }
         }
+        .task(id: manager.jobs.filter { $0.status == .completed }.map { $0.id.uuidString }.joined()) { await manager.loadPackageIcons() }
         .toolPage().navigationTitle("下载").navigationBarTitleDisplayMode(.inline)
         .environment(\.editMode, $editMode)
         .toolbar {
@@ -129,7 +124,7 @@ struct DownloadsView: View {
             NavigationStack {
                 if let job = manager.jobs.first(where: { $0.id == item.id }) {
                     Form {
-                        Section { AppRow(app: job.app); TaskStatusPill(status: job.status) }
+                        Section { AppRow(app: packageDisplayApp(job)); TaskStatusPill(status: job.status) }
                         Section("任务信息") {
                             LabeledContent("创建时间", value: job.createdAt.formatted(date: .abbreviated, time: .shortened))
                             LabeledContent("已传输", value: job.downloaded.byteLabel)
@@ -176,6 +171,9 @@ struct DownloadsView: View {
         } message: { Text("请先配置自己的 HTTPS 清单服务和 Surge/Loon 规则。也可导出 IPA 到签名工具。") }
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
     }
+    private func packageDisplayApp(_ job: DownloadJob) -> StoreApp {
+        var app = job.app; app.iconURL = manager.packageIconURL(job); return app
+    }
     private func primary(_ job: DownloadJob) {
         UX.feedback()
         switch job.status {
@@ -200,6 +198,11 @@ struct DownloadsView: View {
 struct DownloadTaskRow: View {
     @EnvironmentObject private var manager: DownloadManager
     let job: DownloadJob
+    private var displayedApp: StoreApp {
+        var app = job.app
+        app.iconURL = manager.packageIconURL(job)
+        return app
+    }
     var inspecting: () -> Void
     var primary: () -> Void
     var exporting: () -> Void
@@ -220,7 +223,7 @@ struct DownloadTaskRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Button(action: inspecting) { AppRow(app: job.app).contentShape(Rectangle()) }.buttonStyle(.plain)
+            Button(action: inspecting) { AppRow(app: displayedApp).contentShape(Rectangle()) }.buttonStyle(.plain)
             if [.running, .paused, .pausing].contains(job.status) {
                 if job.expected > 0 {
                     ProgressView(value: job.progress).tint(job.status == .paused ? .secondary : UX.tint)

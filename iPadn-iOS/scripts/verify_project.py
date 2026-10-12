@@ -52,13 +52,13 @@ def inspect_refs(value):
 for value in objects.values(): inspect_refs(value)
 groups = {key: value for key, value in objects.items() if value["isa"] == "PBXGroup"}
 for group in groups.values():
-    if group.get("path") in ["iPadn", "iPadnTests"]:
+    if group.get("path") in ["iPadn", "iPadnTests", "iPadnUITests"]:
         for child in group["children"]:
             item = objects[child]
             if item["isa"] == "PBXFileReference":
                 check((ROOT / group["path"] / item["path"]).exists(), "Missing project file " + item["path"])
 actual_swift = {p.relative_to(ROOT / "iPadn").as_posix() for p in (ROOT / "iPadn").rglob("*.swift")}
-referenced_swift = {x["path"] for x in objects.values() if x["isa"] == "PBXFileReference" and x.get("path", "").endswith(".swift") and x["path"] not in {p.name for p in (ROOT / "iPadnTests").glob("*.swift")}}
+referenced_swift = {x["path"] for x in objects.values() if x["isa"] == "PBXFileReference" and x.get("path", "").endswith(".swift") and x["path"] not in {p.name for folder in ["iPadnTests", "iPadnUITests"] for p in (ROOT / folder).glob("*.swift")}}
 check(actual_swift == referenced_swift, "Swift sources differ from project references")
 for file in [ROOT / "iPadn/Info.plist", ROOT / "iPadn/Resources/PrivacyInfo.xcprivacy"]:
     plistlib.loads(file.read_bytes())

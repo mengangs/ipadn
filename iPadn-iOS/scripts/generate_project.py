@@ -75,7 +75,7 @@ base = {"IPHONEOS_DEPLOYMENT_TARGET": "17.0", "SDKROOT": "iphoneos", "SWIFT_VERS
 project_configs = configs("Project", base, {"SWIFT_COMPILATION_MODE": "wholemodule", "VALIDATE_PRODUCT": "YES"})
 app_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
                 "DEVELOPMENT_TEAM": "", "TARGETED_DEVICE_FAMILY": "1,2", "INFOPLIST_FILE": "iPadn/Info.plist",
-                "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": "1.2", "CURRENT_PROJECT_VERSION": "6",
+                "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": "1.2", "CURRENT_PROJECT_VERSION": "7",
                 "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon", "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
                 "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks"],
                 "ENABLE_PREVIEWS": "YES", "SUPPORTS_MACCATALYST": "NO", "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD": "NO",
@@ -94,11 +94,23 @@ add("AppTarget", "PBXNativeTarget", buildConfigurationList=app_configs, buildPha
 add("TestTarget", "PBXNativeTarget", buildConfigurationList=test_configs, buildPhases=[tests_sources, tests_frameworks, tests_resources],
     buildRules=[], dependencies=[dependency], name="iPadnTests", packageProductDependencies=[test_package], productName="iPadnTests",
     productReference=test_product, productType="com.apple.product-type.bundle.unit-test")
+ui_id = uid("UITestTarget")
+ui_product = add("UITestProduct", "PBXFileReference", explicitFileType="wrapper.cfbundle", includeInIndex="0", path="iPadnUITests.xctest", sourceTree="BUILT_PRODUCTS_DIR")
+ui_file = add("UITestFile", "PBXFileReference", lastKnownFileType="sourcecode.swift", path="InteractionTests.swift", sourceTree="<group>")
+ui_group = add("UITestGroup", "PBXGroup", children=[ui_file], path="iPadnUITests", sourceTree="<group>")
+objects[root_group]["children"].append(ui_group)
+objects[products]["children"].append(ui_product)
+ui_build = add("UITestBuild", "PBXBuildFile", fileRef=ui_file)
+ui_sources = add("UITestSources", "PBXSourcesBuildPhase", buildActionMask="2147483647", files=[ui_build], runOnlyForDeploymentPostprocessing="0")
+ui_settings = {k: v for k, v in test_settings.items() if k not in ["TEST_HOST", "BUNDLE_LOADER"]}
+ui_settings.update({"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadnUITests", "TEST_TARGET_NAME": "iPadn"})
+ui_configs = configs("UITests", ui_settings)
+add("UITestTarget", "PBXNativeTarget", buildConfigurationList=ui_configs, buildPhases=[ui_sources], buildRules=[], dependencies=[dependency], name="iPadnUITests", productName="iPadnUITests", productReference=ui_product, productType="com.apple.product-type.bundle.ui-testing")
 project_id = add("Project", "PBXProject", attributes={"BuildIndependentTargetsInParallel": "1", "LastUpgradeCheck": "1600",
     "TargetAttributes": {app_id: {"CreatedOnToolsVersion": "16.0"}, test_id: {"CreatedOnToolsVersion": "16.0", "TestTargetID": app_id}}},
     buildConfigurationList=project_configs, compatibilityVersion="Xcode 14.0", developmentRegion="zh-Hans",
     hasScannedForEncodings="0", knownRegions=["zh-Hans", "en", "Base"], mainGroup=root_group, productRefGroup=products,
-    projectDirPath="", projectRoot="", targets=[app_id, test_id], packageReferences=[package])
+    projectDirPath="", projectRoot="", targets=[app_id, test_id, ui_id], packageReferences=[package])
 
 def render(value, indent=0):
     tab = "\t" * indent
@@ -125,6 +137,8 @@ buildable(entry, app_id, "iPadn", "iPadn.app")
 tests = ET.SubElement(scheme, "TestAction", buildConfiguration="Debug", selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB", selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB", shouldUseLaunchSchemeArgsEnv="YES")
 testable = ET.SubElement(ET.SubElement(tests, "Testables"), "TestableReference", skipped="NO")
 buildable(testable, test_id, "iPadnTests", "iPadnTests.xctest")
+ui_testable = ET.SubElement(tests.find("Testables"), "TestableReference", skipped="NO")
+buildable(ui_testable, ui_id, "iPadnUITests", "iPadnUITests.xctest")
 launch = ET.SubElement(scheme, "LaunchAction", buildConfiguration="Debug", selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB", selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB", launchStyle="0", useCustomWorkingDirectory="NO", ignoresPersistentStateOnLaunch="NO", debugDocumentVersioning="YES", debugServiceExtension="internal", allowLocationSimulation="YES")
 buildable(ET.SubElement(launch, "BuildableProductRunnable", runnableDebuggingMode="0"), app_id, "iPadn", "iPadn.app")
 profile = ET.SubElement(scheme, "ProfileAction", buildConfiguration="Release", shouldUseLaunchSchemeArgsEnv="YES", savedToolIdentifier="", useCustomWorkingDirectory="NO", debugDocumentVersioning="YES")

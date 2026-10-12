@@ -93,6 +93,7 @@ struct DownloadJob: Codable, Identifiable {
     var status: DownloadStatus = .queued
     var downloaded: Int64 = 0
     var expected: Int64 = 0
+    var packageIconScanned: Bool?
     var localFilename: String?
     var error: String?
     var createdAt = Date()

@@ -56,17 +56,23 @@ struct SearchView: View {
                     }
                 }
                 if !store.searchHistory.isEmpty {
-                    Section {
-                        ForEach(store.searchHistory.prefix(8)) { item in
+                    ForEach(Array(store.searchHistory.prefix(8))) { item in
+                        Section {
                             Button { store.search(item.term) } label: {
                                 HStack(spacing: 12) {
                                     Image(systemName: "clock").foregroundStyle(.secondary)
                                     Text(item.term).foregroundStyle(.primary).lineLimit(2)
                                     Spacer(); Image(systemName: "arrow.up.left").font(.caption).foregroundStyle(.tertiary)
                                 }.frame(minHeight: 38).contentShape(Rectangle())
-                            }.swipeActions { Button("删除", role: .destructive) { store.removeHistory(item.term) } }
+                            }.accessibilityIdentifier("history.\(item.id)").swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button { withAnimation { store.removeHistory(item.term) } } label: { Label("删除", systemImage: "trash") }.tint(.red)
+                            }
+                        } header: {
+                            if item.id == store.searchHistory.first?.id {
+                                HStack { Text("最近搜索"); Spacer(); Button("清空") { confirmClear = true }.textCase(nil) }
+                            }
                         }
-                    } header: { HStack { Text("最近搜索"); Spacer(); Button("清空") { confirmClear = true }.textCase(nil) } }
+                    }
                 }
                 Section {
                     Label("支持「App ID 版本 ID」直接查询指定版本", systemImage: "lightbulb")

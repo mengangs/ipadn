@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 import ZIPFoundation
 @testable import iPadn
 
@@ -225,6 +226,51 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ToolSettings.self, from: JSONEncoder().encode(settings)), settings)
     }
 
+    func testPackageIconUsesLargestPrimaryIconAndSeparatesVersions() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func image(_ side: Int, color: UIColor) -> Data {
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1
+            return UIGraphicsImageRenderer(size: CGSize(width: CGFloat(side), height: CGFloat(side)), format: format).pngData { context in
+                color.setFill(); context.fill(CGRect(x: 0, y: 0, width: CGFloat(side), height: CGFloat(side)))
+            }
+        }
+        func package(_ version: String, color: UIColor) throws -> URL {
+            let url = root.appendingPathComponent(version + ".ipa")
+            let archive = try Archive(url: url, accessMode: .create)
+            let info: [String: Any] = ["CFBundleIdentifier": "same.bundle", "CFBundleShortVersionString": version,
+                "CFBundleIcons": ["CFBundlePrimaryIcon": ["CFBundleIconFiles": ["AppIcon60x60"]]]]
+            let files: [String: Data] = [
+                "Payload/Main.app/Info.plist": try PropertyListSerialization.data(fromPropertyList: info, format: .binary, options: 0),
+                "Payload/Main.app/AppIcon60x60@2x.png": image(120, color: color),
+                "Payload/Main.app/AppIcon60x60@3x.png": image(180, color: color),
+                "Payload/Main.app/AlternateIcon.png": image(512, color: .green),
+                "Payload/Main.app/PlugIns/Extension.appex/AppIcon.png": image(512, color: .green)
+            ]
+            for (path, data) in files {
+                let file = root.appendingPathComponent(path)
+                try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: file)
+                try archive.addEntry(with: path, relativeTo: root)
+            }
+            return url
+        }
+        let old = try package("1.0", color: .red), new = try package("2.0", color: .blue)
+        let first = try XCTUnwrap(PackageIconService.png(from: old))
+        let second = try XCTUnwrap(PackageIconService.png(from: new))
+        XCTAssertEqual(UIImage(data: first)?.cgImage?.width, 180)
+        XCTAssertNotEqual(first, second)
+        let id1 = UUID(), id2 = UUID()
+        defer {
+            try? FileManager.default.removeItem(at: PackageIconService.cacheURL(id1))
+            try? FileManager.default.removeItem(at: PackageIconService.cacheURL(id2))
+        }
+        XCTAssertTrue(try PackageIconService.save(from: old, id: id1))
+        XCTAssertTrue(try PackageIconService.save(from: new, id: id2))
+        XCTAssertNotEqual(try Data(contentsOf: PackageIconService.cacheURL(id1)), try Data(contentsOf: PackageIconService.cacheURL(id2)))
+    }
+
     func testPackageInspectionUsesMainBundleNotExtension() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -242,6 +288,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(app.name, "测试应用")
         XCTAssertEqual(app.bundleID, "test.main")
         XCTAssertEqual(app.version, "2.0")
+        XCTAssertNil(try PackageIconService.png(from: url), "A package without an icon must not receive store artwork")
         XCTAssertEqual(PackageService.safeName("a/b:c"), "a_b_c")
     }
 

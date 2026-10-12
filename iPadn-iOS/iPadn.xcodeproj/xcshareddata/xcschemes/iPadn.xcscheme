@@ -12,6 +12,9 @@
       <TestableReference skipped="NO">
         <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="BD64E34F3B89E990E8D455E3" BuildableName="iPadnTests.xctest" BlueprintName="iPadnTests" ReferencedContainer="container:iPadn.xcodeproj" />
       </TestableReference>
+      <TestableReference skipped="NO">
+        <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="52A966A000CFCE4A907042FB" BuildableName="iPadnUITests.xctest" BlueprintName="iPadnUITests" ReferencedContainer="container:iPadn.xcodeproj" />
+      </TestableReference>
     </Testables>
   </TestAction>
   <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES" debugServiceExtension="internal" allowLocationSimulation="YES">

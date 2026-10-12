@@ -1,6 +1,6 @@
 # 构建 iPadn
 
-项目使用 SwiftUI，最低 iOS 17，面向 iPhone 和 iPad。Xcode 工程为 `iPadn.xcodeproj`，共享 scheme 为 `iPadn`。当前版本 1.2，build 6。
+项目使用 SwiftUI，最低 iOS 17，面向 iPhone 和 iPad。Xcode 工程为 `iPadn.xcodeproj`，共享 scheme 为 `iPadn`。当前版本 1.2，build 7。
 
 ## 本地构建
 

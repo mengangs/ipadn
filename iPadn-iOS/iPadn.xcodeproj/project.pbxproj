@@ -159,6 +159,16 @@
 			isa = PBXBuildFile;
 			fileRef = 525FB927D6E0158442EEE80C;
 		};
+		8EF4977EC0C2C9F1B0803640 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/PackageIconService.swift";
+			sourceTree = "<group>";
+		};
+		4D79E74E9CA15CF0827993E9 = {
+			isa = PBXBuildFile;
+			fileRef = 8EF4977EC0C2C9F1B0803640;
+		};
 		DE2B00F9D1374F49D8D7B778 = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -218,6 +228,16 @@
 		BBA95D751DB25B4ECFB64D15 = {
 			isa = PBXBuildFile;
 			fileRef = C378265D29DC31EA6BC9A4BB;
+		};
+		9AEA018F82D4AF6BD44FC09A = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/DownloadFilterBar.swift";
+			sourceTree = "<group>";
+		};
+		9476E1727757706C48DAC128 = {
+			isa = PBXBuildFile;
+			fileRef = 9AEA018F82D4AF6BD44FC09A;
 		};
 		A1E708F62865C66C68AA85E9 = {
 			isa = PBXFileReference;
@@ -378,12 +398,14 @@
 				294558996050B2FE227179BC,
 				43307BBF4EB32558D5FCFF38,
 				525FB927D6E0158442EEE80C,
+				8EF4977EC0C2C9F1B0803640,
 				DE2B00F9D1374F49D8D7B778,
 				20DF3E39BC0667C304A58585,
 				C4E202139941DE609BFBB95D,
 				179AE521F9E371EE4200EDB4,
 				64ED8F7AAAC933FAC771090F,
 				C378265D29DC31EA6BC9A4BB,
+				9AEA018F82D4AF6BD44FC09A,
 				A1E708F62865C66C68AA85E9,
 				1E9502E0C8542CA2BF94D23E,
 				875F86E325615E997D89246A,
@@ -412,6 +434,7 @@
 			children = (
 				DEF93E8F8AC229A0D98BBEFA,
 				970FB190220EDCE2E3BBCD1A,
+				4ED35644D2543696A1034554,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -422,6 +445,7 @@
 				A5660BF89DD2D657048780AB,
 				3A1926085471FC5F24CD7859,
 				4EDC8BFAFC6BD936B849F38C,
+				E6EFEE88595978CBA23F4B6F,
 			);
 			sourceTree = "<group>";
 		};
@@ -443,12 +467,14 @@
 				C0E20030ACC5F23732E47CAE,
 				4F5447AC56A605806430F5AF,
 				D3D7F9AE0A76859E6F98809B,
+				4D79E74E9CA15CF0827993E9,
 				947A4B9739DE11F25F172D4C,
 				79C9C7B781E2036A0BD109DC,
 				4290A7A571B139F6D5141896,
 				7532C26779F64E89AE34C747,
 				81760043801C5EA796AC3B07,
 				BBA95D751DB25B4ECFB64D15,
+				9476E1727757706C48DAC128,
 				E03C6E916BCB77F54CB0D996,
 				4081F8E081F38E620E4F6F53,
 				9B02A284355960077990E605,
@@ -581,7 +607,7 @@
 				INFOPLIST_FILE = "iPadn/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
 				MARKETING_VERSION = 1.2;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -610,7 +636,7 @@
 				INFOPLIST_FILE = "iPadn/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
 				MARKETING_VERSION = 1.2;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -740,6 +766,105 @@
 			productReference = 970FB190220EDCE2E3BBCD1A;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		4ED35644D2543696A1034554 = {
+			isa = PBXFileReference;
+			explicitFileType = wrapper.cfbundle;
+			includeInIndex = 0;
+			path = iPadnUITests.xctest;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		EBF3B4F3DEA8DDAB2177C0AC = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = InteractionTests.swift;
+			sourceTree = "<group>";
+		};
+		E6EFEE88595978CBA23F4B6F = {
+			isa = PBXGroup;
+			children = (
+				EBF3B4F3DEA8DDAB2177C0AC,
+			);
+			path = iPadnUITests;
+			sourceTree = "<group>";
+		};
+		E9356E900EF90F1AB17B213D = {
+			isa = PBXBuildFile;
+			fileRef = EBF3B4F3DEA8DDAB2177C0AC;
+		};
+		ED158573A061B231C0A453CC = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E9356E900EF90F1AB17B213D,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		985F8090218516D8753FD452 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = app.local.iPadnUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				TEST_TARGET_NAME = iPadn;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				ONLY_ACTIVE_ARCH = YES;
+				ENABLE_TESTABILITY = YES;
+			};
+			name = Debug;
+		};
+		A886F3335DEEAEE77A300CC2 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = app.local.iPadnUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				TEST_TARGET_NAME = iPadn;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		75C638FCA6AA00F3FCEE4B52 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				985F8090218516D8753FD452,
+				A886F3335DEEAEE77A300CC2,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		52A966A000CFCE4A907042FB = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 75C638FCA6AA00F3FCEE4B52;
+			buildPhases = (
+				ED158573A061B231C0A453CC,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				19A7FBCA10A205FCAFD6F090,
+			);
+			name = iPadnUITests;
+			productName = iPadnUITests;
+			productReference = 4ED35644D2543696A1034554;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		985959785319747668373CC6 = {
 			isa = PBXProject;
 			attributes = {
@@ -771,6 +896,7 @@
 			targets = (
 				28842F0FBEF7D211F304ACBC,
 				BD64E34F3B89E990E8D455E3,
+				52A966A000CFCE4A907042FB,
 			);
 			packageReferences = (
 				9BC77B6C9BFAFB5749CF4757,

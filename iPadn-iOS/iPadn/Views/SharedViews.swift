@@ -5,20 +5,37 @@ import UIKit
 struct AppIcon: View {
     var url: URL?
     var size: CGFloat = 56
+    @State private var localImage: UIImage?
     var body: some View {
-        AsyncImage(url: url) { phase in
-            if let image = phase.image { image.resizable().scaledToFill() }
-            else {
-                ZStack {
-                    Color.accentColor.opacity(0.10)
-                    Image(systemName: "square.stack.3d.up.fill").font(.system(size: size * 0.42)).foregroundStyle(.tint)
+        Group {
+            if let url, url.isFileURL {
+                if let localImage { Image(uiImage: localImage).resizable().interpolation(.high).scaledToFit() }
+                else { placeholder }
+            } else {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image { image.resizable().interpolation(.high).scaledToFit() }
+                    else { placeholder }
                 }
             }
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
         .accessibilityHidden(true)
+        .task(id: url) {
+            localImage = nil
+            guard let url, url.isFileURL else { return }
+            let data = await Task.detached(priority: .utility) { try? Data(contentsOf: url) }.value
+            guard !Task.isCancelled, let data else { return }
+            localImage = UIImage(data: data)
+        }
     }
+    private var placeholder: some View {
+        ZStack {
+            Color.accentColor.opacity(0.08)
+            Image(systemName: "app.dashed").font(.system(size: size * 0.42)).foregroundStyle(.secondary)
+        }
+    }
+
 }
 
 struct AppRow: View {

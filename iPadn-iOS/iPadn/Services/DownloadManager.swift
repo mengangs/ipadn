@@ -14,6 +14,7 @@ final class DownloadManager: NSObject, ObservableObject {
     private var maxConcurrent = 3
     private var maxQueued = 10
     private var processingIDs = Set<UUID>()
+    private var iconsLoading = false
     private var notifications = true
     private var lastSave = Date.distantPast
     private var transferMetrics: [UUID: TransferMetrics] = [:]
@@ -186,6 +187,7 @@ final class DownloadManager: NSObject, ObservableObject {
         if let file = fileURL(job) { try FileManager.default.removeItem(at: file) }
         try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
         try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
+        try? FileManager.default.removeItem(at: PackageIconService.cacheURL(id))
         jobs.removeAll { $0.id == id }; persist(); schedule()
     }
     func metrics(for id: UUID) -> TransferMetrics? { transferMetrics[id] }
@@ -194,6 +196,27 @@ final class DownloadManager: NSObject, ObservableObject {
         guard let filename = job.localFilename, filename == URL(fileURLWithPath: filename).lastPathComponent else { return nil }
         let url = LocalResources.packages.appendingPathComponent(filename)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    func packageIconURL(_ job: DownloadJob) -> URL? {
+        let url = PackageIconService.cacheURL(job.id)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    func loadPackageIcons() async {
+        guard !iconsLoading else { return }
+        iconsLoading = true
+        defer { iconsLoading = false }
+        for job in jobs where job.status == .completed && job.packageIconScanned != true {
+            guard let file = fileURL(job), !Task.isCancelled else { continue }
+            _ = await Task.detached(priority: .utility) { try? PackageIconService.save(from: file, id: job.id) }.value
+            guard let index = jobs.firstIndex(where: { $0.id == job.id }) else {
+                try? FileManager.default.removeItem(at: PackageIconService.cacheURL(job.id)); continue
+            }
+            jobs[index].packageIconScanned = true
+            jobs[index].app.iconURL = nil
+            persist()
+        }
     }
 
     func importFile(_ source: URL) async throws {
@@ -231,13 +254,14 @@ final class DownloadManager: NSObject, ObservableObject {
             }
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
-                    try PackageService.finish(staging: LocalResources.stagingURL(id), id: id, asset: job.asset)
+                    let result = try PackageService.finish(staging: LocalResources.stagingURL(id), id: id, asset: job.asset)
+                    _ = try? PackageIconService.save(from: LocalResources.packages.appendingPathComponent(result.0), id: id)
+                    return result
                 }.value
                 guard let index = self.jobs.firstIndex(where: { $0.id == id }) else { return }
                 self.jobs[index].localFilename = result.0
-                let icon = self.jobs[index].app.iconURL
                 self.jobs[index].app = result.1
-                self.jobs[index].app.iconURL = icon
+                self.jobs[index].packageIconScanned = true
                 self.jobs[index].status = .completed
                 self.jobs[index].downloaded = result.1.size; self.jobs[index].expected = result.1.size
                 self.jobs[index].error = nil
