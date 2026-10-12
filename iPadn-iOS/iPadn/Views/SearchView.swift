@@ -34,7 +34,6 @@ struct SearchView: View {
                         }
                     }
                 } header: { Text("已购与目录 · \(store.localResults.count)") }
-                footer: { Text("包含已购、本机记录与 iPadn 名称目录。目录覆盖有限，下载以 Apple 授权结果为准。") }
             }
             if !store.results.isEmpty {
                 Section {
