@@ -4,6 +4,41 @@ import ZIPFoundation
 @testable import iPadn
 
 final class CoreTests: XCTestCase {
+    func testPackageCompletionCannotOverwriteSharedIdentifierPrefixAndHandlesLongNames() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var completed: [URL] = []
+        defer { for file in completed { try? FileManager.default.removeItem(at: file) } }
+        func package(name: String, marker: UInt8) throws -> URL {
+            let url = root.appendingPathComponent(UUID().uuidString + ".ipa")
+            let archive = try Archive(url: url, accessMode: .create)
+            let files = ["Payload/Test.app/Info.plist": try HTTPClient.encodePlist([
+                "CFBundleDisplayName": name, "CFBundleIdentifier": "test.filename", "CFBundleShortVersionString": "1.0"]),
+                "Payload/Test.app/marker": Data([marker])]
+            for (path, bytes) in files {
+                let file = root.appendingPathComponent(path)
+                try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try bytes.write(to: file)
+                try archive.addEntry(with: path, relativeTo: root)
+            }
+            return url
+        }
+        let firstID = UUID(uuidString: "11111111-0000-0000-0000-000000000001")!
+        let secondID = UUID(uuidString: "11111111-0000-0000-0000-000000000002")!
+        let first = try PackageService.finish(staging: package(name: "Collision", marker: 1), id: firstID, asset: nil)
+        let firstURL = LocalResources.packages.appendingPathComponent(first.0); completed.append(firstURL)
+        let original = try Data(contentsOf: firstURL)
+        let second = try PackageService.finish(staging: package(name: "Collision", marker: 2), id: secondID, asset: nil)
+        completed.append(LocalResources.packages.appendingPathComponent(second.0))
+        XCTAssertNotEqual(first.0, second.0)
+        XCTAssertEqual(try Data(contentsOf: firstURL), original)
+        XCTAssertThrowsError(try PackageService.finish(staging: package(name: "Collision", marker: 3), id: firstID, asset: nil))
+        XCTAssertEqual(try Data(contentsOf: firstURL), original)
+        let long = try PackageService.finish(staging: package(name: String(repeating: "应用", count: 80), marker: 4), id: UUID(), asset: nil)
+        completed.append(LocalResources.packages.appendingPathComponent(long.0))
+        XCTAssertLessThanOrEqual(long.0.utf8.count, 255)
+    }
     @MainActor
     func testSignerReusesSuccessfulPageAndClearsItOnCacheReset() async throws {
         let signer = SAPSigner()
