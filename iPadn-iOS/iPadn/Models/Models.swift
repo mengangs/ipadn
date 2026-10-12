@@ -43,7 +43,7 @@ enum AppPlatform: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .iOS: return "software"
         case .iPadOS: return "iPadSoftware"
-        case .tvOS: return "tvSoftware"
+        case .tvOS: return "software,tvSoftware"
         case .macOS: return "desktopSoftware"
         }
     }

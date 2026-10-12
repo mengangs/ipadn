@@ -77,33 +77,28 @@ enum StoreService {
     private static func searchInCountry(_ query: SearchQuery, store: StoreContext, limit: Int) async throws -> [StoreApp] {
         switch query {
         case .keyword(let text):
-            let url = try endpoint("https://itunes.apple.com/search", items: [
-                URLQueryItem(name: "term", value: text), URLQueryItem(name: "country", value: store.country),
-                URLQueryItem(name: "entity", value: store.platform.searchEntity),
-                URLQueryItem(name: "explicit", value: "no"), URLQueryItem(name: "limit", value: String(limit))
-            ])
-            var results: [StoreApp] = []
-            do {
+            func searchEntities(_ entities: String) async throws -> [[String: Any]] {
+                let url = try endpoint("https://itunes.apple.com/search", items: [
+                    URLQueryItem(name: "term", value: text), URLQueryItem(name: "country", value: store.country),
+                    URLQueryItem(name: "entity", value: entities),
+                    URLQueryItem(name: "explicit", value: "no"), URLQueryItem(name: "limit", value: String(limit))
+                ])
                 let data = try await HTTPClient.shared.json(url) as? [String: Any]
-                results = (data?["results"] as? [[String: Any]] ?? []).map(mapLookup)
-            } catch {
-                if store.platform != .tvOS { throw error }
+                return data?["results"] as? [[String: Any]] ?? []
             }
-            guard store.platform == .tvOS, results.isEmpty else { return results }
-            // Apple's old tvSoftware search entity is no longer reliable.
-            // A standard software query at least finds cross-platform listings.
-            // These remain *candidates*, not confirmed Apple TV packages.
-            let candidatesURL = try endpoint("https://itunes.apple.com/search", items: [
-                URLQueryItem(name: "term", value: text), URLQueryItem(name: "country", value: store.country),
-                URLQueryItem(name: "entity", value: "software"),
-                URLQueryItem(name: "explicit", value: "no"), URLQueryItem(name: "limit", value: String(limit))
-            ])
-            let data = try await HTTPClient.shared.json(candidatesURL) as? [String: Any]
-            return (data?["results"] as? [[String: Any]] ?? []).map {
-                var candidate = mapLookup($0)
-                candidate.tvOSCandidate = true
-                return candidate
+            guard store.platform == .tvOS else {
+                return try await searchEntities(store.platform.searchEntity).map(mapLookup)
             }
+            // Apple TV has a distinct store offer. Search the combined catalogs,
+            // then require explicit AppleTV device metadata rather than labeling
+            // every iPhone match as an Apple TV result.
+            var rows: [[String: Any]] = []
+            do { rows = try await searchEntities("software,tvSoftware") }
+            catch {
+                // The tvSoftware entity is unreliable on some storefronts.
+                rows = (try? await searchEntities("software")) ?? []
+            }
+            return rows.filter(Self.supportsAppleTV).map(mapLookup)
         case .appID(let id, _):
             if store.platform == .tvOS { return try await platformApp(id, store: store).map { [$0] } ?? [] }
             let url = try endpoint("https://itunes.apple.com/lookup", items: [
@@ -127,6 +122,7 @@ enum StoreService {
         guard let results = data?["results"] as? [String: Any], let raw = results[id] as? [String: Any] else { return nil }
         let offer = (raw["offers"] as? [[String: Any]])?.first ?? [:]
         let version = offer["version"] as? [String: Any] ?? [:]
+        let latestID = Self.platformExternalVersionID(version: version, buyParams: plistString(offer["buyParams"]))
         let artwork = raw["artwork"] as? [String: Any] ?? [:]
         let rating = raw["userRating"] as? [String: Any] ?? [:]
         let description = raw["description"] as? [String: Any] ?? [:]
@@ -136,8 +132,25 @@ enum StoreService {
                         category: (raw["genreNames"] as? [String] ?? []).joined(separator: " · "), size: size,
                         price: plistString(offer["priceFormatted"]), rating: (rating["value"] as? NSNumber)?.doubleValue ?? 0,
                         minimumOS: plistString(raw["minimumOSVersion"]),
-                        externalVersionID: version["externalId"].map { plistString($0) },
+                        externalVersionID: latestID,
                         developerURL: MacInstallerService.safeWebsite(plistString(raw["sellerUrl"] ?? raw["websiteUrl"])))
+    }
+
+    static func platformExternalVersionID(version: [String: Any], buyParams: String) -> String? {
+        let provided = plistString(version["externalId"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if let number = UInt64(provided), number > 0 { return provided }
+        guard let items = URLComponents(string: "https://example.invalid/?" + buyParams)?
+            .queryItems, let value = items.first(where: { $0.name == "appExtVrsId" })?.value,
+            let number = UInt64(value), number > 0 else { return nil }
+        return value
+    }
+
+    static func supportsAppleTV(_ raw: [String: Any]) -> Bool {
+        let devices = raw["supportedDevices"] as? [String] ?? []
+        if devices.contains(where: { $0.lowercased().hasPrefix("appletv") }) { return true }
+        let platforms = raw["platforms"] as? [String] ?? []
+        return platforms.contains(where: { ["appletv", "tvos"].contains($0.lowercased()) }) ||
+            plistString(raw["kind"]).lowercased() == "tv-software"
     }
 
     static func artworkCountries(selected: String, accountCountry: String?) -> [String] {

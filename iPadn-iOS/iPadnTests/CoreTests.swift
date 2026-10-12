@@ -108,7 +108,7 @@ final class CoreTests: XCTestCase {
     func testPlatformSearchEntitiesAndIPASupport() {
         XCTAssertEqual(AppPlatform.iOS.searchEntity, "software")
         XCTAssertEqual(AppPlatform.iPadOS.searchEntity, "iPadSoftware")
-        XCTAssertEqual(AppPlatform.tvOS.searchEntity, "tvSoftware")
+        XCTAssertEqual(AppPlatform.tvOS.searchEntity, "software,tvSoftware")
         XCTAssertEqual(AppPlatform.macOS.searchEntity, "desktopSoftware")
         XCTAssertEqual(AppPlatform.iPadOS.catalogPlatform, AppPlatform.iOS.rawValue)
         XCTAssertFalse(AppPlatform.macOS.supportsIPA)
@@ -116,20 +116,36 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(AppPlatform.tvOS.supportsIPA)
     }
 
+    func testTVStoreOfferVersionAndSearchMetadata() {
+        XCTAssertEqual(StoreService.platformExternalVersionID(
+            version: ["externalId": 892773268],
+            buyParams: "salableAdamId=123&appExtVrsId=111"), "892773268")
+        XCTAssertEqual(StoreService.platformExternalVersionID(
+            version: [:],
+            buyParams: "salableAdamId=123&appExtVrsId=892773268"), "892773268")
+        XCTAssertNil(StoreService.platformExternalVersionID(version: [:], buyParams: "salableAdamId=123"))
+        XCTAssertNil(StoreService.platformExternalVersionID(version: [:], buyParams: "appExtVrsId=0"))
+        XCTAssertTrue(StoreService.supportsAppleTV(["supportedDevices": ["AppleTV4K", "iPhone16,1"]]))
+        XCTAssertTrue(StoreService.supportsAppleTV(["platforms": ["tvos"]]))
+        XCTAssertFalse(StoreService.supportsAppleTV(["supportedDevices": ["iPhone16,1", "iPad14,3"]]))
+        XCTAssertFalse(StoreService.supportsAppleTV([:]))
+    }
+
     func testActualIPAFamilyMustMatchRequestedPlatform() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        func package(family: Int) throws -> URL {
-            let url = root.appendingPathComponent("\(family).ipa")
+        func package(family: Int, platform: String = "iPhoneOS") throws -> URL {
+            let url = root.appendingPathComponent("\(family)-\(platform).ipa")
             let archive = try Archive(url: url, accessMode: .create)
             let contents = [
                 "Payload/Target.app/Info.plist": try HTTPClient.encodePlist([
                     "CFBundleIdentifier": "test.platform",
                     "CFBundleDisplayName": "Platform Test",
                     "CFBundleShortVersionString": "1.0",
-                    "UIDeviceFamily": [family]
+                    "UIDeviceFamily": [family],
+                    "CFBundleSupportedPlatforms": [platform]
                 ]),
                 "Payload/Target.app/SC_Info/Target.supp": Data([0])
             ]
@@ -142,9 +158,12 @@ final class CoreTests: XCTestCase {
             return url
         }
 
-        let tvIPA = try package(family: 3)
+        let tvIPA = try package(family: 3, platform: "AppleTVOS")
+        let wrongTVIPA = try package(family: 3, platform: "iPhoneOS")
         let phoneIPA = try package(family: 1)
         XCTAssertEqual(try PackageService.deviceFamilies(tvIPA), Set([3]))
+        XCTAssertEqual(try PackageService.supportedPlatforms(tvIPA), Set(["AppleTVOS"]))
+        XCTAssertEqual(try PackageService.supportedPlatforms(wrongTVIPA), Set(["iPhoneOS"]))
         XCTAssertEqual(try PackageService.deviceFamilies(phoneIPA), Set([1]))
         let metadata = try HTTPClient.encodePlist(["itemId": "1"])
         let app = StoreApp(id: "1", name: "Platform Test", bundleID: "test.platform", version: "1.0")
@@ -152,6 +171,7 @@ final class CoreTests: XCTestCase {
                                     sinf: Data([1, 2]), metadata: metadata, externalVersionIDs: [],
                                     platform: "appletvos", account: "example")
         XCTAssertThrowsError(try PackageService.finish(staging: phoneIPA, id: UUID(), asset: tvAsset))
+        XCTAssertThrowsError(try PackageService.finish(staging: wrongTVIPA, id: UUID(), asset: tvAsset))
         let iPadAsset = DownloadAsset(app: app, url: URL(string: "https://example.com/file.ipa")!,
                                      sinf: Data([1, 2]), metadata: metadata, externalVersionIDs: [],
                                      platform: "ipad", account: "example")
