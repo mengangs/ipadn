@@ -284,7 +284,7 @@ enum MacInstallerService {
 // Store packages require a separate, device-compatible processing pipeline.
 enum MacStoreOfferService {
     static func versionID(fromHTML html: String, appID: String, bundleID: String) -> String? {
-        let markers = ["id=\\"serialized-server-data\\"", "id='serialized-server-data'"]
+        let markers = ["id=\"serialized-server-data\"", "id='serialized-server-data'"]
         guard let marker = markers.compactMap({ html.range(of: $0) }).first,
               html[..<marker.lowerBound].range(of: "<script", options: .backwards) != nil,
               let start = html[marker.upperBound...].firstIndex(of: ">"),
