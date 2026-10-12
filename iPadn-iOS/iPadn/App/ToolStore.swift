@@ -31,6 +31,8 @@ final class ToolStore: ObservableObject {
     @Published private(set) var avatars: [String: Data] = [:]
     @Published private(set) var ownedError: String?
     @Published private(set) var results: [StoreApp] = []
+    @Published private(set) var localResults: [StoreApp] = []
+    private var appCatalog = LocalResources.load([String: [StoreApp]].self, filename: "app-catalog.json") ?? [:]
     @Published private(set) var searching = false
     @Published private(set) var hasSearched = false
     @Published private(set) var searchHistory: [SearchHistoryItem] = []
@@ -76,6 +78,11 @@ final class ToolStore: ObservableObject {
         let context = settings.store
         let limit = settings.searchLimit
         if input != lastSearchTerm { results = [] }
+        localResults = []
+        if case .keyword(let term)? = try? SearchQuery.parse(input) {
+            let known = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app) + (appCatalog[context.platform.rawValue] ?? [])
+            localResults = AppSearchIndex.search(term, apps: known)
+        }
         searching = true; hasSearched = true; searchError = nil; lastSearchTerm = input
         searchTask = Task {
             defer { if self.searchID == id { self.searching = false } }
@@ -94,6 +101,11 @@ final class ToolStore: ObservableObject {
                 try Task.checkCancellation()
                 guard searchID == id else { return }
                 results = apps
+                let remoteIDs = Set(apps.map(\.id))
+                localResults.removeAll { remoteIDs.contains($0.id) }
+                let key = context.platform.rawValue
+                appCatalog[key] = Array(AppSearchIndex.unique(apps + (appCatalog[key] ?? [])).prefix(1000))
+                try? LocalResources.save(appCatalog, filename: "app-catalog.json")
                 remember(input)
             } catch is CancellationError { }
             catch {
@@ -101,8 +113,8 @@ final class ToolStore: ObservableObject {
             }
         }
     }
-    func cancelSearch() { searchTask?.cancel(); searchID = UUID(); searching = false; hasSearched = !results.isEmpty; searchError = nil }
-    func clearSearch() { cancelSearch(); searchText = ""; results = []; hasSearched = false; lastSearchTerm = "" }
+    func cancelSearch() { searchTask?.cancel(); searchID = UUID(); searching = false; hasSearched = !results.isEmpty || !localResults.isEmpty; searchError = nil }
+    func clearSearch() { cancelSearch(); searchText = ""; results = []; localResults = []; hasSearched = false; lastSearchTerm = "" }
     func isFavorite(_ app: StoreApp) -> Bool { favorites.contains { $0.id == app.id } }
     func toggleFavorite(_ app: StoreApp) {
         var next = favorites

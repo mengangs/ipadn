@@ -27,6 +27,19 @@ struct SearchView: View {
             if let error = store.searchError {
                 Section { InlineIssue(message: error) { store.search(store.lastSearchTerm) } }
             }
+            if !store.localResults.isEmpty {
+                Section {
+                    ForEach(store.localResults) { app in
+                        NavigationLink { AppDetailView(app: app) } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                AppRow(app: app)
+                                Label("已保存的应用记录", systemImage: "archivebox").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } header: { Text("本地与已购 · \(store.localResults.count)") }
+                footer: { Text("包含已购、收藏、下载及查询过的应用。记录保留不代表当前仍可下载，下载以 Apple 授权结果为准。") }
+            }
             if !store.results.isEmpty {
                 Section {
                     ForEach(store.results) { app in
@@ -34,8 +47,8 @@ struct SearchView: View {
                             .contextMenu { Button(store.isFavorite(app) ? "取消收藏" : "收藏应用", systemImage: store.isFavorite(app) ? "star.slash" : "star") { store.toggleFavorite(app); UX.feedback() } }
                     }
                 } header: { Text("\(store.lastSearchTerm) · \(store.results.count) 个结果") }
-            } else if store.hasSearched && !store.searching && store.searchError == nil {
-                Section { EmptyState(title: "没有找到相关应用", message: "试试 App ID 或商店链接，也可以切换地区后重试。", symbol: "magnifyingglass", actionTitle: "重新搜索", action: { store.clearSearch() }) }
+            } else if store.localResults.isEmpty && store.hasSearched && !store.searching && store.searchError == nil {
+                Section { EmptyState(title: "没有找到相关应用", message: "试试 App ID、商店链接或其他地区。查找下架应用时，可先在已购页同步记录。", symbol: "magnifyingglass", actionTitle: "重新搜索", action: { store.clearSearch() }) }
             }
             if !store.hasSearched && !store.searching {
                 if !store.favorites.isEmpty {

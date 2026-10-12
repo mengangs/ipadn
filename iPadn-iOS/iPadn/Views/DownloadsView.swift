@@ -28,11 +28,19 @@ struct DownloadsView: View {
         List(selection: $selection) {
             Section {
                 VStack(alignment: .leading, spacing: 16) {
-                (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(alignment: .top, spacing: 16))) {
-                    StatCell(value: "\(manager.jobs.filter { DownloadFilter.active.includes($0.status) }.count)", title: "进行中")
-                    StatCell(value: "\(manager.jobs.filter { $0.status == .completed }.count)", title: "已保存")
-                    StatCell(value: totalSize.byteLabel, title: "本地文件")
-                }.padding(.vertical, 12)
+                if typeSize.isAccessibilitySize {
+                    VStack(spacing: 10) {
+                        LabeledContent("进行中", value: "\(manager.jobs.filter { DownloadFilter.active.includes($0.status) }.count)")
+                        LabeledContent("已保存", value: "\(manager.jobs.filter { $0.status == .completed }.count)")
+                        LabeledContent("本地文件", value: totalSize.byteLabel)
+                    }.font(.body).padding(.vertical, 8)
+                } else {
+                    HStack(alignment: .top, spacing: 16) {
+                        StatCell(value: "\(manager.jobs.filter { DownloadFilter.active.includes($0.status) }.count)", title: "进行中")
+                        StatCell(value: "\(manager.jobs.filter { $0.status == .completed }.count)", title: "已保存")
+                        StatCell(value: totalSize.byteLabel, title: "本地文件")
+                    }.padding(.vertical, 12)
+                }
                 (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))) {
                     Button { importing = true } label: { Label("导入 IPA", systemImage: "plus.rectangle.on.folder").frame(maxWidth: .infinity, minHeight: 36) }
                         .buttonStyle(MonochromeButtonStyle())

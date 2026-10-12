@@ -3,6 +3,17 @@ import ZIPFoundation
 @testable import iPadn
 
 final class CoreTests: XCTestCase {
+    func testArchivedAppNameSearchDoesNotNeedAnAccountOrLiveStoreResult() {
+        let removed = StoreApp(id: "100", name: "旧时光相机", bundleID: "example.camera")
+        let cached = StoreApp(id: "200", name: "Unpurchased Archive", bundleID: "example.archive")
+        let imported = StoreApp(id: "local-file", name: "旧时光相机")
+        XCTAssertEqual(AppSearchIndex.search("旧时光", apps: [removed, removed, imported]).map(\.id), ["100"])
+        XCTAssertEqual(AppSearchIndex.search("UNPURCHASED", apps: [cached]).map(\.id), ["200"])
+        XCTAssertEqual(AppSearchIndex.search("example.camera", apps: [removed]).map(\.id), ["100"])
+        XCTAssertTrue(AppSearchIndex.search(" ", apps: [removed]).isEmpty)
+        XCTAssertTrue(AppSearchIndex.search("从未记录", apps: [removed]).isEmpty)
+    }
+
     func testTransferRateUsesNewBytesAndExpiresWhenStalled() {
         var metric = TransferMetrics(bytes: 1_000_000, sampledAt: 100)
         metric.record(bytes: 1_500_000, at: 101)
