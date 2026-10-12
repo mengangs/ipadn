@@ -82,15 +82,28 @@ enum StoreService {
                 URLQueryItem(name: "entity", value: store.platform.searchEntity),
                 URLQueryItem(name: "explicit", value: "no"), URLQueryItem(name: "limit", value: String(limit))
             ])
-            let data: [String: Any]?
-            do { data = try await HTTPClient.shared.json(url) as? [String: Any] }
-            catch {
-                // Apple's public Search API does not reliably serve tvSoftware.
-                // Keep local purchase/name-directory matches available instead.
-                if store.platform == .tvOS { return [] }
-                throw error
+            var results: [StoreApp] = []
+            do {
+                let data = try await HTTPClient.shared.json(url) as? [String: Any]
+                results = (data?["results"] as? [[String: Any]] ?? []).map(mapLookup)
+            } catch {
+                if store.platform != .tvOS { throw error }
             }
-            return (data?["results"] as? [[String: Any]] ?? []).map(mapLookup)
+            guard store.platform == .tvOS, results.isEmpty else { return results }
+            // Apple's old tvSoftware search entity is no longer reliable.
+            // A standard software query at least finds cross-platform listings.
+            // These remain *candidates*, not confirmed Apple TV packages.
+            let candidatesURL = try endpoint("https://itunes.apple.com/search", items: [
+                URLQueryItem(name: "term", value: text), URLQueryItem(name: "country", value: store.country),
+                URLQueryItem(name: "entity", value: "software"),
+                URLQueryItem(name: "explicit", value: "no"), URLQueryItem(name: "limit", value: String(limit))
+            ])
+            let data = try await HTTPClient.shared.json(candidatesURL) as? [String: Any]
+            return (data?["results"] as? [[String: Any]] ?? []).map {
+                var candidate = mapLookup($0)
+                candidate.tvOSCandidate = true
+                return candidate
+            }
         case .appID(let id, _):
             if store.platform == .tvOS { return try await platformApp(id, store: store).map { [$0] } ?? [] }
             let url = try endpoint("https://itunes.apple.com/lookup", items: [
