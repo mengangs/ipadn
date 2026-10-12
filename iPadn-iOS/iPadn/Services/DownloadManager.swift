@@ -16,6 +16,8 @@ final class DownloadManager: NSObject, ObservableObject {
     private var maxQueued = 10
     private var processingIDs = Set<UUID>()
     private var iconsLoading = false
+    private var catalogArtworkAttempted = Set<UUID>()
+    private var artworkCountry = "CN"
     private var notifications = true
     private var lastSave = Date.distantPast
     private var transferMetrics: [UUID: TransferMetrics] = [:]
@@ -55,6 +57,7 @@ final class DownloadManager: NSObject, ObservableObject {
         maxConcurrent = min(6, max(1, settings.maxConcurrentDownloads))
         maxQueued = max(1, settings.maxQueuedDownloads)
         notifications = settings.notifications
+        artworkCountry = settings.store.country
         schedule()
     }
 
@@ -243,6 +246,7 @@ final class DownloadManager: NSObject, ObservableObject {
         try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
         try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
         try? FileManager.default.removeItem(at: PackageIconService.cacheURL(id))
+        catalogArtworkAttempted.remove(id)
         schedule()
     }
     func metrics(for id: UUID) -> TransferMetrics? { transferMetrics[id] }
@@ -260,15 +264,49 @@ final class DownloadManager: NSObject, ObservableObject {
         guard !iconsLoading else { return }
         iconsLoading = true
         defer { iconsLoading = false }
-        for job in jobs where job.status == .completed && job.packageIconScanned != true && job.rawFormat == nil {
+        for job in jobs where job.status == .completed && job.rawFormat == nil {
             guard let file = fileURL(job), !Task.isCancelled else { continue }
-            _ = await Task.detached(priority: .utility) { try? PackageIconService.save(from: file, id: job.id) }.value
-            guard let index = jobs.firstIndex(where: { $0.id == job.id }) else {
-                try? FileManager.default.removeItem(at: PackageIconService.cacheURL(job.id)); continue
+            if job.packageIconScanned != true {
+                _ = await Task.detached(priority: .utility) {
+                    try? PackageIconService.save(from: file, id: job.id)
+                }.value
+                guard let index = jobs.firstIndex(where: { $0.id == job.id }) else {
+                    try? FileManager.default.removeItem(at: PackageIconService.cacheURL(job.id))
+                    continue
+                }
+                jobs[index].packageIconScanned = true
+                // Never erase the catalog icon because IPA icon extraction failed.
+                if jobs[index].app.iconURL == nil {
+                    jobs[index].app.iconURL = jobs[index].asset?.app.iconURL
+                }
+                persist()
             }
-            jobs[index].packageIconScanned = true
-            jobs[index].app.iconURL = nil
-            persist()
+            guard job.platformLabel == "tvOS", packageIconURL(job) == nil,
+                  catalogArtworkAttempted.insert(job.id).inserted,
+                  let index = jobs.firstIndex(where: { $0.id == job.id }) else { continue }
+            var artwork = jobs[index].displayApp(packageIcon: nil).iconURL
+            if artwork == nil, job.app.id.allSatisfy({ $0.isASCII && $0.isNumber }) {
+                // Existing completed downloads lost their original artwork
+                // under the old logic. Recover it from the public Apple TV catalog.
+                let countries = artworkCountry == "US" ? ["US"] : [artworkCountry, "US"]
+                for country in countries {
+                    if Task.isCancelled { break }
+                    let context = StoreContext(country: country, platform: .tvOS)
+                    if let listing = try? await StoreService.platformApp(job.app.id, store: context),
+                       let icon = listing.iconURL {
+                        artwork = icon
+                        if let freshIndex = jobs.firstIndex(where: { $0.id == job.id }) {
+                            jobs[freshIndex].app.iconURL = icon
+                            persist()
+                        }
+                        break
+                    }
+                }
+            }
+            guard let artwork, !Task.isCancelled else { continue }
+            if (try? await PackageIconService.saveCatalogArtwork(from: artwork, id: job.id)) == true {
+                objectWillChange.send()
+            }
         }
     }
 
@@ -316,7 +354,7 @@ final class DownloadManager: NSObject, ObservableObject {
                 }.value
                 guard let index = self.jobs.firstIndex(where: { $0.id == id }) else { return }
                 self.jobs[index].localFilename = result.0
-                self.jobs[index].app = result.1
+                self.jobs[index].app = job.completing(with: result.1)
                 self.jobs[index].packageIconScanned = true
                 self.jobs[index].status = .completed
                 self.jobs[index].downloaded = result.1.size; self.jobs[index].expected = result.1.size
@@ -324,6 +362,7 @@ final class DownloadManager: NSObject, ObservableObject {
                 try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
                 try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
                 self.persist(); self.notify(title: "安装包已准备好", body: result.1.name + " " + result.1.version)
+                Task { await self.loadPackageIcons() }
             } catch { self.fail(id, error: error) }
         }
     }
