@@ -27,7 +27,7 @@ struct DownloadsView: View {
         manager.jobs.filter { filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
     }
     var body: some View {
-        List(selection: $selection) {
+        List {
             if !manager.jobs.isEmpty {
                 Section { SearchInput(text: $term, placeholder: "搜索名称、版本或 Bundle ID") }
                     .listRowSeparator(.hidden)
@@ -43,17 +43,32 @@ struct DownloadsView: View {
             } else {
                 ForEach(visible) { job in
                     Section {
-                        DownloadTaskRow(job: job, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
-                            if let file = manager.fileURL(job) { share = SharedFile(url: file) }
-                        })
-                        .accessibilityElement(children: .contain)
-                        .tag(job.id).accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
+                        Group {
+                            if editMode.isEditing {
+                                Button { toggleSelection(job.id) } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: selection.contains(job.id) ? "checkmark.circle.fill" : "circle")
+                                            .font(.title2)
+                                            .foregroundStyle(selection.contains(job.id) ? Color.accentColor : Color.secondary)
+                                            .frame(width: 32)
+                                        taskContent(job).allowsHitTesting(false)
+                                    }.contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel((selection.contains(job.id) ? "取消选择 " : "选择 ") + job.app.name)
+                                .accessibilityIdentifier("download.select." + job.id.uuidString)
+                            } else {
+                                taskContent(job)
+                            }
+                        }
+                        .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            if job.status != .processing && job.status != .pausing {
+                            if !editMode.isEditing && job.status != .processing && job.status != .pausing {
                                 Button { askDelete([job.id]) } label: { Label("删除", systemImage: "trash") }.tint(.red)
                             }
                         }
                         .contextMenu {
+                            if !editMode.isEditing {
                             Button("任务详情", systemImage: "info.circle") { inspecting = job }
                             if let file = manager.fileURL(job) {
                                 Button("导出 IPA", systemImage: "square.and.arrow.up") { share = SharedFile(url: file) }
@@ -69,12 +84,13 @@ struct DownloadsView: View {
                             if job.status != .processing && job.status != .pausing {
                                 Button("删除任务及文件", systemImage: "trash", role: .destructive) { askDelete([job.id]) }
                             }
+                            }
                         }
                     } header: {
                         if job.id == visible.first?.id { Text("\(visible.count) 项任务") }
                     }
                 }
-                .onMove(perform: filter == .all && term.isEmpty ? { manager.move(from: $0, to: $1) } : nil)
+                .onMove(perform: editMode.isEditing && filter == .all && term.isEmpty ? { manager.move(from: $0, to: $1) } : nil)
             }
         }
         .task(id: manager.jobs.filter { $0.status == .completed }.map { $0.id.uuidString }.joined()) { await manager.loadPackageIcons() }
@@ -82,7 +98,11 @@ struct DownloadsView: View {
         .environment(\.editMode, $editMode)
         .toolbar {
             ToolbarItemGroup(placement: .topBarLeading) {
-                EditButton().disabled(manager.jobs.isEmpty)
+                Button(editMode.isEditing ? "完成" : "编辑") {
+                    editMode = editMode.isEditing ? .inactive : .active
+                }
+                .disabled(manager.jobs.isEmpty)
+                .accessibilityIdentifier("downloads.edit")
                 if !manager.jobs.isEmpty {
                     Menu {
                         Picker("下载状态", selection: $filter) {
@@ -186,13 +206,23 @@ struct DownloadsView: View {
         .actionConfirmation(isPresented: $confirmingDelete, title: "删除 \(pendingDelete.count) 项任务？", message: "本地安装包也会删除，此操作无法撤销。", confirmTitle: "删除任务与文件") {
             do {
                 for id in pendingDelete { try manager.remove(id) }
-                selection.subtract(pendingDelete); pendingDelete.removeAll(); store.infoMessage = "已删除任务"
+                selection.subtract(pendingDelete); pendingDelete.removeAll()
+                if manager.jobs.isEmpty { editMode = .inactive }
+                store.infoMessage = "已删除任务"
             } catch { store.errorMessage = error.localizedDescription }
         }
         .sheet(item: $installing) { job in
             PackageInstallationView(job: job).environmentObject(store).environmentObject(manager)
         }
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
+    }
+    private func taskContent(_ job: DownloadJob) -> some View {
+        DownloadTaskRow(job: job, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
+            if let file = manager.fileURL(job) { share = SharedFile(url: file) }
+        })
+    }
+    private func toggleSelection(_ id: UUID) {
+        if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
     }
     private func importPickedFiles() {
         let files = pickedFiles; pickedFiles.removeAll()
