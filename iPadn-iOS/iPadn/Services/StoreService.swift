@@ -278,6 +278,62 @@ enum MacInstallerService {
     }
 }
 
+// Preflight for native Mac App Store packages. Apple's iOS MDM catalog may
+// return the iOS offer for a universal app even if the requested platform is
+// macOS. This parser only resolves a Mac *offer*, not a downloadable .pkg.
+// Store packages require a separate, device-compatible processing pipeline.
+enum MacStoreOfferService {
+    static func versionID(fromHTML html: String, appID: String, bundleID: String) -> String? {
+        let markers = ["id=\\"serialized-server-data\\"", "id='serialized-server-data'"]
+        guard let marker = markers.compactMap({ html.range(of: $0) }).first,
+              html[..<marker.lowerBound].range(of: "<script", options: .backwards) != nil,
+              let start = html[marker.upperBound...].firstIndex(of: ">"),
+              let closing = html[html.index(after: start)...].range(of: "</script>") else { return nil }
+        let json = Data(html[html.index(after: start)..<closing.lowerBound].utf8)
+        guard json.count < 3 * 1024 * 1024,
+              let data = try? JSONSerialization.jsonObject(with: json) else { return nil }
+
+        var ids = Set<String>()
+        var visited = 0
+        func visit(_ value: Any, depth: Int) {
+            visited += 1
+            guard depth < 40, visited < 50_000 else { return }
+            if let object = value as? [String: Any] {
+                if let offer = object["purchaseConfiguration"] as? [String: Any] {
+                    let platforms = offer["appPlatforms"] as? [String] ?? []
+                    let bundle = plistString(offer["bundleId"])
+                    let params = plistString(offer["buyParams"])
+                    let query = URLComponents(string: "https://example.invalid/?" + params)?.queryItems ?? []
+                    let values = Dictionary(query.map { ($0.name, $0.value ?? "") },
+                                            uniquingKeysWith: { first, _ in first })
+                    let version = values["appExtVrsId"] ?? ""
+                    if platforms.contains("mac"), values["salableAdamId"] == appID,
+                       bundleID.isEmpty || bundle == bundleID,
+                       let number = UInt64(version), number > 0 {
+                        ids.insert(version)
+                    }
+                }
+                for child in object.values { visit(child, depth: depth + 1) }
+            } else if let items = value as? [Any] {
+                for item in items { visit(item, depth: depth + 1) }
+            }
+        }
+        visit(data, depth: 0)
+        return ids.count == 1 ? ids.first : nil
+    }
+
+    static func latestVersionID(appID: String, bundleID: String, country: String) async throws -> String? {
+        guard let appNumber = UInt64(appID), appNumber > 0,
+              country.count == 2, country.allSatisfy({ $0.isASCII && $0.isLetter }) else { return nil }
+        let url = URL(string: "https://apps.apple.com/\(country.lowercased())/app/id\(appNumber)?platform=mac")!
+        let (data, response) = try await HTTPClient.shared.request(url)
+        guard data.count <= 3 * 1024 * 1024,
+              response.mimeType?.lowercased().contains("html") == true,
+              let html = String(data: data, encoding: .utf8) else { return nil }
+        return versionID(fromHTML: html, appID: appID, bundleID: bundleID)
+    }
+}
+
 actor VersionService {
     struct Cache: Codable { var savedAt: Date; var versions: [AppVersion] }
     private var cache = LocalResources.load([String: Cache].self, filename: LocalResources.versionsFilename) ?? [:]
