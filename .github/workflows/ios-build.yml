@@ -41,7 +41,7 @@ jobs:
           xcodebuild -showsdks
           mkdir -p build
 
-      - name: Check project and original signing runtime
+      - name: Verify project and repository-local runtime
         run: |
           python3 scripts/assemble_runtime.py
           python3 scripts/verify_project.py

@@ -4,128 +4,163 @@ import Combine
 import CryptoKit
 
 @MainActor
-final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate {
-    @Published var isPresented = false
-    @Published var webView: WKWebView?
-    @Published var title = "正在准备签名"
+final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMessageHandler {
+    @Published private(set) var isPresented = false
+    @Published private(set) var webView: WKWebView?
+    @Published private(set) var title = "正在验证请求"
+    @Published private(set) var stage = "准备本地环境"
+    @Published private(set) var stageIndex = 0
+    @Published private(set) var startedAt = Date()
     let server = LoopbackServer()
+    private var operationID: UUID?
     private var navigation: CheckedContinuation<Void, Error>?
-    private var navigationTimeout: Task<Void, Never>?
-    private var pending: Task<String, Error>?
+    private var evaluation: CheckedContinuation<String, Error>?
+    private var timeout: Task<Void, Never>?
+    private var terminalError: Error?
     private var signatureCache: [String: String] = [:]
     private var kbCache: [String: String] = [:]
 
     func sign(_ data: Data, guid: String, useCache: Bool) async throws -> String {
         let key = guid + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        try Task.checkCancellation()
         if useCache, let cached = signatureCache[key] { return cached }
-        let previous = pending
-        let operation = Task { @MainActor in
-            _ = try? await previous?.value
-            try Task.checkCancellation()
-            self.title = "SAP 签名"
-            try await self.prepare(mode: "sign")
-            let watchdog = self.watchdog()
-            defer { watchdog.cancel(); self.release() }
-            guard let web = self.webView, let base = self.server.baseURL else { throw ToolError.message("签名环境未就绪") }
-            let result = try await web.callAsyncJavaScript("""
-                setSigningStatus('正在准备签名', '正在加载本地签名引擎，请保持应用在前台');
-                await sapInitialize(guid, {proxyURL: proxy});
-                try {
-                    setSigningStatus('正在安全签名', '正在生成请求签名');
-                    return await sapSign(body);
-                } finally { await sapClose(); }
-                """, arguments: ["guid": guid, "proxy": base.appendingPathComponent("proxy").absoluteString,
-                                   "body": data.base64EncodedString()], in: nil, contentWorld: .page)
-            try Task.checkCancellation()
-            guard let signature = result as? String, !signature.isEmpty else { throw ToolError.message("签名引擎返回了空结果") }
-            if useCache {
-                if self.signatureCache.count >= 128 { self.signatureCache.removeAll() }
-                self.signatureCache[key] = signature
-            }
-            return signature
+        let result = try await execute(title: "验证请求", script: """
+            reportStage(1);
+            await sapInitialize(guid, {proxyURL: proxy});
+            try { reportStage(2); return await sapSign(body); }
+            finally { await sapClose(); }
+            """, arguments: ["guid": guid, "body": data.base64EncodedString()])
+        if useCache {
+            if signatureCache.count >= 128 { signatureCache.removeAll() }
+            signatureCache[key] = result
         }
-        pending = operation
-        return try await withTaskCancellationHandler(operation: { try await operation.value }, onCancel: { operation.cancel() })
+        return result
     }
 
     func kbsync(guid: String, dsid: String, useCache: Bool) async throws -> String {
         guard guid.count == 12, guid.allSatisfy(\.isHexDigit), let value = UInt64(dsid), value > 0 else {
-            throw ToolError.message("设备标识或 DSID 无效")
+            throw ToolError.message("设备标识或账号标识无效，请重新登录")
         }
+        try Task.checkCancellation()
         let key = guid + ":" + dsid
         if useCache, let cached = kbCache[key] { return cached }
-        let previous = pending
-        let operation = Task { @MainActor in
-            _ = try? await previous?.value
-            try Task.checkCancellation()
-            self.title = "初始化下载"
-            try await self.prepare(mode: "kbsync")
-            let watchdog = self.watchdog()
-            defer { watchdog.cancel(); self.release() }
-            guard let web = self.webView else { throw ToolError.message("下载初始化环境未就绪") }
-            let result = try await web.callAsyncJavaScript("""
-                setSigningStatus('初始化下载，请稍等', '正在准备下载所需数据，请保持应用在前台');
-                await loadSapSigner();
-                await new Promise(resolve => setTimeout(resolve, 100));
-                return await sapGenerateKBSync(guid, dsid);
-                """, arguments: ["guid": guid, "dsid": dsid], in: nil, contentWorld: .page)
-            try Task.checkCancellation()
-            guard let value = result as? String, !value.isEmpty else { throw ToolError.message("下载初始化结果为空") }
-            if useCache { self.kbCache[key] = value }
-            return value
-        }
-        pending = operation
-        return try await withTaskCancellationHandler(operation: { try await operation.value }, onCancel: { operation.cancel() })
+        let result = try await execute(title: "准备下载", script: """
+            reportStage(1);
+            await loadSapSigner();
+            reportStage(2);
+            await new Promise(resolve => setTimeout(resolve, 50));
+            return await sapGenerateKBSync(guid, dsid);
+            """, arguments: ["guid": guid, "dsid": dsid])
+        if useCache { kbCache[key] = result }
+        return result
     }
 
-    private func prepare(mode: String) async throws {
-        try await server.start()
-        guard let base = server.baseURL else { throw ToolError.message("无法启动本地签名服务") }
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = .nonPersistent()
-        let web = WKWebView(frame: .zero, configuration: config)
-        web.navigationDelegate = self
-        webView = web; isPresented = true
-        var components = URLComponents(url: base.appendingPathComponent("runtime/index.html"), resolvingAgainstBaseURL: false)!
-        if mode == "kbsync" { components.fragment = "kbsync" }
-        do {
+    func execute(title: String, script: String, arguments: [String: Any], timeoutSeconds: UInt64 = 180) async throws -> String {
+        guard operationID == nil else { throw ToolError.message("另一项验证正在进行，请完成或取消后重试") }
+        let id = UUID(); operationID = id; terminalError = nil
+        self.title = title; stage = "准备本地环境"; stageIndex = 0; startedAt = Date()
+        defer { release(id: id) }
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await server.start()
+            try checkActive(id)
+            guard let base = server.baseURL else { throw ToolError.message("无法启动本地验证环境") }
+            let config = WKWebViewConfiguration()
+            config.websiteDataStore = .nonPersistent()
+            config.userContentController.add(self, name: "progress")
+            let web = WKWebView(frame: .zero, configuration: config)
+            web.navigationDelegate = self
+            webView = web; isPresented = true
+            armTimeout(id: id, seconds: 45, message: "本地验证环境加载超时，请重试。")
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 navigation = continuation
-                web.load(URLRequest(url: components.url!))
-                navigationTimeout = Task { @MainActor [weak self] in
-                    do { try await Task.sleep(nanoseconds: 45_000_000_000) } catch { return }
-                    self?.finishNavigation(.failure(ToolError.message("加载本地签名页面超时")))
+                web.load(URLRequest(url: base.appendingPathComponent("runtime/index.html")))
+            }
+            try checkActive(id)
+            armTimeout(id: id, seconds: timeoutSeconds, message: "验证已超过 3 分钟，已停止本次操作。请保持应用在前台后重试。")
+            var values = arguments
+            values["proxy"] = base.appendingPathComponent("proxy").absoluteString
+            let result: String = try await withCheckedThrowingContinuation { continuation in
+                evaluation = continuation
+                web.callAsyncJavaScript(script, arguments: values, in: nil, contentWorld: .page) { [weak self] result in
+                    Task { @MainActor in
+                        guard let self, self.operationID == id, let continuation = self.evaluation else { return }
+                        self.evaluation = nil
+                        switch result {
+                        case .success(let value):
+                            if let text = value as? String, !text.isEmpty { continuation.resume(returning: text) }
+                            else { continuation.resume(throwing: ToolError.message("验证结果为空，请重试")) }
+                        case .failure:
+                            continuation.resume(throwing: ToolError.message("本地验证未完成，请检查网络并重试。"))
+                        }
+                    }
                 }
             }
-        } catch { release(); throw error }
-    }
-
-    private func finishNavigation(_ result: Result<Void, Error>) {
-        let continuation = navigation; navigation = nil
-        navigationTimeout?.cancel(); navigationTimeout = nil
-        continuation?.resume(with: result)
-    }
-    private func watchdog() -> Task<Void, Never> {
-        Task { @MainActor [weak self] in
-            do { try await Task.sleep(nanoseconds: 180_000_000_000) } catch { return }
-            self?.cancel()
+            try checkActive(id)
+            return result
+        } onCancel: { [weak self] in
+            Task { @MainActor in self?.stop(id: id, error: CancellationError()) }
         }
     }
-    func cancel() {
-        pending?.cancel()
-        webView?.loadHTMLString("<html><body>操作已取消</body></html>", baseURL: nil)
-        release()
+
+    private func checkActive(_ id: UUID) throws {
+        try Task.checkCancellation()
+        if let terminalError { throw terminalError }
+        guard operationID == id else { throw CancellationError() }
     }
-    private func release() {
+    private func armTimeout(id: UUID, seconds: UInt64, message: String) {
+        timeout?.cancel()
+        timeout = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: seconds * 1_000_000_000) } catch { return }
+            self?.stop(id: id, error: ToolError.message(message))
+        }
+    }
+    private func finishNavigation(_ result: Result<Void, Error>) {
+        let continuation = navigation; navigation = nil
+        continuation?.resume(with: result)
+    }
+    private func stop(id: UUID, error: Error) {
+        guard operationID == id else { return }
+        terminalError = error
+        finishNavigation(.failure(error))
+        let continuation = evaluation; evaluation = nil
+        continuation?.resume(throwing: error)
+        timeout?.cancel()
+        webView?.stopLoading()
+        webView?.loadHTMLString("<!doctype html><title>Stopped</title>", baseURL: nil)
+        isPresented = false
+    }
+    func cancel() {
+        if let id = operationID { stop(id: id, error: CancellationError()) }
+    }
+    private func release(id: UUID) {
+        guard operationID == id else { return }
+        timeout?.cancel(); timeout = nil
         finishNavigation(.failure(CancellationError()))
+        let continuation = evaluation; evaluation = nil
+        continuation?.resume(throwing: CancellationError())
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "progress")
         webView?.stopLoading(); webView?.navigationDelegate = nil
-        webView = nil; isPresented = false
+        webView = nil; isPresented = false; operationID = nil; terminalError = nil
     }
     func clearCache() { signatureCache.removeAll(); kbCache.removeAll() }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { finishNavigation(.success(())) }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { finishNavigation(.failure(error)) }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { finishNavigation(.failure(error)) }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.webView === webView, operationID != nil, let index = message.body as? Int, (1...2).contains(index) else { return }
+        stageIndex = index
+        stage = index == 1 ? "加载验证组件" : title == "准备下载" ? "生成下载授权数据" : "生成请求签名"
+    }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === self.webView, terminalError == nil else { return }
+        finishNavigation(.success(()))
+    }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard webView === self.webView else { return }; finishNavigation(.failure(error))
+    }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard webView === self.webView else { return }; finishNavigation(.failure(error))
+    }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        finishNavigation(.failure(ToolError.message("签名引擎内存不足或进程退出，请重试")))
+        guard webView === self.webView, let id = operationID else { return }
+        stop(id: id, error: ToolError.message("本地验证进程已退出，可能是可用内存不足。请重试。"))
     }
 }

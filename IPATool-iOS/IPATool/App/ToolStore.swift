@@ -44,6 +44,7 @@ final class ToolStore: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: LocalResources.searchHistory) {
             searchHistory = (try? JSONDecoder().decode([SearchHistoryItem].self, from: data)) ?? []
         }
+        if ["https://api.scripting.fun/ipa-plist", "https://xiaobai.app/install"].contains(settings.plistServer) { settings.plistServer = "" }
         downloads.configure(settings)
         apple.$activeID.sink { [weak self] id in
             guard let self = self else { return }

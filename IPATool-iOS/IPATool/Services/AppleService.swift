@@ -34,15 +34,19 @@ final class AppleService: ObservableObject {
         let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let code = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !email.isEmpty, !password.isEmpty else { throw ToolError.message("请填写 Apple 账号和密码") }
-        let body = try HTTPClient.encodePlist(["appleId": email, "attempt": 1, "guid": guid,
+        guard code.isEmpty || (code.count == 6 && code.allSatisfy({ $0.isASCII && $0.isNumber })) else { throw ToolError.message("请输入 6 位数字验证码") }
+        let body = try HTTPClient.encodePlist(["appleId": email, "attempt": code.isEmpty ? 1 : 2, "guid": guid,
                                                "password": password + code, "rmp": 0, "why": "signIn"])
         let signature = try await signer.sign(body, guid: guid, useCache: useCache)
         let (raw, response) = try await HTTPClient.shared.plist(
             URL(string: "https://p25-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate/")!, body: body,
             headers: ["Content-Type": "application/x-www-form-urlencoded", "X-Apple-ActionSignature": signature])
-        if let failure = HTTPClient.appleFailure(raw) { throw failure }
+        if let failure = AppleLoginResponse.failure(raw, submittedCode: !code.isEmpty) { throw failure }
         guard let info = raw["accountInfo"] as? [String: Any], !plistString(info["appleId"]).isEmpty else {
-            throw ToolError.message(plistString(raw["customerMessage"]).isEmpty ? "登录失败；如账号启用双重认证，请填入最新验证码后重试" : plistString(raw["customerMessage"]))
+            throw ToolError.message("Apple 未返回完整登录信息，请重试")
+        }
+        guard !plistString(raw["dsPersonId"]).isEmpty, !plistString(raw["passwordToken"]).isEmpty else {
+            throw ToolError.message("Apple 返回的登录凭据不完整，请重新登录")
         }
         let id = plistString(info["appleId"])
         let address = info["address"] as? [String: Any] ?? [:]
@@ -220,5 +224,29 @@ final class AppleService: ObservableObject {
             "X-Apple-TZ": String(TimeZone.current.secondsFromGMT(for: now) / 60), "X-Guid": guid,
             "X-Token": account.passwordToken], uniquingKeysWith: { _, new in new })
         return headers
+    }
+}
+
+
+enum AppleLoginError: LocalizedError {
+    case verificationRequired, verificationRejected
+    var errorDescription: String? {
+        switch self {
+        case .verificationRequired: return "请在受信任设备上允许登录，然后输入收到的 6 位验证码。"
+        case .verificationRejected: return "Apple 未接受本次验证。请检查账号密码，并输入最新的 6 位验证码后重试。"
+        }
+    }
+}
+
+enum AppleLoginResponse {
+    static func failure(_ response: [String: Any], submittedCode: Bool) -> Error? {
+        if let failure = HTTPClient.appleFailure(response) { return failure }
+        let message = plistString(response["customerMessage"])
+        if message == "MZFinance.BadLogin.Configurator_message" {
+            return submittedCode ? AppleLoginError.verificationRejected : AppleLoginError.verificationRequired
+        }
+        if let info = response["accountInfo"] as? [String: Any], !plistString(info["appleId"]).isEmpty { return nil }
+        if message.hasPrefix("MZ") { return ToolError.message("Apple 暂时无法完成登录，请稍后重试。") }
+        return ToolError.message(message.isEmpty ? "Apple 未返回登录信息，请检查账号后重试。" : message)
     }
 }

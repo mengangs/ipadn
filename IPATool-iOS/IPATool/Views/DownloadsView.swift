@@ -63,7 +63,7 @@ struct DownloadsView: View {
                 }
             }
             Section {
-                StatusBanner(text: "下载完成的 IPA 可以分享或导出。安装入口沿用原脚本的代理方案，需要配置 Surge/Loon；它不会替应用重新签名。")
+                StatusBanner(text: "下载完成后可导出到签名工具。代理安装需要配置自己的 HTTPS 清单服务及 Surge/Loon 规则。")
             }.listRowBackground(Color.clear)
         }
         .navigationTitle("下载管理")
@@ -108,7 +108,7 @@ struct DownloadsView: View {
             }
         }
         .confirmationDialog("安装 \(installing?.app.name ?? "")", isPresented: Binding(get: { installing != nil }, set: { if !$0 { installing = nil } }), titleVisibility: .visible) {
-            Button("通过原脚本代理安装") {
+            Button("通过代理安装") {
                 guard let job = installing, let file = manager.fileURL(job) else { return }
                 installing = nil
                 perform {

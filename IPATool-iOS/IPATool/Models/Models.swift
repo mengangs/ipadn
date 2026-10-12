@@ -107,7 +107,7 @@ struct ToolSettings: Codable, Equatable {
     var notifications = true
     var useSignerCache = true
     var appearance = "system"
-    var plistServer = "https://api.scripting.fun/ipa-plist"
+    var plistServer = ""
     var versionSources: [VersionSource] = [
         VersionSource(name: "Timbrd", urlTemplate: "https://api.timbrd.com/apple/app-version/index.php?id={id}", containerKey: "", reverse: true),
         VersionSource(name: "Bilin", urlTemplate: "https://apis.bilin.eu.org/history/{id}", containerKey: "data", reverse: false)

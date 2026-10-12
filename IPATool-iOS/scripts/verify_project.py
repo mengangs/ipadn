@@ -109,12 +109,8 @@ for file in ROOT.rglob("*.swift"):
 
 runtime = ROOT / "IPATool/Resources/SAPRuntime"
 hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(runtime.iterdir()) if path.is_file()}
-original = ROOT.parent / "reference/source/web-sap-signer/runtime"
-if original.exists():
-    for name, digest in hashes.items(): check(hashlib.sha256((original / name).read_bytes()).hexdigest() == digest, "Bundled runtime differs: " + name)
-else:
-    expected = json.loads((ROOT / "verification.json").read_text()).get("runtime_sha256", {})
-    for name, digest in hashes.items(): check(expected.get(name) == digest, "Bundled runtime differs from recorded digest: " + name)
+expected = json.loads((ROOT / "vendor/SAPRuntime/manifest.json").read_text())["files"]
+check(hashes == expected, "Bundled runtime files or hashes differ from local manifest")
 report = {"passed": not failures, "app_swift_files": len(actual_swift), "project_objects": len(objects), "runtime_sha256": hashes,
           "checks": ["OpenStep project graph", "referenced files", "plist parsing", "icon filenames", "shared scheme targets", "Swift lexical delimiters", "bundled runtime hashes"],
           "not_run": ["Swift compilation/type checking", "XCTest", "iOS Simulator", "real device", "Apple account/server requests", "IPA installation"], "failures": failures}

@@ -25,7 +25,7 @@ enum ManifestBuilder {
         }
         guard let remote = URLComponents(string: plistServer.trimmingCharacters(in: .whitespacesAndNewlines)),
               remote.scheme == "https", remote.host != nil, remote.query == nil, remote.fragment == nil else {
-            throw ToolError.message("plist 服务必须是没有查询参数的 HTTPS 地址")
+            throw ToolError.message("请先在设置中填写自己的 HTTPS 清单服务地址（不含查询参数），或导出到签名工具")
         }
         var metadata = URLComponents()
         metadata.queryItems = [

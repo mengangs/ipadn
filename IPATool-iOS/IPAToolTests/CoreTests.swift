@@ -3,6 +3,67 @@ import ZIPFoundation
 @testable import IPATool
 
 final class CoreTests: XCTestCase {
+    func testAppleLoginChallengeAndRejection() {
+        let challenge: [String: Any] = ["customerMessage": "MZFinance.BadLogin.Configurator_message", "failureType": ""]
+        guard case .verificationRequired? = AppleLoginResponse.failure(challenge, submittedCode: false) as? AppleLoginError else {
+            return XCTFail("The initial challenge should request a code")
+        }
+        guard case .verificationRejected? = AppleLoginResponse.failure(challenge, submittedCode: true) as? AppleLoginError else {
+            return XCTFail("A rejected code should permit retry")
+        }
+        XCTAssertNil(AppleLoginResponse.failure(["accountInfo": ["appleId": "test@example.com"]], submittedCode: true))
+        XCTAssertNotNil(AppleLoginResponse.failure([:], submittedCode: false))
+        XCTAssertFalse(AppleLoginResponse.failure(["customerMessage": "MZFinance.Unknown"], submittedCode: false)!.localizedDescription.contains("MZFinance"))
+        XCTAssertTrue(AppleLoginResponse.failure(["failureType": "2034"], submittedCode: false)!.localizedDescription.contains("过期"))
+    }
+
+    @MainActor
+    func testSignerCancellationBeforeStartAndInvalidIdentity() async {
+        let signer = SAPSigner()
+        let cancelled = Task { @MainActor in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await signer.sign(Data("test".utf8), guid: "AABBCCDDEEFF", useCache: false)
+        }
+        do { _ = try await cancelled.value; XCTFail("Cancelled work must not start") }
+        catch is CancellationError { }
+        catch { XCTFail("Unexpected error: \(error)") }
+        XCTAssertFalse(signer.isPresented)
+        do { _ = try await signer.kbsync(guid: "invalid", dsid: "0", useCache: false); XCTFail("Invalid identity accepted") }
+        catch { XCTAssertFalse(signer.isPresented) }
+    }
+
+    @MainActor
+    func testSignerCancelResumesPendingJavaScript() async throws {
+        let signer = SAPSigner()
+        let work = Task { @MainActor in
+            try await signer.execute(title: "测试", script: "reportStage(2); return await new Promise(() => {});", arguments: [:], timeoutSeconds: 15)
+        }
+        for _ in 0..<200 {
+            if signer.stageIndex == 2 { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(signer.stageIndex, 2, "JavaScript should reach the pending operation")
+        signer.cancel()
+        do { _ = try await work.value; XCTFail("Cancelled operation returned success") }
+        catch is CancellationError { }
+        catch { XCTFail("Unexpected error: \(error)") }
+        XCTAssertFalse(signer.isPresented)
+        XCTAssertNil(signer.webView)
+        let retry = try await signer.execute(title: "重试", script: "return 'ready';", arguments: [:])
+        XCTAssertEqual(retry, "ready")
+    }
+
+    @MainActor
+    func testSignerTimeoutResumesPendingJavaScript() async {
+        let signer = SAPSigner()
+        do {
+            _ = try await signer.execute(title: "测试", script: "return await new Promise(() => {});", arguments: [:], timeoutSeconds: 1)
+            XCTFail("Timed-out operation returned success")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("已停止")) }
+        XCTAssertFalse(signer.isPresented)
+        XCTAssertNil(signer.webView)
+    }
+
     func testSearchInputs() throws {
         XCTAssertEqual(try SearchQuery.parse("微信"), .keyword("微信"))
         XCTAssertEqual(try SearchQuery.parse(" 414478124 "), .appID("414478124", versionID: nil))

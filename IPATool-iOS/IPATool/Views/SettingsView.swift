@@ -41,24 +41,17 @@ struct SettingsView: View {
                 Text("兼容 external_identifier / bundle_version 字段。并发查询启用的来源，使用首个有效结果；版本缓存有效期 24 小时。")
             }
             Section {
-                Toggle("缓存 SAP 签名与下载初始化数据", isOn: $store.settings.useSignerCache)
+                Toggle("缓存请求验证与下载准备数据", isOn: $store.settings.useSignerCache)
                 Button("清除签名内存缓存") { store.signer.clearCache(); store.infoMessage = "已清除签名缓存。" }
             } header: { Text("签名引擎") } footer: {
-                Text("保留原脚本的 WASM 引擎，在本机 WebKit 中运行。签名缓存只保存在内存里，退出应用后清除。")
+                Text("验证过程在本机运行，缓存仅保留在内存中；退出应用后自动清除。")
             }
             Section {
-                Picker("预设 plist 服务", selection: $store.settings.plistServer) {
-                    Text("Scripting").tag("https://api.scripting.fun/ipa-plist")
-                    Text("代理模块").tag("https://xiaobai.app/install")
-                    if !["https://api.scripting.fun/ipa-plist", "https://xiaobai.app/install"].contains(store.settings.plistServer) {
-                        Text("自定义").tag(store.settings.plistServer)
-                    }
-                }
                 TextField("自定义 HTTPS plist 服务", text: $store.settings.plistServer)
                     .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                 LabeledContent("安装文件服务", value: "127.0.0.1:8000")
             } header: { Text("安装兼容配置") } footer: {
-                Text("沿用原脚本的元数据参数。Surge/Loon 规则须适配新 App 的文件名，并转发到此端口。签名环境使用独立的动态端口。")
+                Text("使用你配置的 HTTPS 清单服务和 Surge/Loon 规则。文件服务仅监听本机；也可直接导出安装包到签名工具。")
             }
             Section("维护") {
                 Button("清除版本查询缓存") { clearCache = true }
@@ -68,13 +61,10 @@ struct SettingsView: View {
                 Button("恢复默认设置", role: .destructive) { resetSettings = true }
             }
             Section {
-                Text("IPA Tool Native 1.0").font(.headline)
-                Text("基于 IPA-Tool-3.0.scripting 的原生迁移版本。用于自己的签名安装环境。")
+                Text("IPA 工具箱 1.1").font(.headline)
+                Text("搜索、下载、管理你的应用安装包。支持 iPhone、iPad 和快捷指令。")
                     .font(.footnote).foregroundStyle(.secondary)
-                Text("原脚本作者：小白脸").font(.caption).foregroundStyle(.secondary)
-                Link("原脚本项目", destination: URL(string: "https://github.com/ScriptingApp/Community-Scripts")!)
-                Text("此应用管理安装包和授权数据，不提供任意应用的重新签名或绕过系统安装限制。")
-                    .font(.caption).foregroundStyle(.secondary)
+                Link("项目与更新", destination: URL(string: "https://github.com/mengangs/ipadn")!)
             }
         }
         .navigationTitle("设置与扩展").navigationBarTitleDisplayMode(.inline)

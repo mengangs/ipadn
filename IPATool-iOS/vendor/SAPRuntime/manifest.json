@@ -1,10 +1,8 @@
 {
-  "source_url": "https://raw.githubusercontent.com/ScriptingApp/Community-Scripts/f9509c530b730d8be36639db5b7825cadb431898/IPA-Tool-3.0.scripting",
-  "archive_sha256": "aaf2325e2935ff5428fa5e1cb16363aabae7158842b87ec0b976911368cab1d4",
-  "archive_size": 51591246,
-  "entry_prefix": "web-sap-signer/runtime/",
+  "format": 1,
+  "storage": "repository-local",
   "files": {
-    "index.html": "2ba2da7f18fa290f01a883254c254fe755a95d6bb449cab031681500fd2dcc45",
+    "index.html": "2c8aa13604ee77ef315820239deadd9a6ee70668a39e334e4f6689cf38f7067f",
     "sap-signer.js": "1e3570781411bab32e5ba25ef6f5f7567ce2ed96a8a93a330bf1757fb4504846",
     "sap.wasm": "b7150bb4d31a03c1a813d310c0b5d7211be2510f7ee970b273f4fce7ea134015",
     "unicorn_x86.js": "a6733c9f2b2b01cba236f945419c70319edbf6a7fb2a0250d61d1b98ca7a0314",

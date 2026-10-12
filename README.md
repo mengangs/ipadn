@@ -1,9 +1,9 @@
-# IPA 工具箱 · Native iOS
+# IPA 工具箱
 
-基于 IPA-Tool-3.0.scripting 迁移的独立 SwiftUI 应用，用于自己签名安装。
+独立 iPhone / iPad 应用：搜索、下载、管理和导出应用安装包。支持自行签名安装。
 
-源码工程和使用说明位于 `IPATool-iOS/`。GitHub Actions 在 macOS 上编译未签名 IPA，并运行模拟器单元测试。
+源码和使用说明位于 [IPATool-iOS](IPATool-iOS/README.md)。签名运行资源保存在本仓库，构建无需访问原脚本项目。
 
-编译完成后打开 Actions 对应运行，下载 `IPATool-unsigned-ipa` 产物，再用自己的工具签名安装。
+[GitHub Actions](https://github.com/mengangs/ipadn/actions/workflows/ios-build.yml) 自动生成未签名 IPA，并执行模拟器测试。下载 `IPATool-unsigned-ipa` 产物后解压，用自己的工具签名。
 
-无需上传 Apple 账号、签名证书或私钥。
+1.1 增加两步认证、原生准备进度、耗时、取消与超时处理。来源和依赖说明见 [第三方说明](IPATool-iOS/THIRD_PARTY_NOTICES.md)。

@@ -421,7 +421,7 @@
 				"$(SRCROOT)/IPATool/Resources/SAPRuntime/wasm_exec.js",
 				"$(SRCROOT)/IPATool/Resources/SAPRuntime/unicorn_x86.js",
 			);
-			name = "Restore original signing runtime";
+			name = "Verify local signing runtime";
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = "/bin/bash";
 			shellScript = "set -euo pipefail\npython3 \"$SRCROOT/scripts/assemble_runtime.py\"\n";
@@ -508,8 +508,8 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 				INFOPLIST_FILE = "IPATool/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
-				MARKETING_VERSION = 1.0;
-				CURRENT_PROJECT_VERSION = 1;
+				MARKETING_VERSION = 1.1;
+				CURRENT_PROJECT_VERSION = 2;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -537,8 +537,8 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 				INFOPLIST_FILE = "IPATool/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
-				MARKETING_VERSION = 1.0;
-				CURRENT_PROJECT_VERSION = 1;
+				MARKETING_VERSION = 1.1;
+				CURRENT_PROJECT_VERSION = 2;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				LD_RUNPATH_SEARCH_PATHS = (
