@@ -12,7 +12,7 @@ struct SettingsView: View {
                 Stepper("同时下载：\(store.settings.maxConcurrentDownloads)", value: $store.settings.maxConcurrentDownloads, in: 1...6)
                 Stepper("等待任务上限：\(store.settings.maxQueuedDownloads)", value: $store.settings.maxQueuedDownloads, in: 1...100)
                 Toggle("下载结果通知", isOn: $store.settings.notifications)
-                LabeledContent("后台下载", value: "URLSession")
+                LabeledContent("切到后台继续下载", value: "支持")
             }
             Section("搜索与外观") {
                 Picker("搜索结果数量", selection: $store.settings.searchLimit) {
@@ -41,7 +41,7 @@ struct SettingsView: View {
                 Text("兼容 external_identifier / bundle_version 字段。并发查询启用的来源，使用首个有效结果；版本缓存有效期 24 小时。")
             }
             Section {
-                Toggle("缓存请求验证与下载准备数据", isOn: $store.settings.useSignerCache)
+                Toggle("加速重复验证和下载准备", isOn: $store.settings.useSignerCache)
                 Button("清除签名内存缓存") { store.signer.clearCache(); store.infoMessage = "已清除签名缓存。" }
             } header: { Text("签名引擎") } footer: {
                 Text("验证过程在本机运行，缓存仅保留在内存中；退出应用后自动清除。")
@@ -61,13 +61,13 @@ struct SettingsView: View {
                 Button("恢复默认设置", role: .destructive) { resetSettings = true }
             }
             Section {
-                Text("IPA 工具箱 1.1").font(.headline)
+                Text("IPA 工具箱 " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")).font(.headline)
                 Text("搜索、下载、管理你的应用安装包。支持 iPhone、iPad 和快捷指令。")
                     .font(.footnote).foregroundStyle(.secondary)
                 Link("项目与更新", destination: URL(string: "https://github.com/mengangs/ipadn")!)
             }
         }
-        .navigationTitle("设置与扩展").navigationBarTitleDisplayMode(.inline)
+        .toolPage().navigationTitle("设置与扩展").navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $addingSource) { AddVersionSourceView() }
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
         .confirmationDialog("恢复默认设置？", isPresented: $resetSettings, titleVisibility: .visible) {

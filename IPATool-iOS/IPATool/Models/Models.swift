@@ -194,3 +194,31 @@ func plistString(_ value: Any?) -> String {
     if let number = value as? NSNumber { return number.stringValue }
     return ""
 }
+
+
+enum DownloadFilter: String, CaseIterable, Identifiable {
+    case all = "全部", active = "进行中", paused = "已暂停", completed = "已完成", failed = "失败"
+    var id: String { rawValue }
+    func includes(_ status: DownloadStatus) -> Bool {
+        switch self {
+        case .all: return true
+        case .active: return [.queued, .running, .pausing, .processing].contains(status)
+        case .paused: return status == .paused
+        case .completed: return status == .completed
+        case .failed: return status == .failed
+        }
+    }
+}
+
+extension DownloadStatus {
+    var symbol: String {
+        switch self {
+        case .queued: return "clock"
+        case .running: return "arrow.down"
+        case .pausing, .paused: return "pause.fill"
+        case .processing: return "shippingbox"
+        case .completed: return "checkmark"
+        case .failed: return "exclamationmark.circle"
+        }
+    }
+}

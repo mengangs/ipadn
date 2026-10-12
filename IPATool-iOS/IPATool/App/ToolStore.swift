@@ -12,7 +12,7 @@ struct SearchHistoryItem: Codable, Identifiable {
 final class ToolStore: ObservableObject {
     let signer = SAPSigner()
     let versions = VersionService()
-    let downloads = DownloadManager()
+    let downloads: DownloadManager
     let installation = InstallationService()
     lazy var apple = AppleService(signer: signer)
     @Published var settings: ToolSettings {
@@ -24,6 +24,10 @@ final class ToolStore: ObservableObject {
     }
     @Published var tab = 0
     @Published var searchText = ""
+    @Published private(set) var searchError: String?
+    @Published private(set) var lastSearchTerm = ""
+    @Published private(set) var favorites = LocalResources.load([StoreApp].self, filename: "favorites.json") ?? []
+    @Published private(set) var ownedError: String?
     @Published private(set) var results: [StoreApp] = []
     @Published private(set) var searching = false
     @Published private(set) var hasSearched = false
@@ -37,7 +41,8 @@ final class ToolStore: ObservableObject {
     private var ownedByAccount = LocalResources.load([String: [OwnedApp]].self, filename: LocalResources.ownedFilename) ?? [:]
     private var subscriptions = Set<AnyCancellable>()
 
-    init() {
+    init(downloadManager: DownloadManager? = nil) {
+        downloads = downloadManager ?? DownloadManager()
         if let data = UserDefaults.standard.data(forKey: LocalResources.settings),
            let saved = try? JSONDecoder().decode(ToolSettings.self, from: data) { settings = saved }
         else { settings = ToolSettings() }
@@ -48,18 +53,21 @@ final class ToolStore: ObservableObject {
         downloads.configure(settings)
         apple.$activeID.sink { [weak self] id in
             guard let self = self else { return }
+            self.ownedError = nil
             self.owned = id.flatMap { self.ownedByAccount[$0] } ?? []
         }.store(in: &subscriptions)
     }
 
     func search(_ text: String? = nil) {
         if let text = text { searchText = text }
-        let input = searchText
+        let input = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty else { clearSearch(); return }
         searchTask?.cancel()
         let id = UUID(); searchID = id
         let context = settings.store
         let limit = settings.searchLimit
-        searching = true; hasSearched = true; results = []
+        if input != lastSearchTerm { results = [] }
+        searching = true; hasSearched = true; searchError = nil; lastSearchTerm = input
         searchTask = Task {
             defer { if self.searchID == id { self.searching = false } }
             do {
@@ -80,11 +88,20 @@ final class ToolStore: ObservableObject {
                 remember(input)
             } catch is CancellationError { }
             catch {
-                if !Task.isCancelled, searchID == id { errorMessage = error.localizedDescription }
+                if !Task.isCancelled, searchID == id { searchError = error.localizedDescription }
             }
         }
     }
-    func cancelSearch() { searchTask?.cancel(); searchID = UUID(); searching = false }
+    func cancelSearch() { searchTask?.cancel(); searchID = UUID(); searching = false; hasSearched = !results.isEmpty; searchError = nil }
+    func clearSearch() { cancelSearch(); searchText = ""; results = []; hasSearched = false; lastSearchTerm = "" }
+    func isFavorite(_ app: StoreApp) -> Bool { favorites.contains { $0.id == app.id } }
+    func toggleFavorite(_ app: StoreApp) {
+        var next = favorites
+        if next.contains(where: { $0.id == app.id }) { next.removeAll { $0.id == app.id } }
+        else { next.insert(app, at: 0) }
+        do { try LocalResources.save(next, filename: "favorites.json"); favorites = next }
+        catch { errorMessage = "收藏保存失败：" + error.localizedDescription }
+    }
 
     private func remember(_ term: String) {
         let term = term.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -137,14 +154,15 @@ final class ToolStore: ObservableObject {
             if apple.activeID == nil { errorMessage = "请先在账号页登录" }
             return
         }
-        ownedLoading = true
+        ownedLoading = true; ownedError = nil
         defer { ownedLoading = false }
         do {
             let apps = try await apple.ownedApps(useCache: settings.useSignerCache)
             guard apple.activeID == id else { return }
             owned = apps; ownedByAccount[id] = apps
             try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
-        } catch { if apple.activeID == id { errorMessage = error.localizedDescription } }
+        } catch is CancellationError { }
+        catch { if apple.activeID == id { ownedError = error.localizedDescription } }
     }
     func deleteAccount(_ id: String) throws {
         try apple.remove(id)
@@ -168,7 +186,7 @@ final class ToolStore: ObservableObject {
 
     func exportDiagnostics() throws -> URL {
         let details = [
-            "IPA Tool Native 1.0", "Platform: \(settings.store.platform.title)", "Region: \(settings.store.country)",
+            "IPA 工具箱 " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""), "Platform: \(settings.store.platform.title)", "Region: \(settings.store.country)",
             "Jobs: \(downloads.jobs.count)", "Concurrent limit: \(settings.maxConcurrentDownloads)",
             "Version sources: \(settings.versionSources.filter(\.enabled).count)",
             "Task states: " + downloads.jobs.map { "\($0.id.uuidString.prefix(8)): \($0.status.rawValue)" }.joined(separator: ", "),
@@ -179,3 +197,14 @@ final class ToolStore: ObservableObject {
         return url
     }
 }
+
+
+#if DEBUG
+extension ToolStore {
+    func prepareVisualPreview() {
+        results = []; hasSearched = false; searchText = ""
+        favorites = [StoreApp(id: "preview-app", name: "像素日记", bundleID: "example.pixel", version: "3.2", category: "摄影与录像", size: 128_000_000)]
+        searchHistory = [SearchHistoryItem(term: "效率工具", count: 3, lastUsed: Date()), SearchHistoryItem(term: "照片编辑", count: 1, lastUsed: Date())]
+    }
+}
+#endif

@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import UIKit
 
 struct AppIcon: View {
     var url: URL?
@@ -10,7 +11,7 @@ struct AppIcon: View {
             else {
                 ZStack {
                     Color.accentColor.opacity(0.10)
-                    Image(systemName: "app.dashed").font(.system(size: size * 0.42)).foregroundStyle(.tint)
+                    Image(systemName: "square.stack.3d.up.fill").font(.system(size: size * 0.42)).foregroundStyle(.tint)
                 }
             }
         }
@@ -67,24 +68,71 @@ struct RootView: View {
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var signer: SAPSigner
     @EnvironmentObject private var downloads: DownloadManager
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    private let destinations = [("发现", "magnifyingglass"), ("下载", "arrow.down.circle"), ("已购", "clock.arrow.circlepath"), ("账号", "person.crop.circle")]
     var body: some View {
-        TabView(selection: $store.tab) {
-            NavigationStack { SearchView() }.tabItem { Label("搜索", systemImage: "magnifyingglass") }.tag(0)
-            NavigationStack { DownloadsView() }.tabItem { Label("下载", systemImage: "arrow.down.circle") }
-                .badge(downloads.jobs.filter { $0.status == .running }.count).tag(1)
-            NavigationStack { PurchasedView() }.tabItem { Label("已购", systemImage: "clock.arrow.circlepath") }.tag(2)
-            NavigationStack { AccountsView() }.tabItem { Label("账号", systemImage: "person.crop.circle") }.tag(3)
+        Group {
+            if sizeClass == .regular {
+                NavigationSplitView {
+                    List(selection: Binding<Int?>(get: { store.tab }, set: { if let value = $0 { store.tab = value } })) {
+                        Section {
+                            ForEach(0..<destinations.count, id: \.self) { index in
+                                Label(destinations[index].0, systemImage: destinations[index].1).tag(index)
+                            }
+                        }
+                        Section { Text("搜索、下载与版本管理").font(.caption).foregroundStyle(.secondary) }
+                    }.navigationTitle("IPA 工具箱").navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
+                } detail: {
+                    NavigationStack {
+                        page(store.tab).frame(maxWidth: 900).frame(maxWidth: .infinity)
+                            .background(Color(.systemGroupedBackground))
+                    }.id(store.tab)
+                }
+            } else {
+                TabView(selection: $store.tab) {
+                    NavigationStack { SearchView() }.tabItem { Label("发现", systemImage: "magnifyingglass") }.tag(0)
+                    NavigationStack { DownloadsView() }.tabItem { Label("下载", systemImage: "arrow.down.circle") }
+                        .badge(downloads.jobs.filter { DownloadFilter.active.includes($0.status) }.count).tag(1)
+                    NavigationStack { PurchasedView() }.tabItem { Label("已购", systemImage: "clock.arrow.circlepath") }.tag(2)
+                    NavigationStack { AccountsView() }.tabItem { Label("账号", systemImage: "person.crop.circle") }.tag(3)
+                }
+            }
         }
         .preferredColorScheme(store.settings.appearance == "system" ? nil : store.settings.appearance == "dark" ? .dark : .light)
+        .sensoryFeedback(.selection, trigger: store.tab)
         .sheet(isPresented: Binding(get: { signer.isPresented }, set: { if !$0 { signer.cancel() } })) {
             SignerProgressView().environmentObject(signer).interactiveDismissDisabled()
+        }
+        .overlay(alignment: .top) {
+            if let message = store.infoMessage {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).padding(.top, 12)
+                    Text(message).font(.subheadline).padding(.vertical, 10).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button { store.infoMessage = nil } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                        .accessibilityLabel("关闭提示")
+                }.padding(.leading, 16).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.primary.opacity(0.06)))
+                    .shadow(color: .black.opacity(0.08), radius: 14, y: 6).padding(16).frame(maxWidth: 600)
+            }
+        }
+        .task(id: store.infoMessage) {
+            guard let message = store.infoMessage else { return }
+            UIAccessibility.post(notification: .announcement, argument: message)
+            do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
+            if store.infoMessage == message { store.infoMessage = nil }
         }
         .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("知道了", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
-        .alert("提示", isPresented: Binding(get: { store.infoMessage != nil }, set: { if !$0 { store.infoMessage = nil } })) {
-            Button("好", role: .cancel) { store.infoMessage = nil }
-        } message: { Text(store.infoMessage ?? "") }
+    }
+    @ViewBuilder private func page(_ index: Int) -> some View {
+        switch index {
+        case 1: DownloadsView()
+        case 2: PurchasedView()
+        case 3: AccountsView()
+        default: SearchView()
+        }
     }
 }
 

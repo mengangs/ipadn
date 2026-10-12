@@ -90,6 +90,22 @@ jobs:
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \
             2>&1 | tee build/tests.log
 
+      - name: Export interface screenshots
+        if: always()
+        run: |
+          if [ -d build/TestResults.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/screenshots
+          fi
+
+      - name: Upload interface screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: IPATool-interface-screenshots
+          path: IPATool-iOS/build/screenshots
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload build and test diagnostics
         if: always()
         uses: actions/upload-artifact@v4

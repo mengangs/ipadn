@@ -75,7 +75,7 @@ base = {"IPHONEOS_DEPLOYMENT_TARGET": "17.0", "SDKROOT": "iphoneos", "SWIFT_VERS
 project_configs = configs("Project", base, {"SWIFT_COMPILATION_MODE": "wholemodule", "VALIDATE_PRODUCT": "YES"})
 app_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.IPATool", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
                 "DEVELOPMENT_TEAM": "", "TARGETED_DEVICE_FAMILY": "1,2", "INFOPLIST_FILE": "IPATool/Info.plist",
-                "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": "1.1", "CURRENT_PROJECT_VERSION": "2",
+                "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": "1.2", "CURRENT_PROJECT_VERSION": "3",
                 "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon", "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
                 "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks"],
                 "ENABLE_PREVIEWS": "YES", "SUPPORTS_MACCATALYST": "NO", "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD": "NO",

@@ -3,6 +3,16 @@ import ZIPFoundation
 @testable import IPATool
 
 final class CoreTests: XCTestCase {
+    func testDownloadFiltersSeparateActivePausedAndFailed() {
+        for status in [DownloadStatus.queued, .running, .pausing, .processing] { XCTAssertTrue(DownloadFilter.active.includes(status)) }
+        for status in [DownloadStatus.paused, .failed, .completed] { XCTAssertFalse(DownloadFilter.active.includes(status)) }
+        XCTAssertTrue(DownloadFilter.paused.includes(.paused))
+        XCTAssertFalse(DownloadFilter.failed.includes(.paused))
+        XCTAssertTrue(DownloadFilter.failed.includes(.failed))
+        XCTAssertTrue(DownloadFilter.completed.includes(.completed))
+        for status in [DownloadStatus.queued, .running, .pausing, .paused, .processing, .completed, .failed] { XCTAssertTrue(DownloadFilter.all.includes(status)) }
+    }
+
     func testLoginPayloadUsesSecondAttemptWithCode() throws {
         let first = try AppleLoginResponse.body(email: "test@example.com", password: "password", code: "", guid: "AABBCCDDEEFF")
         let second = try AppleLoginResponse.body(email: "test@example.com", password: "password", code: "123456", guid: "AABBCCDDEEFF")

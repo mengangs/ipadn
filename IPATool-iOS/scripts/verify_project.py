@@ -58,7 +58,7 @@ for group in groups.values():
             if item["isa"] == "PBXFileReference":
                 check((ROOT / group["path"] / item["path"]).exists(), "Missing project file " + item["path"])
 actual_swift = {p.relative_to(ROOT / "IPATool").as_posix() for p in (ROOT / "IPATool").rglob("*.swift")}
-referenced_swift = {x["path"] for x in objects.values() if x["isa"] == "PBXFileReference" and x.get("path", "").endswith(".swift") and x["path"] != "CoreTests.swift"}
+referenced_swift = {x["path"] for x in objects.values() if x["isa"] == "PBXFileReference" and x.get("path", "").endswith(".swift") and x["path"] not in {p.name for p in (ROOT / "IPAToolTests").glob("*.swift")}}
 check(actual_swift == referenced_swift, "Swift sources differ from project references")
 for file in [ROOT / "IPATool/Info.plist", ROOT / "IPATool/Resources/PrivacyInfo.xcprivacy"]:
     plistlib.loads(file.read_bytes())

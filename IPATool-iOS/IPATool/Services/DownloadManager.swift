@@ -26,6 +26,15 @@ final class DownloadManager: NSObject, ObservableObject {
         return URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }()
 
+    #if DEBUG
+    init(previewJobs: [DownloadJob]) {
+        super.init()
+        jobs = previewJobs
+        // Screenshots never create a URLSession or start real transfers.
+        restoring = true
+    }
+    #endif
+
     override init() {
         super.init()
         let file = LocalResources.support.appendingPathComponent(LocalResources.jobsFilename)
