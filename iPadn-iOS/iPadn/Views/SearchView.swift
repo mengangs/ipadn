@@ -13,6 +13,11 @@ struct SearchView: View {
                     HStack { regionPicker; Spacer(minLength: 8); platformPicker }
                     VStack(alignment: .leading) { regionPicker; platformPicker }
                 }
+                if let accountRegion = StoreService.country(forStorefront: apple.active?.storeFront ?? ""),
+                   accountRegion != store.settings.store.country {
+                    Text("搜索同时补充账号所在地区（\(regions.first { $0.0 == accountRegion }?.1 ?? accountRegion)）的结果。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }.listRowSeparator(.hidden)
             if store.searching {
                 Section {
