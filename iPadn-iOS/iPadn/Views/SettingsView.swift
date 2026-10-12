@@ -22,8 +22,8 @@ struct SettingsView: View {
                     Text("跟随系统").tag("system"); Text("浅色").tag("light"); Text("深色").tag("dark")
                 }
             }
-            Section {
-                ForEach($store.settings.versionSources) { $source in
+            ForEach($store.settings.versionSources) { $source in
+                Section {
                     NavigationLink { VersionSourceEditor(source: $source) } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
@@ -34,10 +34,14 @@ struct SettingsView: View {
                             Text(source.enabled ? "已启用" : "已停用").font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                }
-                .onDelete { store.settings.versionSources.remove(atOffsets: $0) }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button("移除") { store.settings.versionSources.removeAll { $0.id == source.id } }.tint(.red)
+                    }
+                } header: { if source.id == store.settings.versionSources.first?.id { Text("可扩展版本来源") } }
+            }
+            Section {
                 Button("添加版本来源", systemImage: "plus") { addingSource = true }
-            } header: { Text("可扩展版本来源") } footer: {
+            } footer: {
                 Text("兼容 external_identifier / bundle_version 字段。并发查询启用的来源，使用首个有效结果；版本缓存有效期 24 小时。")
             }
             Section {
@@ -71,13 +75,9 @@ struct SettingsView: View {
         .toolPage().navigationTitle("设置与扩展").navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $addingSource) { AddVersionSourceView() }
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
-        .confirmationDialog("恢复默认设置？", isPresented: $resetSettings, titleVisibility: .visible) {
-            Button("恢复默认设置", role: .destructive) { store.settings = ToolSettings() }
-        } message: { Text("保留账号、下载文件、已购记录和历史版本缓存。") }
-        .confirmationDialog("清除版本查询缓存？", isPresented: $clearCache, titleVisibility: .visible) {
-            Button("清除缓存", role: .destructive) {
-                Task { do { try await store.versions.clearCache(); store.infoMessage = "已清除版本查询缓存。" } catch { store.errorMessage = error.localizedDescription } }
-            }
+        .actionConfirmation(isPresented: $resetSettings, title: "恢复默认设置？", message: "保留账号、下载文件、已购记录和历史版本缓存。", confirmTitle: "恢复默认设置") { store.settings = ToolSettings() }
+        .actionConfirmation(isPresented: $clearCache, title: "清除版本查询缓存？", confirmTitle: "清除缓存") {
+            Task { do { try await store.versions.clearCache(); store.infoMessage = "已清除版本查询缓存" } catch { store.errorMessage = error.localizedDescription } }
         }
     }
 }

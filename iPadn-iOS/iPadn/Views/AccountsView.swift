@@ -8,8 +8,8 @@ struct AccountsView: View {
     var body: some View {
         List {
             if let error = apple.accountStorageError { Section { InlineIssue(message: error) } }
-            Section {
-                ForEach(apple.accounts) { account in
+            ForEach(apple.accounts) { account in
+                Section {
                     Button {
                         guard apple.activeID != account.id else { return }
                         apple.select(account.id); UX.feedback()
@@ -26,10 +26,15 @@ struct AccountsView: View {
                         }.padding(.vertical, 5).contentShape(Rectangle())
                     }.buttonStyle(.plain)
                     .accessibilityHint(account.id == apple.activeID ? "当前下载账号" : "切换到此账号")
-                    .swipeActions { Button("移除", role: .destructive) { deleting = account } }
+                    .accessibilityIdentifier("account." + account.id)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) { Button("移除") { deleting = account }.tint(.red) }
+                } header: {
+                    if account.id == apple.accounts.first?.id { Text("Apple 账号") }
                 }
+            }
+            Section {
                 NavigationLink { LoginView() } label: { Label("添加账号", systemImage: "plus") }
-            } header: { Text("Apple 账号") } footer: {
+            } footer: {
                 Text(apple.accounts.isEmpty ? "添加账号后可同步已购应用和下载。" : "勾选的是当前下载账号。点按切换，左滑移除。")
             }
             Section { NavigationLink { SettingsView() } label: { Label("设置", systemImage: "gearshape") } }
@@ -38,16 +43,12 @@ struct AccountsView: View {
             }
         }
         .toolPage().navigationTitle("账号").navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("退出当前账号？", isPresented: $signingOut, titleVisibility: .visible) {
-            Button("退出账号", role: .destructive) { apple.select(nil) }
-        } message: { Text("账号仍会保存在本机，可随时切换回来。") }
-        .confirmationDialog("移除 \(deleting?.id ?? "")？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
-            Button("移除账号", role: .destructive) {
-                guard let id = deleting?.id else { return }
-                do { try store.deleteAccount(id) } catch { store.errorMessage = error.localizedDescription }
-                deleting = nil
-            }
-        } message: { Text("清除此账号的本机登录信息与已购缓存，保留已下载的文件。") }
+        .actionConfirmation(isPresented: $signingOut, title: "退出当前账号？", message: "账号仍保存在本机，可以随时切换回来。", confirmTitle: "退出账号") { apple.select(nil) }
+        .actionConfirmation(isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), title: "移除账号？", message: "清除此账号的本机登录信息与已购记录，保留已下载的文件。", confirmTitle: "移除账号") {
+            guard let id = deleting?.id else { return }
+            do { try store.deleteAccount(id); store.infoMessage = "已移除账号" } catch { store.errorMessage = error.localizedDescription }
+            deleting = nil
+        }
     }
 }
 

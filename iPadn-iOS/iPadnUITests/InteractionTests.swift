@@ -1,33 +1,70 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
-    func testFiltersFitAndSwipeCardsStayPresentUntilConfirmation() {
+    func testFiltersAndDeleteConfirmation() {
         let app = XCUIApplication()
         app.launchArguments = ["--visual-preview", "--downloads"]
         app.launch()
         for title in ["全部", "进行中", "已暂停", "已完成", "失败"] {
             let button = app.buttons["download.filter." + title]
             XCTAssertTrue(button.waitForExistence(timeout: 10))
-            XCTAssertTrue(button.isHittable, "All filters should fit without horizontal scrolling")
+            XCTAssertTrue(button.isHittable)
             XCTAssertGreaterThanOrEqual(button.frame.minX, 0)
             XCTAssertLessThanOrEqual(button.frame.maxX, app.frame.maxX)
         }
-        let row = app.cells.element(boundBy: 1)
+        let row = app.descendants(matching: .any)["download.task.preview-2.paused"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.swipeLeft()
         let delete = app.buttons["删除"].firstMatch
         XCTAssertTrue(delete.waitForExistence(timeout: 5))
         attach("10-download-swipe", app: app)
-        XCTAssertTrue(row.exists)
-        app.terminate()
+        delete.tap()
+        let cancel = app.buttons["confirmation.cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+        let confirm = app.buttons["confirmation.confirm"]
+        XCTAssertGreaterThan(confirm.frame.minY, app.frame.height * 0.5)
+        attach("12-delete-confirmation", app: app)
+        cancel.tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.swipeLeft(); delete.tap()
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
+        XCTAssertTrue(app.buttons["已删除任务"].waitForExistence(timeout: 5))
+        attach("14-task-toast", app: app)
+        XCTAssertFalse(row.exists)
+    }
+
+    func testHistoryAccountSwipeAndImportPicker() {
+        let app = XCUIApplication()
         app.launchArguments = ["--visual-preview"]
         app.launch()
         let history = app.buttons["history.效率工具"]
-        XCTAssertTrue(history.waitForExistence(timeout: 10))
-        history.swipeLeft()
+        XCTAssertTrue(history.waitForExistence(timeout: 10)); history.swipeLeft()
         XCTAssertTrue(app.buttons["删除"].firstMatch.waitForExistence(timeout: 5))
         attach("11-history-swipe", app: app)
-        XCTAssertTrue(history.exists)
+        app.terminate()
+        app.launchArguments = ["--visual-preview", "--accounts"]
+        app.launch()
+        let account = app.buttons["account.demo@example.com"]
+        XCTAssertTrue(account.waitForExistence(timeout: 10)); account.swipeLeft()
+        let remove = app.buttons["移除"].firstMatch
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        attach("13-account-swipe", app: app)
+        remove.tap()
+        XCTAssertTrue(app.buttons["confirmation.cancel"].waitForExistence(timeout: 5))
+        app.buttons["confirmation.cancel"].tap()
+        XCTAssertTrue(account.waitForExistence(timeout: 5))
+        app.terminate()
+        app.launchArguments = ["--visual-preview", "--downloads"]
+        app.launch()
+        let add = app.buttons["downloads.add"]
+        XCTAssertTrue(add.waitForExistence(timeout: 10)); add.tap()
+        XCTAssertTrue(app.buttons["downloads.import"].waitForExistence(timeout: 5))
+        app.buttons["downloads.import"].tap()
+        let pickerCancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "取消"])).firstMatch
+        XCTAssertTrue(pickerCancel.waitForExistence(timeout: 15))
+        attach("15-import-picker", app: app)
+        pickerCancel.tap()
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
     }
     private func attach(_ name: String, app: XCUIApplication) {
         let attachment = XCTAttachment(screenshot: app.screenshot())

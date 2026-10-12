@@ -48,10 +48,12 @@ struct SearchView: View {
             }
             if !store.hasSearched && !store.searching {
                 if !store.favorites.isEmpty {
-                    Section("收藏 · \(store.favorites.count)") {
-                        ForEach(store.favorites) { app in
+                    ForEach(store.favorites) { app in
+                        Section {
                             NavigationLink { AppDetailView(app: app) } label: { AppRow(app: app) }
-                                .swipeActions { Button("取消收藏", systemImage: "star.slash") { store.toggleFavorite(app) }.tint(.gray) }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) { Button("取消收藏", systemImage: "star.slash") { withAnimation { store.toggleFavorite(app) } }.tint(.gray) }
+                        } header: {
+                            if app.id == store.favorites.first?.id { Text("收藏 · \(store.favorites.count)") }
                         }
                     }
                 }
@@ -94,9 +96,7 @@ struct SearchView: View {
                     .accessibilityLabel("切换或管理账号")
             }
         }
-        .confirmationDialog("清空搜索历史？", isPresented: $confirmClear, titleVisibility: .visible) {
-            Button("清空历史", role: .destructive) { store.clearHistory() }
-        }
+        .actionConfirmation(isPresented: $confirmClear, title: "清空搜索历史？", confirmTitle: "清空历史") { withAnimation { store.clearHistory() } }
         .task { await store.loadNameCatalog() }
         .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
         .onChange(of: store.settings.store) { _, _ in if store.hasSearched { store.search() } }

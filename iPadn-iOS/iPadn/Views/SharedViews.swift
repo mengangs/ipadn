@@ -86,7 +86,6 @@ struct RootView: View {
     @EnvironmentObject private var signer: SAPSigner
     @EnvironmentObject private var downloads: DownloadManager
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @State private var signerDetails = false
     private let destinations = [("搜索", "magnifyingglass"), ("下载", "arrow.down.circle"), ("已购", "clock.arrow.circlepath"), ("账号", "person.crop.circle")]
     var body: some View {
         Group {
@@ -123,41 +122,24 @@ struct RootView: View {
                 SignerWebView(web: web).frame(width: 1, height: 1).opacity(0.01).allowsHitTesting(false).accessibilityHidden(true)
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if signer.isPresented {
-                HStack(spacing: 12) {
-                    ProgressView().accessibilityHidden(true)
-                    Button { signerDetails = true } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(signer.title).font(.subheadline.weight(.semibold))
-                            Text(signer.stage).font(.caption).foregroundStyle(.secondary)
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
-                    }.buttonStyle(.plain).accessibilityHint("查看验证进度详情")
-                    Button("取消") { signer.cancel() }.font(.subheadline).frame(minWidth: 44, minHeight: 44)
-                }.padding(.horizontal, 16).background(.regularMaterial)
-            }
-        }
-        .sheet(isPresented: $signerDetails) {
-            SignerProgressView().environmentObject(signer)
-        }
-        .onChange(of: signer.isPresented) { _, active in if !active { signerDetails = false } }
-        .overlay(alignment: .top) {
+        .overlay(alignment: .bottom) {
             if let message = store.infoMessage {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.primary).padding(.top, 12)
-                    Text(message).font(.subheadline).padding(.vertical, 10).fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                    Button { store.infoMessage = nil } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
-                        .accessibilityLabel("关闭提示")
-                }.padding(.leading, 16).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
-                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.primary.opacity(0.06)))
-                    .shadow(color: .black.opacity(0.08), radius: 14, y: 6).padding(16).frame(maxWidth: 600)
+                Button { store.infoMessage = nil } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark").font(.subheadline.weight(.semibold))
+                        Text(message).font(.footnote.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+                    }.foregroundStyle(UX.onAccent).padding(.horizontal, 18).padding(.vertical, 13)
+                        .background(UX.buttonTint, in: RoundedRectangle(cornerRadius: 18))
+                }.buttonStyle(.plain).accessibilityLabel(message).accessibilityHint("点按关闭提示")
+                    .frame(maxWidth: 420).padding(.horizontal, 24).padding(.bottom, sizeClass == .regular ? 20 : 88)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: store.infoMessage)
         .task(id: store.infoMessage) {
             guard let message = store.infoMessage else { return }
             UIAccessibility.post(notification: .announcement, argument: message)
-            do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
+            do { try await Task.sleep(nanoseconds: 3_500_000_000) } catch { return }
             if store.infoMessage == message { store.infoMessage = nil }
         }
         .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
@@ -174,53 +156,3 @@ struct RootView: View {
     }
 }
 
-
-struct SignerProgressView: View {
-    @EnvironmentObject private var signer: SAPSigner
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color(.systemGroupedBackground).ignoresSafeArea()
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        Image(systemName: signer.title == "准备下载" ? "arrow.down.app" : "lock.shield")
-                            .font(.system(size: 40)).foregroundStyle(.tint)
-                            .padding(20).background(.tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 24))
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(signer.title).font(.largeTitle.bold())
-                            Text("请保持应用在前台，首次准备可能需要较长时间。")
-                                .foregroundStyle(.secondary)
-                        }
-                        VStack(alignment: .leading, spacing: 20) {
-                            ForEach(0..<3) { index in
-                                HStack(spacing: 14) {
-                                    if index < signer.stageIndex { Image(systemName: "checkmark.circle.fill").foregroundStyle(.tint) }
-                                    else if index == signer.stageIndex { ProgressView().frame(width: 20) }
-                                    else { Image(systemName: "circle").foregroundStyle(.tertiary) }
-                                    Text(index == 0 ? "准备本地环境" : index == 1 ? "加载验证组件" : signer.title == "准备下载" ? "生成下载授权数据" : "生成请求签名")
-                                        .foregroundStyle(index <= signer.stageIndex ? .primary : .secondary)
-                                }
-                            }
-                            Divider()
-                            TimelineView(.periodic(from: signer.startedAt, by: 1)) { context in
-                                let elapsed = max(0, Int(context.date.timeIntervalSince(signer.startedAt)))
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("已用时 \(elapsed) 秒").font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
-                                    if elapsed >= 30 { Text("仍在处理，可以取消后重试；本次验证超时会自动停止。")
-                                        .font(.footnote).foregroundStyle(.secondary) }
-                                }
-                            }
-                        }.padding(22).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22))
-                        Button("取消本次操作", role: .cancel) { signer.cancel() }
-                            .buttonStyle(.bordered).frame(maxWidth: .infinity)
-                    }.padding(24).frame(maxWidth: 560)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .navigationTitle("iPadn").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("收起") { dismiss() } } }
-        }
-    }
-}

@@ -271,6 +271,33 @@ final class CoreTests: XCTestCase {
         XCTAssertNotEqual(try Data(contentsOf: PackageIconService.cacheURL(id1)), try Data(contentsOf: PackageIconService.cacheURL(id2)))
     }
 
+    func testImportCoordinatesCopiesAndValidatesPackage() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("应用.IPA")
+        do {
+            let archive = try Archive(url: source, accessMode: .create)
+            let path = "Payload/Test.app/Info.plist"
+            let file = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try HTTPClient.encodePlist(["CFBundleDisplayName": "导入应用", "CFBundleIdentifier": "test.import", "CFBundleShortVersionString": "1.0"]).write(to: file)
+            try archive.addEntry(with: path, relativeTo: root)
+        }
+        let original = try Data(contentsOf: source)
+        let id = UUID()
+        defer { try? FileManager.default.removeItem(at: LocalResources.stagingURL(id)) }
+        let app = try PackageImportService.prepare(source, id: id)
+        XCTAssertEqual(app.bundleID, "test.import")
+        XCTAssertEqual(try Data(contentsOf: LocalResources.stagingURL(id)), original)
+        XCTAssertEqual(try Data(contentsOf: source), original)
+        let invalid = root.appendingPathComponent("invalid.ipa")
+        try Data("not an archive".utf8).write(to: invalid)
+        let rejected = UUID()
+        XCTAssertThrowsError(try PackageImportService.prepare(invalid, id: rejected))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: LocalResources.stagingURL(rejected).path))
+    }
+
     func testPackageInspectionUsesMainBundleNotExtension() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

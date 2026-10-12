@@ -10,6 +10,10 @@ struct DownloadsView: View {
     @State private var filter: DownloadFilter = .all
     @State private var term = ""
     @State private var importing = false
+    @State private var showingActions = false
+    @State private var nextAction: AdditionAction?
+    @State private var pickedFiles: [URL] = []
+    private enum AdditionAction { case file, link }
     @State private var addLink = false
     @State private var link = ""
     @State private var share: SharedFile?
@@ -53,7 +57,7 @@ struct DownloadsView: View {
                         DownloadTaskRow(job: job, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
                             if let file = manager.fileURL(job) { share = SharedFile(url: file) }
                         })
-                        .tag(job.id)
+                        .tag(job.id).accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             if job.status != .processing && job.status != .pausing {
                                 Button { askDelete([job.id]) } label: { Label("删除", systemImage: "trash") }.tint(.red)
@@ -89,15 +93,8 @@ struct DownloadsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { EditButton().disabled(manager.jobs.isEmpty) }
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("导入 IPA", systemImage: "square.and.arrow.down") { importing = true }.disabled(actionBusy)
-                    Button("链接下载", systemImage: "link") { addLink = true }.disabled(actionBusy)
-                    Divider()
-                    Button("暂停全部", systemImage: "pause.circle") { manager.pauseAll(); store.infoMessage = "已暂停可暂停的任务" }
-                        .disabled(!manager.jobs.contains { [.running, .queued].contains($0.status) })
-                    Button("继续全部", systemImage: "play.circle") { manager.resumeAll() }
-                        .disabled(!manager.jobs.contains { $0.status == .paused })
-                } label: { Image(systemName: "plus").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel("导入、链接下载与批量操作")
+                Button { showingActions = true } label: { Image(systemName: "plus").frame(minWidth: 44, minHeight: 44) }
+                    .disabled(actionBusy).accessibilityLabel("添加下载").accessibilityIdentifier("downloads.add")
             }
         }
         .safeAreaInset(edge: .bottom) {
@@ -112,12 +109,41 @@ struct DownloadsView: View {
         .onChange(of: editMode) { _, mode in if !mode.isEditing { selection.removeAll() } }
         .onChange(of: filter) { _, _ in selection.removeAll() }
         .onChange(of: term) { _, _ in selection.removeAll() }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [UTType(filenameExtension: "ipa") ?? .data, .zip], allowsMultipleSelection: true) { result in
-            switch result {
-            case .success(let urls):
-                perform { for url in urls { try await manager.importFile(url) }; store.infoMessage = "已导入 \(urls.count) 个安装包" }
-            case .failure(let error): store.errorMessage = error.localizedDescription
+        .sheet(isPresented: $showingActions, onDismiss: {
+            let action = nextAction; nextAction = nil
+            switch action {
+            case .file: importing = true
+            case .link: addLink = true
+            case nil: break
             }
+        }) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("添加下载").font(.title3.weight(.semibold)).padding(.bottom, 6)
+                Button { nextAction = .file; showingActions = false } label: {
+                    Label("导入 IPA", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }.buttonStyle(.plain).accessibilityIdentifier("downloads.import")
+                Button { nextAction = .link; showingActions = false } label: {
+                    Label("链接下载", systemImage: "link").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }.buttonStyle(.plain)
+                if manager.jobs.contains(where: { [.running, .queued, .paused].contains($0.status) }) {
+                    Divider()
+                    Button("暂停全部", systemImage: "pause.circle") { manager.pauseAll(); showingActions = false; store.infoMessage = "已暂停下载" }
+                        .disabled(!manager.jobs.contains { [.running, .queued].contains($0.status) }).frame(minHeight: 44)
+                    Button("继续全部", systemImage: "play.circle") { manager.resumeAll(); showingActions = false }
+                        .disabled(!manager.jobs.contains { $0.status == .paused }).frame(minHeight: 44)
+                }
+            }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+                .presentationDetents([.height(manager.jobs.contains { [.running, .queued, .paused].contains($0.status) } ? 360 : 240), .large])
+                .presentationDragIndicator(.visible).presentationCornerRadius(28)
+        }
+        .sheet(isPresented: $importing, onDismiss: importPickedFiles) {
+            PackageDocumentPicker { result in
+                switch result {
+                case .success(let urls): pickedFiles = urls
+                case .failure(let error): store.errorMessage = error.localizedDescription
+                }
+                importing = false
+            }.ignoresSafeArea()
         }
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
         .sheet(item: $inspecting) { item in
@@ -152,24 +178,34 @@ struct DownloadsView: View {
             }
             Button("取消", role: .cancel) { }
         } message: { Text("填写可直接下载 IPA 文件的 HTTPS 地址。") }
-        .confirmationDialog("删除 \(pendingDelete.count) 项任务及文件？", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("删除", role: .destructive) {
-                do {
-                    for id in pendingDelete { try manager.remove(id) }
-                    selection.subtract(pendingDelete); pendingDelete.removeAll(); store.infoMessage = "已删除所选任务"
-                } catch { store.errorMessage = error.localizedDescription }
+        .actionConfirmation(isPresented: $confirmingDelete, title: "删除 \(pendingDelete.count) 项任务？", message: "本地安装包也会删除，此操作无法撤销。", confirmTitle: "删除任务与文件") {
+            do {
+                for id in pendingDelete { try manager.remove(id) }
+                selection.subtract(pendingDelete); pendingDelete.removeAll(); store.infoMessage = "已删除任务"
+            } catch { store.errorMessage = error.localizedDescription }
+        }
+        .actionConfirmation(isPresented: Binding(get: { installing != nil }, set: { if !$0 { installing = nil } }), title: "安装 \(installing?.app.name ?? "")", message: "请先配置自己的 HTTPS 清单服务和 Surge/Loon 规则，也可导出 IPA 到签名工具。", confirmTitle: "通过代理安装") {
+            guard let job = installing, let file = manager.fileURL(job) else { return }; installing = nil
+            perform {
+                let url = try await store.installation.installURL(job: job, file: file, plistServer: store.settings.plistServer)
+                openURL(url) { accepted in if !accepted { store.errorMessage = "系统未接受安装链接，请检查代理配置" } }
             }
-        } message: { Text("本地安装包也会删除，此操作无法撤销。") }
-        .confirmationDialog("安装 \(installing?.app.name ?? "")", isPresented: Binding(get: { installing != nil }, set: { if !$0 { installing = nil } }), titleVisibility: .visible) {
-            Button("通过代理安装") {
-                guard let job = installing, let file = manager.fileURL(job) else { return }; installing = nil
-                perform {
-                    let url = try await store.installation.installURL(job: job, file: file, plistServer: store.settings.plistServer)
-                    openURL(url) { accepted in if !accepted { store.errorMessage = "系统未接受安装链接，请检查代理配置" } }
-                }
-            }
-        } message: { Text("请先配置自己的 HTTPS 清单服务和 Surge/Loon 规则。也可导出 IPA 到签名工具。") }
+        }
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
+    }
+    private func importPickedFiles() {
+        let files = pickedFiles; pickedFiles.removeAll()
+        guard !files.isEmpty else { return }
+        perform {
+            var imported = 0
+            var failures: [String] = []
+            for url in files {
+                do { try await manager.importFile(url); imported += 1 }
+                catch { failures.append(url.lastPathComponent + "：" + error.localizedDescription) }
+            }
+            if imported > 0 { filter = .all; term = ""; store.infoMessage = "已导入 \(imported) 个安装包" }
+            if !failures.isEmpty { store.errorMessage = failures.joined(separator: "\n") }
+        }
     }
     private func packageDisplayApp(_ job: DownloadJob) -> StoreApp {
         var app = job.app; app.iconURL = manager.packageIconURL(job); return app

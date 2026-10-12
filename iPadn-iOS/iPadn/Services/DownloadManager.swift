@@ -220,17 +220,10 @@ final class DownloadManager: NSObject, ObservableObject {
     }
 
     func importFile(_ source: URL) async throws {
-        guard source.isFileURL, ["ipa", "zip"].contains(source.pathExtension.lowercased()) else { throw ToolError.message("仅支持导入 IPA 或 ZIP 格式安装包") }
         guard storageError == nil else { throw ToolError.message(storageError!) }
-        let access = source.startAccessingSecurityScopedResource()
-        defer { if access { source.stopAccessingSecurityScopedResource() } }
         let id = UUID()
-        let stage = LocalResources.stagingURL(id)
         let inspected = try await Task.detached(priority: .userInitiated) {
-            do {
-                try FileManager.default.copyItem(at: source, to: stage)
-                return try PackageService.inspect(stage)
-            } catch { try? FileManager.default.removeItem(at: stage); throw error }
+            try PackageImportService.prepare(source, id: id)
         }.value
         jobs.insert(DownloadJob(id: id, app: inspected, status: .processing), at: 0)
         persist(); process(id)
