@@ -29,7 +29,20 @@ enum StoreService {
     static func mergeResults(_ primary: [StoreApp], _ account: [StoreApp], limit: Int) -> [StoreApp] {
         var merged: [StoreApp] = []
         var indices: [String: Int] = [:]
-        for app in primary + account where !app.id.isEmpty {
+        // Two selected-region results followed by one account-region result
+        // keeps the secondary store visible even if the primary fills the limit.
+        var candidates: [StoreApp] = []
+        var primaryIndex = 0
+        var accountIndex = 0
+        while primaryIndex < primary.count || accountIndex < account.count {
+            for _ in 0..<2 where primaryIndex < primary.count {
+                candidates.append(primary[primaryIndex]); primaryIndex += 1
+            }
+            if accountIndex < account.count {
+                candidates.append(account[accountIndex]); accountIndex += 1
+            }
+        }
+        for app in candidates where !app.id.isEmpty {
             if let index = indices[app.id] {
                 // An app found in both stores may have missing artwork in one.
                 if merged[index].iconURL == nil { merged[index].iconURL = app.iconURL }
