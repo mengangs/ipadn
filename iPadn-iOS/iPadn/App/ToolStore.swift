@@ -243,13 +243,16 @@ final class ToolStore: ObservableObject {
         #endif
         guard let account = apple.activeID, ownedStorageError == nil else { return }
         let context = settings.store
+        var artworkContext = context
+        // Purchased iPhone/iPad apps are independent of the search platform picker.
+        artworkContext.platform = .iOS
         let accountCountry = StoreService.country(forStorefront: apple.active?.storeFront ?? "")
         let revision = ownedRevision
         let ids = owned.filter { $0.iconURL == nil }.map(\.id)
         for offset in stride(from: 0, to: ids.count, by: 20) {
             do {
                 try Task.checkCancellation()
-                let urls = try await StoreService.artwork(Array(ids[offset..<min(offset + 20, ids.count)]), store: context, accountCountry: accountCountry)
+                let urls = try await StoreService.artwork(Array(ids[offset..<min(offset + 20, ids.count)]), store: artworkContext, accountCountry: accountCountry)
                 try Task.checkCancellation()
                 guard apple.activeID == account, settings.store == context, ownedRevision == revision else { return }
                 for index in owned.indices { if let url = urls[owned[index].id] { owned[index].iconURL = url } }
