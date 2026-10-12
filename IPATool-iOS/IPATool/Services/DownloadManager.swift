@@ -314,7 +314,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
             if let current = self.tasks[id], current.taskIdentifier != task.taskIdentifier { return }
             if job.status == .pausing || job.status == .paused { return }
             if let resume = resume { try? resume.write(to: LocalResources.resumeURL(id), options: .atomic) }
-            if error.code == NSURLErrorCannotResume { try? FileManager.default.removeItem(at: LocalResources.resumeURL(id)) }
+            else { try? FileManager.default.removeItem(at: LocalResources.resumeURL(id)) }
             self.fail(id, error: error)
         }
     }
