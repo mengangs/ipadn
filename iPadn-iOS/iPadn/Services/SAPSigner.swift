@@ -2,6 +2,7 @@ import Foundation
 import WebKit
 import Combine
 import CryptoKit
+import UIKit
 
 @MainActor
 final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMessageHandler {
@@ -20,6 +21,20 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
     private var signatureCache: [String: String] = [:]
     private var kbCache: [String: String] = [:]
     private var cacheRevision = UUID()
+    private var reusableWebView: WKWebView?
+    private var reusableBase: URL?
+    private var idleTimeout: Task<Void, Never>?
+    private var memoryObserver: AnyCancellable?
+
+    override init() {
+        super.init()
+        memoryObserver = Publishers.Merge(
+            NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification),
+            NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification))
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.discardIdleRuntime() }
+            }
+    }
 
     func sign(_ data: Data, guid: String, useCache: Bool) async throws -> String {
         let key = guid + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -31,7 +46,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
             await sapInitialize(guid, {proxyURL: proxy});
             try { reportStage(2); return await sapSign(body); }
             finally { await sapClose(); }
-            """, arguments: ["guid": guid, "body": data.base64EncodedString()])
+            """, arguments: ["guid": guid, "body": data.base64EncodedString()], reuseRuntime: useCache)
         if useCache, revision == cacheRevision {
             if signatureCache.count >= 128 { signatureCache.removeAll() }
             signatureCache[key] = result
@@ -51,33 +66,45 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
             reportStage(1);
             await loadSapSigner();
             reportStage(2);
-            await new Promise(resolve => setTimeout(resolve, 50));
             return await sapGenerateKBSync(guid, dsid);
-            """, arguments: ["guid": guid, "dsid": dsid])
+            """, arguments: ["guid": guid, "dsid": dsid], reuseRuntime: useCache)
         if useCache, revision == cacheRevision { kbCache[key] = result }
         return result
     }
 
-    func execute(title: String, script: String, arguments: [String: Any], timeoutSeconds: UInt64 = 180) async throws -> String {
+    func execute(title: String, script: String, arguments: [String: Any], timeoutSeconds: UInt64 = 180, reuseRuntime: Bool = true) async throws -> String {
         guard operationID == nil else { throw ToolError.message("另一项验证正在进行，请完成或取消后重试") }
         let id = UUID(); operationID = id; terminalError = nil
+        let revision = cacheRevision
+        var succeeded = false
+        idleTimeout?.cancel(); idleTimeout = nil
         self.title = title; stage = "准备本地环境"; stageIndex = 0; startedAt = Date()
-        defer { release(id: id) }
+        defer { release(id: id, reuse: reuseRuntime && succeeded && cacheRevision == revision) }
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
             try await server.start()
             try checkActive(id)
             guard let base = server.baseURL else { throw ToolError.message("无法启动本地验证环境") }
-            let config = WKWebViewConfiguration()
-            config.websiteDataStore = .nonPersistent()
-            config.userContentController.add(self, name: "progress")
-            let web = WKWebView(frame: .zero, configuration: config)
+            let web: WKWebView
+            let warm = reuseRuntime && reusableBase == base && reusableWebView != nil
+            if warm, let saved = reusableWebView { web = saved }
+            else {
+                let config = WKWebViewConfiguration()
+                config.websiteDataStore = .nonPersistent()
+                web = WKWebView(frame: .zero, configuration: config)
+            }
+            reusableWebView = nil; reusableBase = nil
+            web.configuration.userContentController.add(self, name: "progress")
             web.navigationDelegate = self
             webView = web; isPresented = true
-            armTimeout(id: id, seconds: 45, message: "本地验证环境加载超时，请重试。")
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                navigation = continuation
-                web.load(URLRequest(url: base.appendingPathComponent("runtime/index.html")))
+            if !warm {
+                armTimeout(id: id, seconds: 45, message: "本地验证环境加载超时，请重试。")
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    navigation = continuation
+                    web.load(URLRequest(url: base.appendingPathComponent("runtime/index.html")))
+                }
+            } else {
+                stage = "复用本机验证组件"
             }
             try checkActive(id)
             armTimeout(id: id, seconds: timeoutSeconds, message: "验证已超过 3 分钟，已停止本次操作。请保持应用在前台后重试。")
@@ -100,6 +127,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
                 }
             }
             try checkActive(id)
+            succeeded = true
             return result
         } onCancel: { [weak self] in
             Task { @MainActor in self?.stop(id: id, error: CancellationError()) }
@@ -136,7 +164,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
     func cancel() {
         if let id = operationID { stop(id: id, error: CancellationError()) }
     }
-    private func release(id: UUID) {
+    private func release(id: UUID, reuse: Bool) {
         guard operationID == id else { return }
         timeout?.cancel(); timeout = nil
         finishNavigation(.failure(CancellationError()))
@@ -144,9 +172,21 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
         continuation?.resume(throwing: CancellationError())
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "progress")
         webView?.stopLoading(); webView?.navigationDelegate = nil
+        if reuse && UIApplication.shared.applicationState == .active {
+            reusableWebView = webView; reusableBase = server.baseURL
+            idleTimeout = Task { @MainActor [weak self] in
+                do { try await Task.sleep(nanoseconds: 90_000_000_000) } catch { return }
+                self?.discardIdleRuntime()
+            }
+        } else { reusableWebView = nil; reusableBase = nil }
         webView = nil; isPresented = false; operationID = nil; terminalError = nil
     }
-    func clearCache() { cacheRevision = UUID(); signatureCache.removeAll(); kbCache.removeAll() }
+    private func discardIdleRuntime() {
+        guard operationID == nil else { return }
+        idleTimeout?.cancel(); idleTimeout = nil
+        reusableWebView?.stopLoading(); reusableWebView = nil; reusableBase = nil
+    }
+    func clearCache() { cacheRevision = UUID(); signatureCache.removeAll(); kbCache.removeAll(); discardIdleRuntime() }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.webView === webView, operationID != nil, let index = message.body as? Int, (1...2).contains(index) else { return }
         stageIndex = index

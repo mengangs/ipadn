@@ -5,6 +5,22 @@ import ZIPFoundation
 
 final class CoreTests: XCTestCase {
     @MainActor
+    func testSignerReusesSuccessfulPageAndClearsItOnCacheReset() async throws {
+        let signer = SAPSigner()
+        let coldStart = ProcessInfo.processInfo.systemUptime
+        let marker = try await signer.execute(title: "首次", script: "await loadSapSigner(); window.runtimeMarker = 'retained-context'; return window.runtimeMarker;", arguments: [:])
+        let cold = ProcessInfo.processInfo.systemUptime - coldStart
+        let warmStart = ProcessInfo.processInfo.systemUptime
+        let reused = try await signer.execute(title: "复用", script: "await loadSapSigner(); return window.runtimeMarker || 'new-context';", arguments: [:])
+        let warm = ProcessInfo.processInfo.systemUptime - warmStart
+        XCTAssertEqual(reused, marker)
+        print("WebKit WASM initialization: cold \(cold)s; warm \(warm)s (no Apple signing request)")
+        signer.clearCache()
+        let fresh = try await signer.execute(title: "清理后", script: "return window.runtimeMarker || 'new-context';", arguments: [:])
+        XCTAssertEqual(fresh, "new-context")
+        signer.clearCache()
+    }
+    @MainActor
     func testPackagedIconChoicesIncludePhoneAndPadAlternates() throws {
         XCTAssertNil(AppIconService.Choice.dimensional.alternateName)
         XCTAssertEqual(AppIconService.Choice.flat.alternateName, "AppIconFlat")

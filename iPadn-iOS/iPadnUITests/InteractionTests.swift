@@ -32,13 +32,18 @@ final class InteractionTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--visual-preview", "--downloads"]
         app.launch()
+        let menu = app.buttons["download.filter.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 10))
         for title in ["全部", "进行中", "已暂停", "已完成", "失败"] {
+            menu.tap()
             let button = app.buttons["download.filter." + title]
             XCTAssertTrue(button.waitForExistence(timeout: 10))
             XCTAssertTrue(button.isHittable)
             XCTAssertGreaterThanOrEqual(button.frame.minX, 0)
             XCTAssertLessThanOrEqual(button.frame.maxX, app.frame.maxX)
+            button.tap()
         }
+        menu.tap(); app.buttons["download.filter.全部"].tap()
         let row = app.descendants(matching: .any)["download.task.preview-2.paused"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.swipeLeft()

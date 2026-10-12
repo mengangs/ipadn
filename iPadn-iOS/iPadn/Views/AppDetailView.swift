@@ -8,6 +8,7 @@ struct AppDetailView: View {
     @State private var versions: [AppVersion] = []
     @State private var versionsLoading = false
     @State private var downloadLoading = false
+    @State private var downloadTask: Task<Void, Never>?
     @State private var manualID = ""
     @State private var versionSearch = ""
     @State private var versionError: String?
@@ -94,6 +95,7 @@ struct AppDetailView: View {
                         Label(downloadLoading ? "正在准备下载…" : apple.active == nil ? "登录后下载" : "下载当前版本", systemImage: apple.active == nil ? "person.crop.circle" : "arrow.down.circle.fill")
                     }.font(.headline).frame(maxWidth: .infinity).frame(minHeight: 44)
                 }.buttonStyle(MonochromeButtonStyle()).controlSize(.large).disabled(downloadLoading)
+                if downloadLoading { Button("取消准备下载") { downloadTask?.cancel() }.frame(minHeight: 44) }
                 Text(apple.active.map { "使用账号 \($0.id)" } ?? "登录后获取你拥有许可的应用")
                     .font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }.padding(.horizontal, 20).padding(.vertical, 12).frame(maxWidth: 680).frame(maxWidth: .infinity).background(.regularMaterial)
@@ -104,6 +106,7 @@ struct AppDetailView: View {
             ShareLink(item: storeURL) { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("分享商店链接")
         }
         .navigationDestination(isPresented: $showLogin) { LoginView() }
+        .onDisappear { downloadTask?.cancel() }
         .task(id: "\(official)-\(reloadID)-\(store.settings.store.country)-\(store.settings.store.platform.rawValue)-\(apple.activeID ?? "")") { await fetchVersions(force: reloadID > 0) }
     }
     private var appHeading: some View {
@@ -128,8 +131,8 @@ struct AppDetailView: View {
         guard apple.active != nil else { showLogin = true; return }
         if let versionID, !versionID.isEmpty, !versionID.allSatisfy({ $0.isASCII && $0.isNumber }) { store.errorMessage = "版本 ID 必须是数字"; return }
         downloadLoading = true
-        Task {
-            defer { downloadLoading = false }
+        downloadTask = Task {
+            defer { downloadLoading = false; downloadTask = nil }
             do { try await store.startDownload(app: app, versionID: versionID?.isEmpty == true ? nil : versionID) }
             catch is CancellationError { }
             catch { store.errorMessage = error.localizedDescription }

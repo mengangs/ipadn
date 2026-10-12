@@ -62,6 +62,7 @@ struct LoginView: View {
     @State private var busy = false
     @State private var verifying = false
     @State private var failure: String?
+    @State private var loginTask: Task<Void, Never>?
     @FocusState private var focus: Field?
     private enum Field { case email, password, code }
     var body: some View {
@@ -103,13 +104,17 @@ struct LoginView: View {
         .toolPage()
         .navigationTitle("添加账号").navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(busy)
+        .toolbar {
+            if busy { ToolbarItem(placement: .topBarTrailing) { Button("取消") { loginTask?.cancel() } } }
+        }
         .toolbar { ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("完成") { focus = nil } } }
+        .onDisappear { loginTask?.cancel() }
     }
     private func submit() {
         guard !busy else { return }
         focus = nil; busy = true; failure = nil
-        Task {
-            defer { busy = false }
+        loginTask = Task {
+            defer { busy = false; loginTask = nil }
             do {
                 try await apple.login(email: email, password: password, code: verifying ? code : "", useCache: store.settings.useSignerCache)
                 password = ""; code = ""; dismiss()
