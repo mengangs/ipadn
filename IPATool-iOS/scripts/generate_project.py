@@ -22,7 +22,7 @@ def build(name, settings):
     return add(name, "XCBuildConfiguration", buildSettings=settings, name=name.rsplit("/", 1)[-1])
 
 def configs(name, base, release_extra=None):
-    debug = build(name + "/Debug", {**base, "SWIFT_OPTIMIZATION_LEVEL": "-Onone", "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "DEBUG $(inherited)"})
+    debug = build(name + "/Debug", {**base, "SWIFT_OPTIMIZATION_LEVEL": "-Onone", "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "DEBUG $(inherited)", "ONLY_ACTIVE_ARCH": "YES", "ENABLE_TESTABILITY": "YES"})
     release = build(name + "/Release", {**base, "SWIFT_OPTIMIZATION_LEVEL": "-O", **(release_extra or {})})
     return add(name + "/ConfigList", "XCConfigurationList", buildConfigurations=[debug, release], defaultConfigurationIsVisible="0", defaultConfigurationName="Release")
 

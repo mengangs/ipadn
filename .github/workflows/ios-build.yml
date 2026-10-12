@@ -101,7 +101,7 @@ jobs:
           retention-days: 14
 
       - name: Write download summary
-        if: steps.ipa.outcome == 'success'
+        if: always() && steps.ipa.outcome == 'success'
         env:
           ARTIFACT_URL: ${{ steps.ipa.outputs.artifact-url }}
         run: |
