@@ -26,23 +26,12 @@ struct DownloadsView: View {
     private var visible: [DownloadJob] {
         manager.jobs.filter { filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
     }
-    private var totalSize: Int64 { manager.jobs.filter { $0.status == .completed }.reduce(0) { $0 + $1.app.size } }
-    @ViewBuilder private var summary: some View {
-        Text("进行中 \(manager.jobs.filter { DownloadFilter.active.includes($0.status) }.count)")
-        Text("已保存 \(manager.jobs.filter { $0.status == .completed }.count) · \(totalSize.byteLabel)")
-    }
     var body: some View {
         List(selection: $selection) {
-            Section {
-                VStack(alignment: .leading, spacing: 10) {
-                ViewThatFits(in: .horizontal) {
-                    HStack { summary; Spacer() }
-                    VStack(alignment: .leading, spacing: 4) { summary }
-                }.font(.footnote).foregroundStyle(.secondary)
-                if !manager.jobs.isEmpty { SearchInput(text: $term, placeholder: "搜索名称、版本或 Bundle ID") }
-                DownloadFilterBar(selection: $filter, jobs: manager.jobs)
-                }.padding(.vertical, 4)
-            }.listRowSeparator(.hidden)
+            if !manager.jobs.isEmpty {
+                Section { SearchInput(text: $term, placeholder: "搜索名称、版本或 Bundle ID") }
+                    .listRowSeparator(.hidden)
+            }
             if let error = manager.storageError { Section { InlineIssue(message: error) } }
             if let warning = manager.discoveryWarning { Section { InlineIssue(message: warning) } }
             if visible.isEmpty {
@@ -91,7 +80,21 @@ struct DownloadsView: View {
         .toolPage().navigationTitle("下载").navigationBarTitleDisplayMode(.inline)
         .environment(\.editMode, $editMode)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) { EditButton().disabled(manager.jobs.isEmpty) }
+            ToolbarItemGroup(placement: .topBarLeading) {
+                EditButton().disabled(manager.jobs.isEmpty)
+                if !manager.jobs.isEmpty {
+                    Menu {
+                        ForEach(DownloadFilter.allCases) { item in
+                            Button { filter = item } label: {
+                                Label(item.rawValue, systemImage: filter == item ? "checkmark" : "line.3.horizontal.decrease")
+                            }.accessibilityIdentifier("download.filter." + item.id)
+                        }
+                    } label: {
+                        Image(systemName: filter == .all ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }.accessibilityLabel("筛选下载任务").accessibilityIdentifier("download.filter.menu")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingActions = true } label: { Image(systemName: "plus").frame(minWidth: 44, minHeight: 44) }
                     .disabled(actionBusy).accessibilityLabel("添加下载").accessibilityIdentifier("downloads.add")
@@ -184,11 +187,14 @@ struct DownloadsView: View {
                 selection.subtract(pendingDelete); pendingDelete.removeAll(); store.infoMessage = "已删除任务"
             } catch { store.errorMessage = error.localizedDescription }
         }
-        .actionConfirmation(isPresented: Binding(get: { installing != nil }, set: { if !$0 { installing = nil } }), title: "安装 \(installing?.app.name ?? "")", message: "请先配置自己的 HTTPS 清单服务和 Surge/Loon 规则，也可导出 IPA 到签名工具。", confirmTitle: "通过代理安装", destructive: false) {
+        .actionConfirmation(isPresented: Binding(get: { installing != nil }, set: { if !$0 { installing = nil } }), title: "安装 \(installing?.app.name ?? "")", message: "将通过你配置的 HTTPS 清单服务请求系统安装。是否可安装由当前系统和安装包授权决定。", confirmTitle: "请求系统安装", destructive: false) {
             guard let job = installing, let file = manager.fileURL(job) else { return }; installing = nil
             perform {
                 let url = try await store.installation.installURL(job: job, file: file, plistServer: store.settings.plistServer)
-                openURL(url) { accepted in if !accepted { store.errorMessage = "系统未接受安装链接，请检查代理配置" } }
+                openURL(url) { accepted in
+                    if accepted { store.infoMessage = "已请求系统安装，请查看系统提示。" }
+                    else { store.errorMessage = "系统未接受安装链接，请检查当前系统支持和清单服务配置" }
+                }
             }
         }
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
@@ -217,6 +223,7 @@ struct DownloadsView: View {
         case .paused: manager.resume(job.id)
         case .failed:
             if job.asset != nil { perform { try await store.refreshDownload(job) } } else { manager.resume(job.id) }
+        case .completed: installing = job
         default: break
         }
     }
@@ -251,6 +258,14 @@ struct DownloadTaskRow: View {
     private func speedLabel(_ speed: Double) -> some View {
         Label(speed > 0 ? "\(Int64(min(speed, Double(Int64.max / 2))).byteLabel)/s" : "正在测速…", systemImage: "speedometer")
     }
+    private var installButton: some View {
+        Button("安装", systemImage: "square.and.arrow.down", action: primary)
+            .buttonStyle(MonochromeButtonStyle()).controlSize(.large)
+            .accessibilityIdentifier("download.install." + job.app.id)
+    }
+    private var exportButton: some View {
+        Button("导出", systemImage: "square.and.arrow.up", action: exporting).buttonStyle(.bordered).controlSize(.large)
+    }
     @ViewBuilder private var taskAction: some View {
         switch job.status {
         case .running, .queued:
@@ -258,7 +273,10 @@ struct DownloadTaskRow: View {
         case .paused, .failed:
             Button(job.status == .failed ? "重试" : "继续", systemImage: job.status == .failed ? "arrow.clockwise" : "play.fill", action: primary).buttonStyle(.bordered).controlSize(.large)
         case .completed:
-            Button("导出", systemImage: "square.and.arrow.up", action: exporting).buttonStyle(MonochromeButtonStyle()).controlSize(.large)
+            ViewThatFits(in: .horizontal) {
+                HStack { installButton; exportButton }
+                VStack(alignment: .leading, spacing: 8) { installButton; exportButton }
+            }
         case .processing, .pausing: ProgressView()
         }
     }

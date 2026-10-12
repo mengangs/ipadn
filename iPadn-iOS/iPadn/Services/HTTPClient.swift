@@ -35,7 +35,8 @@ final class HTTPClient: Sendable {
             if [301, 302, 303, 307, 308].contains(response.statusCode),
                let location = response.value(forHTTPHeaderField: "Location"),
                let next = URL(string: location, relativeTo: current)?.absoluteURL {
-                guard next.scheme == "https", let host = next.host else { throw ToolError.message("接口返回了不安全的重定向") }
+                guard next.scheme == "https", let host = next.host,
+                      next.user == nil, next.password == nil else { throw ToolError.message("接口返回了不安全的重定向") }
                 if appleRedirects {
                     guard host == "itunes.apple.com" || host.hasSuffix(".itunes.apple.com") else {
                         throw ToolError.message("Apple 接口重定向到了非 Apple 地址，已停止请求")

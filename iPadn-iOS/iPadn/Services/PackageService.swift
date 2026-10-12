@@ -70,9 +70,9 @@ enum PackageService {
             app.id = asset.app.id
             app.externalVersionID = asset.app.externalVersionID
         }
-        let filename = "\(id.uuidString.prefix(8))-\(safeName(app.name))_\(safeName(app.version)).ipa"
+        let filename = "\(id.uuidString)-\(filenameComponent(app.name, limit: 100))_\(filenameComponent(app.version, limit: 40)).ipa"
         let destination = LocalResources.packages.appendingPathComponent(filename)
-        if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
+        // A retry or identifier collision must not delete an existing user package.
         try FileManager.default.moveItem(at: working, to: destination)
         return (filename, app)
     }
@@ -99,5 +99,15 @@ enum PackageService {
         let invalid = CharacterSet(charactersIn: "/\\:?%*|\"<>\n\r\t").union(.controlCharacters)
         let value = name.components(separatedBy: invalid).joined(separator: "_").trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? "App" : String(value.prefix(80))
+    }
+
+    private static func filenameComponent(_ value: String, limit: Int) -> String {
+        var result = "", bytes = 0
+        for character in safeName(value) {
+            let count = String(character).utf8.count
+            if bytes + count > limit { break }
+            result.append(character); bytes += count
+        }
+        return result.isEmpty ? "App" : result
     }
 }

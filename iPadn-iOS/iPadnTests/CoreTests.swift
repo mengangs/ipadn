@@ -4,6 +4,71 @@ import ZIPFoundation
 @testable import iPadn
 
 final class CoreTests: XCTestCase {
+    func testPackageCompletionCannotOverwriteSharedIdentifierPrefixAndHandlesLongNames() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var completed: [URL] = []
+        defer { for file in completed { try? FileManager.default.removeItem(at: file) } }
+        func package(name: String, marker: UInt8) throws -> URL {
+            let url = root.appendingPathComponent(UUID().uuidString + ".ipa")
+            let archive = try Archive(url: url, accessMode: .create)
+            let files = ["Payload/Test.app/Info.plist": try HTTPClient.encodePlist([
+                "CFBundleDisplayName": name, "CFBundleIdentifier": "test.filename", "CFBundleShortVersionString": "1.0"]),
+                "Payload/Test.app/marker": Data([marker])]
+            for (path, bytes) in files {
+                let file = root.appendingPathComponent(path)
+                try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try bytes.write(to: file)
+                try archive.addEntry(with: path, relativeTo: root)
+            }
+            return url
+        }
+        let firstID = UUID(uuidString: "11111111-0000-0000-0000-000000000001")!
+        let secondID = UUID(uuidString: "11111111-0000-0000-0000-000000000002")!
+        let first = try PackageService.finish(staging: package(name: "Collision", marker: 1), id: firstID, asset: nil)
+        let firstURL = LocalResources.packages.appendingPathComponent(first.0); completed.append(firstURL)
+        let original = try Data(contentsOf: firstURL)
+        let second = try PackageService.finish(staging: package(name: "Collision", marker: 2), id: secondID, asset: nil)
+        completed.append(LocalResources.packages.appendingPathComponent(second.0))
+        XCTAssertNotEqual(first.0, second.0)
+        XCTAssertEqual(try Data(contentsOf: firstURL), original)
+        XCTAssertThrowsError(try PackageService.finish(staging: package(name: "Collision", marker: 3), id: firstID, asset: nil))
+        XCTAssertEqual(try Data(contentsOf: firstURL), original)
+        let long = try PackageService.finish(staging: package(name: String(repeating: "应用", count: 80), marker: 4), id: UUID(), asset: nil)
+        completed.append(LocalResources.packages.appendingPathComponent(long.0))
+        XCTAssertLessThanOrEqual(long.0.utf8.count, 255)
+    }
+    @MainActor
+    func testSignerReusesSuccessfulPageAndClearsItOnCacheReset() async throws {
+        let signer = SAPSigner()
+        let coldStart = ProcessInfo.processInfo.systemUptime
+        let marker = try await signer.execute(title: "首次", script: "await loadSapSigner(); window.runtimeMarker = 'retained-context'; return window.runtimeMarker;", arguments: [:])
+        let cold = ProcessInfo.processInfo.systemUptime - coldStart
+        let warmStart = ProcessInfo.processInfo.systemUptime
+        let reused = try await signer.execute(title: "复用", script: "await loadSapSigner(); return window.runtimeMarker || 'new-context';", arguments: [:])
+        let warm = ProcessInfo.processInfo.systemUptime - warmStart
+        XCTAssertEqual(reused, marker)
+        print("WebKit WASM initialization: cold \(cold)s; warm \(warm)s (no Apple signing request)")
+        signer.clearCache()
+        let fresh = try await signer.execute(title: "清理后", script: "return window.runtimeMarker || 'new-context';", arguments: [:])
+        XCTAssertEqual(fresh, "new-context")
+        signer.clearCache()
+    }
+    @MainActor
+    func testPackagedIconChoicesMatchCurrentDevice() throws {
+        XCTAssertNil(AppIconService.Choice.dimensional.alternateName)
+        XCTAssertEqual(AppIconService.Choice.flat.alternateName, "AppIconFlat")
+        // Xcode thins simulator builds to the selected device. Both idioms are
+        // checked separately in the unthinned device IPA by verify_ipa.py.
+        let key = UIDevice.current.userInterfaceIdiom == .pad ? "CFBundleIcons~ipad" : "CFBundleIcons"
+        let icons = try XCTUnwrap(Bundle.main.infoDictionary?[key] as? [String: Any])
+        let alternates = try XCTUnwrap(icons["CFBundleAlternateIcons"] as? [String: Any])
+        XCTAssertNotNil(alternates["AppIconFlat"])
+        XCTAssertNotNil(UIImage(named: AppIconService.Choice.dimensional.preview))
+        XCTAssertNotNil(UIImage(named: AppIconService.Choice.flat.preview))
+        XCTAssertTrue(UIApplication.shared.supportsAlternateIcons)
+    }
     func testPartialSettingsPreserveUserChoicesAndBoundInvalidLimits() throws {
         let legacy = Data(#"{"plistServer":"https://example.com/manifest","notifications":false,"maxConcurrentDownloads":99,"maxQueuedDownloads":-1}"#.utf8)
         let settings = try JSONDecoder().decode(ToolSettings.self, from: legacy)
