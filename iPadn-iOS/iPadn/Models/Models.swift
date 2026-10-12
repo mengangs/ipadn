@@ -44,7 +44,7 @@ enum AppPlatform: String, Codable, CaseIterable, Identifiable {
         case .iOS: return "software"
         case .iPadOS: return "iPadSoftware"
         case .tvOS: return "software,tvSoftware"
-        case .macOS: return "desktopSoftware"
+        case .macOS: return "macSoftware"
         }
     }
     var catalogPlatform: String { self == .iPadOS ? AppPlatform.iOS.rawValue : rawValue }
