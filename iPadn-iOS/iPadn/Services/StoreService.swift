@@ -8,20 +8,107 @@ enum StoreService {
         return url
     }
 
-    static func search(_ query: SearchQuery, store: StoreContext, limit: Int) async throws -> [StoreApp] {
+    // Apple sends storefront identifiers such as "143441-1,29". The selected
+    // search region can differ from the account's purchase region.
+    static func country(forStorefront storefront: String) -> String? {
+        let identifier = String(storefront.split(separator: "-").first ?? "")
+        return [
+            "143441": "US", "143465": "CN", "143463": "HK", "143470": "TW",
+            "143462": "JP", "143444": "GB", "143464": "SG", "143455": "CA",
+            "143460": "AU", "143466": "KR", "143443": "DE", "143442": "FR"
+        ][identifier]
+    }
+
+    static func searchCountries(selected: String, accountCountry: String?) -> [String] {
+        var countries = [selected.uppercased()]
+        if let accountCountry = accountCountry?.uppercased(), !accountCountry.isEmpty,
+           !countries.contains(accountCountry) { countries.append(accountCountry) }
+        return countries
+    }
+
+    static func mergeResults(_ primary: [StoreApp], _ account: [StoreApp], limit: Int) -> [StoreApp] {
+        var merged: [StoreApp] = []
+        var indices: [String: Int] = [:]
+        // Two selected-region results followed by one account-region result
+        // keeps the secondary store visible even if the primary fills the limit.
+        let regionalIDs = Set(primary.map(\.id))
+        let accountOnly = account.filter { !regionalIDs.contains($0.id) }
+        var candidates: [StoreApp] = []
+        var primaryIndex = 0
+        var accountIndex = 0
+        while primaryIndex < primary.count || accountIndex < accountOnly.count {
+            for _ in 0..<2 where primaryIndex < primary.count {
+                candidates.append(primary[primaryIndex]); primaryIndex += 1
+            }
+            if accountIndex < accountOnly.count {
+                candidates.append(accountOnly[accountIndex]); accountIndex += 1
+            }
+        }
+        // Also inspect overlapping results to fill missing artwork.
+        candidates.append(contentsOf: account)
+        for app in candidates where !app.id.isEmpty {
+            if let index = indices[app.id] {
+                // An app found in both stores may have missing artwork in one.
+                if merged[index].iconURL == nil { merged[index].iconURL = app.iconURL }
+            } else {
+                indices[app.id] = merged.count
+                merged.append(app)
+            }
+        }
+        return Array(merged.prefix(max(0, limit)))
+    }
+
+    static func search(_ query: SearchQuery, store: StoreContext, limit: Int,
+                       accountCountry: String? = nil) async throws -> [StoreApp] {
+        let primary = try await searchInCountry(query, store: store, limit: limit)
+        let countries = searchCountries(selected: store.country, accountCountry: accountCountry)
+        guard countries.count > 1 else { return primary }
+        var accountStore = store
+        accountStore.country = countries[1]
+        do {
+            let alternate = try await searchInCountry(query, store: accountStore, limit: limit)
+            return mergeResults(primary, alternate, limit: limit)
+        } catch {
+            // A secondary regional lookup must not hide otherwise valid results.
+            return primary
+        }
+    }
+
+    private static func searchInCountry(_ query: SearchQuery, store: StoreContext, limit: Int) async throws -> [StoreApp] {
         switch query {
         case .keyword(let text):
             let url = try endpoint("https://itunes.apple.com/search", items: [
                 URLQueryItem(name: "term", value: text), URLQueryItem(name: "country", value: store.country),
-                URLQueryItem(name: "entity", value: store.platform == .iOS ? "software" : "tvSoftware"),
+                URLQueryItem(name: "entity", value: store.platform.searchEntity),
                 URLQueryItem(name: "explicit", value: "no"), URLQueryItem(name: "limit", value: String(limit))
             ])
-            let data = try await HTTPClient.shared.json(url) as? [String: Any]
-            return (data?["results"] as? [[String: Any]] ?? []).map(mapLookup)
+            var results: [StoreApp] = []
+            do {
+                let data = try await HTTPClient.shared.json(url) as? [String: Any]
+                results = (data?["results"] as? [[String: Any]] ?? []).map(mapLookup)
+            } catch {
+                if store.platform != .tvOS { throw error }
+            }
+            guard store.platform == .tvOS, results.isEmpty else { return results }
+            // Apple's old tvSoftware search entity is no longer reliable.
+            // A standard software query at least finds cross-platform listings.
+            // These remain *candidates*, not confirmed Apple TV packages.
+            let candidatesURL = try endpoint("https://itunes.apple.com/search", items: [
+                URLQueryItem(name: "term", value: text), URLQueryItem(name: "country", value: store.country),
+                URLQueryItem(name: "entity", value: "software"),
+                URLQueryItem(name: "explicit", value: "no"), URLQueryItem(name: "limit", value: String(limit))
+            ])
+            let data = try await HTTPClient.shared.json(candidatesURL) as? [String: Any]
+            return (data?["results"] as? [[String: Any]] ?? []).map {
+                var candidate = mapLookup($0)
+                candidate.tvOSCandidate = true
+                return candidate
+            }
         case .appID(let id, _):
             if store.platform == .tvOS { return try await platformApp(id, store: store).map { [$0] } ?? [] }
             let url = try endpoint("https://itunes.apple.com/lookup", items: [
-                URLQueryItem(name: "id", value: id), URLQueryItem(name: "country", value: store.country)
+                URLQueryItem(name: "id", value: id), URLQueryItem(name: "country", value: store.country),
+                URLQueryItem(name: "entity", value: store.platform.searchEntity)
             ])
             let data = try await HTTPClient.shared.json(url) as? [String: Any]
             let apps = (data?["results"] as? [[String: Any]] ?? []).map(mapLookup)
@@ -34,7 +121,7 @@ enum StoreService {
         let url = try endpoint("https://uclient-api.itunes.apple.com/WebObjects/MZStorePlatform.woa/wa/lookup", items: [
             URLQueryItem(name: "version", value: "2"), URLQueryItem(name: "id", value: id),
             URLQueryItem(name: "p", value: "mdm-lockup"), URLQueryItem(name: "caller", value: "MDM"),
-            URLQueryItem(name: "platform", value: store.platform.rawValue), URLQueryItem(name: "cc", value: store.country)
+            URLQueryItem(name: "platform", value: store.platform.catalogPlatform), URLQueryItem(name: "cc", value: store.country)
         ])
         let data = try await HTTPClient.shared.json(url) as? [String: Any]
         guard let results = data?["results"] as? [String: Any], let raw = results[id] as? [String: Any] else { return nil }
@@ -49,23 +136,40 @@ enum StoreService {
                         category: (raw["genreNames"] as? [String] ?? []).joined(separator: " · "), size: size,
                         price: plistString(offer["priceFormatted"]), rating: (rating["value"] as? NSNumber)?.doubleValue ?? 0,
                         minimumOS: plistString(raw["minimumOSVersion"]),
-                        externalVersionID: version["externalId"].map { plistString($0) })
+                        externalVersionID: version["externalId"].map { plistString($0) },
+                        developerURL: MacInstallerService.safeWebsite(plistString(raw["sellerUrl"] ?? raw["websiteUrl"])))
     }
 
-    static func artwork(_ ids: [String], store: StoreContext) async throws -> [String: URL] {
-        let valid = ids.filter { !$0.isEmpty && $0.allSatisfy { $0.isASCII && $0.isNumber } }
-        guard !valid.isEmpty else { return [:] }
-        let url = try endpoint("https://itunes.apple.com/lookup", items: [
-            URLQueryItem(name: "id", value: valid.joined(separator: ",")),
-            URLQueryItem(name: "country", value: store.country),
-            URLQueryItem(name: "entity", value: store.platform == .iOS ? "software" : "tvSoftware")
-        ])
-        let response = try await HTTPClient.shared.json(url) as? [String: Any]
+    static func artworkCountries(selected: String, accountCountry: String?) -> [String] {
+        var countries = searchCountries(selected: accountCountry ?? selected, accountCountry: selected)
+        if !countries.contains("US") { countries.append("US") }
+        return countries
+    }
+
+    static func artwork(_ ids: [String], store: StoreContext, accountCountry: String? = nil) async throws -> [String: URL] {
+        var missing = Array(Set(ids.filter { !$0.isEmpty && $0.allSatisfy { $0.isASCII && $0.isNumber } })).sorted()
+        guard !missing.isEmpty else { return [:] }
         var icons: [String: URL] = [:]
-        for raw in response?["results"] as? [[String: Any]] ?? [] {
-            let app = mapLookup(raw)
-            if let icon = app.iconURL { icons[app.id] = icon }
+        var firstError: Error?
+        for country in artworkCountries(selected: store.country, accountCountry: accountCountry) {
+            guard !missing.isEmpty else { break }
+            do {
+                let url = try endpoint("https://itunes.apple.com/lookup", items: [
+                    URLQueryItem(name: "id", value: missing.joined(separator: ",")),
+                    URLQueryItem(name: "country", value: country),
+                    URLQueryItem(name: "entity", value: store.platform.searchEntity)
+                ])
+                let response = try await HTTPClient.shared.json(url) as? [String: Any]
+                for raw in response?["results"] as? [[String: Any]] ?? [] {
+                    let app = mapLookup(raw)
+                    if let icon = app.iconURL { icons[app.id] = icon }
+                }
+                missing.removeAll { icons[$0] != nil }
+            } catch {
+                if firstError == nil { firstError = error }
+            }
         }
+        if icons.isEmpty, let firstError { throw firstError }
         return icons
     }
 
@@ -77,7 +181,8 @@ enum StoreService {
                  size: Int64(plistString(raw["fileSizeBytes"])) ?? 0,
                  price: plistString(raw["formattedPrice"]).isEmpty ? "免费" : plistString(raw["formattedPrice"]),
                  rating: (raw["averageUserRating"] as? NSNumber)?.doubleValue ?? 0,
-                 minimumOS: plistString(raw["minimumOsVersion"]))
+                 minimumOS: plistString(raw["minimumOsVersion"]),
+                 developerURL: MacInstallerService.safeWebsite(plistString(raw["sellerUrl"])))
     }
 
     static func icon(_ value: String) -> URL? {
@@ -85,6 +190,64 @@ enum StoreService {
             .replacingOccurrences(of: "{h}", with: "512").replacingOccurrences(of: "{f}", with: "png")
             .replacingOccurrences(of: "{c}", with: "bb")), url.scheme == "https", url.host != nil else { return nil }
         return url
+    }
+}
+
+// Only direct download links published on a developer website supplied by
+// Apple's catalog are offered. Mac App Store does not publish DMG/PKG URLs.
+enum MacInstallerService {
+    struct Installer: Identifiable, Hashable {
+        let url: URL
+        var id: String { url.absoluteString }
+        var format: String { url.pathExtension.lowercased() }
+        var title: String { url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent }
+    }
+
+    static func safeWebsite(_ text: String) -> URL? {
+        guard let url = URL(string: text), url.scheme?.lowercased() == "https",
+              let host = url.host, !host.isEmpty, url.user == nil, url.password == nil,
+              !url.isFileURL, !host.lowercased().hasSuffix(".local"),
+              host.lowercased() != "localhost",
+              !host.hasPrefix("127."), !host.hasPrefix("10."),
+              !host.hasPrefix("192.168."), !host.hasPrefix("169.254."),
+              !host.hasPrefix("172.16."), !host.hasPrefix("172.17."),
+              !host.hasPrefix("172.18."), !host.hasPrefix("172.19."),
+              !host.hasPrefix("172.2"), !host.hasPrefix("172.30."), !host.hasPrefix("172.31."),
+              !host.contains(":") else { return nil }
+        return url
+    }
+
+    static func directPackage(_ url: URL) -> Bool {
+        guard safeWebsite(url.absoluteString) != nil else { return false }
+        return ["dmg", "pkg", "zip"].contains(url.pathExtension.lowercased())
+    }
+
+    static func links(in html: String, from website: URL) -> [Installer] {
+        guard let regex = try? NSRegularExpression(pattern: #"<a\b[^>]*\bhref\s*=\s*["']([^"']+)["']"#, options: [.caseInsensitive]) else { return [] }
+        let text = html as NSString
+        let matches = regex.matches(in: html, range: NSRange(location: 0, length: text.length))
+        var results: [Installer] = []
+        var seen = Set<String>()
+        for match in matches {
+            guard match.numberOfRanges > 1 else { continue }
+            let ref = text.substring(with: match.range(at: 1))
+                .replacingOccurrences(of: "&amp;", with: "&")
+                .replacingOccurrences(of: "&#38;", with: "&")
+            guard let url = URL(string: ref, relativeTo: website)?.absoluteURL,
+                  directPackage(url), seen.insert(url.absoluteString).inserted else { continue }
+            results.append(Installer(url: url))
+            if results.count == 12 { break }
+        }
+        return results
+    }
+
+    static func find(on website: URL) async throws -> [Installer] {
+        guard safeWebsite(website.absoluteString) != nil else { return [] }
+        let (data, response) = try await HTTPClient.shared.request(website)
+        guard data.count <= 2 * 1024 * 1024,
+              response.mimeType?.lowercased().contains("html") == true,
+              let html = String(data: data, encoding: .utf8) else { return [] }
+        return links(in: html, from: website)
     }
 }
 

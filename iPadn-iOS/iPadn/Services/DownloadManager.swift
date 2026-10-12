@@ -118,6 +118,24 @@ final class DownloadManager: NSObject, ObservableObject {
         requestNotifications(); schedule()
     }
 
+    func enqueueMacInstaller(_ url: URL, for app: StoreApp) throws {
+        guard MacInstallerService.directPackage(url) else {
+            throw ToolError.message("只支持开发者网站提供的 HTTPS DMG、PKG 或 ZIP 文件")
+        }
+        guard storageError == nil else { throw ToolError.message(storageError!) }
+        guard jobs.filter({ $0.status != .completed && $0.status != .failed }).count < maxQueued else {
+            throw ToolError.message("已达到等待任务上限")
+        }
+        guard !jobs.contains(where: { $0.sourceURL == url && ![.completed, .failed].contains($0.status) }) else {
+            throw ToolError.message("此安装包已有下载任务")
+        }
+        var next = jobs
+        next.insert(DownloadJob(app: app, sourceURL: url, packageIconScanned: true,
+                                rawFormat: url.pathExtension.lowercased()), at: 0)
+        try saveNewJobs(next)
+        requestNotifications(); schedule()
+    }
+
     func enqueueURL(_ url: URL) throws {
         guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ToolError.message("下载链接必须是有效的 HTTPS 地址，不能包含账号密码") }
         guard storageError == nil else { throw ToolError.message(storageError!) }
@@ -242,7 +260,7 @@ final class DownloadManager: NSObject, ObservableObject {
         guard !iconsLoading else { return }
         iconsLoading = true
         defer { iconsLoading = false }
-        for job in jobs where job.status == .completed && job.packageIconScanned != true {
+        for job in jobs where job.status == .completed && job.packageIconScanned != true && job.rawFormat == nil {
             guard let file = fileURL(job), !Task.isCancelled else { continue }
             _ = await Task.detached(priority: .utility) { try? PackageIconService.save(from: file, id: job.id) }.value
             guard let index = jobs.firstIndex(where: { $0.id == job.id }) else {
@@ -289,6 +307,9 @@ final class DownloadManager: NSObject, ObservableObject {
             }
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
+                    if job.rawFormat != nil {
+                        return try MacPackageStorage.finish(staging: LocalResources.stagingURL(id), job: job)
+                    }
                     let result = try PackageService.finish(staging: LocalResources.stagingURL(id), id: id, asset: job.asset)
                     _ = try? PackageIconService.save(from: LocalResources.packages.appendingPathComponent(result.0), id: id)
                     return result
@@ -354,6 +375,38 @@ final class DownloadManager: NSObject, ObservableObject {
     private func finishBackgroundIfReady() {
         guard processingIDs.isEmpty else { return }
         let completion = backgroundCompletion; backgroundCompletion = nil; completion?()
+    }
+}
+
+// Mac downloads are exported as original files. Never feed them to the IPA
+// parser or iOS system installer. Check basic signatures before saving.
+enum MacPackageStorage {
+    static func finish(staging: URL, job: DownloadJob) throws -> (String, StoreApp) {
+        guard let format = job.rawFormat, ["dmg", "pkg", "zip"].contains(format),
+              let length = (try FileManager.default.attributesOfItem(atPath: staging.path)[.size] as? NSNumber)?.int64Value,
+              length >= 8 else { throw ToolError.message("下载的 Mac 文件不完整") }
+        let file = try FileHandle(forReadingFrom: staging)
+        defer { try? file.close() }
+        let prefix = try file.read(upToCount: 4) ?? Data()
+        let valid: Bool
+        switch format {
+        case "pkg": valid = prefix == Data("xar!".utf8)
+        case "zip": valid = prefix.starts(with: [0x50, 0x4B, 0x03, 0x04])
+        default:
+            guard length >= 512 else { throw ToolError.message("DMG 文件不完整") }
+            try file.seek(toOffset: UInt64(length - 512))
+            valid = (try file.read(upToCount: 4) ?? Data()) == Data("koly".utf8)
+        }
+        guard valid else { throw ToolError.message("文件内容不是有效的 \(format.uppercased()) 安装包") }
+        let filename = "\(job.id.uuidString)-\(PackageService.safeName(job.app.name).prefix(40)).\(format)"
+        let destination = LocalResources.packages.appendingPathComponent(filename)
+        guard !FileManager.default.fileExists(atPath: destination.path) else {
+            throw ToolError.message("文件名已存在，停止覆盖原始安装包")
+        }
+        try FileManager.default.moveItem(at: staging, to: destination)
+        var app = job.app
+        app.size = length
+        return (filename, app)
     }
 }
 

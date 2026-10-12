@@ -59,6 +59,9 @@ final class CoreTests: XCTestCase {
     func testPackagedIconChoicesMatchCurrentDevice() throws {
         XCTAssertNil(AppIconService.Choice.dimensional.alternateName)
         XCTAssertEqual(AppIconService.Choice.flat.alternateName, "AppIconFlat")
+        XCTAssertEqual(AppIconService.systemChoice(for: nil), .dimensional)
+        XCTAssertEqual(AppIconService.systemChoice(for: "AppIconFlat"), .flat)
+        XCTAssertEqual(AppIconService.systemChoice(for: "some-other-icon"), .dimensional)
         // Xcode thins simulator builds to the selected device. Both idioms are
         // checked separately in the unthinned device IPA by verify_ipa.py.
         let key = UIDevice.current.userInterfaceIdiom == .pad ? "CFBundleIcons~ipad" : "CFBundleIcons"
@@ -67,10 +70,160 @@ final class CoreTests: XCTestCase {
         let flat = try XCTUnwrap(alternates["AppIconFlat"] as? [String: Any])
         XCTAssertFalse(try XCTUnwrap(flat["CFBundleIconFiles"] as? [String]).isEmpty)
         XCTAssertNotNil(Bundle.main.url(forResource: "AppIconFlat60x60@2x", withExtension: "png"))
+        XCTAssertTrue(AppIconService.bundledAlternateIsAvailable())
         XCTAssertNotNil(UIImage(named: AppIconService.Choice.dimensional.preview))
         XCTAssertNotNil(UIImage(named: AppIconService.Choice.flat.preview))
         XCTAssertTrue(UIApplication.shared.supportsAlternateIcons)
     }
+    func testAppleCredentialError2002RequiresExplicitReauthentication() {
+        XCTAssertTrue(AppleAuthError.requiresReauthentication(["failureType": "2002"]))
+        XCTAssertFalse(AppleAuthError.requiresReauthentication(["failureType": "9610"]))
+        XCTAssertFalse(AppleAuthError.requiresReauthentication(["failureType": "2034"]))
+    }
+
+    func testDownloadPlatformLabelsAndFriendlyAppleErrors() throws {
+        let app = StoreApp(id: "123", name: "Test")
+        let url = URL(string: "https://example.org/download.ipa")!
+        let asset = DownloadAsset(app: app, url: url, sinf: nil, metadata: nil,
+                                  externalVersionIDs: [], platform: "appletvos", account: "test@example.org")
+        XCTAssertEqual(DownloadJob(app: app, asset: asset).platformLabel, "tvOS")
+        var modified = asset
+        modified.platform = "ipad"
+        XCTAssertEqual(DownloadJob(app: app, asset: modified).platformLabel, "iPad")
+        modified.platform = "ios"
+        XCTAssertEqual(DownloadJob(app: app, asset: modified).platformLabel, "iOS")
+        XCTAssertEqual(DownloadJob(app: app, rawFormat: "dmg").platformLabel, "Mac")
+        XCTAssertEqual(DownloadJob(app: app).platformLabel, "IPA")
+        let message = try XCTUnwrap(HTTPClient.appleFailure([
+            "failureType": "2002", "customerMessage": "Your password has changed."
+        ])?.localizedDescription)
+        XCTAssertTrue(message.contains("重新登录"))
+        XCTAssertFalse(message.contains("2002"))
+        XCTAssertFalse(message.contains("Your password"))
+        let searchError = AppErrorMessage.forSearch(ToolError.message("Your password has changed.(2002)"))
+        XCTAssertTrue(searchError.contains("重新登录"))
+        XCTAssertFalse(searchError.contains("2002"))
+    }
+
+    func testPlatformSearchEntitiesAndIPASupport() {
+        XCTAssertEqual(AppPlatform.iOS.searchEntity, "software")
+        XCTAssertEqual(AppPlatform.iPadOS.searchEntity, "iPadSoftware")
+        XCTAssertEqual(AppPlatform.tvOS.searchEntity, "tvSoftware")
+        XCTAssertEqual(AppPlatform.macOS.searchEntity, "desktopSoftware")
+        XCTAssertEqual(AppPlatform.iPadOS.catalogPlatform, AppPlatform.iOS.rawValue)
+        XCTAssertFalse(AppPlatform.macOS.supportsIPA)
+        XCTAssertTrue(AppPlatform.iPadOS.supportsIPA)
+        XCTAssertTrue(AppPlatform.tvOS.supportsIPA)
+    }
+
+    func testActualIPAFamilyMustMatchRequestedPlatform() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        func package(family: Int) throws -> URL {
+            let url = root.appendingPathComponent("\(family).ipa")
+            let archive = try Archive(url: url, accessMode: .create)
+            let contents = [
+                "Payload/Target.app/Info.plist": try HTTPClient.encodePlist([
+                    "CFBundleIdentifier": "test.platform",
+                    "CFBundleDisplayName": "Platform Test",
+                    "CFBundleShortVersionString": "1.0",
+                    "UIDeviceFamily": [family]
+                ]),
+                "Payload/Target.app/SC_Info/Target.supp": Data([0])
+            ]
+            for (path, data) in contents {
+                let target = root.appendingPathComponent(path)
+                try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: target)
+                try archive.addEntry(with: path, relativeTo: root)
+            }
+            return url
+        }
+
+        let tvIPA = try package(family: 3)
+        let phoneIPA = try package(family: 1)
+        XCTAssertEqual(try PackageService.deviceFamilies(tvIPA), Set([3]))
+        XCTAssertEqual(try PackageService.deviceFamilies(phoneIPA), Set([1]))
+        let metadata = try HTTPClient.encodePlist(["itemId": "1"])
+        let app = StoreApp(id: "1", name: "Platform Test", bundleID: "test.platform", version: "1.0")
+        let tvAsset = DownloadAsset(app: app, url: URL(string: "https://example.com/file.ipa")!,
+                                    sinf: Data([1, 2]), metadata: metadata, externalVersionIDs: [],
+                                    platform: "appletvos", account: "example")
+        XCTAssertThrowsError(try PackageService.finish(staging: phoneIPA, id: UUID(), asset: tvAsset))
+        let iPadAsset = DownloadAsset(app: app, url: URL(string: "https://example.com/file.ipa")!,
+                                     sinf: Data([1, 2]), metadata: metadata, externalVersionIDs: [],
+                                     platform: "ipad", account: "example")
+        XCTAssertThrowsError(try PackageService.finish(staging: phoneIPA, id: UUID(), asset: iPadAsset))
+    }
+
+    func testMacDeveloperInstallerLinksAndRawPackagePreservation() throws {
+        let website = URL(string: "https://developer.example.org/products/")!
+        let html = """
+        <a href="/downloads/Sample.dmg?version=2&amp;platform=mac">DMG</a>
+        <a href="https://cdn.example.org/installer.pkg">PKG</a>
+        <a href="http://example.org/insecure.dmg">Unsafe</a>
+        <a href="javascript:alert('x')">Script</a>
+        <a href="/downloads/Sample.dmg?version=2&amp;platform=mac">Duplicate</a>
+        """
+        let links = MacInstallerService.links(in: html, from: website)
+        XCTAssertEqual(links.count, 2)
+        XCTAssertEqual(links.map(\.format), ["dmg", "pkg"])
+        XCTAssertEqual(links.first?.url.absoluteString,
+                       "https://developer.example.org/downloads/Sample.dmg?version=2&platform=mac")
+        XCTAssertNil(MacInstallerService.safeWebsite("http://developer.example.org"))
+        XCTAssertNil(MacInstallerService.safeWebsite("https://127.0.0.1/secret.pkg"))
+        XCTAssertFalse(MacInstallerService.directPackage(URL(string: "https://example.org/a.ipa")!))
+
+        let app = StoreApp(id: "mac-test", name: "Mac Test", version: "1.0")
+        let id = UUID()
+        let staging = LocalResources.stagingURL(id)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        try Data("xar!test-data".utf8).write(to: staging)
+        let job = DownloadJob(id: id, app: app, rawFormat: "pkg")
+        let (filename, result) = try MacPackageStorage.finish(staging: staging, job: job)
+        let finalURL = try XCTUnwrap(LocalResources.packageURL(filename))
+        defer { try? FileManager.default.removeItem(at: finalURL) }
+        XCTAssertTrue(filename.hasSuffix(".pkg"))
+        XCTAssertEqual(result.name, app.name)
+        XCTAssertEqual(result.size, Int64(Data("xar!test-data".utf8).count))
+        XCTAssertEqual(try Data(contentsOf: finalURL), Data("xar!test-data".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
+
+        let invalidID = UUID()
+        let invalid = LocalResources.stagingURL(invalidID)
+        defer { try? FileManager.default.removeItem(at: invalid) }
+        try Data("<html>not a dmg</html>".utf8).write(to: invalid)
+        XCTAssertThrowsError(try MacPackageStorage.finish(
+            staging: invalid,
+            job: DownloadJob(id: invalidID, app: app, rawFormat: "dmg")))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: invalid.path))
+    }
+
+    func testAccountStorefrontRegionsAndCrossRegionSearchMerge() {
+        XCTAssertEqual(StoreService.country(forStorefront: "143441-1,29"), "US")
+        XCTAssertEqual(StoreService.country(forStorefront: "143465"), "CN")
+        XCTAssertEqual(StoreService.country(forStorefront: "143462-1,15"), "JP")
+        XCTAssertNil(StoreService.country(forStorefront: "unknown"))
+        XCTAssertEqual(StoreService.searchCountries(selected: "CN", accountCountry: "US"), ["CN", "US"])
+        XCTAssertEqual(StoreService.searchCountries(selected: "US", accountCountry: "US"), ["US"])
+        XCTAssertEqual(StoreService.artworkCountries(selected: "CN", accountCountry: "US"), ["US", "CN"])
+        XCTAssertEqual(StoreService.artworkCountries(selected: "JP", accountCountry: "CN"), ["CN", "JP", "US"])
+
+        let regional = (1...4).map { StoreApp(id: String($0), name: "Regional \($0)") }
+        let usArtwork = URL(string: "https://example.com/2.png")!
+        let account = [
+            StoreApp(id: "2", name: "Same app in another region", iconURL: usArtwork),
+            StoreApp(id: "100", name: "Only in US"),
+            StoreApp(id: "101", name: "Another US app")
+        ]
+        let results = StoreService.mergeResults(regional, account, limit: 4)
+        XCTAssertEqual(results.map(\.id), ["1", "2", "100", "3"])
+        XCTAssertEqual(results[1].iconURL, usArtwork)
+        XCTAssertEqual(Set(results.map(\.id)).count, results.count)
+    }
+
     func testPartialSettingsPreserveUserChoicesAndBoundInvalidLimits() throws {
         let legacy = Data(#"{"plistServer":"https://example.com/manifest","notifications":false,"maxConcurrentDownloads":99,"maxQueuedDownloads":-1}"#.utf8)
         let settings = try JSONDecoder().decode(ToolSettings.self, from: legacy)

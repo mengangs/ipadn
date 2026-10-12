@@ -75,11 +75,19 @@ final class HTTPClient: Sendable {
     static func appleFailure(_ response: [String: Any]) -> ToolError? {
         let code = plistString(response["failureType"])
         guard !code.isEmpty else { return nil }
-        let messages = ["5002": "Apple 服务发生未知错误", "2040": "已购买的应用已下架",
-                        "2059": "应用未购买、已下架或不在账号地区上架", "1010": "应用未在账号地区上架",
-                        "2034": "登录会话已过期", "2042": "登录会话为空或已过期",
-                        "2019": "不支持直接购买付费应用", "9610": "没有应用许可或 App ID 错误"]
-        let detail = plistString(response["customerMessage"])
-        return .message("\(detail.isEmpty ? messages[code] ?? "Apple 接口错误" : detail)（\(code)）")
+        let messages = [
+            "2002": "Apple 账号需要重新登录，请检查当前密码。",
+            "5002": "Apple 服务暂时不可用，请稍后再试。",
+            "2040": "该应用目前无法从 Apple 下载。",
+            "2059": "账号没有此应用的下载许可，或该应用不在账号所在地区上架。",
+            "1010": "该应用尚未在这个账号所属地区上架。",
+            "2034": "Apple 登录已过期，请重新登录。",
+            "2042": "Apple 登录已过期，请重新登录。",
+            "2019": "付费应用请先通过 App Store 正常购买。",
+            "9610": "当前账号没有此应用的下载许可。请先在 App Store 获取应用。"
+        ]
+        // Raw customerMessage often contains internal localization keys,
+        // response codes, or English diagnostic text; never show it in the UI.
+        return .message(messages[code] ?? "Apple 暂时无法完成该操作，请稍后重试。")
     }
 }

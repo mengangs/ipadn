@@ -5,10 +5,49 @@ enum ToolError: LocalizedError {
     var errorDescription: String? { if case .message(let text) = self { return text }; return nil }
 }
 
+enum AppErrorMessage {
+    static func forSearch(_ error: Error) -> String {
+        if error is CancellationError { return "" }
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain {
+            return "网络连接暂时不可用，请检查网络后重试。"
+        }
+        if error is AppleAuthError || error is AppleLoginError {
+            return "Apple 账号需要重新登录，请到「账号」页面验证后再试。"
+        }
+        let message = error.localizedDescription
+        if message.contains("2002") || message.contains("Your password has changed") {
+            return "Apple 账号需要重新登录，请到「账号」页面更新密码。"
+        }
+        if message.contains("HTTP") || message.contains("JSON") || message.contains("itunes.apple.com") {
+            return "商店暂时无法返回结果，请稍后重试或更换地区。"
+        }
+        return "暂时无法完成搜索，请检查网络、商店地区或应用 ID 后重试。"
+    }
+}
+ 
 enum AppPlatform: String, Codable, CaseIterable, Identifiable {
-    case iOS = "itunes", tvOS = "atv9"
+    case iOS = "itunes", iPadOS = "ipad", tvOS = "atv9", macOS = "mac"
     var id: String { rawValue }
-    var title: String { self == .iOS ? "iOS" : "tvOS" }
+    var title: String {
+        switch self {
+        case .iOS: return "iOS"
+        case .iPadOS: return "iPad"
+        case .tvOS: return "tvOS"
+        case .macOS: return "Mac"
+        }
+    }
+    var supportsIPA: Bool { self != .macOS }
+    var usesIOSStore: Bool { self == .iOS || self == .iPadOS }
+    var searchEntity: String {
+        switch self {
+        case .iOS: return "software"
+        case .iPadOS: return "iPadSoftware"
+        case .tvOS: return "tvSoftware"
+        case .macOS: return "desktopSoftware"
+        }
+    }
+    var catalogPlatform: String { self == .iPadOS ? AppPlatform.iOS.rawValue : rawValue }
 }
 
 struct StoreContext: Codable, Equatable {
@@ -29,6 +68,10 @@ struct StoreApp: Codable, Identifiable, Hashable {
     var rating: Double = 0
     var minimumOS = ""
     var externalVersionID: String?
+    var developerURL: URL?
+    // tvSoftware search is unavailable for some storefronts; candidate
+    // listings are not proof of compatibility with Apple TV.
+    var tvOSCandidate: Bool?
 }
 
 struct AppVersion: Codable, Identifiable, Hashable {
@@ -94,11 +137,22 @@ struct DownloadJob: Codable, Identifiable {
     var downloaded: Int64 = 0
     var expected: Int64 = 0
     var packageIconScanned: Bool?
+    // Non-IPA downloads are saved as raw Mac files, never processed as an IPA.
+    var rawFormat: String?
     var localFilename: String?
     var error: String?
     var createdAt = Date()
     var progress: Double { expected > 0 ? min(1, max(0, Double(downloaded) / Double(expected))) : 0 }
     var account: String? { asset?.account }
+    var platformLabel: String {
+        if rawFormat != nil { return "Mac" }
+        switch asset?.platform.lowercased() {
+        case "appletvos", "tvos", "atv9": return "tvOS"
+        case "ipad": return "iPad"
+        case "ios", "iphoneos": return "iOS"
+        default: return "IPA"
+        }
+    }
 }
 
 struct ToolSettings: Codable, Equatable {

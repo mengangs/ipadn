@@ -39,6 +39,10 @@ struct SettingsView: View {
                             Text(choice.title).foregroundStyle(.primary)
                             Spacer()
                             if icons.changing && choice != icons.selected { ProgressView() }
+                            else if icons.awaitingSystem == choice {
+                                Image(systemName: "clock").foregroundStyle(.secondary)
+                                    .accessibilityLabel("等待系统同步")
+                            }
                             else if icons.selected == choice { Image(systemName: "checkmark").foregroundStyle(.primary) }
                         }.frame(minHeight: 54).contentShape(Rectangle())
                     }.buttonStyle(.plain).disabled(icons.changing || !icons.supported)
@@ -48,7 +52,12 @@ struct SettingsView: View {
                         .accessibilityValue(icons.selected == choice ? "已选中" : "未选中")
                 }
             } header: { Text("应用图标") } footer: {
-                Text(icons.supported ? "默认使用立体图标，也可切换为原先的扁平风格。系统会提示图标已更改。" : "当前设备或安装方式不支持切换图标。")
+                if let status = icons.statusHint {
+                    Text(status)
+                        .accessibilityIdentifier("settings.icon.status")
+                } else if !icons.supported {
+                    Text("当前设备或安装方式不支持切换图标。")
+                }
             }
             ForEach($store.settings.versionSources) { $source in
                 Section {

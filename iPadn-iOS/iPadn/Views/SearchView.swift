@@ -34,12 +34,18 @@ struct SearchView: View {
                         }
                     }
                 } header: { Text("已购与目录 · \(store.localResults.count)") }
-                footer: { Text("包含已购、本机记录与 iPadn 名称目录。目录覆盖有限，下载以 Apple 授权结果为准。") }
             }
             if !store.results.isEmpty {
                 Section {
                     ForEach(store.results) { app in
-                        NavigationLink { AppDetailView(app: app) } label: { AppRow(app: app) }
+                        NavigationLink { AppDetailView(app: app) } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                AppRow(app: app)
+                                if app.tvOSCandidate == true {
+                                    Text("tvOS 待确认").font(.caption2).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
                             .contextMenu { Button(store.isFavorite(app) ? "取消收藏" : "收藏应用", systemImage: store.isFavorite(app) ? "star.slash" : "star") { store.toggleFavorite(app); UX.feedback() } }
                     }
                 } header: { Text("\(store.lastSearchTerm) · \(store.results.count) 个结果") }
@@ -100,6 +106,7 @@ struct SearchView: View {
         .task { await store.loadNameCatalog() }
         .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
         .onChange(of: store.settings.store) { _, _ in if store.hasSearched { store.search() } }
+        .onChange(of: apple.activeID) { _, _ in if store.hasSearched { store.search() } }
     }
     private var regionPicker: some View {
         Menu {
@@ -109,8 +116,14 @@ struct SearchView: View {
         } label: { Label(regions.first { $0.0 == store.settings.store.country }?.1 ?? store.settings.store.country, systemImage: "globe.asia.australia").font(.subheadline).frame(minHeight: 44) }
     }
     private var platformPicker: some View {
-        Picker("平台", selection: $store.settings.store.platform) {
-            ForEach(AppPlatform.allCases) { platform in Text(platform.title).tag(platform) }
-        }.pickerStyle(.segmented).frame(maxWidth: 180).accessibilityLabel("应用平台")
+        Menu {
+            Picker("应用平台", selection: $store.settings.store.platform) {
+                ForEach(AppPlatform.allCases) { platform in Text(platform.title).tag(platform) }
+            }
+        } label: {
+            Label(store.settings.store.platform.title, systemImage: "square.on.square")
+                .font(.subheadline).frame(minHeight: 44)
+        }
+        .accessibilityLabel("应用平台：\(store.settings.store.platform.title)")
     }
 }

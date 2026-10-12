@@ -14,8 +14,19 @@ struct AppDetailView: View {
     @State private var versionError: String?
     @State private var official = false
     @State private var showLogin = false
+    @State private var reauthenticationID: String?
+    @State private var retryAfterLoginVersion: String?
+    @State private var showVerification = false
+    @State private var pendingDownloadVersion: String?
+    @State private var retryVersionsAfterVerification = false
+    @State private var verifiedForRetry = false
     @State private var showDescription = false
     @State private var reloadID = 0
+    @State private var macWebsite: URL?
+    @State private var macInstallers: [MacInstallerService.Installer] = []
+    @State private var macLoading = false
+    @State private var enteringMacDownloadURL = false
+    @State private var macDownloadURL = ""
     private var storeURL: URL { URL(string: "https://apps.apple.com/\(store.settings.store.country.lowercased())/app/id\(app.id)")! }
     private var filtered: [AppVersion] {
         versionSearch.isEmpty ? versions : versions.filter { $0.version.localizedCaseInsensitiveContains(versionSearch) || $0.id.contains(versionSearch) }
@@ -32,11 +43,27 @@ struct AppDetailView: View {
                     HStack(alignment: .top, spacing: 18) { AppIcon(url: app.iconURL, size: 64); appHeading }
                     VStack(alignment: .leading, spacing: 16) { AppIcon(url: app.iconURL, size: 64); appHeading }
                 }.padding(.vertical, 6)
+                Button { copy(app.id) } label: {
+                    HStack(spacing: 8) {
+                        Text("App ID")
+                        Text(app.id).monospacedDigit()
+                        Image(systemName: "doc.on.doc").font(.caption)
+                        Spacer(minLength: 0)
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+                    .frame(minHeight: 38)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("App ID \(app.id)，点按复制")
+                .accessibilityIdentifier("app.copy-id")
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 14) { appMetadata }
                     VStack(alignment: .leading, spacing: 6) { appMetadata }
                 }.font(.footnote).foregroundStyle(.secondary)
             }.listRowSeparator(.hidden)
+            if store.settings.store.platform.supportsIPA {
             Section {
                 Toggle("从 Apple 获取版本", isOn: $official).font(.subheadline)
                     .disabled(apple.active == nil || store.settings.store.platform == .tvOS)
@@ -73,11 +100,35 @@ struct AppDetailView: View {
             } header: {
                 HStack { Text("历史版本 · \(versions.count)"); Spacer(); Button("刷新") { reloadID += 1 }.disabled(versionsLoading).textCase(nil) }
             } footer: { Text("版本可用性取决于商店地区及账号许可。") }
+            } else {
+                Section("Mac 安装包") {
+                    if macLoading { ProgressView("查找开发者安装包…") }
+                    ForEach(macInstallers) { installer in
+                        Button {
+                            enqueueMacInstaller(installer)
+                        } label: {
+                            HStack {
+                                Label(installer.format.uppercased() + " · " + installer.title, systemImage: "arrow.down.to.line")
+                                    .lineLimit(2)
+                                Spacer()
+                            }.frame(minHeight: 44)
+                        }
+                        .accessibilityIdentifier("mac.download." + installer.format)
+                    }
+                    Button("通过链接下载 DMG / PKG / ZIP", systemImage: "link") {
+                        enteringMacDownloadURL = true
+                    }
+                    .accessibilityIdentifier("mac.manual-download")
+                    if let website = macWebsite {
+                        Link("开发者网站", destination: website)
+                    }
+                }
+            }
             Section("应用信息") {
-                LabeledContent("App ID", value: app.id).textSelection(.enabled)
                 if !app.bundleID.isEmpty { Text(app.bundleID).font(.footnote.monospaced()).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
-                Button("复制 App ID", systemImage: "doc.on.doc") { copy(app.id) }
-                Link(destination: storeURL) { Label("在 App Store 查看", systemImage: "arrow.up.right.square") }
+                if store.settings.store.platform != .macOS {
+                    Link(destination: storeURL) { Label("在 App Store 查看", systemImage: "arrow.up.right.square") }
+                }
             }
             if !app.description.isEmpty {
                 Section("应用介绍") {
@@ -89,6 +140,7 @@ struct AppDetailView: View {
         .toolPage().navigationTitle("应用详情").navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 8) {
+                if store.settings.store.platform.supportsIPA {
                 Button { download(versionID: app.externalVersionID) } label: {
                     HStack(spacing: 10) {
                         if downloadLoading { ProgressView().tint(UX.onAccent) }
@@ -98,6 +150,23 @@ struct AppDetailView: View {
                 if downloadLoading { Button("取消准备下载") { downloadTask?.cancel() }.frame(minHeight: 44) }
                 Text(apple.active.map { "使用账号 \($0.id)" } ?? "登录后获取你拥有许可的应用")
                     .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                } else {
+                    if let installer = macInstallers.first {
+                        Button {
+                            enqueueMacInstaller(installer)
+                        } label: {
+                            Label("下载 Mac " + installer.format.uppercased(), systemImage: "arrow.down.circle.fill")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(MonochromeButtonStyle())
+                    } else {
+                        Button { enteringMacDownloadURL = true } label: {
+                            Label("通过链接下载 Mac 安装包", systemImage: "link")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(MonochromeButtonStyle())
+                    }
+                }
             }.padding(.horizontal, 20).padding(.vertical, 12).frame(maxWidth: 680).frame(maxWidth: .infinity).background(.regularMaterial)
         }
         .toolbar {
@@ -105,9 +174,63 @@ struct AppDetailView: View {
                 .accessibilityLabel(store.isFavorite(app) ? "取消收藏" : "收藏应用")
             ShareLink(item: storeURL) { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("分享商店链接")
         }
-        .navigationDestination(isPresented: $showLogin) { LoginView() }
+        .alert("下载 Mac 安装包", isPresented: $enteringMacDownloadURL) {
+            TextField("https://example.com/App.dmg", text: $macDownloadURL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("加入下载") {
+                let value = macDownloadURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let url = URL(string: value), MacInstallerService.directPackage(url) else {
+                    store.errorMessage = "请输入有效的 HTTPS 下载链接，文件需要是 DMG、PKG 或 ZIP。"
+                    return
+                }
+                enqueueMacInstaller(MacInstallerService.Installer(url: url))
+                macDownloadURL = ""
+            }
+            Button("取消", role: .cancel) { }
+        } message: {
+            Text("粘贴开发者提供的安装包直链。下载后可通过下载页导出到 Mac。")
+        }
+        .navigationDestination(isPresented: $showLogin) {
+            LoginView(initialAccountID: reauthenticationID, onSignedIn: {
+                reauthenticationID = nil
+                guard let pending = retryAfterLoginVersion else { return }
+                retryAfterLoginVersion = nil
+                Task { @MainActor in
+                    await Task.yield()
+                    download(versionID: pending.isEmpty ? nil : pending)
+                }
+            })
+        }
+        .sheet(isPresented: $showVerification, onDismiss: {
+            guard verifiedForRetry else {
+                pendingDownloadVersion = nil
+                retryVersionsAfterVerification = false
+                return
+            }
+            verifiedForRetry = false
+            if retryVersionsAfterVerification {
+                retryVersionsAfterVerification = false
+                reloadID += 1
+            } else {
+                let pending = pendingDownloadVersion
+                pendingDownloadVersion = nil
+                if let pending { download(versionID: pending.isEmpty ? nil : pending) }
+            }
+        }) {
+            if let accountID = apple.activeID {
+                ExistingAccountVerificationView(accountID: accountID, onVerified: {
+                    verifiedForRetry = true
+                })
+                .environmentObject(store)
+                .environmentObject(apple)
+            }
+        }
         .onDisappear { downloadTask?.cancel() }
         .task(id: "\(official)-\(reloadID)-\(store.settings.store.country)-\(store.settings.store.platform.rawValue)-\(apple.activeID ?? "")") { await fetchVersions(force: reloadID > 0) }
+        .task(id: "\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
+            await loadMacInstallers()
+        }
     }
     private var appHeading: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -124,16 +247,70 @@ struct AppDetailView: View {
             let result = try await store.loadVersions(for: app, force: force, official: official)
             try Task.checkCancellation(); versions = result
         } catch is CancellationError { }
-        catch { if !Task.isCancelled { versionError = error.localizedDescription } }
+        catch AppleAuthError.reauthenticationRequired {
+            if !Task.isCancelled {
+                reauthenticationID = apple.activeID
+                retryVersionsAfterVerification = false
+                showLogin = true
+            }
+        }
+        catch AppleLoginError.verificationRequired {
+            if !Task.isCancelled {
+                retryVersionsAfterVerification = true
+                showVerification = true
+            }
+        }
+        catch { if !Task.isCancelled { versionError = AppErrorMessage.forSearch(error) } }
     }
+    private func enqueueMacInstaller(_ installer: MacInstallerService.Installer) {
+        do {
+            try store.downloads.enqueueMacInstaller(installer.url, for: app)
+            store.tab = 1
+        } catch { store.errorMessage = error.localizedDescription }
+    }
+
+    private func loadMacInstallers() async {
+        guard store.settings.store.platform == .macOS else { return }
+        macLoading = true
+        macInstallers = []
+        defer { macLoading = false }
+        var website = app.developerURL
+        if website == nil, app.id.allSatisfy({ $0.isNumber }) {
+            let query = SearchQuery.appID(app.id, versionID: nil)
+            if let matches = try? await StoreService.search(query, store: store.settings.store, limit: 1) {
+                website = matches.first(where: { $0.id == app.id })?.developerURL
+            }
+        }
+        guard !Task.isCancelled else { return }
+        macWebsite = website
+        if let website, let installers = try? await MacInstallerService.find(on: website),
+           !Task.isCancelled {
+            macInstallers = installers
+        }
+    }
+
     private func download(versionID: String?) {
         guard !downloadLoading else { return }
+        guard store.settings.store.platform.supportsIPA else {
+            store.errorMessage = "原生 Mac 应用需要在 Mac App Store 下载，不能导出为 IPA"
+            return
+        }
         guard apple.active != nil else { showLogin = true; return }
         if let versionID, !versionID.isEmpty, !versionID.allSatisfy({ $0.isASCII && $0.isNumber }) { store.errorMessage = "版本 ID 必须是数字"; return }
         downloadLoading = true
         downloadTask = Task {
             defer { downloadLoading = false; downloadTask = nil }
             do { try await store.startDownload(app: app, versionID: versionID?.isEmpty == true ? nil : versionID) }
+            catch AppleLoginError.verificationRequired {
+                pendingDownloadVersion = versionID ?? ""
+                retryVersionsAfterVerification = false
+                showVerification = true
+            }
+            catch AppleAuthError.reauthenticationRequired {
+                reauthenticationID = apple.activeID
+                retryAfterLoginVersion = versionID ?? ""
+                showLogin = true
+            }
             catch is CancellationError { }
             catch { store.errorMessage = error.localizedDescription }
         }

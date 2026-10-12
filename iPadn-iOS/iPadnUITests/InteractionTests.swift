@@ -1,6 +1,26 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testDownloadEditModeAllowsSelectingAndDeletingTasks() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--visual-preview", "--downloads"]
+        app.launch()
+        let edit = app.buttons["downloads.edit"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 10))
+        edit.tap()
+
+        let deleteSelected = app.buttons["downloads.delete-selected"]
+        XCTAssertTrue(deleteSelected.waitForExistence(timeout: 5))
+        XCTAssertFalse(deleteSelected.isEnabled)
+        let task = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "download.select.")).firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: 5))
+        task.tap()
+        XCTAssertTrue(deleteSelected.isEnabled)
+        XCTAssertTrue(app.staticTexts["已选 1 项"].exists)
+        edit.tap()
+        XCTAssertFalse(deleteSelected.exists)
+    }
+
     func testCompletedActionsHaveEqualSizeAndOpenInstallationSettings() {
         let app = XCUIApplication()
         app.launchArguments = ["--visual-preview", "--downloads"]
