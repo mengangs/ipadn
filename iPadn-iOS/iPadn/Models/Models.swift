@@ -123,6 +123,15 @@ struct DownloadJob: Codable, Identifiable {
     var createdAt = Date()
     var progress: Double { expected > 0 ? min(1, max(0, Double(downloaded) / Double(expected))) : 0 }
     var account: String? { asset?.account }
+    var platformLabel: String {
+        if rawFormat != nil { return "Mac" }
+        switch asset?.platform.lowercased() {
+        case "appletvos", "tvos", "atv9": return "tvOS"
+        case "ipad": return "iPad"
+        case "ios", "iphoneos": return "iOS"
+        default: return "IPA"
+        }
+    }
 }
 
 struct ToolSettings: Codable, Equatable {
