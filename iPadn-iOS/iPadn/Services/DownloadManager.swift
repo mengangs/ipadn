@@ -398,7 +398,7 @@ enum MacPackageStorage {
             valid = (try file.read(upToCount: 4) ?? Data()) == Data("koly".utf8)
         }
         guard valid else { throw ToolError.message("文件内容不是有效的 \(format.uppercased()) 安装包") }
-        let filename = "\(job.id.uuidString)-\(PackageService.safeName(job.app.name)).\(format)"
+        let filename = "\(job.id.uuidString)-\(PackageService.safeName(job.app.name).prefix(40)).\(format)"
         let destination = LocalResources.packages.appendingPathComponent(filename)
         guard !FileManager.default.fileExists(atPath: destination.path) else {
             throw ToolError.message("文件名已存在，停止覆盖原始安装包")
