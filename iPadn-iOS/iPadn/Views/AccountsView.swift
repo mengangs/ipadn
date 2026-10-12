@@ -53,6 +53,13 @@ struct AccountsView: View {
 }
 
 struct LoginView: View {
+    let initialAccountID: String?
+    let onSignedIn: (() -> Void)?
+    init(initialAccountID: String? = nil, onSignedIn: (() -> Void)? = nil) {
+        self.initialAccountID = initialAccountID
+        self.onSignedIn = onSignedIn
+        _email = State(initialValue: initialAccountID ?? "")
+    }
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var apple: AppleService
     @Environment(\.dismiss) private var dismiss
@@ -75,7 +82,9 @@ struct LoginView: View {
                     .focused($focus, equals: .password).disabled(busy || verifying).submitLabel(.go)
                     .onSubmit { if !email.isEmpty && !password.isEmpty { submit() } }
             } header: { Text("Apple 账号") } footer: {
-                Text(verifying ? "请在受信任设备上允许登录，再输入验证码。" : "登录用于同步已购记录与下载授权。")
+                Text(verifying ? "请在受信任设备上允许登录，再输入验证码。" :
+                     initialAccountID == nil ? "登录用于同步已购记录与下载授权。" :
+                     "当前登录凭据已失效，请输入现在使用的密码重新登录。")
             }
             if verifying {
                 Section {
@@ -117,7 +126,7 @@ struct LoginView: View {
             defer { busy = false; loginTask = nil }
             do {
                 try await apple.login(email: email, password: password, code: verifying ? code : "", useCache: store.settings.useSignerCache)
-                password = ""; code = ""; dismiss()
+                password = ""; code = ""; onSignedIn?(); dismiss()
             } catch AppleLoginError.verificationRequired {
                 verifying = true; code = ""; focus = .code
             } catch is CancellationError {
