@@ -38,7 +38,14 @@ struct SearchView: View {
             if !store.results.isEmpty {
                 Section {
                     ForEach(store.results) { app in
-                        NavigationLink { AppDetailView(app: app) } label: { AppRow(app: app) }
+                        NavigationLink { AppDetailView(app: app) } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                AppRow(app: app)
+                                if app.tvOSCandidate == true {
+                                    Text("tvOS 待确认").font(.caption2).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
                             .contextMenu { Button(store.isFavorite(app) ? "取消收藏" : "收藏应用", systemImage: store.isFavorite(app) ? "star.slash" : "star") { store.toggleFavorite(app); UX.feedback() } }
                     }
                 } header: { Text("\(store.lastSearchTerm) · \(store.results.count) 个结果") }
