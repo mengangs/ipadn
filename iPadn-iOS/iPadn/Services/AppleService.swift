@@ -146,7 +146,7 @@ final class AppleService: ObservableObject {
         let (raw, _) = try await HTTPClient.shared.plist(URL(string: root + "?guid=" + guid)!,
             body: HTTPClient.encodePlist(payload), headers: authHeaders(account))
         let failure = plistString(raw["failureType"])
-        if failure == "2002" { throw AppleAuthError.reauthenticationRequired }
+        if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
         if ["2034", "2042"].contains(failure), !refreshed {
             let refreshedAccount = try await refresh(account, useCache: useCache)
             return try await fetchAsset(appID: appID, versionID: versionID, account: refreshedAccount,
@@ -206,7 +206,7 @@ final class AppleService: ObservableObject {
             body: HTTPClient.encodePlist(payload), headers: headers)
         // A license acquisition can independently require a new trusted-device
         // approval, even when the previous download token was accepted.
-        if plistString(raw["failureType"]) == "2002" { throw AppleAuthError.reauthenticationRequired }
+        if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
         if ["2034", "2042"].contains(plistString(raw["failureType"])) ||
            plistString(raw["customerMessage"]) == "MZFinance.BadLogin.Configurator_message" {
             throw AppleLoginError.verificationRequired
@@ -267,6 +267,9 @@ final class AppleService: ObservableObject {
 
 enum AppleAuthError: LocalizedError {
     case reauthenticationRequired
+    static func requiresReauthentication(_ response: [String: Any]) -> Bool {
+        plistString(response["failureType"]) == "2002"
+    }
     var errorDescription: String? {
         "Apple 不再接受当前保存的登录凭据（2002）。请使用现在的密码重新登录；如果 Apple 需要验证，再输入六位验证码。"
     }
