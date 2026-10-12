@@ -30,7 +30,7 @@ final class InstallationService: ObservableObject {
         guard let certificate = try InstallationCertificate.load() else {
             throw ToolError.message("请先在安装设置中导入自己的 SSL 服务器证书")
         }
-        try certificate.validate(host: host)
+        try await certificate.validateAsync(host: host)
         let server = LoopbackServer(identity: certificate.identity, publicHost: host)
         try await server.start()
         let packageURL = try server.register(file)

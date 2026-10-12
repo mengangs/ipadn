@@ -7,9 +7,10 @@ final class InteractionTests: XCTestCase {
         app.launch()
         app.buttons["download.filter.menu"].tap()
         app.buttons["download.filter.已完成"].tap()
-        let install = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'download.install.'")).firstMatch
-        let export = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'download.export.'")).firstMatch
-        XCTAssertTrue(install.waitForExistence(timeout: 10))
+        let install = app.buttons["安装"].firstMatch
+        let export = app.buttons["导出"].firstMatch
+        if !install.waitForExistence(timeout: 10) { print(app.debugDescription) }
+        XCTAssertTrue(install.exists)
         XCTAssertTrue(export.exists)
         XCTAssertEqual(install.frame.width, export.frame.width, accuracy: 2)
         XCTAssertEqual(install.frame.height, export.frame.height, accuracy: 2)
@@ -20,6 +21,11 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 5)); settings.tap()
         XCTAssertTrue(app.buttons["installation.certificate"].waitForExistence(timeout: 5))
         attach("18-installation-settings", app: app)
+        let create = app.buttons["installation.create-certificate"]
+        if !create.isHittable { app.swipeUp() }
+        XCTAssertTrue(create.waitForExistence(timeout: 5)); create.tap()
+        XCTAssertTrue(app.buttons["installation.local-profile"].waitForExistence(timeout: 20))
+        attach("20-local-certificate-created", app: app)
     }
     func testSystemActuallyChangesAlternateIconAndRestoresDefault() {
         let app = XCUIApplication()
@@ -38,15 +44,15 @@ final class InteractionTests: XCTestCase {
         }
         if flat.isSelected {
             dimensional.tap(); acknowledgeSystemAlert()
-            let initial = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: dimensional)
+            let initial = expectation(for: NSPredicate(format: "value == %@ AND isEnabled == true", "已选中"), evaluatedWith: dimensional)
             wait(for: [initial], timeout: 12)
         }
         flat.tap(); acknowledgeSystemAlert()
-        let switched = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: flat)
+        let switched = expectation(for: NSPredicate(format: "value == %@ AND isEnabled == true", "已选中"), evaluatedWith: flat)
         wait(for: [switched], timeout: 12)
         attach("19-system-icon-switch", app: app)
         dimensional.tap(); acknowledgeSystemAlert()
-        let restored = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: dimensional)
+        let restored = expectation(for: NSPredicate(format: "value == %@ AND isEnabled == true", "已选中"), evaluatedWith: dimensional)
         wait(for: [restored], timeout: 12)
     }
 

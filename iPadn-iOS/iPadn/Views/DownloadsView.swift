@@ -46,6 +46,7 @@ struct DownloadsView: View {
                         DownloadTaskRow(job: job, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
                             if let file = manager.fileURL(job) { share = SharedFile(url: file) }
                         })
+                        .accessibilityElement(children: .contain)
                         .tag(job.id).accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             if job.status != .processing && job.status != .pausing {

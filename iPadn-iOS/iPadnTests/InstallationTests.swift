@@ -67,7 +67,8 @@ final class InstallationTests: XCTestCase {
         let fileURL = try server.register(file)
         let manifest = try ManifestBuilder.manifest(app: StoreApp(id: "1", name: "Local", bundleID: "test.local", version: "1.0"), packageURL: fileURL)
         let manifestURL = try server.register(data: manifest, contentType: "application/xml")
-        let delegate = TestCertificateDelegate(certificates: identity.certificates)
+        let root = try XCTUnwrap(SecCertificateCreateWithData(nil, material.rootCertificate as CFData))
+        let delegate = TestCertificateDelegate(certificates: [root])
         let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         let (received, response) = try await session.data(from: manifestURL)
@@ -103,6 +104,6 @@ private final class TestCertificateDelegate: NSObject, URLSessionDelegate, @unch
         SecTrustSetAnchorCertificatesOnly(trust, true)
         var error: CFError?
         if SecTrustEvaluateWithError(trust, &error) { completionHandler(.useCredential, URLCredential(trust: trust)) }
-        else { completionHandler(.cancelAuthenticationChallenge, nil) }
+        else { print("Test TLS trust failed:", error?.localizedDescription ?? "unknown"); completionHandler(.cancelAuthenticationChallenge, nil) }
     }
 }

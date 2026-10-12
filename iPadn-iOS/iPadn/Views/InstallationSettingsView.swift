@@ -141,7 +141,7 @@ struct InstallationSettingsView: View {
             do {
                 let host = try ManifestBuilder.localHost(store.settings.localInstallHost)
                 guard let certificate = try InstallationCertificate.load() else { throw ToolError.message("请先导入 SSL 服务器证书") }
-                try certificate.validate(host: host)
+                try await certificate.validateAsync(host: host)
                 notice = "证书有效且受系统信任。域名解析和系统安装仍需实际安装验证。"
             } catch { issue = error.localizedDescription }
         }

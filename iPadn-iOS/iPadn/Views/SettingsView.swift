@@ -44,6 +44,8 @@ struct SettingsView: View {
                     }.buttonStyle(.plain).disabled(icons.changing || !icons.supported)
                         .accessibilityIdentifier("settings.icon." + choice.rawValue)
                         .accessibilityAddTraits(icons.selected == choice ? .isSelected : [])
+                        .accessibilityRemoveTraits(icons.selected == choice ? [] : .isSelected)
+                        .accessibilityValue(icons.selected == choice ? "已选中" : "未选中")
                 }
             } header: { Text("应用图标") } footer: {
                 Text(icons.supported ? "默认使用立体图标，也可切换为原先的扁平风格。系统会提示图标已更改。" : "当前设备或安装方式不支持切换图标。")

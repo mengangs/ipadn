@@ -4,10 +4,14 @@ import Security
 /// Installation TLS material is separate from Apple accounts and never stored in preferences.
 enum InstallationCertificate {
     private struct Stored: Codable { let data: Data; let password: String; var localRoot: Data?; var localIdentifier: UUID? }
-    struct Identity {
+    // Security identities/certificates are immutable here; each validation creates its own trust object.
+    struct Identity: @unchecked Sendable {
         let identity: SecIdentity
         let certificates: [SecCertificate]
         let name: String
+        func validateAsync(host: String) async throws {
+            try await Task.detached(priority: .userInitiated) { try self.validate(host: host) }.value
+        }
         func validate(host: String) throws {
             var trust: SecTrust?
             let policy = SecPolicyCreateSSL(true, host as CFString)

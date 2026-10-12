@@ -40,9 +40,16 @@ final class AppIconService: ObservableObject {
         defer { changing = false }
         if simulatesChanges { selected = choice; return }
         let id = UUID()
+        // Some iOS versions update alternateIconName without invoking the completion.
+        // Observe the actual system state so successful changes never leave a spinner.
         let timeout = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 10_000_000_000)
-            guard !Task.isCancelled else { return }
+            for _ in 0..<100 {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                guard !Task.isCancelled else { return }
+                if UIApplication.shared.alternateIconName == choice.alternateName {
+                    self?.finish(id, choice: choice, error: nil); return
+                }
+            }
             self?.finish(id, choice: choice, error: ToolError.message("系统未完成图标切换，请稍后重试。重新签名时请保留备用图标文件和 Info.plist 图标配置。"))
         }
         defer { timeout.cancel() }
@@ -51,6 +58,7 @@ final class AppIconService: ObservableObject {
                 if Task.isCancelled { continuation.resume(throwing: CancellationError()); return }
                 requestID = id; pending = continuation
                 UIApplication.shared.setAlternateIconName(choice.alternateName) { [weak self] error in
+                    guard let error else { return }
                     Task { @MainActor in self?.finish(id, choice: choice, error: error) }
                 }
             }
