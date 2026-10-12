@@ -20,6 +20,9 @@ struct AppDetailView: View {
     @State private var verifiedForRetry = false
     @State private var showDescription = false
     @State private var reloadID = 0
+    @State private var macWebsite: URL?
+    @State private var macInstallers: [MacInstallerService.Installer] = []
+    @State private var macLoading = false
     private var storeURL: URL { URL(string: "https://apps.apple.com/\(store.settings.store.country.lowercased())/app/id\(app.id)")! }
     private var filtered: [AppVersion] {
         versionSearch.isEmpty ? versions : versions.filter { $0.version.localizedCaseInsensitiveContains(versionSearch) || $0.id.contains(versionSearch) }
@@ -77,12 +80,25 @@ struct AppDetailView: View {
                 }
             } header: {
                 HStack { Text("历史版本 · \(versions.count)"); Spacer(); Button("刷新") { reloadID += 1 }.disabled(versionsLoading).textCase(nil) }
-            } footer: { Text("版本可用性取决于商店地区及账号许可。tvOS 安装包在下载后核验设备类型。") }
+            } footer: { Text("版本可用性取决于商店地区及账号许可。") }
             } else {
-                Section("Mac App Store") {
-                    Text("这是原生 macOS 应用。iPadn 可以查找应用信息，但不能将 Mac 安装包作为 IPA 下载或安装。")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                    Link("在 Mac App Store 查看", destination: storeURL)
+                Section("Mac 安装包") {
+                    if macLoading { ProgressView("查找开发者安装包…") }
+                    ForEach(macInstallers) { installer in
+                        Button {
+                            enqueueMacInstaller(installer)
+                        } label: {
+                            HStack {
+                                Label(installer.format.uppercased() + " · " + installer.title, systemImage: "arrow.down.to.line")
+                                    .lineLimit(2)
+                                Spacer()
+                            }.frame(minHeight: 44)
+                        }
+                        .accessibilityIdentifier("mac.download." + installer.format)
+                    }
+                    if let website = macWebsite {
+                        Link("开发者网站", destination: website)
+                    }
                 }
             }
             Section("应用信息") {
@@ -112,11 +128,21 @@ struct AppDetailView: View {
                 Text(apple.active.map { "使用账号 \($0.id)" } ?? "登录后获取你拥有许可的应用")
                     .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 } else {
-                    Link(destination: storeURL) {
-                        Label("在 Mac App Store 查看", systemImage: "arrow.up.right.square")
-                            .frame(maxWidth: .infinity, minHeight: 44)
+                    if let installer = macInstallers.first {
+                        Button {
+                            enqueueMacInstaller(installer)
+                        } label: {
+                            Label("下载 Mac " + installer.format.uppercased(), systemImage: "arrow.down.circle.fill")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(MonochromeButtonStyle())
+                    } else {
+                        Link(destination: storeURL) {
+                            Label("在 Mac App Store 查看", systemImage: "arrow.up.right.square")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(MonochromeButtonStyle())
                     }
-                    .buttonStyle(MonochromeButtonStyle())
                 }
             }.padding(.horizontal, 20).padding(.vertical, 12).frame(maxWidth: 680).frame(maxWidth: .infinity).background(.regularMaterial)
         }
@@ -152,6 +178,9 @@ struct AppDetailView: View {
         }
         .onDisappear { downloadTask?.cancel() }
         .task(id: "\(official)-\(reloadID)-\(store.settings.store.country)-\(store.settings.store.platform.rawValue)-\(apple.activeID ?? "")") { await fetchVersions(force: reloadID > 0) }
+        .task(id: "\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
+            await loadMacInstallers()
+        }
     }
     private var appHeading: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -176,6 +205,33 @@ struct AppDetailView: View {
         }
         catch { if !Task.isCancelled { versionError = error.localizedDescription } }
     }
+    private func enqueueMacInstaller(_ installer: MacInstallerService.Installer) {
+        do {
+            try store.downloads.enqueueMacInstaller(installer.url, for: app)
+            store.tab = 1
+        } catch { store.errorMessage = error.localizedDescription }
+    }
+
+    private func loadMacInstallers() async {
+        guard store.settings.store.platform == .macOS else { return }
+        macLoading = true
+        macInstallers = []
+        defer { macLoading = false }
+        var website = app.developerURL
+        if website == nil, app.id.allSatisfy({ $0.isNumber }) {
+            let query = SearchQuery.appID(app.id, versionID: nil)
+            if let matches = try? await StoreService.search(query, store: store.settings.store, limit: 1) {
+                website = matches.first(where: { $0.id == app.id })?.developerURL
+            }
+        }
+        guard !Task.isCancelled else { return }
+        macWebsite = website
+        if let website, let installers = try? await MacInstallerService.find(on: website),
+           !Task.isCancelled {
+            macInstallers = installers
+        }
+    }
+
     private func download(versionID: String?) {
         guard !downloadLoading else { return }
         guard store.settings.store.platform.supportsIPA else {
