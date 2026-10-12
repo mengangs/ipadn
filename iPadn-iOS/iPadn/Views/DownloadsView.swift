@@ -59,9 +59,10 @@ struct DownloadsView: View {
                                 .accessibilityIdentifier("download.select." + job.id.uuidString)
                             } else {
                                 taskContent(job)
+                                    .accessibilityElement(children: .contain)
+                                    .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
                             }
                         }
-                        .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             if !editMode.isEditing && job.status != .processing && job.status != .pausing {
                                 Button { askDelete([job.id]) } label: { Label("删除", systemImage: "trash") }.tint(.red)
