@@ -180,7 +180,13 @@ final class ToolStore: ObservableObject {
         if visualPreview { return [AppVersion(id: "123456789", version: "3.2.1", source: "版本资料"), AppVersion(id: "123456788", version: "3.1.0", source: "版本资料")] }
         #endif
         let context = settings.store
-        if official || context.platform == .tvOS {
+        if context.platform == .macOS { return [] }
+        if context.platform == .tvOS {
+            guard let listing = try await StoreService.platformApp(app.id, store: context),
+                  let id = listing.externalVersionID, !id.isEmpty else { return [] }
+            return [AppVersion(id: id, version: listing.version.isEmpty ? "未知版本" : listing.version, source: "Apple TV")]
+        }
+        if official {
             let asset = try await apple.asset(appID: app.id, versionID: nil, store: context, useCache: settings.useSignerCache)
             let third = context.platform == .iOS ? (try? await versions.thirdParty(app.id, sources: settings.versionSources, force: force)) ?? [] : []
             let names = Dictionary(third.map { ($0.id, $0.version) }, uniquingKeysWith: { first, _ in first })
@@ -202,7 +208,12 @@ final class ToolStore: ObservableObject {
     func refreshDownload(_ job: DownloadJob) async throws {
         guard job.status == .failed, job.asset != nil else { throw ToolError.message("只有失败的 Apple 下载任务可以刷新链接") }
         guard apple.activeID == job.account else { throw ToolError.message("请先切换至原下载账号：\(job.account ?? "")") }
-        let platform: AppPlatform = job.asset?.platform.lowercased() == "ios" ? .iOS : .tvOS
+        let platform: AppPlatform
+        switch job.asset?.platform.lowercased() {
+        case "appletvos", "tvos", "atv9": platform = .tvOS
+        case "ipad": platform = .iPadOS
+        default: platform = .iOS
+        }
         let asset = try await apple.asset(appID: job.app.id, versionID: job.asset?.app.externalVersionID,
             store: StoreContext(country: settings.store.country, platform: platform), useCache: settings.useSignerCache)
         try downloads.refreshFailed(job.id, asset: asset)
