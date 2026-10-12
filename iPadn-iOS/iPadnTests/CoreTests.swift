@@ -70,6 +70,7 @@ final class CoreTests: XCTestCase {
         let flat = try XCTUnwrap(alternates["AppIconFlat"] as? [String: Any])
         XCTAssertFalse(try XCTUnwrap(flat["CFBundleIconFiles"] as? [String]).isEmpty)
         XCTAssertNotNil(Bundle.main.url(forResource: "AppIconFlat60x60@2x", withExtension: "png"))
+        XCTAssertTrue(AppIconService.bundledAlternateIsAvailable())
         XCTAssertNotNil(UIImage(named: AppIconService.Choice.dimensional.preview))
         XCTAssertNotNil(UIImage(named: AppIconService.Choice.flat.preview))
         XCTAssertTrue(UIApplication.shared.supportsAlternateIcons)
