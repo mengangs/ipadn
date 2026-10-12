@@ -105,6 +105,44 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(searchError.contains("2002"))
     }
 
+    func testTvOSDownloadPreservesAndRestoresArtwork() {
+        let storeArtwork = URL(string: "https://is1-ssl.mzstatic.com/image/thumb/tv-app.png")!
+        let localArtwork = URL(fileURLWithPath: "/tmp/extracted-icon.png")
+        let catalog = StoreApp(id: "1628995509", name: "TV Player",
+                               version: "1.0.9", iconURL: storeArtwork)
+        let dispatch = StoreApp(id: catalog.id, name: catalog.name, version: catalog.version)
+        let asset = DownloadAsset(app: dispatch,
+                                  url: URL(string: "https://example.com/package.ipa")!,
+                                  externalVersionIDs: [], platform: "appletvos", account: "test")
+        let requested = DownloadJob(app: catalog, asset: asset)
+        let inspected = StoreApp(id: catalog.id, name: catalog.name, version: catalog.version)
+        let completed = requested.completing(with: inspected)
+        XCTAssertEqual(completed.iconURL, storeArtwork,
+                       "IPA inspection must not discard catalog artwork")
+        XCTAssertEqual(DownloadJob(app: completed, asset: asset)
+            .displayApp(packageIcon: nil).iconURL, storeArtwork)
+        XCTAssertEqual(requested.displayApp(packageIcon: localArtwork).iconURL, localArtwork)
+
+        let lostArtwork = DownloadJob(app: inspected,
+                                     asset: DownloadAsset(app: catalog, url: asset.url,
+                                                          externalVersionIDs: [], platform: "appletvos",
+                                                          account: "test"), status: .completed)
+        XCTAssertEqual(lostArtwork.displayApp(packageIcon: nil).iconURL, storeArtwork)
+    }
+
+    @MainActor
+    func testCatalogArtworkCanBecomeLocalPNG() {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32))
+        let data = renderer.pngData { context in
+            UIColor.systemPurple.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+        }
+        let normalized = PackageIconService.normalizedArtwork(data)
+        XCTAssertNotNil(normalized)
+        XCTAssertNotNil(normalized.flatMap(UIImage.init(data:)))
+        XCTAssertNil(PackageIconService.normalizedArtwork(Data("not an image".utf8)))
+    }
+
     func testPlatformSearchEntitiesAndIPASupport() {
         XCTAssertEqual(AppPlatform.iOS.searchEntity, "software")
         XCTAssertEqual(AppPlatform.iPadOS.searchEntity, "iPadSoftware")
