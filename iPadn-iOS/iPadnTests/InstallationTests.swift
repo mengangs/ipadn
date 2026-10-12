@@ -56,15 +56,6 @@ final class InstallationTests: XCTestCase {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "localhost-test-only", withExtension: "p12"))
         XCTAssertThrowsError(try InstallationCertificate.importPKCS12(Data(contentsOf: url), password: "wrong-password"))
     }
-    func testCertificateSaveAndClearCycle() throws {
-        let material = try LocalInstallationIdentityFactory.create()
-        try InstallationCertificate.save(data: material.pkcs12, password: material.password, localRoot: material.rootCertificate, localIdentifier: material.identifier)
-        XCTAssertNotNil(try InstallationCertificate.load())
-        XCTAssertNotNil(try InstallationCertificate.localProfile())
-        try InstallationCertificate.clear()
-        XCTAssertNil(try InstallationCertificate.load())
-        XCTAssertNil(try InstallationCertificate.localProfile())
-    }
     func testLocalHTTPSActuallyServesManifestAndRangedIPA() async throws {
         let material = try LocalInstallationIdentityFactory.create()
         let identity = try InstallationCertificate.importPKCS12(material.pkcs12, password: material.password)

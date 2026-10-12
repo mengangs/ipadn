@@ -15,9 +15,8 @@ enum PackageService {
         let name = plistString(plist["CFBundleDisplayName"] ?? plist["CFBundleName"])
         let id = plistString(metadata["itemId"])
         let size = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
-        let version = plistString(plist["CFBundleShortVersionString"] ?? plist["CFBundleVersion"])
         return StoreApp(id: id.isEmpty ? UUID().uuidString : id, name: name.isEmpty ? url.deletingPathExtension().lastPathComponent : name,
-                        bundleID: plistString(plist["CFBundleIdentifier"]), version: version.isEmpty ? "1.0" : version,
+                        bundleID: plistString(plist["CFBundleIdentifier"]), version: plistString(plist["CFBundleShortVersionString"]),
                         size: size, minimumOS: plistString(plist["MinimumOSVersion"]))
     }
 
@@ -65,8 +64,7 @@ enum PackageService {
         }
         var app = try inspect(working)
         if let asset = asset {
-            guard app.bundleID == asset.app.bundleID,
-                  asset.app.version.isEmpty || app.version == asset.app.version else {
+            guard app.bundleID == asset.app.bundleID, app.version == asset.app.version else {
                 throw ToolError.message("下载文件的 Bundle ID 或版本与请求不一致")
             }
             app.id = asset.app.id

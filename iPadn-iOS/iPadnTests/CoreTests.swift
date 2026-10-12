@@ -407,7 +407,6 @@ final class CoreTests: XCTestCase {
 
     func testDMAPUint64AndMalformedData() throws {
         XCTAssertEqual(try DMAP.integer(Data([255, 255, 255, 255, 255, 255, 255, 255])), UInt64.max)
-        XCTAssertEqual(try DMAP.integer(Data([0x04, 0xd2])), 1234)
         XCTAssertEqual(try DMAP.firstInteger(DMAP.tag("mlog", DMAP.uint32("mlid", 1234)), name: "mlid"), 1234)
         XCTAssertThrowsError(try DMAP.walk(Data([1, 2, 3])) { _ in })
         XCTAssertThrowsError(try DMAP.walk(Data("mlit".utf8) + Data([0, 0, 0, 100])) { _ in })

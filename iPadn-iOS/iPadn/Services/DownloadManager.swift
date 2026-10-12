@@ -212,7 +212,6 @@ final class DownloadManager: NSObject, ObservableObject {
         guard job.status != .processing, job.status != .pausing else { throw ToolError.message("请等待当前文件处理或暂停完成后再删除") }
         let file = fileURL(job)
         let removal = LocalResources.support.appendingPathComponent("\(id.uuidString).removing.ipa")
-        try? FileManager.default.removeItem(at: removal)
         if let file { try FileManager.default.moveItem(at: file, to: removal) }
         do { try saveNewJobs(jobs.filter { $0.id != id }) }
         catch {
@@ -304,10 +303,7 @@ final class DownloadManager: NSObject, ObservableObject {
                 try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
                 try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
                 self.persist(); self.notify(title: "安装包已准备好", body: result.1.name + " " + result.1.version)
-            } catch {
-                try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
-                self.fail(id, error: error)
-            }
+            } catch { self.fail(id, error: error) }
         }
     }
 

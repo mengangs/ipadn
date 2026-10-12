@@ -73,10 +73,4 @@ enum InstallationCertificate {
             guard added == errSecSuccess else { throw ToolError.message("无法保存安装证书（\(added)）") }
         } else if status != errSecSuccess { throw ToolError.message("无法更新安装证书（\(status)）") }
     }
-    static func clear() throws {
-        let status = SecItemDelete(query as CFDictionary)
-        if status != errSecSuccess && status != errSecItemNotFound {
-            throw ToolError.message("无法清除安装证书（\(status)）")
-        }
-    }
 }

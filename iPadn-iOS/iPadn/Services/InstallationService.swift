@@ -28,7 +28,7 @@ final class InstallationService: ObservableObject {
     func localInstallURL(job: DownloadJob, file: URL, host: String) async throws -> URL {
         let host = try ManifestBuilder.localHost(host)
         guard let certificate = try InstallationCertificate.load() else {
-            throw ToolError.message("请先在安装设置中创建或导入 SSL 服务器证书")
+            throw ToolError.message("请先在安装设置中导入自己的 SSL 服务器证书")
         }
         try await certificate.validateAsync(host: host)
         let server = LoopbackServer(identity: certificate.identity, publicHost: host)

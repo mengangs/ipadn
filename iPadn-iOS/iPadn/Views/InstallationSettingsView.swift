@@ -7,7 +7,6 @@ struct InstallationSettingsView: View {
     @State private var importing = false
     @State private var hasLocalProfile = false
     @State private var replacingCertificate = false
-    @State private var clearingCertificate = false
     @State private var certificateData: Data?
     @State private var password = ""
     @State private var certificateName = "未导入"
@@ -40,10 +39,6 @@ struct InstallationSettingsView: View {
                     Button("导入自己的 SSL 证书（高级）", systemImage: "square.and.arrow.down") { importing = true }
                         .accessibilityIdentifier("installation.certificate")
                     Button("检查证书与地址", systemImage: "checkmark.shield") { checkCertificate() }.disabled(busy)
-                    if certificateName != "未导入" {
-                        Button("清除 SSL 证书", systemImage: "trash", role: .destructive) { clearingCertificate = true }
-                            .disabled(busy)
-                    }
                 } header: { Text("本地服务器") } footer: {
                     Text("本机证书由你的设备自行创建，无需外部服务。首次需安装描述文件，再到「设置 → 通用 → 关于本机 → 证书信任设置」为 iPadn 本机 CA 启用完全信任。之后清单和 IPA 都由本机提供。高级导入须使用包含地址、未过期且受系统信任的服务器 SSL 证书。")
                 }
@@ -91,7 +86,6 @@ struct InstallationSettingsView: View {
                 }.presentationDetents([.medium, .large])
             }
             .actionConfirmation(isPresented: $replacingCertificate, title: "重新创建本机证书？", message: "将替换当前安装服务证书，需要重新安装并信任新的描述文件。账号和 IPA 不受影响。", confirmTitle: "重新创建", destructive: false) { createLocalCertificate() }
-            .actionConfirmation(isPresented: $clearingCertificate, title: "清除当前 SSL 证书？", message: "将从本机钥匙串移除安装服务证书。账号和下载文件不受影响。", confirmTitle: "清除证书", destructive: true) { clearCertificate() }
             .alert("安装设置", isPresented: Binding(get: { issue != nil && certificateData == nil }, set: { if !$0 { issue = nil } })) {
                 Button("知道了", role: .cancel) { issue = nil }
             } message: { Text(issue ?? "") }
@@ -146,18 +140,10 @@ struct InstallationSettingsView: View {
             defer { busy = false }
             do {
                 let host = try ManifestBuilder.localHost(store.settings.localInstallHost)
-                guard let certificate = try InstallationCertificate.load() else { throw ToolError.message("请先在安装设置中创建或导入 SSL 服务器证书") }
+                guard let certificate = try InstallationCertificate.load() else { throw ToolError.message("请先导入 SSL 服务器证书") }
                 try await certificate.validateAsync(host: host)
                 notice = "证书有效且受系统信任。域名解析和系统安装仍需实际安装验证。"
             } catch { issue = error.localizedDescription }
         }
-    }
-    private func clearCertificate() {
-        do {
-            try InstallationCertificate.clear()
-            store.installation.stopHosting()
-            refreshCertificate()
-            notice = "已清除安装证书。"
-        } catch { issue = error.localizedDescription }
     }
 }
