@@ -174,7 +174,8 @@ final class AppleService: ObservableObject {
                 useCache: useCache, fallback: fallback, refreshed: true, purchased: purchased,
                 allowLicenseAcquisition: allowLicenseAcquisition)
         }
-        if failure == "9610", !purchased, allowLicenseAcquisition {
+        if Self.shouldAcquireLicense(failure: failure, purchased: purchased,
+                                     allowLicenseAcquisition: allowLicenseAcquisition) {
             // A missing license does not mean the login session is expired. Refreshing
             // here always calls authenticate and can trigger an invisible 2FA prompt.
             // Acquire the free license using the current valid account first.
@@ -218,6 +219,11 @@ final class AppleService: ObservableObject {
         return DownloadAsset(app: app, url: url, sinf: sinf, metadata: try HTTPClient.encodePlist(metadata),
             externalVersionIDs: (metadata["softwareVersionExternalIdentifiers"] as? [Any] ?? []).map { plistString($0) },
             platform: plistString(metadata["software-platform"]), account: account.id)
+    }
+
+    static func shouldAcquireLicense(failure: String, purchased: Bool,
+                                     allowLicenseAcquisition: Bool) -> Bool {
+        failure == "9610" && !purchased && allowLicenseAcquisition
     }
 
     private func acquireFreeApp(_ id: String, account: AppleAccount) async throws {
