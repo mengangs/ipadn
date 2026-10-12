@@ -328,6 +328,12 @@ struct DownloadTaskRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Button(action: inspecting) { AppRow(app: displayedApp).contentShape(Rectangle()) }.buttonStyle(.plain)
+            Text(job.platformLabel)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
+                .accessibilityIdentifier("download.platform." + job.platformLabel)
             if [.running, .paused, .pausing].contains(job.status) {
                 if job.expected > 0 {
                     ProgressView(value: job.progress).tint(job.status == .paused ? .secondary : UX.tint)
