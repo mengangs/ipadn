@@ -1,6 +1,33 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testIconSelectionAndSearchSubmitControl() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--visual-preview", "--accounts"]
+        app.launch()
+        let settings = app.buttons["accounts.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10)); settings.tap()
+        let dimensional = app.buttons["settings.icon.dimensional"]
+        let flat = app.buttons["settings.icon.flat"]
+        if !flat.isHittable { app.swipeUp() }
+        XCTAssertTrue(flat.waitForExistence(timeout: 5))
+        XCTAssertTrue(dimensional.isSelected)
+        flat.tap()
+        let selected = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: flat)
+        wait(for: [selected], timeout: 5)
+        dimensional.tap()
+        XCTAssertTrue(dimensional.isSelected)
+        attach("16-icon-settings", app: app)
+        app.terminate()
+        app.launchArguments = ["--visual-preview"]
+        app.launch()
+        let submit = app.buttons["search.submit"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 10))
+        XCTAssertFalse(submit.isEnabled)
+        let input = app.textFields["应用名称、App ID 或链接"]
+        input.tap(); input.typeText("Test")
+        XCTAssertTrue(submit.isEnabled)
+    }
     func testFiltersAndDeleteConfirmation() {
         let app = XCUIApplication()
         app.launchArguments = ["--visual-preview", "--downloads"]

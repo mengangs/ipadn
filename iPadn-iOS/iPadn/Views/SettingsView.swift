@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var store: ToolStore
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var icons = AppIconService()
     @State private var addingSource = false
     @State private var share: SharedFile?
     @State private var resetSettings = false
@@ -21,6 +23,29 @@ struct SettingsView: View {
                 Picker("外观", selection: $store.settings.appearance) {
                     Text("跟随系统").tag("system"); Text("浅色").tag("light"); Text("深色").tag("dark")
                 }
+            }
+            Section {
+                ForEach(AppIconService.Choice.allCases) { choice in
+                    Button {
+                        Task {
+                            do { try await icons.select(choice) }
+                            catch { store.errorMessage = error.localizedDescription }
+                        }
+                    } label: {
+                        HStack(spacing: 14) {
+                            Image(choice.preview).resizable().scaledToFit().frame(width: 48, height: 48)
+                                .clipShape(RoundedRectangle(cornerRadius: 11)).accessibilityHidden(true)
+                            Text(choice.title).foregroundStyle(.primary)
+                            Spacer()
+                            if icons.changing && choice != icons.selected { ProgressView() }
+                            else if icons.selected == choice { Image(systemName: "checkmark").foregroundStyle(.primary) }
+                        }.frame(minHeight: 54).contentShape(Rectangle())
+                    }.buttonStyle(.plain).disabled(icons.changing || !icons.supported)
+                        .accessibilityIdentifier("settings.icon." + choice.rawValue)
+                        .accessibilityAddTraits(icons.selected == choice ? .isSelected : [])
+                }
+            } header: { Text("应用图标") } footer: {
+                Text(icons.supported ? "默认使用立体图标，也可切换为原先的扁平风格。系统会提示图标已更改。" : "当前设备或安装方式不支持切换图标。")
             }
             ForEach($store.settings.versionSources) { $source in
                 Section {
@@ -73,6 +98,7 @@ struct SettingsView: View {
             }
         }
         .toolPage().navigationTitle("设置与扩展").navigationBarTitleDisplayMode(.inline)
+        .onChange(of: scenePhase) { _, phase in if phase == .active { icons.refresh() } }
         .sheet(isPresented: $addingSource) { AddVersionSourceView() }
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
         .actionConfirmation(isPresented: $resetSettings, title: "恢复默认设置？", message: "保留账号、下载文件、已购记录和历史版本缓存。", confirmTitle: "恢复默认设置") { store.settings = ToolSettings() }

@@ -4,6 +4,19 @@ import ZIPFoundation
 @testable import iPadn
 
 final class CoreTests: XCTestCase {
+    @MainActor
+    func testPackagedIconChoicesIncludePhoneAndPadAlternates() throws {
+        XCTAssertNil(AppIconService.Choice.dimensional.alternateName)
+        XCTAssertEqual(AppIconService.Choice.flat.alternateName, "AppIconFlat")
+        for key in ["CFBundleIcons", "CFBundleIcons~ipad"] {
+            let icons = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: key) as? [String: Any])
+            let alternates = try XCTUnwrap(icons["CFBundleAlternateIcons"] as? [String: Any])
+            XCTAssertNotNil(alternates["AppIconFlat"])
+        }
+        XCTAssertNotNil(UIImage(named: AppIconService.Choice.dimensional.preview))
+        XCTAssertNotNil(UIImage(named: AppIconService.Choice.flat.preview))
+        XCTAssertTrue(UIApplication.shared.supportsAlternateIcons)
+    }
     func testPartialSettingsPreserveUserChoicesAndBoundInvalidLimits() throws {
         let legacy = Data(#"{"plistServer":"https://example.com/manifest","notifications":false,"maxConcurrentDownloads":99,"maxQueuedDownloads":-1}"#.utf8)
         let settings = try JSONDecoder().decode(ToolSettings.self, from: legacy)

@@ -37,7 +37,7 @@ struct AccountsView: View {
             } footer: {
                 Text(apple.accounts.isEmpty ? "添加账号后可同步已购应用和下载。" : "勾选的是当前下载账号。点按切换，左滑移除。")
             }
-            Section { NavigationLink { SettingsView() } label: { Label("设置", systemImage: "gearshape") } }
+            Section { NavigationLink { SettingsView() } label: { Label("设置", systemImage: "gearshape") }.accessibilityIdentifier("accounts.settings") }
             if apple.active != nil {
                 Section { Button("退出当前账号", role: .destructive) { signingOut = true } }
             }

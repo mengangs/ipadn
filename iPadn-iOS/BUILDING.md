@@ -24,7 +24,7 @@ node scripts/runtime_smoke_test.cjs
 
 校验报告输出到 `build/verification.json`，不会修改受跟踪文件。
 
-GitHub Actions 对 PR、main 推送及手动构建执行设备编译、模拟器测试和界面截图，产物分别为 `iPadn-unsigned-ipa`、`iPadn-interface-screenshots`、`iPadn-build-diagnostics`。测试范围与验收记录见 [VERIFICATION.md](VERIFICATION.md)。
+GitHub Actions 对 PR、main 推送及手动构建执行设备编译、模拟器测试和界面截图，产物分别为 `iPadn-unsigned-ipa`、`iPadn-interface-screenshots`、`iPadn-build-diagnostics`。运行结果可在对应构建的测试步骤及产物中查看。
 
 ## 扩展
 

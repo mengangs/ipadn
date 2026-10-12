@@ -7,6 +7,7 @@ import hashlib
 import json
 import plistlib
 import re
+import struct
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -68,6 +69,15 @@ for path in (ROOT / "iPadn/Resources/Assets.xcassets").rglob("Contents.json"):
     asset = json.loads(path.read_text())
     for image in asset.get("images", []):
         if "filename" in image: check((path.parent / image["filename"]).exists(), "Missing app icon " + image["filename"])
+        if path.parent.suffix == ".appiconset" and "filename" in image:
+            file = path.parent / image["filename"]
+            if not file.exists(): continue
+            data = file.read_bytes()
+            check(data[:8] == b"\x89PNG\r\n\x1a\n", "Icon is not PNG: " + str(file))
+            width, height, depth, color = struct.unpack(">IIBB", data[16:26])
+            expected = int(float(image["size"].split("x")[0]) * float(image["scale"].rstrip("x")))
+            check(width == height == expected, "Incorrect icon dimensions: " + str(file))
+            check(depth == 8 and color == 2, "Icon must be opaque 8-bit RGB: " + str(file))
 scheme = ET.parse(ROOT / "iPadn.xcodeproj/xcshareddata/xcschemes/iPadn.xcscheme")
 for element in scheme.iter("BuildableReference"):
     check(element.get("BlueprintIdentifier") in objects, "Scheme references unresolved target")
@@ -112,7 +122,7 @@ hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in s
 expected = json.loads((ROOT / "vendor/SAPRuntime/manifest.json").read_text())["files"]
 check(hashes == expected, "Bundled runtime files or hashes differ from local manifest")
 report = {"passed": not failures, "app_swift_files": len(actual_swift), "project_objects": len(objects), "runtime_sha256": hashes,
-          "checks": ["OpenStep project graph", "referenced files", "plist parsing", "icon filenames", "shared scheme targets", "Swift lexical delimiters", "bundled runtime hashes"],
+          "checks": ["OpenStep project graph", "referenced files", "plist parsing", "icon filenames and opaque square dimensions", "shared scheme targets", "Swift lexical delimiters", "bundled runtime hashes"],
           "not_run": ["Swift compilation/type checking", "XCTest", "iOS Simulator", "real device", "Apple account/server requests", "IPA installation"], "failures": failures}
 (ROOT / "build").mkdir(exist_ok=True)
 (ROOT / "build/verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
