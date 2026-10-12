@@ -277,27 +277,40 @@ actor VersionService {
         let key = appID + "|" + sourceKey
         if !force, let entry = cache[key], Date().timeIntervalSince(entry.savedAt) < 24 * 3600 { return entry.versions }
         let revision = cacheRevision
-        let result = await withTaskGroup(of: Result<[AppVersion], Error>.self, returning: Result<[AppVersion], Error>.self) { group in
-            for source in enabled {
+        // Complete every enabled query. Taking the first provider to respond
+        // makes the version list depend on network timing and hides unique IDs.
+        let sourceResults = await withTaskGroup(
+            of: (Int, Result<[AppVersion], Error>).self,
+            returning: [[AppVersion]].self
+        ) { group in
+            for (index, source) in enabled.enumerated() {
                 group.addTask {
-                    do { return .success(try await Self.fetch(appID, source: source)) }
-                    catch { return .failure(error) }
+                    do { return (index, .success(try await Self.fetch(appID, source: source))) }
+                    catch { return (index, .failure(error)) }
                 }
             }
-            var failures: [String] = []
-            for await item in group {
-                switch item {
-                case .success(let versions) where !versions.isEmpty: group.cancelAll(); return .success(versions)
-                case .success: failures.append("版本来源返回空列表")
-                case .failure(let error): failures.append(error.localizedDescription)
-                }
+            var lists = Array(repeating: [AppVersion](), count: enabled.count)
+            for await (index, result) in group {
+                if case .success(let versions) = result { lists[index] = versions }
             }
-            return .failure(ToolError.message(failures.joined(separator: "\n")))
+            return lists
         }
-        let versions = try result.get()
         try Task.checkCancellation()
+        let versions = Self.mergeSourceResults(sourceResults)
+        guard !versions.isEmpty else {
+            // The previous successful records remain useful if both third-party
+            // services are temporarily unavailable. Label them as cached.
+            if let old = cache[key], Date().timeIntervalSince(old.savedAt) < 7 * 86400 {
+                return old.versions.map {
+                    var item = $0
+                    item.source += "（缓存）"
+                    return item
+                }
+            }
+            throw ToolError.message("历史版本来源暂不可用，可使用「从 Apple 获取版本」或手动指定版本 ID。")
+        }
         if revision == cacheRevision {
-            cache = cache.filter { Date().timeIntervalSince($0.value.savedAt) < 24 * 3600 }
+            cache = cache.filter { Date().timeIntervalSince($0.value.savedAt) < 7 * 86400 }
             if cache.count >= 200 {
                 // Also shrink oversized caches created by earlier versions in one pass.
                 cache = Dictionary(uniqueKeysWithValues: cache.sorted { $0.value.savedAt > $1.value.savedAt }
@@ -310,6 +323,29 @@ actor VersionService {
         return versions
     }
 
+    static func mergeSourceResults(_ sources: [[AppVersion]]) -> [AppVersion] {
+        var result: [AppVersion] = []
+        var indices: [String: Int] = [:]
+        // Preserve the configured source priority and the order returned by
+        // each source. The API does not provide comparable release timestamps.
+        for source in sources {
+            for version in source where !version.id.isEmpty {
+                if let index = indices[version.id] {
+                    if result[index].version == "未知版本" && version.version != "未知版本" {
+                        result[index].version = version.version
+                    }
+                    if !result[index].source.components(separatedBy: "、").contains(version.source) {
+                        result[index].source += "、" + version.source
+                    }
+                } else {
+                    indices[version.id] = result.count
+                    result.append(version)
+                }
+            }
+        }
+        return Array(result.prefix(2000))
+    }
+
     private static func fetch(_ id: String, source: VersionSource) async throws -> [AppVersion] {
         guard source.urlTemplate.contains("{id}"),
               let url = URL(string: source.urlTemplate.replacingOccurrences(of: "{id}", with: id)), url.scheme == "https" else {
@@ -319,7 +355,7 @@ actor VersionService {
         let value: Any? = source.containerKey.isEmpty ? object : (object as? [String: Any])?[source.containerKey]
         guard let records = value as? [[String: Any]] else { throw ToolError.message("\(source.name)：版本列表格式不兼容") }
         var seen = Set<String>()
-        let ordered = source.reverse ? Array(records.reversed()) : records
+        let ordered = source.reverse ? Array(records.suffix(2000).reversed()) : Array(records.prefix(2000))
         return ordered.compactMap { record in
             let id = plistString(record["external_identifier"])
             guard !id.isEmpty, id.allSatisfy({ $0.isASCII && $0.isNumber }), seen.insert(id).inserted else { return nil }
