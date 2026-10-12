@@ -82,7 +82,14 @@ enum StoreService {
                 URLQueryItem(name: "entity", value: store.platform.searchEntity),
                 URLQueryItem(name: "explicit", value: "no"), URLQueryItem(name: "limit", value: String(limit))
             ])
-            let data = try await HTTPClient.shared.json(url) as? [String: Any]
+            let data: [String: Any]?
+            do { data = try await HTTPClient.shared.json(url) as? [String: Any] }
+            catch {
+                // Apple's public Search API does not reliably serve tvSoftware.
+                // Keep local purchase/name-directory matches available instead.
+                if store.platform == .tvOS { return [] }
+                throw error
+            }
             return (data?["results"] as? [[String: Any]] ?? []).map(mapLookup)
         case .appID(let id, _):
             if store.platform == .tvOS { return try await platformApp(id, store: store).map { [$0] } ?? [] }
