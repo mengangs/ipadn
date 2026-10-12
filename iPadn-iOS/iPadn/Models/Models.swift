@@ -48,6 +48,9 @@ struct StoreApp: Codable, Identifiable, Hashable {
     var minimumOS = ""
     var externalVersionID: String?
     var developerURL: URL?
+    // tvSoftware search is unavailable for some storefronts; candidate
+    // listings are not proof of compatibility with Apple TV.
+    var tvOSCandidate: Bool?
 }
 
 struct AppVersion: Codable, Identifiable, Hashable {
