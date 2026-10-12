@@ -3,7 +3,10 @@ import UniformTypeIdentifiers
 
 struct InstallationSettingsView: View {
     @EnvironmentObject private var store: ToolStore
+    @Environment(\.openURL) private var openURL
     @State private var importing = false
+    @State private var hasLocalProfile = false
+    @State private var replacingCertificate = false
     @State private var certificateData: Data?
     @State private var password = ""
     @State private var certificateName = "未导入"
@@ -25,11 +28,19 @@ struct InstallationSettingsView: View {
                     TextField("证书包含的 IP 或域名", text: $store.settings.localInstallHost)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                     LabeledContent("SSL 证书", value: certificateName)
-                    Button("导入 / 更新 SSL 证书", systemImage: "lock.shield") { importing = true }
+                    Button("创建本机安装证书", systemImage: "lock.shield") {
+                        if certificateName == "未导入" { createLocalCertificate() }
+                        else { replacingCertificate = true }
+                    }.disabled(busy).accessibilityIdentifier("installation.create-certificate")
+                    if hasLocalProfile {
+                        Button("安装本机证书描述文件", systemImage: "doc.badge.gearshape") { installProfile() }
+                            .disabled(busy).accessibilityIdentifier("installation.local-profile")
+                    }
+                    Button("导入自己的 SSL 证书（高级）", systemImage: "square.and.arrow.down") { importing = true }
                         .accessibilityIdentifier("installation.certificate")
                     Button("检查证书与地址", systemImage: "checkmark.shield") { checkCertificate() }.disabled(busy)
                 } header: { Text("本地服务器") } footer: {
-                    Text("仅监听本机回环地址。默认 127.0.0.1；使用域名时须将它解析到本机。导入含私钥的 P12/PFX 服务器 SSL 证书（非应用签名证书），证书须包含上述地址且受系统信任。自签名证书需先安装并信任签发 CA。本功能不会忽略 SSL 验证。")
+                    Text("本机证书由你的设备自行创建，无需外部服务。首次需安装描述文件，再到「设置 → 通用 → 关于本机 → 证书信任设置」为 iPadn 本机 CA 启用完全信任。之后清单和 IPA 都由本机提供。高级导入须使用包含地址、未过期且受系统信任的服务器 SSL 证书。")
                 }
                 Section {
                     Text("清单和 IPA 由本机提供，无需上传安装包或配置外部清单服务。安装请求发出后，请保持 iPadn 运行；大型安装包可返回 iPadn 以继续传输。")
@@ -74,13 +85,45 @@ struct InstallationSettingsView: View {
                         }
                 }.presentationDetents([.medium, .large])
             }
+            .actionConfirmation(isPresented: $replacingCertificate, title: "重新创建本机证书？", message: "将替换当前安装服务证书，需要重新安装并信任新的描述文件。账号和 IPA 不受影响。", confirmTitle: "重新创建", destructive: false) { createLocalCertificate() }
             .alert("安装设置", isPresented: Binding(get: { issue != nil && certificateData == nil }, set: { if !$0 { issue = nil } })) {
                 Button("知道了", role: .cancel) { issue = nil }
             } message: { Text(issue ?? "") }
     }
     private func refreshCertificate() {
-        do { certificateName = try InstallationCertificate.load()?.name ?? "未导入" }
+        do {
+            certificateName = try InstallationCertificate.load()?.name ?? "未导入"
+            hasLocalProfile = try InstallationCertificate.localProfile() != nil
+        }
         catch { issue = error.localizedDescription }
+    }
+    private func createLocalCertificate() {
+        guard !busy else { return }; busy = true; notice = nil
+        Task {
+            defer { busy = false }
+            do {
+                let material = try await Task.detached(priority: .userInitiated) { try LocalInstallationIdentityFactory.create() }.value
+                try InstallationCertificate.save(data: material.pkcs12, password: material.password,
+                    localRoot: material.rootCertificate, localIdentifier: material.identifier)
+                store.installation.stopHosting(); store.settings.localInstallation = true; store.settings.localInstallHost = "127.0.0.1"
+                refreshCertificate()
+                notice = "本机证书已创建。请安装描述文件，并在系统设置中启用完全信任。"
+            } catch { issue = error.localizedDescription }
+        }
+    }
+    private func installProfile() {
+        guard !busy else { return }; busy = true
+        Task {
+            defer { busy = false }
+            do {
+                guard let profile = try InstallationCertificate.localProfile() else { throw ToolError.message("请先创建本机安装证书") }
+                let url = try await store.installation.profileURL(data: profile)
+                openURL(url) { accepted in
+                    if accepted { notice = "请在系统设置中安装已下载的描述文件，然后到「通用 → 关于本机 → 证书信任设置」启用 iPadn 本机 CA 的完全信任。" }
+                    else { issue = "系统未打开本机描述文件地址，请稍后重试" }
+                }
+            } catch { issue = error.localizedDescription }
+        }
     }
     private func saveCertificate() {
         guard let data = certificateData else { return }

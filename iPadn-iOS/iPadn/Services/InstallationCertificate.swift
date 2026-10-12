@@ -3,7 +3,7 @@ import Security
 
 /// Installation TLS material is separate from Apple accounts and never stored in preferences.
 enum InstallationCertificate {
-    private struct Stored: Codable { let data: Data; let password: String }
+    private struct Stored: Codable { let data: Data; let password: String; var localRoot: Data?; var localIdentifier: UUID? }
     struct Identity {
         let identity: SecIdentity
         let certificates: [SecCertificate]
@@ -41,18 +41,25 @@ enum InstallationCertificate {
         let chain = item[kSecImportItemCertChain as String] as? [SecCertificate] ?? [certificate]
         return Identity(identity: identity, certificates: chain, name: SecCertificateCopySubjectSummary(certificate) as String? ?? "本地安装证书")
     }
-    static func load() throws -> Identity? {
+    private static func stored() throws -> Stored? {
         var request = query; request[kSecReturnData as String] = true; request[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
         let status = SecItemCopyMatching(request as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = result as? Data else { throw ToolError.message("无法读取安装证书（\(status)），请解锁设备后重试") }
-        let saved = try JSONDecoder().decode(Stored.self, from: data)
+        return try JSONDecoder().decode(Stored.self, from: data)
+    }
+    static func load() throws -> Identity? {
+        guard let saved = try stored() else { return nil }
         return try importPKCS12(saved.data, password: saved.password)
     }
-    static func save(data: Data, password: String) throws {
+    static func localProfile() throws -> Data? {
+        guard let saved = try stored(), let root = saved.localRoot, let id = saved.localIdentifier else { return nil }
+        return try LocalInstallationIdentityFactory.Material(pkcs12: saved.data, password: saved.password, rootCertificate: root, identifier: id).profile()
+    }
+    static func save(data: Data, password: String, localRoot: Data? = nil, localIdentifier: UUID? = nil) throws {
         _ = try importPKCS12(data, password: password)
-        let encoded = try JSONEncoder().encode(Stored(data: data, password: password))
+        let encoded = try JSONEncoder().encode(Stored(data: data, password: password, localRoot: localRoot, localIdentifier: localIdentifier))
         let attributes: [String: Any] = [kSecValueData as String: encoded,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)

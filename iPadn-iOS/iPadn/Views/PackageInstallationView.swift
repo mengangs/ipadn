@@ -28,7 +28,7 @@ struct PackageInstallationView: View {
                         else { issue = "安装包文件不可用，请检查任务详情" }
                     }
                 } footer: {
-                    Text("本地 HTTPS 需要受信任的服务器证书；代理方式需要清单服务与规则。系统会验证 IPA 的签名和账号授权。")
+                    Text("本地 HTTPS 可在安装设置中创建本机证书，首次需在系统中安装并信任；代理方式需要清单服务与规则。系统会验证 IPA 的签名和账号授权。")
                 }
                 if let message { Section { Text(message).font(.subheadline) } }
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)

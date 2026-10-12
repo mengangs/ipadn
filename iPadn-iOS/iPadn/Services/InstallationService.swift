@@ -6,11 +6,24 @@ import Combine
 final class InstallationService: ObservableObject {
     @Published private(set) var isHosting = false
     private var localFiles: LoopbackServer?
+    private var profileFiles: LoopbackServer?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
     func stopHosting() {
-        localFiles = nil; isHosting = false
+        localFiles = nil; profileFiles = nil; isHosting = false
         if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
+    }
+    func profileURL(data: Data) async throws -> URL {
+        let server = LoopbackServer()
+        try await server.start()
+        let url = try server.register(data: data, contentType: "application/x-apple-aspen-config")
+        profileFiles = server
+        if backgroundTask == .invalid {
+            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "iPadn local certificate") { [weak self] in
+                Task { @MainActor in self?.stopHosting() }
+            }
+        }
+        return url
     }
     func localInstallURL(job: DownloadJob, file: URL, host: String) async throws -> URL {
         let host = try ManifestBuilder.localHost(host)

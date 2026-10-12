@@ -21,6 +21,34 @@ final class InstallationTests: XCTestCase {
         XCTAssertThrowsError(try ManifestBuilder.localHost("a.com?token=x"))
         XCTAssertThrowsError(try ManifestBuilder.installURL(app: app, filename: "a.ipa", plistServer: "https://user:password@example.com/a"))
     }
+    func testGeneratedCertificateChainMatchesLocalhostAndProfileContainsOnlyPublicCA() throws {
+        let first = try LocalInstallationIdentityFactory.create()
+        let second = try LocalInstallationIdentityFactory.create()
+        XCTAssertNotEqual(first.rootCertificate, second.rootCertificate)
+        XCTAssertNotEqual(first.password, second.password)
+        let identity = try InstallationCertificate.importPKCS12(first.pkcs12, password: first.password)
+        let root = try XCTUnwrap(SecCertificateCreateWithData(nil, first.rootCertificate as CFData))
+        func trusted(_ host: String) throws -> Bool {
+            var trust: SecTrust?
+            XCTAssertEqual(SecTrustCreateWithCertificates(identity.certificates as CFArray, SecPolicyCreateSSL(true, host as CFString), &trust), errSecSuccess)
+            let value = try XCTUnwrap(trust)
+            SecTrustSetAnchorCertificates(value, [root] as CFArray)
+            SecTrustSetAnchorCertificatesOnly(value, true)
+            SecTrustSetNetworkFetchAllowed(value, false)
+            return SecTrustEvaluateWithError(value, nil)
+        }
+        XCTAssertTrue(try trusted("127.0.0.1"))
+        XCTAssertTrue(try trusted("localhost"))
+        XCTAssertFalse(try trusted("example.com"))
+        XCTAssertThrowsError(try identity.validate(host: "127.0.0.1"))
+        let profile = try first.profile()
+        let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: profile, options: [], format: nil) as? [String: Any])
+        let payloads = try XCTUnwrap(plist["PayloadContent"] as? [[String: Any]])
+        XCTAssertEqual(payloads.count, 1)
+        XCTAssertEqual(payloads.first?["PayloadType"] as? String, "com.apple.security.root")
+        XCTAssertEqual(payloads.first?["PayloadContent"] as? Data, first.rootCertificate)
+        XCTAssertNil(profile.range(of: first.pkcs12))
+    }
     func testInvalidCertificatePasswordAndUntrustedIdentityAreRejected() throws {
         let identity = try fixture()
         XCTAssertThrowsError(try identity.validate(host: "127.0.0.1"))
@@ -29,7 +57,8 @@ final class InstallationTests: XCTestCase {
         XCTAssertThrowsError(try InstallationCertificate.importPKCS12(Data(contentsOf: url), password: "wrong-password"))
     }
     func testLocalHTTPSActuallyServesManifestAndRangedIPA() async throws {
-        let identity = try fixture()
+        let material = try LocalInstallationIdentityFactory.create()
+        let identity = try InstallationCertificate.importPKCS12(material.pkcs12, password: material.password)
         let server = LoopbackServer(identity: identity.identity)
         try await server.start()
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".ipa")
