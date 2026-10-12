@@ -20,6 +20,17 @@ enum PackageService {
                         size: size, minimumOS: plistString(plist["MinimumOSVersion"]))
     }
 
+    static func deviceFamilies(_ url: URL) throws -> Set<Int> {
+        let archive = try Archive(url: url, accessMode: .read)
+        guard let info = archive.first(where: { entry in
+            let parts = entry.path.split(separator: "/")
+            return parts.count == 3 && parts[0] == "Payload" &&
+                parts[1].hasSuffix(".app") && parts[2] == "Info.plist"
+        }) else { throw ToolError.message("安装包缺少主程序的 Info.plist") }
+        let plist = try readPlist(info, archive: archive)
+        return Set(plist["UIDeviceFamily"] as? [Int] ?? [])
+    }
+
     private static func readPlist(_ entry: Entry, archive: Archive) throws -> [String: Any] {
         let limit = 2 * 1024 * 1024
         guard entry.type == .file, entry.uncompressedSize <= UInt64(limit) else { throw ToolError.message("IPA 元数据异常：plist 过大或类型无效") }
@@ -64,6 +75,16 @@ enum PackageService {
         }
         var app = try inspect(working)
         if let asset = asset {
+            let platform = asset.platform.lowercased()
+            if platform == "appletvos" || platform == "tvos" || platform == "atv9" {
+                guard try deviceFamilies(working).contains(3) else {
+                    throw ToolError.message("安装包并非 tvOS 应用（UIDeviceFamily 不包含 Apple TV），已阻止错误安装包")
+                }
+            } else if platform == "ipad" {
+                guard try deviceFamilies(working).contains(2) else {
+                    throw ToolError.message("安装包不支持 iPad（UIDeviceFamily 不包含 iPad）")
+                }
+            }
             guard app.bundleID == asset.app.bundleID, app.version == asset.app.version else {
                 throw ToolError.message("下载文件的 Bundle ID 或版本与请求不一致")
             }
