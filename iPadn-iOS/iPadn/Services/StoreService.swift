@@ -31,17 +31,21 @@ enum StoreService {
         var indices: [String: Int] = [:]
         // Two selected-region results followed by one account-region result
         // keeps the secondary store visible even if the primary fills the limit.
+        let regionalIDs = Set(primary.map(\.id))
+        let accountOnly = account.filter { !regionalIDs.contains($0.id) }
         var candidates: [StoreApp] = []
         var primaryIndex = 0
         var accountIndex = 0
-        while primaryIndex < primary.count || accountIndex < account.count {
+        while primaryIndex < primary.count || accountIndex < accountOnly.count {
             for _ in 0..<2 where primaryIndex < primary.count {
                 candidates.append(primary[primaryIndex]); primaryIndex += 1
             }
-            if accountIndex < account.count {
-                candidates.append(account[accountIndex]); accountIndex += 1
+            if accountIndex < accountOnly.count {
+                candidates.append(accountOnly[accountIndex]); accountIndex += 1
             }
         }
+        // Also inspect overlapping results to fill missing artwork.
+        candidates.append(contentsOf: account)
         for app in candidates where !app.id.isEmpty {
             if let index = indices[app.id] {
                 // An app found in both stores may have missing artwork in one.
