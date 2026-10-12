@@ -105,9 +105,15 @@ final class AppleService: ObservableObject {
         guard let account = active else { throw ToolError.message("请先在账号页登录 Apple 账号") }
         var targetVersion = versionID
         if store.platform == .tvOS, targetVersion == nil {
-            // A tvOS listing may omit externalVersionId. The generic dispatch
-            // can still return a build; the IPA family is verified before use.
-            targetVersion = try? await StoreService.platformApp(appID, store: store)?.externalVersionID
+            // Always resolve the Apple TV offer in the authenticated account's
+            // storefront. The user's chosen search region may differ.
+            var accountStore = store
+            if let country = StoreService.country(forStorefront: account.storeFront) {
+                accountStore.country = country
+            }
+            targetVersion = try? await StoreService.platformApp(appID, store: accountStore)?.externalVersionID
+            // Delisted Apple TV purchases may have no public catalog offer.
+            // Such requests still undergo strict package validation below.
         }
         var asset = try await fetchAsset(appID: appID, versionID: targetVersion, account: account,
                                          useCache: useCache, fallback: false, refreshed: false, purchased: false)
