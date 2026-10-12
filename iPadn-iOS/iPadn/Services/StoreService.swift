@@ -8,7 +8,56 @@ enum StoreService {
         return url
     }
 
-    static func search(_ query: SearchQuery, store: StoreContext, limit: Int) async throws -> [StoreApp] {
+    // Apple sends storefront identifiers such as "143441-1,29". The selected
+    // search region can differ from the account's purchase region.
+    static func country(forStorefront storefront: String) -> String? {
+        let identifier = String(storefront.split(separator: "-").first ?? "")
+        return [
+            "143441": "US", "143465": "CN", "143463": "HK", "143470": "TW",
+            "143462": "JP", "143444": "GB", "143464": "SG", "143455": "CA",
+            "143460": "AU", "143466": "KR", "143443": "DE", "143442": "FR"
+        ][identifier]
+    }
+
+    static func searchCountries(selected: String, accountCountry: String?) -> [String] {
+        var countries = [selected.uppercased()]
+        if let accountCountry = accountCountry?.uppercased(), !accountCountry.isEmpty,
+           !countries.contains(accountCountry) { countries.append(accountCountry) }
+        return countries
+    }
+
+    static func mergeResults(_ primary: [StoreApp], _ account: [StoreApp], limit: Int) -> [StoreApp] {
+        var merged: [StoreApp] = []
+        var indices: [String: Int] = [:]
+        for app in primary + account where !app.id.isEmpty {
+            if let index = indices[app.id] {
+                // An app found in both stores may have missing artwork in one.
+                if merged[index].iconURL == nil { merged[index].iconURL = app.iconURL }
+            } else {
+                indices[app.id] = merged.count
+                merged.append(app)
+            }
+        }
+        return Array(merged.prefix(max(0, limit)))
+    }
+
+    static func search(_ query: SearchQuery, store: StoreContext, limit: Int,
+                       accountCountry: String? = nil) async throws -> [StoreApp] {
+        let primary = try await searchInCountry(query, store: store, limit: limit)
+        let countries = searchCountries(selected: store.country, accountCountry: accountCountry)
+        guard countries.count > 1 else { return primary }
+        var accountStore = store
+        accountStore.country = countries[1]
+        do {
+            let alternate = try await searchInCountry(query, store: accountStore, limit: limit)
+            return mergeResults(primary, alternate, limit: limit)
+        } catch {
+            // A secondary regional lookup must not hide otherwise valid results.
+            return primary
+        }
+    }
+
+    private static func searchInCountry(_ query: SearchQuery, store: StoreContext, limit: Int) async throws -> [StoreApp] {
         switch query {
         case .keyword(let text):
             let url = try endpoint("https://itunes.apple.com/search", items: [
@@ -52,20 +101,36 @@ enum StoreService {
                         externalVersionID: version["externalId"].map { plistString($0) })
     }
 
-    static func artwork(_ ids: [String], store: StoreContext) async throws -> [String: URL] {
-        let valid = ids.filter { !$0.isEmpty && $0.allSatisfy { $0.isASCII && $0.isNumber } }
-        guard !valid.isEmpty else { return [:] }
-        let url = try endpoint("https://itunes.apple.com/lookup", items: [
-            URLQueryItem(name: "id", value: valid.joined(separator: ",")),
-            URLQueryItem(name: "country", value: store.country),
-            URLQueryItem(name: "entity", value: store.platform == .iOS ? "software" : "tvSoftware")
-        ])
-        let response = try await HTTPClient.shared.json(url) as? [String: Any]
+    static func artworkCountries(selected: String, accountCountry: String?) -> [String] {
+        var countries = searchCountries(selected: accountCountry ?? selected, accountCountry: selected)
+        if !countries.contains("US") { countries.append("US") }
+        return countries
+    }
+
+    static func artwork(_ ids: [String], store: StoreContext, accountCountry: String? = nil) async throws -> [String: URL] {
+        var missing = Array(Set(ids.filter { !$0.isEmpty && $0.allSatisfy { $0.isASCII && $0.isNumber } })).sorted()
+        guard !missing.isEmpty else { return [:] }
         var icons: [String: URL] = [:]
-        for raw in response?["results"] as? [[String: Any]] ?? [] {
-            let app = mapLookup(raw)
-            if let icon = app.iconURL { icons[app.id] = icon }
+        var firstError: Error?
+        for country in artworkCountries(selected: store.country, accountCountry: accountCountry) {
+            guard !missing.isEmpty else { break }
+            do {
+                let url = try endpoint("https://itunes.apple.com/lookup", items: [
+                    URLQueryItem(name: "id", value: missing.joined(separator: ",")),
+                    URLQueryItem(name: "country", value: country),
+                    URLQueryItem(name: "entity", value: store.platform == .iOS ? "software" : "tvSoftware")
+                ])
+                let response = try await HTTPClient.shared.json(url) as? [String: Any]
+                for raw in response?["results"] as? [[String: Any]] ?? [] {
+                    let app = mapLookup(raw)
+                    if let icon = app.iconURL { icons[app.id] = icon }
+                }
+                missing.removeAll { icons[$0] != nil }
+            } catch {
+                if firstError == nil { firstError = error }
+            }
         }
+        if icons.isEmpty, let firstError { throw firstError }
         return icons
     }
 
