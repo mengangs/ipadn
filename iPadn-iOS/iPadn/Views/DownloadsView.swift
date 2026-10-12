@@ -72,8 +72,10 @@ struct DownloadsView: View {
                             if !editMode.isEditing {
                             Button("任务详情", systemImage: "info.circle") { inspecting = job }
                             if let file = manager.fileURL(job) {
-                                Button("导出 IPA", systemImage: "square.and.arrow.up") { share = SharedFile(url: file) }
-                                Button("安装", systemImage: "square.and.arrow.down") { installing = job }
+                                Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: file) }
+                                if job.rawFormat == nil {
+                                    Button("安装", systemImage: "square.and.arrow.down") { installing = job }
+                                }
                                 Button("复制本机链接", systemImage: "link") {
                                     perform {
                                         let url = try await store.installation.localURL(file: file)
@@ -188,7 +190,7 @@ struct DownloadsView: View {
                         if let error = job.error { Section("错误详情") { Text(error).font(.subheadline).textSelection(.enabled) } }
                         if job.status == .completed {
                             if let file = manager.fileURL(job) {
-                                Section { ShareLink(item: file) { Label("导出 IPA", systemImage: "square.and.arrow.up") } }
+                                Section { ShareLink(item: file) { Label("导出文件", systemImage: "square.and.arrow.up") } }
                             }
                         }
                     }.toolPage().navigationTitle("任务详情").navigationBarTitleDisplayMode(.inline)
@@ -242,7 +244,9 @@ struct DownloadsView: View {
         }
     }
     private func packageDisplayApp(_ job: DownloadJob) -> StoreApp {
-        var app = job.app; app.iconURL = manager.packageIconURL(job); return app
+        var app = job.app
+        app.iconURL = manager.packageIconURL(job) ?? (job.rawFormat == nil ? nil : job.app.iconURL)
+        return app
     }
     private func primary(_ job: DownloadJob) {
         UX.feedback()
@@ -251,7 +255,10 @@ struct DownloadsView: View {
         case .paused: manager.resume(job.id)
         case .failed:
             if job.asset != nil { perform { try await store.refreshDownload(job) } } else { manager.resume(job.id) }
-        case .completed: installing = job
+        case .completed:
+            if job.rawFormat != nil, let file = manager.fileURL(job) {
+                share = SharedFile(url: file)
+            } else { installing = job }
         default: break
         }
     }
@@ -272,7 +279,7 @@ struct DownloadTaskRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private var displayedApp: StoreApp {
         var app = job.app
-        app.iconURL = manager.packageIconURL(job)
+        app.iconURL = manager.packageIconURL(job) ?? (job.rawFormat == nil ? nil : job.app.iconURL)
         return app
     }
     var inspecting: () -> Void
@@ -302,7 +309,9 @@ struct DownloadTaskRow: View {
         case .paused, .failed:
             Button(job.status == .failed ? "重试" : "继续", systemImage: job.status == .failed ? "arrow.clockwise" : "play.fill", action: primary).buttonStyle(.bordered).controlSize(.large)
         case .completed:
-            if dynamicTypeSize.isAccessibilitySize {
+            if job.rawFormat != nil {
+                exportButton
+            } else if dynamicTypeSize.isAccessibilitySize {
                 VStack(spacing: 10) { installButton; exportButton }
             } else {
                 HStack(spacing: 12) { installButton; exportButton }
