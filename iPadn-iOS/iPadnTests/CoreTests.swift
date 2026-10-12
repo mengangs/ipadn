@@ -80,6 +80,30 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(AppleAuthError.requiresReauthentication(["failureType": "2034"]))
     }
 
+    func testDownloadPlatformLabelsAndFriendlyAppleErrors() throws {
+        let app = StoreApp(id: "123", name: "Test")
+        let url = URL(string: "https://example.org/download.ipa")!
+        let asset = DownloadAsset(app: app, url: url, sinf: nil, metadata: nil,
+                                  externalVersionIDs: [], platform: "appletvos", account: "test@example.org")
+        XCTAssertEqual(DownloadJob(app: app, asset: asset).platformLabel, "tvOS")
+        var modified = asset
+        modified.platform = "ipad"
+        XCTAssertEqual(DownloadJob(app: app, asset: modified).platformLabel, "iPad")
+        modified.platform = "ios"
+        XCTAssertEqual(DownloadJob(app: app, asset: modified).platformLabel, "iOS")
+        XCTAssertEqual(DownloadJob(app: app, rawFormat: "dmg").platformLabel, "Mac")
+        XCTAssertEqual(DownloadJob(app: app).platformLabel, "IPA")
+        let message = try XCTUnwrap(HTTPClient.appleFailure([
+            "failureType": "2002", "customerMessage": "Your password has changed."
+        ])?.localizedDescription)
+        XCTAssertTrue(message.contains("重新登录"))
+        XCTAssertFalse(message.contains("2002"))
+        XCTAssertFalse(message.contains("Your password"))
+        let searchError = AppErrorMessage.forSearch(ToolError.message("Your password has changed.(2002)"))
+        XCTAssertTrue(searchError.contains("重新登录"))
+        XCTAssertFalse(searchError.contains("2002"))
+    }
+
     func testPlatformSearchEntitiesAndIPASupport() {
         XCTAssertEqual(AppPlatform.iOS.searchEntity, "software")
         XCTAssertEqual(AppPlatform.iPadOS.searchEntity, "iPadSoftware")
