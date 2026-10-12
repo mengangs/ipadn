@@ -113,15 +113,26 @@ final class AppleService: ObservableObject {
                                          useCache: useCache, fallback: false, refreshed: false, purchased: false)
         let reported = asset.platform.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if store.platform == .tvOS {
-            guard reported.isEmpty || ["tvos", "appletvos", "appletv", "atv9"].contains(reported) else {
-                throw ToolError.message("Apple 返回的不是 tvOS 版本，已阻止混合下载")
+            let tvPlatforms = ["tvos", "appletvos", "appletv", "atv9"]
+            if !reported.isEmpty && !tvPlatforms.contains(reported) {
+                // The standard dispatch can resolve a shared iOS App ID to its
+                // iPhone build. Try Apple's alternate version-aware endpoint once
+                // before reporting that no verified tvOS file is available.
+                if let alternate = try? await fetchAsset(appID: appID, versionID: targetVersion,
+                    account: account, useCache: useCache, fallback: true,
+                    refreshed: false, purchased: false),
+                   alternate.platform.isEmpty || tvPlatforms.contains(alternate.platform.lowercased()) {
+                    asset = alternate
+                } else {
+                    throw ToolError.message("Apple 没有提供可确认的 Apple TV 安装包。请检查应用是否支持 tvOS，以及当前 Apple 账号是否可下载。")
+                }
             }
-            // Dispatch metadata can omit the platform field. Validate UIDeviceFamily
-            // from the actual IPA before reporting this download as completed.
+            // A missing platform field is not proof of tvOS compatibility.
+            // Final IPA validation still requires UIDeviceFamily to include Apple TV.
             asset.platform = "appletvos"
         } else {
             guard reported.isEmpty || ["ios", "iphoneos", "ipad"].contains(reported) else {
-                throw ToolError.message("Apple 返回的安装包不属于 iOS/iPadOS 平台")
+                throw ToolError.message("Apple 返回的安装包与当前平台不匹配，请切换正确的平台后重试。")
             }
             asset.platform = store.platform == .iPadOS ? "ipad" : "ios"
         }
