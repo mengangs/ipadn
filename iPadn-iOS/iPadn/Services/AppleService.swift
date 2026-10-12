@@ -78,6 +78,13 @@ final class AppleService: ObservableObject {
         accounts = updated
         if activeID == id { select(nil) }
     }
+    func verifyCurrentAccount(code: String, expectedID: String, useCache: Bool) async throws {
+        guard let account = active, account.id == expectedID else {
+            throw ToolError.message("验证期间账号已改变，请重新选择下载账号")
+        }
+        try await login(email: account.id, password: account.password, code: code, useCache: useCache)
+    }
+
     func refresh(_ account: AppleAccount, useCache: Bool) async throws -> AppleAccount {
         guard activeID == account.id else { throw ToolError.message("账号已切换，请重新执行操作") }
         try await login(email: account.id, password: account.password, code: "", useCache: useCache)
@@ -92,19 +99,30 @@ final class AppleService: ObservableObject {
             guard let version = UInt64(versionID), version > 0,
                   versionID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message("版本 ID 必须是有效的正整数") }
         }
+        guard store.platform.supportsIPA else {
+            throw ToolError.message("原生 Mac App Store 应用不是 iOS IPA，无法使用当前下载方式获取；请在 Mac App Store 下载")
+        }
         guard let account = active else { throw ToolError.message("请先在账号页登录 Apple 账号") }
         var targetVersion = versionID
         if store.platform == .tvOS, targetVersion == nil {
             targetVersion = try await StoreService.platformApp(appID, store: store)?.externalVersionID
             guard targetVersion != nil else { throw ToolError.message("未找到 tvOS 最新版本，请指定版本 ID") }
         }
-        let asset = try await fetchAsset(appID: appID, versionID: targetVersion, account: account,
+        var asset = try await fetchAsset(appID: appID, versionID: targetVersion, account: account,
                                          useCache: useCache, fallback: false, refreshed: false, purchased: false)
-        if !asset.platform.isEmpty {
-            let isIOS = asset.platform.lowercased() == "ios"
-            guard isIOS == (store.platform == .iOS) else { throw ToolError.message("返回版本不属于当前 \(store.platform.title) 平台") }
-        } else if store.platform == .tvOS {
-            throw ToolError.message("返回数据缺少平台信息，无法确认 tvOS 安装包")
+        let reported = asset.platform.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if store.platform == .tvOS {
+            guard reported.isEmpty || ["tvos", "appletvos", "atv9"].contains(reported) else {
+                throw ToolError.message("Apple 返回的不是 tvOS 版本，已阻止混合下载")
+            }
+            // Dispatch metadata can omit the platform field. Validate UIDeviceFamily
+            // from the actual IPA before reporting this download as completed.
+            asset.platform = "appletvos"
+        } else {
+            guard reported.isEmpty || ["ios", "iphoneos", "ipad"].contains(reported) else {
+                throw ToolError.message("Apple 返回的安装包不属于 iOS/iPadOS 平台")
+            }
+            asset.platform = store.platform == .iPadOS ? "ipad" : "ios"
         }
         return asset
     }
@@ -133,10 +151,12 @@ final class AppleService: ObservableObject {
                 useCache: useCache, fallback: fallback, refreshed: true, purchased: purchased)
         }
         if failure == "9610", !purchased {
-            let refreshedAccount = try await refresh(account, useCache: useCache)
-            guard activeID == refreshedAccount.id else { throw ToolError.message("账号已切换，请重新执行下载") }
-            try await acquireFreeApp(appID, account: refreshedAccount)
-            return try await fetchAsset(appID: appID, versionID: versionID, account: refreshedAccount,
+            // A missing license does not mean the login session is expired. Refreshing
+            // here always calls authenticate and can trigger an invisible 2FA prompt.
+            // Acquire the free license using the current valid account first.
+            guard activeID == account.id else { throw ToolError.message("账号已切换，请重新执行下载") }
+            try await acquireFreeApp(appID, account: account)
+            return try await fetchAsset(appID: appID, versionID: versionID, account: account,
                 useCache: useCache, fallback: fallback, refreshed: refreshed, purchased: true)
         }
         if let error = HTTPClient.appleFailure(raw) { throw error }
