@@ -83,12 +83,9 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.run_tests
         run: |
           set -o pipefail
-          simulator_id="$(xcrun simctl list devices available --json | python3 -c 'import sys,json; d=json.load(sys.stdin); a=[(k,v["udid"]) for k,vs in d["devices"].items() if ".iOS-" in k for v in vs if v.get("isAvailable") and v["name"].startswith("iPhone")]; assert a,"No available iPhone simulator"; a.sort(key=lambda x: ("iOS-26-0" not in x[0],x[0])); print(a[0][1])')"
-          echo "$simulator_id" > build/simulator-id.txt
-          xcrun simctl boot "$simulator_id" || true
-          xcrun simctl bootstatus "$simulator_id" -b
+          killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
           xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
-            -configuration Debug -destination "platform=iOS Simulator,id=$simulator_id" \
+            -configuration Debug -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=latest" \
             -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
             -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 \
             -destination-timeout 120 -derivedDataPath build/TestDerivedData \
@@ -97,12 +94,11 @@ jobs:
             2>&1 | tee build/tests.log
 
       - name: Capture running app screenshots
+        timeout-minutes: 5
         if: always() && !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.run_tests)
         run: |
           if [ ! -d build/TestDerivedData/Build/Products/Debug-iphonesimulator/iPadn.app ]; then exit 0; fi
-          simulator_id="$(cat build/simulator-id.txt)"
-          xcrun simctl boot "$simulator_id" || true
-          xcrun simctl bootstatus "$simulator_id" -b
+          simulator_id="booted"
           xcrun simctl install "$simulator_id" build/TestDerivedData/Build/Products/Debug-iphonesimulator/iPadn.app
           mkdir -p build/screenshots/native
           xcrun simctl status_bar "$simulator_id" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
