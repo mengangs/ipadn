@@ -305,6 +305,11 @@ final class DownloadManager: NSObject, ObservableObject {
             }
             guard let artwork, !Task.isCancelled else { continue }
             if (try? await PackageIconService.saveCatalogArtwork(from: artwork, id: job.id)) == true {
+                // A download can be deleted while the artwork request is in flight.
+                guard jobs.contains(where: { $0.id == job.id }) else {
+                    try? FileManager.default.removeItem(at: PackageIconService.cacheURL(job.id))
+                    continue
+                }
                 objectWillChange.send()
             }
         }
