@@ -97,8 +97,9 @@ final class LoopbackServer: @unchecked Sendable {
                     listener.newConnectionHandler = { [weak self] connection in
                         guard let self else { connection.cancel(); return }
                         connection.start(queue: self.queue)
-                        self.read(connection, accumulated: Data())
-                        self.queue.asyncAfter(deadline: .now() + 120) { connection.cancel() }
+                        let timeout = DispatchWorkItem { [weak connection] in connection?.cancel() }
+                        self.queue.asyncAfter(deadline: .now() + 60, execute: timeout)
+                        self.read(connection, accumulated: Data(), timeoutItem: timeout)
                     }
                     listener.start(queue: self.queue)
                 } catch { self.listener = nil; self.finishStart(.failure(error)) }
@@ -127,33 +128,34 @@ final class LoopbackServer: @unchecked Sendable {
         return baseURL.appendingPathComponent("data").appendingPathComponent(key)
     }
 
-    private func read(_ connection: NWConnection, accumulated: Data) {
+    private func read(_ connection: NWConnection, accumulated: Data, timeoutItem: DispatchWorkItem? = nil) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { data, _, ended, error in
-            if error != nil { connection.cancel(); return }
+            if error != nil { timeoutItem?.cancel(); connection.cancel(); return }
             var buffer = accumulated; if let data = data { buffer.append(data) }
-            guard buffer.count <= 2 * 1024 * 1024 else { self.reply(connection, status: 413); return }
+            guard buffer.count <= 2 * 1024 * 1024 else { timeoutItem?.cancel(); self.reply(connection, status: 413); return }
             let separator = Data("\r\n\r\n".utf8)
             if let boundary = buffer.range(of: separator),
                let header = String(data: buffer[..<boundary.lowerBound], encoding: .utf8) {
                 let lines = header.components(separatedBy: "\r\n")
                 let first = (lines.first ?? "").split(separator: " ")
-                guard first.count == 3 else { self.reply(connection, status: 400); return }
+                guard first.count == 3 else { timeoutItem?.cancel(); self.reply(connection, status: 400); return }
                 var headers: [String: String] = [:]
                 for line in lines.dropFirst() {
                     guard let colon = line.firstIndex(of: ":") else { continue }
                     headers[String(line[..<colon]).lowercased()] = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
                 }
-                guard headers["transfer-encoding"] == nil else { self.reply(connection, status: 400); return }
+                guard headers["transfer-encoding"] == nil else { timeoutItem?.cancel(); self.reply(connection, status: 400); return }
                 let contentLength = Int(headers["content-length"] ?? "0") ?? -1
-                guard contentLength >= 0, contentLength <= 1024 * 1024 else { self.reply(connection, status: 413); return }
+                guard contentLength >= 0, contentLength <= 1024 * 1024 else { timeoutItem?.cancel(); self.reply(connection, status: 413); return }
                 let start = boundary.upperBound
                 if buffer.count - start >= contentLength {
+                    timeoutItem?.cancel()
                     self.route(connection, method: String(first[0]), target: String(first[1]),
                                headers: headers, body: Data(buffer[start..<(start + contentLength)]))
                     return
                 }
             }
-            if ended { connection.cancel() } else { self.read(connection, accumulated: buffer) }
+            if ended { timeoutItem?.cancel(); connection.cancel() } else { self.read(connection, accumulated: buffer, timeoutItem: timeoutItem) }
         }
     }
 
@@ -190,10 +192,14 @@ final class LoopbackServer: @unchecked Sendable {
         if parts.count == 2, parts[0] == "data" {
             lock.lock(); let resource = registeredData[parts[1]]; lock.unlock()
             guard let resource else { reply(connection, status: 404); return }
-            let header = responseHeader(status: 200, length: UInt64(resource.0.count), contentType: resource.1, extra: [:])
+            var extra: [String: String] = [:]
+            if resource.1 == "application/x-apple-aspen-config" {
+                extra["Content-Disposition"] = "attachment; filename=\"iPadn-local-root.mobileconfig\""
+            }
+            let header = responseHeader(status: 200, length: UInt64(resource.0.count), contentType: resource.1, extra: extra)
             var response = header
             if method != "HEAD" { response.append(resource.0) }
-            connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
+            connection.send(content: response, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in connection.cancel() })
         } else if parts.count == 2, parts[0] == "runtime", !parts[1].contains(".."),
            let root = Bundle.main.url(forResource: "SAPRuntime", withExtension: nil),
            ["index.html", "sap-signer.js", "wasm_exec.js", "unicorn_x86.js", "sap.wasm"].contains(parts[1]) {
@@ -219,22 +225,51 @@ final class LoopbackServer: @unchecked Sendable {
             let header = responseHeader(status: selected == nil ? 200 : 206, length: length, contentType: mime, extra: extra)
             let file = try FileHandle(forReadingFrom: url)
             try file.seek(toOffset: selected?.start ?? 0)
-            connection.send(content: header, completion: .contentProcessed { error in
+            connection.send(content: header, contentContext: head ? .finalMessage : .defaultMessage, isComplete: head, completion: .contentProcessed { error in
                 if error != nil || head { try? file.close(); connection.cancel(); return }
                 self.sendChunk(connection, file: file, remaining: length)
             })
         } catch { reply(connection, status: 404) }
     }
-    private func sendChunk(_ connection: NWConnection, file: FileHandle, remaining: UInt64) {
-        guard remaining > 0 else { try? file.close(); connection.cancel(); return }
-        do {
-            let chunk = try file.read(upToCount: Int(min(remaining, 262_144))) ?? Data()
-            guard !chunk.isEmpty else { try? file.close(); connection.cancel(); return }
-            connection.send(content: chunk, completion: .contentProcessed { error in
-                if error != nil { try? file.close(); connection.cancel() }
-                else { self.sendChunk(connection, file: file, remaining: remaining - UInt64(chunk.count)) }
+    private func sendChunk(_ connection: NWConnection, file: FileHandle, remaining: UInt64, timeoutItem: DispatchWorkItem? = nil) {
+        timeoutItem?.cancel()
+        guard remaining > 0 else {
+            try? file.close()
+            connection.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in
+                connection.cancel()
             })
-        } catch { try? file.close(); connection.cancel() }
+            return
+        }
+        do {
+            let count = Int(min(remaining, 262_144))
+            let chunk = try file.read(upToCount: count) ?? Data()
+            guard !chunk.isEmpty else {
+                try? file.close()
+                connection.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in
+                    connection.cancel()
+                })
+                return
+            }
+            let isLast = remaining == UInt64(chunk.count)
+            let nextTimeout = DispatchWorkItem { [weak connection] in
+                try? file.close()
+                connection?.cancel()
+            }
+            queue.asyncAfter(deadline: .now() + 60, execute: nextTimeout)
+            connection.send(content: chunk, contentContext: isLast ? .finalMessage : .defaultMessage, isComplete: isLast, completion: .contentProcessed { error in
+                nextTimeout.cancel()
+                if error != nil || isLast {
+                    try? file.close()
+                    connection.cancel()
+                } else {
+                    self.sendChunk(connection, file: file, remaining: remaining - UInt64(chunk.count), timeoutItem: nextTimeout)
+                }
+            })
+        } catch {
+            timeoutItem?.cancel()
+            try? file.close()
+            connection.cancel()
+        }
     }
     private func responseHeader(status: Int, length: UInt64, contentType: String, extra: [String: String]) -> Data {
         let phrases = [200: "OK", 204: "No Content", 206: "Partial Content", 400: "Bad Request", 403: "Forbidden", 404: "Not Found", 405: "Method Not Allowed", 413: "Payload Too Large", 416: "Range Not Satisfiable", 502: "Bad Gateway"]
@@ -246,6 +281,6 @@ final class LoopbackServer: @unchecked Sendable {
     private func reply(_ connection: NWConnection, status: Int, body: Data = Data(), contentType: String = "text/plain; charset=utf-8", extra: [String: String] = [:]) {
         var data = responseHeader(status: status, length: UInt64(body.count), contentType: contentType, extra: extra)
         data.append(body)
-        connection.send(content: data, completion: .contentProcessed { _ in connection.cancel() })
+        connection.send(content: data, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in connection.cancel() })
     }
 }

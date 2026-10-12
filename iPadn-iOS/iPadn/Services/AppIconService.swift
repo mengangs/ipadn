@@ -43,7 +43,7 @@ final class AppIconService: ObservableObject {
         // Some iOS versions update alternateIconName without invoking the completion.
         // Observe the actual system state so successful changes never leave a spinner.
         let timeout = Task { [weak self] in
-            for _ in 0..<100 {
+            for _ in 0..<300 {
                 try? await Task.sleep(nanoseconds: 100_000_000)
                 guard !Task.isCancelled else { return }
                 if UIApplication.shared.alternateIconName == choice.alternateName {
@@ -58,8 +58,16 @@ final class AppIconService: ObservableObject {
                 if Task.isCancelled { continuation.resume(throwing: CancellationError()); return }
                 requestID = id; pending = continuation
                 UIApplication.shared.setAlternateIconName(choice.alternateName) { [weak self] error in
-                    guard let error else { return }
-                    Task { @MainActor in self?.finish(id, choice: choice, error: error) }
+                    Task { @MainActor in
+                        if let error {
+                            self?.finish(id, choice: choice, error: error)
+                        } else {
+                            self?.refresh()
+                            if self?.selected == choice {
+                                self?.finish(id, choice: choice, error: nil)
+                            }
+                        }
+                    }
                 }
             }
         }, onCancel: { [weak self] in
