@@ -105,14 +105,15 @@ final class AppleService: ObservableObject {
         guard let account = active else { throw ToolError.message("请先在账号页登录 Apple 账号") }
         var targetVersion = versionID
         if store.platform == .tvOS, targetVersion == nil {
-            targetVersion = try await StoreService.platformApp(appID, store: store)?.externalVersionID
-            guard targetVersion != nil else { throw ToolError.message("未找到 tvOS 最新版本，请指定版本 ID") }
+            // A tvOS listing may omit externalVersionId. The generic dispatch
+            // can still return a build; the IPA family is verified before use.
+            targetVersion = try? await StoreService.platformApp(appID, store: store)?.externalVersionID
         }
         var asset = try await fetchAsset(appID: appID, versionID: targetVersion, account: account,
                                          useCache: useCache, fallback: false, refreshed: false, purchased: false)
         let reported = asset.platform.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if store.platform == .tvOS {
-            guard reported.isEmpty || ["tvos", "appletvos", "atv9"].contains(reported) else {
+            guard reported.isEmpty || ["tvos", "appletvos", "appletv", "atv9"].contains(reported) else {
                 throw ToolError.message("Apple 返回的不是 tvOS 版本，已阻止混合下载")
             }
             // Dispatch metadata can omit the platform field. Validate UIDeviceFamily
