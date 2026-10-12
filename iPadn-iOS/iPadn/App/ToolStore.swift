@@ -91,16 +91,16 @@ final class ToolStore: ObservableObject {
             defer { if self.searchID == id { self.searching = false } }
             do {
                 let query = try SearchQuery.parse(input)
-                let apps: [StoreApp]
-                if case .appID(let appID, let versionID) = query, versionID != nil {
-                    let asset = try await apple.asset(appID: appID, versionID: versionID, store: context, useCache: settings.useSignerCache)
-                    apps = [asset.app]
-                } else {
-                    let accountCountry = StoreService.country(forStorefront: apple.active?.storeFront ?? "")
-                    let publicResults = try await StoreService.search(query, store: context, limit: limit, accountCountry: accountCountry)
-                    if publicResults.isEmpty, case .appID(let appID, _) = query, apple.active != nil {
-                        apps = [try await apple.asset(appID: appID, versionID: nil, store: context, useCache: settings.useSignerCache).app]
-                    } else { apps = publicResults }
+                // Public search must never trigger purchase or download authorization.
+                // Searching an App ID should work even if saved Apple credentials expired.
+                let accountCountry = StoreService.country(forStorefront: apple.active?.storeFront ?? "")
+                var apps = try await StoreService.search(query, store: context, limit: limit, accountCountry: accountCountry)
+                if case .appID(_, let versionID) = query, let versionID {
+                    apps = apps.map {
+                        var result = $0
+                        result.externalVersionID = versionID
+                        return result
+                    }
                 }
                 try Task.checkCancellation()
                 guard searchID == id else { return }
@@ -113,7 +113,9 @@ final class ToolStore: ObservableObject {
                 remember(input)
             } catch is CancellationError { }
             catch {
-                if !Task.isCancelled, searchID == id { searchError = error.localizedDescription }
+                if !Task.isCancelled, searchID == id {
+                    searchError = AppErrorMessage.forSearch(error)
+                }
             }
         }
     }
