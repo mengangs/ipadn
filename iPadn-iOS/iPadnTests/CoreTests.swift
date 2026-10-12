@@ -64,7 +64,9 @@ final class CoreTests: XCTestCase {
         let key = UIDevice.current.userInterfaceIdiom == .pad ? "CFBundleIcons~ipad" : "CFBundleIcons"
         let icons = try XCTUnwrap(Bundle.main.infoDictionary?[key] as? [String: Any])
         let alternates = try XCTUnwrap(icons["CFBundleAlternateIcons"] as? [String: Any])
-        XCTAssertNotNil(alternates["AppIconFlat"])
+        let flat = try XCTUnwrap(alternates["AppIconFlat"] as? [String: Any])
+        XCTAssertFalse(try XCTUnwrap(flat["CFBundleIconFiles"] as? [String]).isEmpty)
+        XCTAssertNotNil(Bundle.main.url(forResource: "AppIconFlat60x60@2x", withExtension: "png"))
         XCTAssertNotNil(UIImage(named: AppIconService.Choice.dimensional.preview))
         XCTAssertNotNil(UIImage(named: AppIconService.Choice.flat.preview))
         XCTAssertTrue(UIApplication.shared.supportsAlternateIcons)

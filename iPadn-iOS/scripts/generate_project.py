@@ -41,6 +41,12 @@ for path, file_type in [("Resources/SAPRuntime", "folder"), ("Resources/Assets.x
     reference = add("File/" + path, "PBXFileReference", lastKnownFileType=file_type, path=path, sourceTree="<group>")
     app_files.append(reference)
     resources.append(add("Build/" + path, "PBXBuildFile", fileRef=reference))
+# Alternate icons also ship as standalone PNGs for SpringBoard and signing tools.
+for path in sorted((ROOT / "iPadn/Resources/AlternateIcons").glob("*.png")):
+    relative = path.relative_to(ROOT / "iPadn").as_posix()
+    reference = add("File/" + relative, "PBXFileReference", lastKnownFileType="image.png", path=relative, sourceTree="<group>")
+    app_files.append(reference)
+    resources.append(add("Build/" + relative, "PBXBuildFile", fileRef=reference))
 app_files.append(add("InfoPlist", "PBXFileReference", lastKnownFileType="text.plist.xml", path="Info.plist", sourceTree="<group>"))
 test_files, test_sources = [], []
 for path in sorted((ROOT / "iPadnTests").glob("*.swift")):
@@ -67,7 +73,13 @@ assemble = add("AssembleWASM", "PBXShellScriptBuildPhase", buildActionMask="2147
                shellScript='set -euo pipefail\npython3 "$SRCROOT/scripts/assemble_runtime.py"\n', alwaysOutOfDate="1")
 tests_sources = add("TestsSources", "PBXSourcesBuildPhase", buildActionMask="2147483647", files=test_sources, runOnlyForDeploymentPostprocessing="0")
 tests_frameworks = add("TestsFrameworks", "PBXFrameworksBuildPhase", buildActionMask="2147483647", files=[test_framework], runOnlyForDeploymentPostprocessing="0")
-tests_resources = add("TestsResources", "PBXResourcesBuildPhase", buildActionMask="2147483647", files=[], runOnlyForDeploymentPostprocessing="0")
+test_resources = []
+for path in sorted((ROOT / "iPadnTests/Fixtures").glob("*.p12")):
+    relative = path.relative_to(ROOT / "iPadnTests").as_posix()
+    reference = add("TestFile/" + relative, "PBXFileReference", lastKnownFileType="file", path=relative, sourceTree="<group>")
+    objects[test_group]["children"].append(reference)
+    test_resources.append(add("TestBuild/" + relative, "PBXBuildFile", fileRef=reference))
+tests_resources = add("TestsResources", "PBXResourcesBuildPhase", buildActionMask="2147483647", files=test_resources, runOnlyForDeploymentPostprocessing="0")
 base = {"IPHONEOS_DEPLOYMENT_TARGET": "17.0", "SDKROOT": "iphoneos", "SWIFT_VERSION": "5.0",
         "CLANG_ENABLE_MODULES": "YES", "CLANG_ENABLE_OBJC_ARC": "YES", "ENABLE_STRICT_OBJC_MSGSEND": "YES",
         "GCC_C_LANGUAGE_STANDARD": "gnu17", "CLANG_CXX_LANGUAGE_STANDARD": "gnu++20",
@@ -75,9 +87,8 @@ base = {"IPHONEOS_DEPLOYMENT_TARGET": "17.0", "SDKROOT": "iphoneos", "SWIFT_VERS
 project_configs = configs("Project", base, {"SWIFT_COMPILATION_MODE": "wholemodule", "VALIDATE_PRODUCT": "YES"})
 app_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
                 "DEVELOPMENT_TEAM": "", "TARGETED_DEVICE_FAMILY": "1,2", "INFOPLIST_FILE": "iPadn/Info.plist",
-                "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": "1.3.0", "CURRENT_PROJECT_VERSION": "11",
+                "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": "1.3.0", "CURRENT_PROJECT_VERSION": "12",
                 "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
-                "ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES": "AppIconFlat",
                 "ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS": "YES", "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
                 "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks"],
                 "ENABLE_PREVIEWS": "YES", "SUPPORTS_MACCATALYST": "NO", "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD": "NO",
@@ -165,6 +176,8 @@ info = {"CFBundleDevelopmentRegion": "$(DEVELOPMENT_LANGUAGE)", "CFBundleExecuta
         "UISupportedInterfaceOrientations~ipad": ["UIInterfaceOrientationPortrait", "UIInterfaceOrientationPortraitUpsideDown", "UIInterfaceOrientationLandscapeLeft", "UIInterfaceOrientationLandscapeRight"],
         "CFBundleURLTypes": [{"CFBundleURLName": "app.local.iPadn", "CFBundleURLSchemes": ["ipadn"]}],
         "LSApplicationQueriesSchemes": ["itms-services"],
+        "CFBundleIcons": {"CFBundleAlternateIcons": {"AppIconFlat": {"CFBundleIconFiles": ["AppIconFlat60x60"], "UIPrerenderedIcon": False}}},
+        "CFBundleIcons~ipad": {"CFBundleAlternateIcons": {"AppIconFlat": {"CFBundleIconFiles": ["AppIconFlat60x60", "AppIconFlat76x76", "AppIconFlat83x83"], "UIPrerenderedIcon": False}}},
         "CFBundleDocumentTypes": [{"CFBundleTypeName": "IPA 安装包", "CFBundleTypeRole": "Viewer", "LSHandlerRank": "Alternate",
                                    "LSItemContentTypes": ["com.apple.itunes.ipa", "public.zip-archive"]}],
         "UTImportedTypeDeclarations": [{"UTTypeIdentifier": "com.apple.itunes.ipa", "UTTypeDescription": "iOS App Archive",

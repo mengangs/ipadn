@@ -110,6 +110,8 @@ struct ToolSettings: Codable, Equatable {
     var useSignerCache = true
     var appearance = "system"
     var plistServer = ""
+    var localInstallation = true
+    var localInstallHost = "127.0.0.1"
     var versionSources: [VersionSource] = [
         VersionSource(name: "Timbrd", urlTemplate: "https://api.timbrd.com/apple/app-version/index.php?id={id}", containerKey: "", reverse: true),
         VersionSource(name: "Bilin", urlTemplate: "https://apis.bilin.eu.org/history/{id}", containerKey: "data", reverse: false)
@@ -118,7 +120,7 @@ struct ToolSettings: Codable, Equatable {
     init() { }
     private enum CodingKeys: String, CodingKey {
         case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
-        case useSignerCache, appearance, plistServer, versionSources
+        case useSignerCache, appearance, plistServer, versionSources, localInstallation, localInstallHost
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -132,6 +134,8 @@ struct ToolSettings: Codable, Equatable {
         appearance = try values.decodeIfPresent(String.self, forKey: .appearance) ?? appearance
         if !["system", "light", "dark"].contains(appearance) { appearance = "system" }
         plistServer = try values.decodeIfPresent(String.self, forKey: .plistServer) ?? plistServer
+        localInstallation = try values.decodeIfPresent(Bool.self, forKey: .localInstallation) ?? plistServer.isEmpty
+        localInstallHost = try values.decodeIfPresent(String.self, forKey: .localInstallHost) ?? localInstallHost
         versionSources = try values.decodeIfPresent([VersionSource].self, forKey: .versionSources) ?? versionSources
     }
 }
@@ -249,6 +253,15 @@ func plistString(_ value: Any?) -> String {
 enum DownloadFilter: String, CaseIterable, Identifiable {
     case all = "全部", active = "进行中", paused = "已暂停", completed = "已完成", failed = "失败"
     var id: String { rawValue }
+    var symbol: String {
+        switch self {
+        case .all: return "square.stack"
+        case .active: return "arrow.down.circle"
+        case .paused: return "pause.circle"
+        case .completed: return "checkmark.circle"
+        case .failed: return "exclamationmark.circle"
+        }
+    }
     func includes(_ status: DownloadStatus) -> Bool {
         switch self {
         case .all: return true

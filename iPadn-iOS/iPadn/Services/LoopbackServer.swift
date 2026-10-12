@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Security
 
 struct HTTPByteRange: Equatable {
     let start: UInt64
@@ -29,7 +30,10 @@ final class LoopbackServer: @unchecked Sendable {
     private var listener: NWListener?
     private var starters: [CheckedContinuation<Void, Error>] = []
     private var registeredFiles: [String: URL] = [:]
+    private var registeredData: [String: (Data, String)] = [:]
     private var compatibilityFiles: [String: URL] = [:]
+    private let identity: SecIdentity?
+    private let publicHost: String
     private let port: UInt16?
     private let compatibilityMode: Bool
     private let token = UUID().uuidString
@@ -42,8 +46,9 @@ final class LoopbackServer: @unchecked Sendable {
         "https://fpinit.itunes.apple.com/v1/signSapSetup/legacy"
     ]
 
-    init(port: UInt16? = nil, compatibilityMode: Bool = false) {
+    init(port: UInt16? = nil, compatibilityMode: Bool = false, identity: SecIdentity? = nil, publicHost: String = "127.0.0.1") {
         self.port = port; self.compatibilityMode = compatibilityMode
+        self.identity = identity; self.publicHost = publicHost
     }
 
     func start() async throws {
@@ -53,7 +58,14 @@ final class LoopbackServer: @unchecked Sendable {
                 self.starters.append(continuation)
                 guard self.listener == nil else { return }
                 do {
-                    let parameters = NWParameters.tcp
+                    let parameters: NWParameters
+                    if let identity = self.identity {
+                        guard let localIdentity = sec_identity_create(identity) else { throw ToolError.message("无法加载安装服务证书") }
+                        let tls = NWProtocolTLS.Options()
+                        sec_protocol_options_set_local_identity(tls.securityProtocolOptions, localIdentity)
+                        sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)
+                        parameters = NWParameters(tls: tls, tcp: NWProtocolTCP.Options())
+                    } else { parameters = .tcp }
                     parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: self.port.flatMap(NWEndpoint.Port.init(rawValue:)) ?? .any)
                     let listener = try NWListener(using: parameters, on: .any)
                     self.listener = listener
@@ -63,7 +75,11 @@ final class LoopbackServer: @unchecked Sendable {
                         case .ready:
                             guard let port = listener.port else { return }
                             self.lock.lock()
-                            self.readyURL = URL(string: "http://127.0.0.1:\(port.rawValue)/\(self.token)/")
+                            var address = URLComponents()
+                            address.scheme = self.identity == nil ? "http" : "https"
+                            address.host = self.publicHost; address.port = Int(port.rawValue)
+                            address.path = "/\(self.token)/"
+                            self.readyURL = address.url
                             self.lock.unlock()
                             self.finishStart(.success(()))
                         case .failed(let error):
@@ -102,6 +118,13 @@ final class LoopbackServer: @unchecked Sendable {
         if compatibilityMode { compatibilityFiles[url.lastPathComponent] = url }
         lock.unlock()
         return baseURL.appendingPathComponent("files").appendingPathComponent(key).appendingPathComponent(url.lastPathComponent)
+    }
+
+    func register(data: Data, contentType: String) throws -> URL {
+        guard let baseURL else { throw ToolError.message("本地文件服务未就绪") }
+        let key = UUID().uuidString
+        lock.lock(); registeredData[key] = (data, contentType); lock.unlock()
+        return baseURL.appendingPathComponent("data").appendingPathComponent(key)
     }
 
     private func read(_ connection: NWConnection, accumulated: Data) {
@@ -164,7 +187,14 @@ final class LoopbackServer: @unchecked Sendable {
         }
         guard method == "GET" || method == "HEAD" else { reply(connection, status: 405); return }
         let parts = path.split(separator: "/").map(String.init)
-        if parts.count == 2, parts[0] == "runtime", !parts[1].contains(".."),
+        if parts.count == 2, parts[0] == "data" {
+            lock.lock(); let resource = registeredData[parts[1]]; lock.unlock()
+            guard let resource else { reply(connection, status: 404); return }
+            let header = responseHeader(status: 200, length: UInt64(resource.0.count), contentType: resource.1, extra: [:])
+            var response = header
+            if method != "HEAD" { response.append(resource.0) }
+            connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
+        } else if parts.count == 2, parts[0] == "runtime", !parts[1].contains(".."),
            let root = Bundle.main.url(forResource: "SAPRuntime", withExtension: nil),
            ["index.html", "sap-signer.js", "wasm_exec.js", "unicorn_x86.js", "sap.wasm"].contains(parts[1]) {
             sendFile(connection, url: root.appendingPathComponent(parts[1]), range: headers["range"], head: method == "HEAD")
@@ -185,7 +215,7 @@ final class LoopbackServer: @unchecked Sendable {
             let length = selected?.count ?? size
             var extra = ["Accept-Ranges": "bytes"]
             if let selected = selected { extra["Content-Range"] = "bytes \(selected.start)-\(selected.end)/\(size)" }
-            let mime = ["html": "text/html; charset=utf-8", "js": "text/javascript", "wasm": "application/wasm", "ipa": "application/octet-stream"][url.pathExtension] ?? "application/octet-stream"
+            let mime = ["html": "text/html; charset=utf-8", "js": "text/javascript", "wasm": "application/wasm", "ipa": "application/octet-stream", "plist": "application/xml", "png": "image/png"][url.pathExtension] ?? "application/octet-stream"
             let header = responseHeader(status: selected == nil ? 200 : 206, length: length, contentType: mime, extra: extra)
             let file = try FileHandle(forReadingFrom: url)
             try file.seek(toOffset: selected?.start ?? 0)

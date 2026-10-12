@@ -12,6 +12,11 @@ on:
         required: true
         default: true
         type: boolean
+      publish_release:
+        description: Publish a GitHub Release after all build, test and screenshot checks pass
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -56,9 +61,13 @@ jobs:
           python3 scripts/verify_ipa.py build/iPadn-unsigned.ipa
           shasum -a 256 build/iPadn-unsigned.ipa > build/iPadn-unsigned.ipa.sha256
           python3 - <<'PY'
-          import json, os, subprocess
+          import json, os, subprocess, plistlib, zipfile
           from pathlib import Path
+          with zipfile.ZipFile('build/iPadn-unsigned.ipa') as ipa:
+              info = plistlib.loads(ipa.read('Payload/iPadn.app/Info.plist'))
           Path('build/build-info.json').write_text(json.dumps({
+              'version': info['CFBundleShortVersionString'],
+              'build': info['CFBundleVersion'],
               'commit': os.environ['GITHUB_SHA'],
               'run': os.environ['GITHUB_RUN_ID'],
               'xcode': subprocess.check_output(['xcodebuild', '-version'], text=True).strip(),
@@ -105,11 +114,25 @@ jobs:
           print('Executed tests:', result['passedTests'], 'passed;', result['skippedTests'], 'skipped')
           PY
 
+      - name: Upload test summary
+        if: success() && (github.event_name != 'workflow_dispatch' || inputs.run_tests)
+        uses: actions/upload-artifact@v4
+        with:
+          name: iPadn-test-summary
+          path: |
+            iPadn-iOS/build/test-summary.json
+            iPadn-iOS/build/ipa-verification.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Capture running app screenshots
         timeout-minutes: 10
         if: always() && !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.run_tests)
         run: |
           if [ ! -d build/TestDerivedData/Build/Products/Debug-iphonesimulator/iPadn.app ]; then exit 0; fi
+          # XCTest can leave CoreSimulator unresponsive after shutting down its UI-test clone.
+          # Restart this job's service before selecting and booting the screenshot device.
+          killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
           simulator_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); devices=[(runtime,device) for runtime,values in d["devices"].items() if ".iOS-" in runtime for device in values if device.get("isAvailable") and device["name"].startswith("iPhone")]; devices.sort(key=lambda x: (x[1]["state"] != "Booted", "iOS-26-0" not in x[0], x[1]["name"] != "iPhone 17 Pro", x[1]["name"])); assert devices,"No available iPhone simulator"; print(devices[0][1]["udid"])')"
           xcrun simctl boot "$simulator_id" || true
           xcrun simctl bootstatus "$simulator_id" -b
@@ -134,7 +157,7 @@ jobs:
           capture archived-name --archive
 
       - name: Export interface screenshots
-        if: always()
+        if: always() && !cancelled()
         run: |
           if [ -d build/TestResults.xcresult ]; then
             xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/screenshots
@@ -176,3 +199,60 @@ jobs:
             echo '下载后用自己的工具签名。无需向 GitHub 上传 Apple 账号、证书或私钥。'
             echo '登录、真实下载授权和最终安装仍需要真机验收。'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-release:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release && inputs.run_tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: iPadn-unsigned-ipa
+          path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: iPadn-test-summary
+          path: release
+      - name: Verify and prepare release assets
+        id: release
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, re
+          from pathlib import Path
+          root = Path('release')
+          info = json.loads((root / 'build-info.json').read_text())
+          tests = json.loads((root / 'test-summary.json').read_text())
+          verification = json.loads((root / 'ipa-verification.json').read_text())
+          assert info['commit'] == os.environ['EXPECTED_COMMIT'], 'Source commit mismatch'
+          assert not info['signed'] and verification['passed'], 'Invalid unsigned IPA'
+          assert tests['passedTests'] > 0 and tests['failedTests'] == 0, 'Tests did not pass'
+          version = info['version']
+          assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version), 'Invalid release version'
+          assert verification['version'] == version and verification['build'] == info['build']
+          ipa = root / 'iPadn-unsigned.ipa'
+          digest = hashlib.sha256(ipa.read_bytes()).hexdigest()
+          assert digest == (root / 'iPadn-unsigned.ipa.sha256').read_text().split()[0], 'IPA checksum mismatch'
+          asset = ipa.with_name('iPadn-' + version + '-unsigned.ipa')
+          ipa.rename(asset)
+          (root / (asset.name + '.sha256')).write_text(digest + '  ' + asset.name + '\n')
+          notes = Path('RELEASE_NOTES.md').read_text()
+          notes += '\n验证：设备 Release 编译与 IPA 检查通过；' + str(tests['passedTests']) + ' 项测试通过，' + str(tests['failedTests']) + ' 项失败，' + str(tests['skippedTests']) + ' 项跳过；模拟器截图步骤通过。\n'
+          (root / 'notes.md').write_text(notes)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('tag=v' + version + '\n')
+              output.write('asset=' + str(asset) + '\n')
+          PY
+      - name: Publish tested unsigned IPA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_ASSET: ${{ steps.release.outputs.asset }}
+        run: |
+          gh release create "$RELEASE_TAG" "$RELEASE_ASSET" "$RELEASE_ASSET.sha256" release/build-info.json \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "iPadn $RELEASE_TAG" \
+            --notes-file release/notes.md --latest

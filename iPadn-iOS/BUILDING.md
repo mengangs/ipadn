@@ -1,6 +1,6 @@
 # 构建 iPadn
 
-项目使用 SwiftUI，最低 iOS 17，面向 iPhone 和 iPad。Xcode 工程为 `iPadn.xcodeproj`，共享 scheme 为 `iPadn`。当前版本 1.2，build 9。
+项目使用 SwiftUI，最低 iOS 17，面向 iPhone 和 iPad。Xcode 工程为 `iPadn.xcodeproj`，共享 scheme 为 `iPadn`。当前版本 1.3.0，build 12。
 
 ## 本地构建
 
@@ -26,11 +26,15 @@ node scripts/runtime_smoke_test.cjs
 
 GitHub Actions 对 PR、main 推送及手动构建执行设备编译、模拟器测试和界面截图，产物分别为 `iPadn-unsigned-ipa`、`iPadn-interface-screenshots`、`iPadn-build-diagnostics`。运行结果可在对应构建的测试步骤及产物中查看。
 
+通过 Actions 手动运行构建时，启用 `run_tests` 和 `publish_release` 可发布 GitHub Release。仅在设备编译、IPA 检查、测试与截图全部通过后发布；现有同名标签不会被覆盖。
+
 ## 扩展
 
 历史版本接口使用 `external_identifier` 和 `bundle_version` 字段，可在设置中配置地址模板及容器键。
 
 代理安装清单接受 name、bundleId、displayVersion、fileName；整个 query 再编码一次。文件请求通过用户配置的代理规则转发到 `http://127.0.0.1:8000/<filename>.ipa`。应用仅提供选定文件的本机服务。
+
+本地安装使用系统 Network / Security / CryptoKit，在本机生成 X.509 CA 与服务器证书并编码 PKCS#12；安装密钥和公开 CA 保存在独立钥匙串。首次需要用户在系统中安装并信任 CA。应用不覆盖系统 TLS 信任策略。
 
 Release 不包含截图用的虚构数据入口。原生网络、验证桥接、队列与文件处理均在当前工程内维护；组件归属见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
