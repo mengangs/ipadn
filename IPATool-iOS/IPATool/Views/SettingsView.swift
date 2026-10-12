@@ -1,0 +1,142 @@
+import SwiftUI
+
+struct SettingsView: View {
+    @EnvironmentObject private var store: ToolStore
+    @State private var addingSource = false
+    @State private var share: SharedFile?
+    @State private var resetSettings = false
+    @State private var clearCache = false
+    var body: some View {
+        Form {
+            Section("下载") {
+                Stepper("同时下载：\(store.settings.maxConcurrentDownloads)", value: $store.settings.maxConcurrentDownloads, in: 1...6)
+                Stepper("等待任务上限：\(store.settings.maxQueuedDownloads)", value: $store.settings.maxQueuedDownloads, in: 1...100)
+                Toggle("下载结果通知", isOn: $store.settings.notifications)
+                LabeledContent("后台下载", value: "URLSession")
+            }
+            Section("搜索与外观") {
+                Picker("搜索结果数量", selection: $store.settings.searchLimit) {
+                    ForEach([10, 30, 50, 100, 200], id: \.self) { Text("\($0)").tag($0) }
+                }
+                Picker("外观", selection: $store.settings.appearance) {
+                    Text("跟随系统").tag("system"); Text("浅色").tag("light"); Text("深色").tag("dark")
+                }
+            }
+            Section {
+                ForEach($store.settings.versionSources) { $source in
+                    NavigationLink { VersionSourceEditor(source: $source) } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(source.name)
+                                Text(source.urlTemplate).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer()
+                            Text(source.enabled ? "已启用" : "已停用").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .onDelete { store.settings.versionSources.remove(atOffsets: $0) }
+                Button("添加版本来源", systemImage: "plus") { addingSource = true }
+            } header: { Text("可扩展版本来源") } footer: {
+                Text("兼容 external_identifier / bundle_version 字段。并发查询启用的来源，使用首个有效结果；版本缓存有效期 24 小时。")
+            }
+            Section {
+                Toggle("缓存 SAP 签名与下载初始化数据", isOn: $store.settings.useSignerCache)
+                Button("清除签名内存缓存") { store.signer.clearCache(); store.infoMessage = "已清除签名缓存。" }
+            } header: { Text("签名引擎") } footer: {
+                Text("保留原脚本的 WASM 引擎，在本机 WebKit 中运行。签名缓存只保存在内存里，退出应用后清除。")
+            }
+            Section {
+                Picker("预设 plist 服务", selection: $store.settings.plistServer) {
+                    Text("Scripting").tag("https://api.scripting.fun/ipa-plist")
+                    Text("代理模块").tag("https://xiaobai.app/install")
+                    if !["https://api.scripting.fun/ipa-plist", "https://xiaobai.app/install"].contains(store.settings.plistServer) {
+                        Text("自定义").tag(store.settings.plistServer)
+                    }
+                }
+                TextField("自定义 HTTPS plist 服务", text: $store.settings.plistServer)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                LabeledContent("安装文件服务", value: "127.0.0.1:8000")
+            } header: { Text("安装兼容配置") } footer: {
+                Text("沿用原脚本的元数据参数。Surge/Loon 规则须适配新 App 的文件名，并转发到此端口。签名环境使用独立的动态端口。")
+            }
+            Section("维护") {
+                Button("清除版本查询缓存") { clearCache = true }
+                Button("导出诊断摘要") {
+                    do { share = SharedFile(url: try store.exportDiagnostics()) } catch { store.errorMessage = error.localizedDescription }
+                }
+                Button("恢复默认设置", role: .destructive) { resetSettings = true }
+            }
+            Section {
+                Text("IPA Tool Native 1.0").font(.headline)
+                Text("基于 IPA-Tool-3.0.scripting 的原生迁移版本。用于自己的签名安装环境。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Text("原脚本作者：小白脸").font(.caption).foregroundStyle(.secondary)
+                Link("原脚本项目", destination: URL(string: "https://github.com/ScriptingApp/Community-Scripts")!)
+                Text("此应用管理安装包和授权数据，不提供任意应用的重新签名或绕过系统安装限制。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("设置与扩展").navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $addingSource) { AddVersionSourceView() }
+        .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
+        .confirmationDialog("恢复默认设置？", isPresented: $resetSettings, titleVisibility: .visible) {
+            Button("恢复默认设置", role: .destructive) { store.settings = ToolSettings() }
+        } message: { Text("保留账号、下载文件、已购记录和历史版本缓存。") }
+        .confirmationDialog("清除版本查询缓存？", isPresented: $clearCache, titleVisibility: .visible) {
+            Button("清除缓存", role: .destructive) {
+                Task { do { try await store.versions.clearCache(); store.infoMessage = "已清除版本查询缓存。" } catch { store.errorMessage = error.localizedDescription } }
+            }
+        }
+    }
+}
+
+struct VersionSourceEditor: View {
+    @Binding var source: VersionSource
+    var body: some View {
+        Form {
+            Section("来源设置") {
+                Toggle("启用", isOn: $source.enabled)
+                TextField("来源名称", text: $source.name)
+                TextField("HTTPS 地址，使用 {id} 占位符", text: $source.urlTemplate)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                TextField("列表容器键，顶层数组留空", text: $source.containerKey)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                Toggle("反转接口结果顺序", isOn: $source.reverse)
+            }
+            Section("支持的 JSON 格式") {
+                Text("[{\"external_identifier\":\"123\",\"bundle_version\":\"1.0\"}]")
+                    .font(.caption.monospaced()).textSelection(.enabled)
+                Text("若返回 {\"data\":[…]}，列表容器键填写 data。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }.navigationTitle(source.name).navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct AddVersionSourceView: View {
+    @EnvironmentObject private var store: ToolStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var source = VersionSource(name: "新来源", urlTemplate: "https://", containerKey: "data", reverse: false)
+    @State private var error: String?
+    var body: some View {
+        NavigationStack {
+            VersionSourceEditor(source: $source)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("添加") {
+                            guard !source.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                                  source.urlTemplate.contains("{id}"),
+                                  let url = URL(string: source.urlTemplate.replacingOccurrences(of: "{id}", with: "123")),
+                                  url.scheme == "https", url.host != nil else { error = "请填写来源名称和带 {id} 的 HTTPS 接口地址"; return }
+                            store.settings.versionSources.append(source); dismiss()
+                        }
+                    }
+                }
+                .alert("无法添加", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+                    Button("好", role: .cancel) { error = nil }
+                } message: { Text(error ?? "") }
+        }
+    }
+}
