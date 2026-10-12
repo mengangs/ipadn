@@ -6,9 +6,27 @@ enum ToolError: LocalizedError {
 }
 
 enum AppPlatform: String, Codable, CaseIterable, Identifiable {
-    case iOS = "itunes", tvOS = "atv9"
+    case iOS = "itunes", iPadOS = "ipad", tvOS = "atv9", macOS = "mac"
     var id: String { rawValue }
-    var title: String { self == .iOS ? "iOS" : "tvOS" }
+    var title: String {
+        switch self {
+        case .iOS: return "iOS"
+        case .iPadOS: return "iPad"
+        case .tvOS: return "tvOS"
+        case .macOS: return "Mac"
+        }
+    }
+    var supportsIPA: Bool { self != .macOS }
+    var usesIOSStore: Bool { self == .iOS || self == .iPadOS }
+    var searchEntity: String {
+        switch self {
+        case .iOS: return "software"
+        case .iPadOS: return "iPadSoftware"
+        case .tvOS: return "tvSoftware"
+        case .macOS: return "desktopSoftware"
+        }
+    }
+    var catalogPlatform: String { self == .iPadOS ? AppPlatform.iOS.rawValue : rawValue }
 }
 
 struct StoreContext: Codable, Equatable {
