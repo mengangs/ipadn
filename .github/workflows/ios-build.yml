@@ -79,6 +79,7 @@ jobs:
           compression-level: 0
 
       - name: Run simulator unit tests
+        timeout-minutes: 12
         if: github.event_name != 'workflow_dispatch' || inputs.run_tests
         run: |
           set -o pipefail
@@ -96,8 +97,9 @@ jobs:
             2>&1 | tee build/tests.log
 
       - name: Capture running app screenshots
-        if: success() && (github.event_name != 'workflow_dispatch' || inputs.run_tests)
+        if: always() && !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.run_tests)
         run: |
+          if [ ! -d build/TestDerivedData/Build/Products/Debug-iphonesimulator/iPadn.app ]; then exit 0; fi
           simulator_id="$(cat build/simulator-id.txt)"
           xcrun simctl boot "$simulator_id" || true
           xcrun simctl bootstatus "$simulator_id" -b

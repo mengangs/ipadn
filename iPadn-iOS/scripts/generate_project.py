@@ -134,7 +134,7 @@ def buildable(parent, ident, name, product):
                          BuildableName=product, BlueprintName=name, ReferencedContainer="container:iPadn.xcodeproj")
 entry = ET.SubElement(entries, "BuildActionEntry", buildForTesting="YES", buildForRunning="YES", buildForProfiling="YES", buildForArchiving="YES", buildForAnalyzing="YES")
 buildable(entry, app_id, "iPadn", "iPadn.app")
-tests = ET.SubElement(scheme, "TestAction", buildConfiguration="Debug", selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB", selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB", shouldUseLaunchSchemeArgsEnv="YES")
+tests = ET.SubElement(scheme, "TestAction", buildConfiguration="Debug", selectedDebuggerIdentifier="", selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.PosixSpawn", shouldUseLaunchSchemeArgsEnv="YES")
 testable = ET.SubElement(ET.SubElement(tests, "Testables"), "TestableReference", skipped="NO")
 buildable(testable, test_id, "iPadnTests", "iPadnTests.xctest")
 ui_testable = ET.SubElement(tests.find("Testables"), "TestableReference", skipped="NO")
