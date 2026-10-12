@@ -139,6 +139,16 @@
 			isa = PBXBuildFile;
 			fileRef = BCDB149703DDF289FBA19140;
 		};
+		3228CD82BBADE4C6F497128C = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/InstallationCertificate.swift";
+			sourceTree = "<group>";
+		};
+		BA280790D649F882F8B296E5 = {
+			isa = PBXBuildFile;
+			fileRef = 3228CD82BBADE4C6F497128C;
+		};
 		294558996050B2FE227179BC = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -259,6 +269,16 @@
 			isa = PBXBuildFile;
 			fileRef = A1E708F62865C66C68AA85E9;
 		};
+		8F1179CCA505E90A3DE9BA29 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/InstallationSettingsView.swift";
+			sourceTree = "<group>";
+		};
+		94FC099DDAA41D79877704E8 = {
+			isa = PBXBuildFile;
+			fileRef = 8F1179CCA505E90A3DE9BA29;
+		};
 		86F43769758ED77572E1A466 = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -268,6 +288,16 @@
 		7D6640A75908FC0DCE131875 = {
 			isa = PBXBuildFile;
 			fileRef = 86F43769758ED77572E1A466;
+		};
+		D38DA86C81DE0C58DC2A02C2 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/PackageInstallationView.swift";
+			sourceTree = "<group>";
+		};
+		4AD7E64B5ED2E685307DA502 = {
+			isa = PBXBuildFile;
+			fileRef = D38DA86C81DE0C58DC2A02C2;
 		};
 		1E9502E0C8542CA2BF94D23E = {
 			isa = PBXFileReference;
@@ -349,6 +379,46 @@
 			isa = PBXBuildFile;
 			fileRef = 1CDCE2D7B842ECAE64295E63;
 		};
+		52FEBFC053EFD8D5AD8FBDAE = {
+			isa = PBXFileReference;
+			lastKnownFileType = image.png;
+			path = "Resources/AlternateIcons/AppIconFlat60x60@2x.png";
+			sourceTree = "<group>";
+		};
+		9A39C74DC51FF01633F2AD8D = {
+			isa = PBXBuildFile;
+			fileRef = 52FEBFC053EFD8D5AD8FBDAE;
+		};
+		82AD8E6B914B0BB31CBA9B11 = {
+			isa = PBXFileReference;
+			lastKnownFileType = image.png;
+			path = "Resources/AlternateIcons/AppIconFlat60x60@3x.png";
+			sourceTree = "<group>";
+		};
+		45F9EBF0142585DF1A781006 = {
+			isa = PBXBuildFile;
+			fileRef = 82AD8E6B914B0BB31CBA9B11;
+		};
+		2B780F1867938A461415D98E = {
+			isa = PBXFileReference;
+			lastKnownFileType = image.png;
+			path = "Resources/AlternateIcons/AppIconFlat76x76@2x~ipad.png";
+			sourceTree = "<group>";
+		};
+		58D918330C63133861E70DAC = {
+			isa = PBXBuildFile;
+			fileRef = 2B780F1867938A461415D98E;
+		};
+		6BF1CF7E89075DD6094AB019 = {
+			isa = PBXFileReference;
+			lastKnownFileType = image.png;
+			path = "Resources/AlternateIcons/AppIconFlat83x83@2x~ipad.png";
+			sourceTree = "<group>";
+		};
+		95463069DC570A81FEE54109 = {
+			isa = PBXBuildFile;
+			fileRef = 6BF1CF7E89075DD6094AB019;
+		};
 		C1E36C75A6B6E7BC0D47881C = {
 			isa = PBXFileReference;
 			lastKnownFileType = text.plist.xml;
@@ -364,6 +434,16 @@
 		9CD55C88894B030A66E10BFC = {
 			isa = PBXBuildFile;
 			fileRef = DF17B7F31CB119020ABB3383;
+		};
+		C893DFB88667291E462080FF = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = InstallationTests.swift;
+			sourceTree = "<group>";
+		};
+		F7855E1B1CA17D39AF64B21B = {
+			isa = PBXBuildFile;
+			fileRef = C893DFB88667291E462080FF;
 		};
 		43B20E5B39E4494D4F6661D0 = {
 			isa = PBXFileReference;
@@ -416,6 +496,7 @@
 				03223D703FED7749D0182600,
 				F8027934C71C79D0C4556300,
 				BCDB149703DDF289FBA19140,
+				3228CD82BBADE4C6F497128C,
 				294558996050B2FE227179BC,
 				43307BBF4EB32558D5FCFF38,
 				525FB927D6E0158442EEE80C,
@@ -428,7 +509,9 @@
 				64ED8F7AAAC933FAC771090F,
 				C378265D29DC31EA6BC9A4BB,
 				A1E708F62865C66C68AA85E9,
+				8F1179CCA505E90A3DE9BA29,
 				86F43769758ED77572E1A466,
+				D38DA86C81DE0C58DC2A02C2,
 				1E9502E0C8542CA2BF94D23E,
 				875F86E325615E997D89246A,
 				AC7ABAF3BAFCCF834C35D127,
@@ -437,6 +520,10 @@
 				8FEB83A29956DE0B59952846,
 				8D670B021DC9E9A81AD94FB4,
 				1CDCE2D7B842ECAE64295E63,
+				52FEBFC053EFD8D5AD8FBDAE,
+				82AD8E6B914B0BB31CBA9B11,
+				2B780F1867938A461415D98E,
+				6BF1CF7E89075DD6094AB019,
 				C1E36C75A6B6E7BC0D47881C,
 			);
 			path = iPadn;
@@ -446,7 +533,9 @@
 			isa = PBXGroup;
 			children = (
 				DF17B7F31CB119020ABB3383,
+				C893DFB88667291E462080FF,
 				43B20E5B39E4494D4F6661D0,
+				B0563010449BDC3A2DFEF8A0,
 			);
 			path = iPadnTests;
 			sourceTree = "<group>";
@@ -487,6 +576,7 @@
 				D9FE40E25730AE6E6B295708,
 				7C04EA5E4EC7AB7D31EE0AE7,
 				BF33CC061A259701E2392CC4,
+				BA280790D649F882F8B296E5,
 				C0E20030ACC5F23732E47CAE,
 				4F5447AC56A605806430F5AF,
 				D3D7F9AE0A76859E6F98809B,
@@ -499,7 +589,9 @@
 				81760043801C5EA796AC3B07,
 				BBA95D751DB25B4ECFB64D15,
 				E03C6E916BCB77F54CB0D996,
+				94FC099DDAA41D79877704E8,
 				7D6640A75908FC0DCE131875,
+				4AD7E64B5ED2E685307DA502,
 				4081F8E081F38E620E4F6F53,
 				9B02A284355960077990E605,
 				2838CB8E3BB731C0C58ADEBF,
@@ -515,6 +607,10 @@
 				FE8AD461736E2C3E2C8BE36E,
 				FE7CC9734AD8010D74C8E69A,
 				B03D1A024E90C64DA4480E67,
+				9A39C74DC51FF01633F2AD8D,
+				45F9EBF0142585DF1A781006,
+				58D918330C63133861E70DAC,
+				95463069DC570A81FEE54109,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -553,6 +649,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9CD55C88894B030A66E10BFC,
+				F7855E1B1CA17D39AF64B21B,
 				6474B699E7D3303EDAF747F3,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -565,10 +662,21 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B0563010449BDC3A2DFEF8A0 = {
+			isa = PBXFileReference;
+			lastKnownFileType = file;
+			path = "Fixtures/localhost-test-only.p12";
+			sourceTree = "<group>";
+		};
+		FF10D9D830157358AAD43161 = {
+			isa = PBXBuildFile;
+			fileRef = B0563010449BDC3A2DFEF8A0;
+		};
 		F3450B63233CC3F0A1670847 = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FF10D9D830157358AAD43161,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -631,9 +739,8 @@
 				INFOPLIST_FILE = "iPadn/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
 				MARKETING_VERSION = 1.3.0;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = AppIconFlat;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -662,9 +769,8 @@
 				INFOPLIST_FILE = "iPadn/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
 				MARKETING_VERSION = 1.3.0;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = AppIconFlat;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				LD_RUNPATH_SEARCH_PATHS = (

@@ -1,6 +1,55 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testCompletedActionsHaveEqualSizeAndOpenInstallationSettings() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--visual-preview", "--downloads"]
+        app.launch()
+        app.buttons["download.filter.menu"].tap()
+        app.buttons["download.filter.已完成"].tap()
+        let install = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'download.install.'")).firstMatch
+        let export = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'download.export.'")).firstMatch
+        XCTAssertTrue(install.waitForExistence(timeout: 10))
+        XCTAssertTrue(export.exists)
+        XCTAssertEqual(install.frame.width, export.frame.width, accuracy: 2)
+        XCTAssertEqual(install.frame.height, export.frame.height, accuracy: 2)
+        XCTAssertGreaterThanOrEqual(install.frame.height, 44)
+        attach("17-completed-actions", app: app)
+        install.tap()
+        let settings = app.buttons["installation.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5)); settings.tap()
+        XCTAssertTrue(app.buttons["installation.certificate"].waitForExistence(timeout: 5))
+        attach("18-installation-settings", app: app)
+    }
+    func testSystemActuallyChangesAlternateIconAndRestoresDefault() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--visual-preview", "--accounts", "--system-icon-test"]
+        app.launch()
+        app.buttons["accounts.settings"].tap()
+        let flat = app.buttons["settings.icon.flat"]
+        let dimensional = app.buttons["settings.icon.dimensional"]
+        XCTAssertTrue(flat.waitForExistence(timeout: 10))
+        if !flat.isHittable { app.swipeUp() }
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        func acknowledgeSystemAlert() {
+            let alert = springboard.alerts.firstMatch
+            if alert.waitForExistence(timeout: 3) { alert.buttons.firstMatch.tap() }
+            else if app.alerts.firstMatch.exists { app.alerts.firstMatch.buttons.firstMatch.tap() }
+        }
+        if flat.isSelected {
+            dimensional.tap(); acknowledgeSystemAlert()
+            let initial = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: dimensional)
+            wait(for: [initial], timeout: 12)
+        }
+        flat.tap(); acknowledgeSystemAlert()
+        let switched = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: flat)
+        wait(for: [switched], timeout: 12)
+        attach("19-system-icon-switch", app: app)
+        dimensional.tap(); acknowledgeSystemAlert()
+        let restored = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: dimensional)
+        wait(for: [restored], timeout: 12)
+    }
+
     func testIconSelectionAndSearchSubmitControl() {
         let app = XCUIApplication()
         app.launchArguments = ["--visual-preview", "--accounts"]

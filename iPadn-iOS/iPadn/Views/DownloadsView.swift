@@ -56,7 +56,7 @@ struct DownloadsView: View {
                             Button("任务详情", systemImage: "info.circle") { inspecting = job }
                             if let file = manager.fileURL(job) {
                                 Button("导出 IPA", systemImage: "square.and.arrow.up") { share = SharedFile(url: file) }
-                                Button("通过代理安装", systemImage: "square.and.arrow.down") { installing = job }
+                                Button("安装", systemImage: "square.and.arrow.down") { installing = job }
                                 Button("复制本机链接", systemImage: "link") {
                                     perform {
                                         let url = try await store.installation.localURL(file: file)
@@ -84,15 +84,16 @@ struct DownloadsView: View {
                 EditButton().disabled(manager.jobs.isEmpty)
                 if !manager.jobs.isEmpty {
                     Menu {
-                        ForEach(DownloadFilter.allCases) { item in
-                            Button { filter = item } label: {
-                                Label(item.rawValue, systemImage: filter == item ? "checkmark" : "line.3.horizontal.decrease")
-                            }.accessibilityIdentifier("download.filter." + item.id)
+                        Picker("下载状态", selection: $filter) {
+                            ForEach(DownloadFilter.allCases) { item in
+                                Label(item.rawValue, systemImage: item.symbol).tag(item)
+                                    .accessibilityIdentifier("download.filter." + item.id)
+                            }
                         }
                     } label: {
-                        Image(systemName: filter == .all ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
+                        Image(systemName: filter.symbol)
                             .frame(minWidth: 44, minHeight: 44)
-                    }.accessibilityLabel("筛选下载任务").accessibilityIdentifier("download.filter.menu")
+                    }.accessibilityLabel("筛选下载任务，当前" + filter.rawValue).accessibilityIdentifier("download.filter.menu")
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -187,15 +188,8 @@ struct DownloadsView: View {
                 selection.subtract(pendingDelete); pendingDelete.removeAll(); store.infoMessage = "已删除任务"
             } catch { store.errorMessage = error.localizedDescription }
         }
-        .actionConfirmation(isPresented: Binding(get: { installing != nil }, set: { if !$0 { installing = nil } }), title: "安装 \(installing?.app.name ?? "")", message: "将通过你配置的 HTTPS 清单服务请求系统安装。是否可安装由当前系统和安装包授权决定。", confirmTitle: "请求系统安装", destructive: false) {
-            guard let job = installing, let file = manager.fileURL(job) else { return }; installing = nil
-            perform {
-                let url = try await store.installation.installURL(job: job, file: file, plistServer: store.settings.plistServer)
-                openURL(url) { accepted in
-                    if accepted { store.infoMessage = "已请求系统安装，请查看系统提示。" }
-                    else { store.errorMessage = "系统未接受安装链接，请检查当前系统支持和清单服务配置" }
-                }
-            }
+        .sheet(item: $installing) { job in
+            PackageInstallationView(job: job).environmentObject(store).environmentObject(manager)
         }
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
     }
@@ -241,6 +235,7 @@ struct DownloadsView: View {
 struct DownloadTaskRow: View {
     @EnvironmentObject private var manager: DownloadManager
     let job: DownloadJob
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private var displayedApp: StoreApp {
         var app = job.app
         app.iconURL = manager.packageIconURL(job)
@@ -260,11 +255,11 @@ struct DownloadTaskRow: View {
     }
     private var installButton: some View {
         Button("安装", systemImage: "square.and.arrow.down", action: primary)
-            .buttonStyle(MonochromeButtonStyle()).controlSize(.large)
-            .accessibilityIdentifier("download.install." + job.app.id)
+            .buttonStyle(DownloadActionStyle()).accessibilityIdentifier("download.install." + job.app.id)
     }
     private var exportButton: some View {
-        Button("导出", systemImage: "square.and.arrow.up", action: exporting).buttonStyle(.bordered).controlSize(.large)
+        Button("导出", systemImage: "square.and.arrow.up", action: exporting)
+            .buttonStyle(DownloadActionStyle(secondary: true)).accessibilityIdentifier("download.export." + job.app.id)
     }
     @ViewBuilder private var taskAction: some View {
         switch job.status {
@@ -273,9 +268,10 @@ struct DownloadTaskRow: View {
         case .paused, .failed:
             Button(job.status == .failed ? "重试" : "继续", systemImage: job.status == .failed ? "arrow.clockwise" : "play.fill", action: primary).buttonStyle(.bordered).controlSize(.large)
         case .completed:
-            ViewThatFits(in: .horizontal) {
-                HStack { installButton; exportButton }
-                VStack(alignment: .leading, spacing: 8) { installButton; exportButton }
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 10) { installButton; exportButton }
+            } else {
+                HStack(spacing: 12) { installButton; exportButton }
             }
         case .processing, .pausing: ProgressView()
         }
@@ -310,11 +306,27 @@ struct DownloadTaskRow: View {
                     }
                 }
             }
-            ViewThatFits(in: .horizontal) {
-                HStack { TaskStatusPill(status: job.status); Spacer(minLength: 8); taskAction }
-                VStack(alignment: .leading, spacing: 10) { TaskStatusPill(status: job.status); taskAction }
-            }.font(.subheadline)
+            if job.status == .completed {
+                TaskStatusPill(status: job.status)
+                taskAction.font(.subheadline.weight(.semibold))
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack { TaskStatusPill(status: job.status); Spacer(minLength: 8); taskAction }
+                    VStack(alignment: .leading, spacing: 10) { TaskStatusPill(status: job.status); taskAction }
+                }.font(.subheadline)
+            }
             if let error = job.error { Text(error).font(.caption).foregroundStyle(.primary).lineLimit(2) }
         }.padding(.vertical, 10)
+    }
+}
+
+private struct DownloadActionStyle: ButtonStyle {
+    var secondary = false
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .foregroundStyle(secondary ? Color.primary : UX.onAccent)
+            .background(secondary ? Color(uiColor: .tertiarySystemFill) : UX.buttonTint, in: RoundedRectangle(cornerRadius: 16))
+            .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }

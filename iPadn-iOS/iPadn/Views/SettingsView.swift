@@ -4,6 +4,7 @@ struct SettingsView: View {
     @EnvironmentObject private var store: ToolStore
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var icons = AppIconService()
+    @State private var iconIssue: String?
     @State private var addingSource = false
     @State private var share: SharedFile?
     @State private var resetSettings = false
@@ -29,7 +30,7 @@ struct SettingsView: View {
                     Button {
                         Task {
                             do { try await icons.select(choice) }
-                            catch { store.errorMessage = error.localizedDescription }
+                            catch { iconIssue = error.localizedDescription }
                         }
                     } label: {
                         HStack(spacing: 14) {
@@ -76,11 +77,8 @@ struct SettingsView: View {
                 Text("验证过程在本机运行，缓存仅保留在内存中；退出应用后自动清除。")
             }
             Section {
-                TextField("自定义 HTTPS plist 服务", text: $store.settings.plistServer)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                LabeledContent("安装文件服务", value: "127.0.0.1:8000")
-            } header: { Text("安装兼容配置") } footer: {
-                Text("使用你配置的 HTTPS 清单服务和 Surge/Loon 规则。文件服务仅监听本机；也可直接导出安装包到签名工具。")
+                NavigationLink { InstallationSettingsView() } label: { Label("安装设置", systemImage: "arrow.down.app") }
+                    .accessibilityIdentifier("settings.installation")
             }
             Section("维护") {
                 Button("清除版本查询缓存") { clearCache = true }
@@ -99,6 +97,9 @@ struct SettingsView: View {
         }
         .toolPage().navigationTitle("设置与扩展").navigationBarTitleDisplayMode(.inline)
         .onChange(of: scenePhase) { _, phase in if phase == .active { icons.refresh() } }
+        .alert("图标未更改", isPresented: Binding(get: { iconIssue != nil }, set: { if !$0 { iconIssue = nil } })) {
+            Button("知道了", role: .cancel) { iconIssue = nil }
+        } message: { Text(iconIssue ?? "") }
         .sheet(isPresented: $addingSource) { AddVersionSourceView() }
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
         .actionConfirmation(isPresented: $resetSettings, title: "恢复默认设置？", message: "保留账号、下载文件、已购记录和历史版本缓存。", confirmTitle: "恢复默认设置") { store.settings = ToolSettings() }

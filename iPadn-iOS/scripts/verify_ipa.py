@@ -21,7 +21,11 @@ with zipfile.ZipFile(ipa) as archive:
     for key in ['CFBundleIcons', 'CFBundleIcons~ipad']:
         icons = info[key]
         assert icons['CFBundlePrimaryIcon']['CFBundleIconName'] == 'AppIcon', key
-        assert icons['CFBundleAlternateIcons']['AppIconFlat']['CFBundleIconName'] == 'AppIconFlat', key
+        alternate = icons['CFBundleAlternateIcons']['AppIconFlat']
+        assert alternate['CFBundleIconFiles'], 'Missing standalone alternate icon declaration: ' + key
+    for filename in ['AppIconFlat60x60@2x.png', 'AppIconFlat60x60@3x.png',
+                     'AppIconFlat76x76@2x~ipad.png', 'AppIconFlat83x83@2x~ipad.png']:
+        assert prefix + filename in archive.namelist(), 'Missing alternate icon PNG: ' + filename
     manifest = json.loads((ROOT / 'vendor/SAPRuntime/manifest.json').read_text())['files']
     for filename, expected in manifest.items():
         actual = hashlib.sha256(archive.read(prefix + 'SAPRuntime/' + filename)).hexdigest()
