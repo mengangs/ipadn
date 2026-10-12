@@ -109,7 +109,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(AppPlatform.iOS.searchEntity, "software")
         XCTAssertEqual(AppPlatform.iPadOS.searchEntity, "iPadSoftware")
         XCTAssertEqual(AppPlatform.tvOS.searchEntity, "software,tvSoftware")
-        XCTAssertEqual(AppPlatform.macOS.searchEntity, "desktopSoftware")
+        XCTAssertEqual(AppPlatform.macOS.searchEntity, "macSoftware")
         XCTAssertEqual(AppPlatform.iPadOS.catalogPlatform, AppPlatform.iOS.rawValue)
         XCTAssertFalse(AppPlatform.macOS.supportsIPA)
         XCTAssertTrue(AppPlatform.iPadOS.supportsIPA)
@@ -204,6 +204,32 @@ final class CoreTests: XCTestCase {
                                      sinf: Data([1, 2]), metadata: metadata, externalVersionIDs: [],
                                      platform: "ipad", account: "example")
         XCTAssertThrowsError(try PackageService.finish(staging: phoneIPA, id: UUID(), asset: iPadAsset))
+    }
+
+    func testNativeMacSearchAndAppStoreOfferExtraction() {
+        XCTAssertTrue(StoreService.supportsNativeMac(["kind": "mac-software"]))
+        XCTAssertTrue(StoreService.supportsNativeMac(["supportedDevices": ["Mac14,6"]]))
+        XCTAssertFalse(StoreService.supportsNativeMac(["kind": "software", "supportedDevices": ["iPhone15,2"]]))
+        let html = """
+        <html><script type="application/json" id="serialized-server-data">
+        {"data":[{"purchaseConfiguration":{"appPlatforms":["mac"],"bundleId":"test.mac.app",
+        "buyParams":"salableAdamId=6503940939&appExtVrsId=112233"}},{"purchaseConfiguration":{
+        "appPlatforms":["ios"],"bundleId":"test.mac.app",
+        "buyParams":"salableAdamId=6503940939&appExtVrsId=998877"}}]}</script></html>
+        """
+        XCTAssertEqual(MacStoreOfferService.versionID(
+            fromHTML: html, appID: "6503940939", bundleID: "test.mac.app"), "112233")
+        XCTAssertNil(MacStoreOfferService.versionID(
+            fromHTML: html, appID: "6503940939", bundleID: "wrong.bundle"))
+        XCTAssertNil(MacStoreOfferService.versionID(
+            fromHTML: html, appID: "123", bundleID: "test.mac.app"))
+        let conflicting = html.replacingOccurrences(
+            of: "\"appPlatforms\":[\"ios\"],\"bundleId\":\"test.mac.app\"",
+            with: "\"appPlatforms\":[\"mac\"],\"bundleId\":\"test.mac.app\"")
+        XCTAssertNil(MacStoreOfferService.versionID(
+            fromHTML: conflicting, appID: "6503940939", bundleID: "test.mac.app"))
+        XCTAssertNil(MacStoreOfferService.versionID(
+            fromHTML: "<html>unrelated content</html>", appID: "6503940939", bundleID: ""))
     }
 
     func testMacDeveloperInstallerLinksAndRawPackagePreservation() throws {
