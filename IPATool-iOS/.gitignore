@@ -1,8 +1,0 @@
-build/
-DerivedData/
-*.xcuserstate
-xcuserdata/
-.DS_Store
-/IPATool/Resources/SAPRuntime/
-/vendor/SAPRuntime/*.b64
-/.runtime-cache/

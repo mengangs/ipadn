@@ -1,4 +1,4 @@
-name: Build iOS IPA
+name: Build iPadn
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 45
     defaults:
       run:
-        working-directory: IPATool-iOS
+        working-directory: iPadn-iOS
         shell: bash
     steps:
       - name: Checkout source
@@ -51,7 +51,7 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/build_unsigned_ipa.sh 2>&1 | tee build/build.log
-          shasum -a 256 build/IPATool-unsigned.ipa > build/IPATool-unsigned.ipa.sha256
+          shasum -a 256 build/iPadn-unsigned.ipa > build/iPadn-unsigned.ipa.sha256
           python3 - <<'PY'
           import json, os, subprocess
           from pathlib import Path
@@ -69,11 +69,11 @@ jobs:
         id: ipa
         uses: actions/upload-artifact@v4
         with:
-          name: IPATool-unsigned-ipa
+          name: iPadn-unsigned-ipa
           path: |
-            IPATool-iOS/build/IPATool-unsigned.ipa
-            IPATool-iOS/build/IPATool-unsigned.ipa.sha256
-            IPATool-iOS/build/build-info.json
+            iPadn-iOS/build/iPadn-unsigned.ipa
+            iPadn-iOS/build/iPadn-unsigned.ipa.sha256
+            iPadn-iOS/build/build-info.json
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
@@ -83,12 +83,35 @@ jobs:
         run: |
           set -o pipefail
           simulator_id="$(xcrun simctl list devices available --json | python3 -c 'import sys,json; d=json.load(sys.stdin); a=[(k,v["udid"]) for k,vs in d["devices"].items() if ".iOS-" in k for v in vs if v.get("isAvailable") and v["name"].startswith("iPhone")]; assert a,"No available iPhone simulator"; a.sort(key=lambda x: ("iOS-26-0" not in x[0],x[0])); print(a[0][1])')"
-          xcodebuild test -project IPATool.xcodeproj -scheme IPATool \
+          echo "$simulator_id" > build/simulator-id.txt
+          xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
             -configuration Debug -destination "platform=iOS Simulator,id=$simulator_id" \
+            -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 \
             -destination-timeout 120 -derivedDataPath build/TestDerivedData \
             -resultBundlePath build/TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \
             2>&1 | tee build/tests.log
+
+      - name: Capture running app screenshots
+        if: success() && (github.event_name != 'workflow_dispatch' || inputs.run_tests)
+        run: |
+          simulator_id="$(cat build/simulator-id.txt)"
+          xcrun simctl install "$simulator_id" build/TestDerivedData/Build/Products/Debug-iphonesimulator/iPadn.app
+          mkdir -p build/screenshots/native
+          xcrun simctl status_bar "$simulator_id" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+          capture() {
+            screenshot_name="$1"
+            shift
+            xcrun simctl launch --terminate-running-process "$simulator_id" app.local.iPadn --visual-preview "$@"
+            sleep 3
+            xcrun simctl io "$simulator_id" screenshot "build/screenshots/native/$screenshot_name.png"
+          }
+          capture discover-light
+          capture discover-dark --dark
+          capture downloads --downloads
+          capture downloads-large-text --downloads --large-text
+          capture login --login
+          capture app-detail --detail
 
       - name: Export interface screenshots
         if: always()
@@ -101,8 +124,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: IPATool-interface-screenshots
-          path: IPATool-iOS/build/screenshots
+          name: iPadn-interface-screenshots
+          path: iPadn-iOS/build/screenshots
           if-no-files-found: warn
           retention-days: 14
 
@@ -110,11 +133,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: IPATool-build-diagnostics
+          name: iPadn-build-diagnostics
           path: |
-            IPATool-iOS/build/*.log
-            IPATool-iOS/build/TestResults.xcresult
-            IPATool-iOS/verification.json
+            iPadn-iOS/build/*.log
+            iPadn-iOS/build/TestResults.xcresult
+            iPadn-iOS/verification.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -124,7 +147,7 @@ jobs:
           ARTIFACT_URL: ${{ steps.ipa.outputs.artifact-url }}
         run: |
           {
-            echo '## IPA 工具箱'
+            echo '## iPadn'
             echo
             echo "[下载未签名 IPA]($ARTIFACT_URL)"
             echo

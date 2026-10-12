@@ -1,0 +1,757 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+		DEF93E8F8AC229A0D98BBEFA = {
+			isa = PBXFileReference;
+			explicitFileType = wrapper.application;
+			includeInIndex = 0;
+			path = iPadn.app;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		970FB190220EDCE2E3BBCD1A = {
+			isa = PBXFileReference;
+			explicitFileType = wrapper.cfbundle;
+			includeInIndex = 0;
+			path = iPadnTests.xctest;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		E5897D35708E9120B8647A2F = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/ToolIntents.swift";
+			sourceTree = "<group>";
+		};
+		41112957FFC8DF4DD3F48FE2 = {
+			isa = PBXBuildFile;
+			fileRef = E5897D35708E9120B8647A2F;
+		};
+		E62D865FB463397117968832 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/ToolStore.swift";
+			sourceTree = "<group>";
+		};
+		8EE231649195F263F52CE685 = {
+			isa = PBXBuildFile;
+			fileRef = E62D865FB463397117968832;
+		};
+		5D8D68F1FED8399BDA1BAE05 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/iPadnApp.swift";
+			sourceTree = "<group>";
+		};
+		28794B21362D7DD58544D5B3 = {
+			isa = PBXBuildFile;
+			fileRef = 5D8D68F1FED8399BDA1BAE05;
+		};
+		9C74C66866F0A2483D0A8371 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Models/Models.swift";
+			sourceTree = "<group>";
+		};
+		43E25ABCD2BA73E3BFD8EDE0 = {
+			isa = PBXBuildFile;
+			fileRef = 9C74C66866F0A2483D0A8371;
+		};
+		97B77CBFB5B60DE50E8659BA = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Models/TransferMetrics.swift";
+			sourceTree = "<group>";
+		};
+		1C018FC21201DC15AA0DD851 = {
+			isa = PBXBuildFile;
+			fileRef = 97B77CBFB5B60DE50E8659BA;
+		};
+		0BD07ACE3BF45E1B7AA5D034 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/AppleService.swift";
+			sourceTree = "<group>";
+		};
+		E0631520F368539F2C0854C8 = {
+			isa = PBXBuildFile;
+			fileRef = 0BD07ACE3BF45E1B7AA5D034;
+		};
+		03223D703FED7749D0182600 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/DMAP.swift";
+			sourceTree = "<group>";
+		};
+		D9FE40E25730AE6E6B295708 = {
+			isa = PBXBuildFile;
+			fileRef = 03223D703FED7749D0182600;
+		};
+		F8027934C71C79D0C4556300 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/DownloadManager.swift";
+			sourceTree = "<group>";
+		};
+		7C04EA5E4EC7AB7D31EE0AE7 = {
+			isa = PBXBuildFile;
+			fileRef = F8027934C71C79D0C4556300;
+		};
+		BCDB149703DDF289FBA19140 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/HTTPClient.swift";
+			sourceTree = "<group>";
+		};
+		BF33CC061A259701E2392CC4 = {
+			isa = PBXBuildFile;
+			fileRef = BCDB149703DDF289FBA19140;
+		};
+		294558996050B2FE227179BC = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/InstallationService.swift";
+			sourceTree = "<group>";
+		};
+		C0E20030ACC5F23732E47CAE = {
+			isa = PBXBuildFile;
+			fileRef = 294558996050B2FE227179BC;
+		};
+		43307BBF4EB32558D5FCFF38 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/KeychainStore.swift";
+			sourceTree = "<group>";
+		};
+		4F5447AC56A605806430F5AF = {
+			isa = PBXBuildFile;
+			fileRef = 43307BBF4EB32558D5FCFF38;
+		};
+		525FB927D6E0158442EEE80C = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/LoopbackServer.swift";
+			sourceTree = "<group>";
+		};
+		D3D7F9AE0A76859E6F98809B = {
+			isa = PBXBuildFile;
+			fileRef = 525FB927D6E0158442EEE80C;
+		};
+		DE2B00F9D1374F49D8D7B778 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/PackageService.swift";
+			sourceTree = "<group>";
+		};
+		947A4B9739DE11F25F172D4C = {
+			isa = PBXBuildFile;
+			fileRef = DE2B00F9D1374F49D8D7B778;
+		};
+		20DF3E39BC0667C304A58585 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/SAPSigner.swift";
+			sourceTree = "<group>";
+		};
+		79C9C7B781E2036A0BD109DC = {
+			isa = PBXBuildFile;
+			fileRef = 20DF3E39BC0667C304A58585;
+		};
+		C4E202139941DE609BFBB95D = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/StoreService.swift";
+			sourceTree = "<group>";
+		};
+		4290A7A571B139F6D5141896 = {
+			isa = PBXBuildFile;
+			fileRef = C4E202139941DE609BFBB95D;
+		};
+		24676682B667747A20517456 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/AccountAvatar.swift";
+			sourceTree = "<group>";
+		};
+		9F6F3B0AA7DF6199BC3539FD = {
+			isa = PBXBuildFile;
+			fileRef = 24676682B667747A20517456;
+		};
+		179AE521F9E371EE4200EDB4 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/AccountsView.swift";
+			sourceTree = "<group>";
+		};
+		7532C26779F64E89AE34C747 = {
+			isa = PBXBuildFile;
+			fileRef = 179AE521F9E371EE4200EDB4;
+		};
+		64ED8F7AAAC933FAC771090F = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/AppDetailView.swift";
+			sourceTree = "<group>";
+		};
+		81760043801C5EA796AC3B07 = {
+			isa = PBXBuildFile;
+			fileRef = 64ED8F7AAAC933FAC771090F;
+		};
+		C378265D29DC31EA6BC9A4BB = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/DesignSystem.swift";
+			sourceTree = "<group>";
+		};
+		BBA95D751DB25B4ECFB64D15 = {
+			isa = PBXBuildFile;
+			fileRef = C378265D29DC31EA6BC9A4BB;
+		};
+		A1E708F62865C66C68AA85E9 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/DownloadsView.swift";
+			sourceTree = "<group>";
+		};
+		E03C6E916BCB77F54CB0D996 = {
+			isa = PBXBuildFile;
+			fileRef = A1E708F62865C66C68AA85E9;
+		};
+		1E9502E0C8542CA2BF94D23E = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/PurchasedView.swift";
+			sourceTree = "<group>";
+		};
+		4081F8E081F38E620E4F6F53 = {
+			isa = PBXBuildFile;
+			fileRef = 1E9502E0C8542CA2BF94D23E;
+		};
+		875F86E325615E997D89246A = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/SearchView.swift";
+			sourceTree = "<group>";
+		};
+		9B02A284355960077990E605 = {
+			isa = PBXBuildFile;
+			fileRef = 875F86E325615E997D89246A;
+		};
+		AC7ABAF3BAFCCF834C35D127 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/SettingsView.swift";
+			sourceTree = "<group>";
+		};
+		2838CB8E3BB731C0C58ADEBF = {
+			isa = PBXBuildFile;
+			fileRef = AC7ABAF3BAFCCF834C35D127;
+		};
+		B8B5827DB7B30C5EF9E4CE8E = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/SharedViews.swift";
+			sourceTree = "<group>";
+		};
+		E68DE723119F75E73EA2FB8A = {
+			isa = PBXBuildFile;
+			fileRef = B8B5827DB7B30C5EF9E4CE8E;
+		};
+		D05E572A50390E96676EFEC2 = {
+			isa = PBXFileReference;
+			lastKnownFileType = folder;
+			path = "Resources/SAPRuntime";
+			sourceTree = "<group>";
+		};
+		0B3E23817FC5EE4695A12DF9 = {
+			isa = PBXBuildFile;
+			fileRef = D05E572A50390E96676EFEC2;
+		};
+		8FEB83A29956DE0B59952846 = {
+			isa = PBXFileReference;
+			lastKnownFileType = folder.assetcatalog;
+			path = "Resources/Assets.xcassets";
+			sourceTree = "<group>";
+		};
+		FE8AD461736E2C3E2C8BE36E = {
+			isa = PBXBuildFile;
+			fileRef = 8FEB83A29956DE0B59952846;
+		};
+		8D670B021DC9E9A81AD94FB4 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.xml;
+			path = "Resources/PrivacyInfo.xcprivacy";
+			sourceTree = "<group>";
+		};
+		FE7CC9734AD8010D74C8E69A = {
+			isa = PBXBuildFile;
+			fileRef = 8D670B021DC9E9A81AD94FB4;
+		};
+		C1E36C75A6B6E7BC0D47881C = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.xml;
+			path = Info.plist;
+			sourceTree = "<group>";
+		};
+		DF17B7F31CB119020ABB3383 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = CoreTests.swift;
+			sourceTree = "<group>";
+		};
+		9CD55C88894B030A66E10BFC = {
+			isa = PBXBuildFile;
+			fileRef = DF17B7F31CB119020ABB3383;
+		};
+		43B20E5B39E4494D4F6661D0 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = VisualTests.swift;
+			sourceTree = "<group>";
+		};
+		6474B699E7D3303EDAF747F3 = {
+			isa = PBXBuildFile;
+			fileRef = 43B20E5B39E4494D4F6661D0;
+		};
+		9BC77B6C9BFAFB5749CF4757 = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/weichsel/ZIPFoundation.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.9.19;
+			};
+		};
+		0507EAB0D89D8F0B76FF0550 = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9BC77B6C9BFAFB5749CF4757;
+			productName = ZIPFoundation;
+		};
+		F7DFB174695B0A1A0FA95C8C = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9BC77B6C9BFAFB5749CF4757;
+			productName = ZIPFoundation;
+		};
+		0E2952C57168E56459E1915B = {
+			isa = PBXBuildFile;
+			productRef = 0507EAB0D89D8F0B76FF0550;
+		};
+		0359D093502DDF5CA655C10F = {
+			isa = PBXBuildFile;
+			productRef = F7DFB174695B0A1A0FA95C8C;
+		};
+		A5660BF89DD2D657048780AB = {
+			isa = PBXGroup;
+			children = (
+				E5897D35708E9120B8647A2F,
+				E62D865FB463397117968832,
+				5D8D68F1FED8399BDA1BAE05,
+				9C74C66866F0A2483D0A8371,
+				97B77CBFB5B60DE50E8659BA,
+				0BD07ACE3BF45E1B7AA5D034,
+				03223D703FED7749D0182600,
+				F8027934C71C79D0C4556300,
+				BCDB149703DDF289FBA19140,
+				294558996050B2FE227179BC,
+				43307BBF4EB32558D5FCFF38,
+				525FB927D6E0158442EEE80C,
+				DE2B00F9D1374F49D8D7B778,
+				20DF3E39BC0667C304A58585,
+				C4E202139941DE609BFBB95D,
+				24676682B667747A20517456,
+				179AE521F9E371EE4200EDB4,
+				64ED8F7AAAC933FAC771090F,
+				C378265D29DC31EA6BC9A4BB,
+				A1E708F62865C66C68AA85E9,
+				1E9502E0C8542CA2BF94D23E,
+				875F86E325615E997D89246A,
+				AC7ABAF3BAFCCF834C35D127,
+				B8B5827DB7B30C5EF9E4CE8E,
+				D05E572A50390E96676EFEC2,
+				8FEB83A29956DE0B59952846,
+				8D670B021DC9E9A81AD94FB4,
+				C1E36C75A6B6E7BC0D47881C,
+			);
+			path = iPadn;
+			sourceTree = "<group>";
+		};
+		3A1926085471FC5F24CD7859 = {
+			isa = PBXGroup;
+			children = (
+				DF17B7F31CB119020ABB3383,
+				43B20E5B39E4494D4F6661D0,
+			);
+			path = iPadnTests;
+			sourceTree = "<group>";
+		};
+		4EDC8BFAFC6BD936B849F38C = {
+			isa = PBXGroup;
+			children = (
+				DEF93E8F8AC229A0D98BBEFA,
+				970FB190220EDCE2E3BBCD1A,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		97A63A01E61FD439E8760B8E = {
+			isa = PBXGroup;
+			children = (
+				A5660BF89DD2D657048780AB,
+				3A1926085471FC5F24CD7859,
+				4EDC8BFAFC6BD936B849F38C,
+			);
+			sourceTree = "<group>";
+		};
+		0D25A9A11793BE91427A3D7D = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				41112957FFC8DF4DD3F48FE2,
+				8EE231649195F263F52CE685,
+				28794B21362D7DD58544D5B3,
+				43E25ABCD2BA73E3BFD8EDE0,
+				1C018FC21201DC15AA0DD851,
+				E0631520F368539F2C0854C8,
+				D9FE40E25730AE6E6B295708,
+				7C04EA5E4EC7AB7D31EE0AE7,
+				BF33CC061A259701E2392CC4,
+				C0E20030ACC5F23732E47CAE,
+				4F5447AC56A605806430F5AF,
+				D3D7F9AE0A76859E6F98809B,
+				947A4B9739DE11F25F172D4C,
+				79C9C7B781E2036A0BD109DC,
+				4290A7A571B139F6D5141896,
+				9F6F3B0AA7DF6199BC3539FD,
+				7532C26779F64E89AE34C747,
+				81760043801C5EA796AC3B07,
+				BBA95D751DB25B4ECFB64D15,
+				E03C6E916BCB77F54CB0D996,
+				4081F8E081F38E620E4F6F53,
+				9B02A284355960077990E605,
+				2838CB8E3BB731C0C58ADEBF,
+				E68DE723119F75E73EA2FB8A,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DBBFC30291D55CDD50B10B32 = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0B3E23817FC5EE4695A12DF9,
+				FE8AD461736E2C3E2C8BE36E,
+				FE7CC9734AD8010D74C8E69A,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		609A52E5B24E5BB109D44D04 = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0E2952C57168E56459E1915B,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		999563F69797B7C5B2640A80 = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/assemble_runtime.py",
+				"$(SRCROOT)/vendor/SAPRuntime",
+			);
+			outputPaths = (
+				"$(SRCROOT)/iPadn/Resources/SAPRuntime/sap.wasm",
+				"$(SRCROOT)/iPadn/Resources/SAPRuntime/index.html",
+				"$(SRCROOT)/iPadn/Resources/SAPRuntime/sap-signer.js",
+				"$(SRCROOT)/iPadn/Resources/SAPRuntime/wasm_exec.js",
+				"$(SRCROOT)/iPadn/Resources/SAPRuntime/unicorn_x86.js",
+			);
+			name = "Verify local signing runtime";
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = "/bin/bash";
+			shellScript = "set -euo pipefail\npython3 \"$SRCROOT/scripts/assemble_runtime.py\"\n";
+			alwaysOutOfDate = 1;
+		};
+		F4E9F38E16B01050A03B8113 = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9CD55C88894B030A66E10BFC,
+				6474B699E7D3303EDAF747F3,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		376CB33734054840C2006334 = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0359D093502DDF5CA655C10F,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F3450B63233CC3F0A1670847 = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		653F00C218B171A375DB131B = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				ONLY_ACTIVE_ARCH = YES;
+				ENABLE_TESTABILITY = YES;
+			};
+			name = Debug;
+		};
+		C6E4775ECDD79062F35351BF = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				SWIFT_STRICT_CONCURRENCY = targeted;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		49B2A46CE88C43D97CE97256 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				653F00C218B171A375DB131B,
+				C6E4775ECDD79062F35351BF,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F8402A14F28B0D7E5C2F1CF9 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = app.local.iPadn;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				INFOPLIST_FILE = "iPadn/Info.plist";
+				GENERATE_INFOPLIST_FILE = NO;
+				MARKETING_VERSION = 1.2;
+				CURRENT_PROJECT_VERSION = 4;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				ENABLE_PREVIEWS = YES;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				ONLY_ACTIVE_ARCH = YES;
+				ENABLE_TESTABILITY = YES;
+			};
+			name = Debug;
+		};
+		B77A2964E67CEC00F098935C = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = app.local.iPadn;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				INFOPLIST_FILE = "iPadn/Info.plist";
+				GENERATE_INFOPLIST_FILE = NO;
+				MARKETING_VERSION = 1.2;
+				CURRENT_PROJECT_VERSION = 4;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				ENABLE_PREVIEWS = YES;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		0EF97637030A8D46EE22C3AA = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F8402A14F28B0D7E5C2F1CF9,
+				B77A2964E67CEC00F098935C,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FFCF2052198FB39C6972134D = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = app.local.iPadnTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				GENERATE_INFOPLIST_FILE = YES;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/iPadn.app/iPadn";
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				ONLY_ACTIVE_ARCH = YES;
+				ENABLE_TESTABILITY = YES;
+			};
+			name = Debug;
+		};
+		A38DFF1D652F9EDE21F290BB = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = app.local.iPadnTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				GENERATE_INFOPLIST_FILE = YES;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/iPadn.app/iPadn";
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		7967B6803B2DE095ECFF5BBD = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FFCF2052198FB39C6972134D,
+				A38DFF1D652F9EDE21F290BB,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0EA9EA0A0633EB7A283CC58E = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 985959785319747668373CC6;
+			proxyType = 1;
+			remoteGlobalIDString = 28842F0FBEF7D211F304ACBC;
+			remoteInfo = iPadn;
+		};
+		19A7FBCA10A205FCAFD6F090 = {
+			isa = PBXTargetDependency;
+			target = 28842F0FBEF7D211F304ACBC;
+			targetProxy = 0EA9EA0A0633EB7A283CC58E;
+		};
+		28842F0FBEF7D211F304ACBC = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0EF97637030A8D46EE22C3AA;
+			buildPhases = (
+				999563F69797B7C5B2640A80,
+				0D25A9A11793BE91427A3D7D,
+				609A52E5B24E5BB109D44D04,
+				DBBFC30291D55CDD50B10B32,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = iPadn;
+			packageProductDependencies = (
+				0507EAB0D89D8F0B76FF0550,
+			);
+			productName = iPadn;
+			productReference = DEF93E8F8AC229A0D98BBEFA;
+			productType = "com.apple.product-type.application";
+		};
+		BD64E34F3B89E990E8D455E3 = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7967B6803B2DE095ECFF5BBD;
+			buildPhases = (
+				F4E9F38E16B01050A03B8113,
+				376CB33734054840C2006334,
+				F3450B63233CC3F0A1670847,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				19A7FBCA10A205FCAFD6F090,
+			);
+			name = iPadnTests;
+			packageProductDependencies = (
+				F7DFB174695B0A1A0FA95C8C,
+			);
+			productName = iPadnTests;
+			productReference = 970FB190220EDCE2E3BBCD1A;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		985959785319747668373CC6 = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					28842F0FBEF7D211F304ACBC = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					BD64E34F3B89E990E8D455E3 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 28842F0FBEF7D211F304ACBC;
+					};
+				};
+			};
+			buildConfigurationList = 49B2A46CE88C43D97CE97256;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = "zh-Hans";
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				"zh-Hans",
+				en,
+				Base,
+			);
+			mainGroup = 97A63A01E61FD439E8760B8E;
+			productRefGroup = 4EDC8BFAFC6BD936B849F38C;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				28842F0FBEF7D211F304ACBC,
+				BD64E34F3B89E990E8D455E3,
+			);
+			packageReferences = (
+				9BC77B6C9BFAFB5749CF4757,
+			);
+		};
+	};
+	rootObject = 985959785319747668373CC6;
+}
