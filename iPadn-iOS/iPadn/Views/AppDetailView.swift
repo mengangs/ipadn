@@ -22,7 +22,7 @@ struct AppDetailView: View {
     @ViewBuilder private var appMetadata: some View {
         if app.size > 0 { Text(app.size.byteLabel) }
         if app.rating > 0 { Label(String(format: "%.1f", app.rating), systemImage: "star") }
-        if !app.minimumOS.isEmpty { Text("iOS \(app.minimumOS)+") }
+        if !app.minimumOS.isEmpty { Text("\(store.settings.store.platform.title) \(app.minimumOS)+") }
     }
     var body: some View {
         List {
@@ -39,6 +39,9 @@ struct AppDetailView: View {
             Section {
                 Toggle("从 Apple 获取版本", isOn: $official).font(.subheadline)
                     .disabled(apple.active == nil || store.settings.store.platform == .tvOS)
+                if apple.active == nil {
+                    Button("登录后查询 Apple 版本", systemImage: "person.crop.circle") { showLogin = true }
+                }
                 if versionsLoading { HStack { ProgressView(); Text("正在查找历史版本…").foregroundStyle(.secondary) } }
                 if let versionError { InlineIssue(message: versionError) { reloadID += 1 } }
                 if !versions.isEmpty {
@@ -101,7 +104,7 @@ struct AppDetailView: View {
             ShareLink(item: storeURL) { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("分享商店链接")
         }
         .navigationDestination(isPresented: $showLogin) { LoginView() }
-        .task(id: "\(official)-\(reloadID)-\(store.settings.store.country)-\(store.settings.store.platform.rawValue)") { await fetchVersions(force: reloadID > 0) }
+        .task(id: "\(official)-\(reloadID)-\(store.settings.store.country)-\(store.settings.store.platform.rawValue)-\(apple.activeID ?? "")") { await fetchVersions(force: reloadID > 0) }
     }
     private var appHeading: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -112,7 +115,7 @@ struct AppDetailView: View {
     }
     private func copy(_ text: String) { UIPasteboard.general.string = text; store.infoMessage = "已复制到剪贴板"; UX.feedback() }
     private func fetchVersions(force: Bool) async {
-        versionsLoading = true; versionError = nil
+        versionsLoading = true; versionError = nil; versions = []
         defer { if !Task.isCancelled { versionsLoading = false } }
         do {
             let result = try await store.loadVersions(for: app, force: force, official: official)
@@ -123,7 +126,7 @@ struct AppDetailView: View {
     private func download(versionID: String?) {
         guard !downloadLoading else { return }
         guard apple.active != nil else { showLogin = true; return }
-        if let versionID, !versionID.isEmpty, !versionID.allSatisfy(\.isNumber) { store.errorMessage = "版本 ID 必须是数字"; return }
+        if let versionID, !versionID.isEmpty, !versionID.allSatisfy({ $0.isASCII && $0.isNumber }) { store.errorMessage = "版本 ID 必须是数字"; return }
         downloadLoading = true
         Task {
             defer { downloadLoading = false }

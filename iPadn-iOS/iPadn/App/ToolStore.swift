@@ -17,7 +17,7 @@ final class ToolStore: ObservableObject {
     lazy var apple = AppleService(signer: signer)
     @Published var settings: ToolSettings {
         didSet {
-            do { UserDefaults.standard.set(try JSONEncoder().encode(settings), forKey: LocalResources.settings) }
+            do { LocalResources.defaults.set(try JSONEncoder().encode(settings), forKey: LocalResources.settings) }
             catch { errorMessage = "设置保存失败：" + error.localizedDescription }
             downloads.configure(settings)
         }
@@ -26,7 +26,9 @@ final class ToolStore: ObservableObject {
     @Published var searchText = ""
     @Published private(set) var searchError: String?
     @Published private(set) var lastSearchTerm = ""
-    @Published private(set) var favorites = LocalResources.load([StoreApp].self, filename: "favorites.json") ?? []
+    @Published private(set) var favorites: [StoreApp] = []
+    private var favoritesStorageError: String?
+    private var ownedStorageError: String?
     @Published private(set) var ownedRevision = UUID()
     @Published private(set) var ownedError: String?
     @Published private(set) var results: [StoreApp] = []
@@ -47,15 +49,19 @@ final class ToolStore: ObservableObject {
     #endif
     private var searchTask: Task<Void, Never>?
     private var searchID = UUID()
-    private var ownedByAccount = LocalResources.load([String: [OwnedApp]].self, filename: LocalResources.ownedFilename) ?? [:]
+    private var ownedByAccount: [String: [OwnedApp]] = [:]
     private var subscriptions = Set<AnyCancellable>()
 
     init(downloadManager: DownloadManager? = nil) {
         downloads = downloadManager ?? DownloadManager()
-        if let data = UserDefaults.standard.data(forKey: LocalResources.settings),
+        if let data = LocalResources.defaults.data(forKey: LocalResources.settings),
            let saved = try? JSONDecoder().decode(ToolSettings.self, from: data) { settings = saved }
         else { settings = ToolSettings() }
-        if let data = UserDefaults.standard.data(forKey: LocalResources.searchHistory) {
+        do { favorites = try LocalResources.loadChecked([StoreApp].self, filename: "favorites.json") ?? [] }
+        catch { favoritesStorageError = "收藏文件读取失败；已保留原文件。"; errorMessage = favoritesStorageError }
+        do { ownedByAccount = try LocalResources.loadChecked([String: [OwnedApp]].self, filename: LocalResources.ownedFilename) ?? [:] }
+        catch { ownedStorageError = "已购缓存读取失败；已保留原文件，不能覆盖其他账号记录。"; errorMessage = ownedStorageError }
+        if let data = LocalResources.defaults.data(forKey: LocalResources.searchHistory) {
             searchHistory = (try? JSONDecoder().decode([SearchHistoryItem].self, from: data)) ?? []
         }
         if ["https://api.scripting.fun/ipa-plist", "https://xiaobai.app/install"].contains(settings.plistServer) { settings.plistServer = "" }
@@ -77,7 +83,7 @@ final class ToolStore: ObservableObject {
         let id = UUID(); searchID = id
         let context = settings.store
         let limit = settings.searchLimit
-        if input != lastSearchTerm { results = [] }
+        results = []
         localResults = []
         updateLocalResults(for: input)
         searching = true; hasSearched = true; searchError = nil; lastSearchTerm = input
@@ -147,10 +153,11 @@ final class ToolStore: ObservableObject {
     func clearSearch() { cancelSearch(); searchText = ""; results = []; localResults = []; hasSearched = false; lastSearchTerm = "" }
     func isFavorite(_ app: StoreApp) -> Bool { favorites.contains { $0.id == app.id } }
     func toggleFavorite(_ app: StoreApp) {
+        guard favoritesStorageError == nil else { errorMessage = favoritesStorageError; return }
         var next = favorites
         if next.contains(where: { $0.id == app.id }) { next.removeAll { $0.id == app.id } }
         else { next.insert(app, at: 0) }
-        do { try LocalResources.save(next, filename: "favorites.json"); favorites = next }
+        do { try LocalResources.save(next, filename: "favorites.json"); favorites = next; updateLocalResults() }
         catch { errorMessage = "收藏保存失败：" + error.localizedDescription }
     }
 
@@ -164,7 +171,7 @@ final class ToolStore: ObservableObject {
     func removeHistory(_ term: String) { searchHistory.removeAll { $0.term == term }; persistHistory() }
     func clearHistory() { searchHistory.removeAll(); persistHistory() }
     private func persistHistory() {
-        if let data = try? JSONEncoder().encode(searchHistory) { UserDefaults.standard.set(data, forKey: LocalResources.searchHistory) }
+        if let data = try? JSONEncoder().encode(searchHistory) { LocalResources.defaults.set(data, forKey: LocalResources.searchHistory) }
     }
 
     func loadVersions(for app: StoreApp, force: Bool = false, official: Bool = false) async throws -> [AppVersion] {
@@ -197,9 +204,7 @@ final class ToolStore: ObservableObject {
         let platform: AppPlatform = job.asset?.platform.lowercased() == "ios" ? .iOS : .tvOS
         let asset = try await apple.asset(appID: job.app.id, versionID: job.asset?.app.externalVersionID,
             store: StoreContext(country: settings.store.country, platform: platform), useCache: settings.useSignerCache)
-        // Enqueue first; retain the failed task if refreshing or saving the replacement fails.
-        try downloads.enqueue(asset)
-        try downloads.remove(job.id)
+        try downloads.refreshFailed(job.id, asset: asset)
         tab = 1
     }
 
@@ -209,7 +214,10 @@ final class ToolStore: ObservableObject {
             return
         }
         ownedLoading = true; ownedError = nil
-        defer { ownedLoading = false }
+        defer {
+            ownedLoading = false
+            if apple.activeID != id { Task { await self.ensureOwnedLoaded() } }
+        }
         do {
             let apps = try await apple.ownedApps(useCache: settings.useSignerCache)
             guard apple.activeID == id else { return }
@@ -219,10 +227,12 @@ final class ToolStore: ObservableObject {
                 if item.iconURL == nil { item.iconURL = cached[item.id] ?? nil }
                 return item
             }
-            ownedByAccount[id] = owned
+            guard ownedStorageError == nil else { ownedError = ownedStorageError; return }
+            var next = ownedByAccount; next[id] = owned
+            try LocalResources.save(next, filename: LocalResources.ownedFilename)
+            ownedByAccount = next
             updateLocalResults()
             ownedRevision = UUID()
-            try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
         } catch is CancellationError { }
         catch { if apple.activeID == id { ownedError = error.localizedDescription } }
     }
@@ -230,7 +240,7 @@ final class ToolStore: ObservableObject {
         #if DEBUG
         if visualPreview { return }
         #endif
-        guard let account = apple.activeID else { return }
+        guard let account = apple.activeID, ownedStorageError == nil else { return }
         let context = settings.store
         let revision = ownedRevision
         let ids = owned.filter { $0.iconURL == nil }.map(\.id)
@@ -250,9 +260,15 @@ final class ToolStore: ObservableObject {
     }
 
     func deleteAccount(_ id: String) throws {
-        try apple.remove(id)
-        ownedByAccount.removeValue(forKey: id)
-        try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
+        guard ownedStorageError == nil else { throw ToolError.message(ownedStorageError!) }
+        var next = ownedByAccount; next.removeValue(forKey: id)
+        try LocalResources.save(next, filename: LocalResources.ownedFilename)
+        do { try apple.remove(id) }
+        catch {
+            try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
+            throw error
+        }
+        ownedByAccount = next
     }
 
     func handleURL(_ url: URL) {

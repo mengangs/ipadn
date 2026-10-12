@@ -21,9 +21,14 @@ enum PackageService {
     }
 
     private static func readPlist(_ entry: Entry, archive: Archive) throws -> [String: Any] {
-        guard entry.uncompressedSize <= 2 * 1024 * 1024 else { throw ToolError.message("IPA 元数据异常：plist 过大") }
+        let limit = 2 * 1024 * 1024
+        guard entry.type == .file, entry.uncompressedSize <= UInt64(limit) else { throw ToolError.message("IPA 元数据异常：plist 过大或类型无效") }
         var data = Data()
-        _ = try archive.extract(entry, consumer: { data.append($0) })
+        let checksum = try archive.extract(entry, consumer: {
+            guard data.count + $0.count <= limit else { throw ToolError.message("IPA 元数据异常：plist 过大") }
+            data.append($0)
+        })
+        guard checksum == entry.checksum else { throw ToolError.message("IPA 元数据校验失败，请重新获取完整文件") }
         guard let result = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
             throw ToolError.message("IPA plist 格式无效")
         }
@@ -73,6 +78,7 @@ enum PackageService {
     }
 
     private static func replace(_ path: String, data: Data, archive: Archive) throws {
+        guard isSafeArchivePath(path) else { throw ToolError.message("IPA 授权文件路径无效") }
         if let entry = archive[path] { try archive.remove(entry) }
         // Use the file API rather than depending on a version-specific Provider integer type.
         let scratch = LocalResources.support.appendingPathComponent("entry-\(UUID().uuidString)", isDirectory: true)
@@ -81,6 +87,12 @@ enum PackageService {
         defer { try? FileManager.default.removeItem(at: scratch) }
         try data.write(to: file, options: .atomic)
         try archive.addEntry(with: path, relativeTo: scratch, compressionMethod: .deflate)
+    }
+
+    static func isSafeArchivePath(_ path: String) -> Bool {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        return !path.contains("\\") && !path.contains("\0") && !parts.isEmpty &&
+            parts.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
     }
 
     static func safeName(_ name: String) -> String {

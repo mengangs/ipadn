@@ -55,16 +55,6 @@ struct AppRow: View {
     }
 }
 
-struct StatusBanner: View {
-    let text: String
-    var symbol = "info.circle"
-    var body: some View {
-        Label(text, systemImage: symbol).font(.footnote)
-            .foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14).background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
-    }
-}
-
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
     func makeUIViewController(context: Context) -> UIActivityViewController {

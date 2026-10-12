@@ -10,16 +10,16 @@ final class AppleService: ObservableObject {
     private var loginInProgress = false
     var active: AppleAccount? { accounts.first { $0.id == activeID } }
     var guid: String {
-        if let value = UserDefaults.standard.string(forKey: LocalResources.guid) { return value }
+        if let value = LocalResources.defaults.string(forKey: LocalResources.guid) { return value }
         let value = (0..<6).map { _ in String(format: "%02X", UInt8.random(in: 0...255)) }.joined()
-        UserDefaults.standard.set(value, forKey: LocalResources.guid)
+        LocalResources.defaults.set(value, forKey: LocalResources.guid)
         return value
     }
 
     init(signer: SAPSigner) {
         self.signer = signer
         do { accounts = try KeychainStore.load() } catch { accountStorageError = error.localizedDescription }
-        activeID = UserDefaults.standard.string(forKey: LocalResources.activeAccount)
+        activeID = LocalResources.defaults.string(forKey: LocalResources.activeAccount)
         if !accounts.contains(where: { $0.id == activeID }) { activeID = nil }
     }
 
@@ -31,6 +31,7 @@ final class AppleService: ObservableObject {
         guard !loginInProgress else { throw ToolError.message("另一个账号正在登录，请稍后重试") }
         loginInProgress = true
         defer { loginInProgress = false }
+        let initialAccount = activeID
         let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let code = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !email.isEmpty, !password.isEmpty else { throw ToolError.message("请填写 Apple 账号和密码") }
@@ -59,6 +60,8 @@ final class AppleService: ObservableObject {
                                    dsid: plistString(raw["dsPersonId"]), passwordToken: plistString(raw["passwordToken"]),
                                    storeFront: String(fullStore.split(separator: "-").first ?? ""), fullStoreFront: fullStore)
         let updated = [account] + accounts.filter { $0.id != id }
+        try Task.checkCancellation()
+        guard activeID == initialAccount else { throw ToolError.message("账号已切换，已停止保存本次登录") }
         try KeychainStore.save(updated)
         accounts = updated; select(id); accountStorageError = nil
     }
@@ -66,7 +69,7 @@ final class AppleService: ObservableObject {
     func select(_ id: String?) {
         guard id == nil || accounts.contains(where: { $0.id == id }) else { return }
         activeID = id
-        UserDefaults.standard.set(id, forKey: LocalResources.activeAccount)
+        LocalResources.defaults.set(id, forKey: LocalResources.activeAccount)
         signer.clearCache()
     }
     func remove(_ id: String) throws {
@@ -83,6 +86,12 @@ final class AppleService: ObservableObject {
     }
 
     func asset(appID: String, versionID: String?, store: StoreContext, useCache: Bool) async throws -> DownloadAsset {
+        guard let identifier = UInt64(appID), identifier > 0,
+              appID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message("App ID 必须是有效的正整数") }
+        if let versionID {
+            guard let version = UInt64(versionID), version > 0,
+                  versionID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message("版本 ID 必须是有效的正整数") }
+        }
         guard let account = active else { throw ToolError.message("请先在账号页登录 Apple 账号") }
         var targetVersion = versionID
         if store.platform == .tvOS, targetVersion == nil {
@@ -125,6 +134,7 @@ final class AppleService: ObservableObject {
         }
         if failure == "9610", !purchased {
             let refreshedAccount = try await refresh(account, useCache: useCache)
+            guard activeID == refreshedAccount.id else { throw ToolError.message("账号已切换，请重新执行下载") }
             try await acquireFreeApp(appID, account: refreshedAccount)
             return try await fetchAsset(appID: appID, versionID: versionID, account: refreshedAccount,
                 useCache: useCache, fallback: fallback, refreshed: refreshed, purchased: true)
@@ -148,12 +158,11 @@ final class AppleService: ObservableObject {
         let artwork = song["artwork-urls"] as? [String: Any]
         let defaultArt = artwork?["default"] as? [String: Any]
         let assetInfo = song["asset-info"] as? [String: Any]
-        let rating = metadata["rating"] as? [String: Any]
         let app = StoreApp(id: plistString(song["songId"]).isEmpty ? appID : plistString(song["songId"]),
             name: plistString(metadata["bundleDisplayName"]), bundleID: plistString(metadata["softwareVersionBundleId"]),
             version: plistString(metadata["bundleShortVersionString"]), iconURL: StoreService.icon(plistString(defaultArt?["url"])),
             size: (assetInfo?["file-size"] as? NSNumber)?.int64Value ?? 0,
-            minimumOS: plistString(rating?["label"]), externalVersionID: externalID)
+            minimumOS: plistString(metadata["minimumOSVersion"] ?? metadata["minimumOsVersion"]), externalVersionID: externalID)
         let sinfRaw = (song["sinfs"] as? [[String: Any]])?.first?["sinf"]
         let sinf: Data?
         if let data = sinfRaw as? Data { sinf = data }

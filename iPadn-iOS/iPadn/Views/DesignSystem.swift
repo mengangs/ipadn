@@ -75,20 +75,14 @@ struct SearchInput: View {
                 Button { text = ""; clear?() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary).frame(width: 44, height: 44) }
                     .buttonStyle(.borderless).accessibilityLabel("清空输入")
             }
+            if let submit {
+                Button { focused = false; submit() } label: {
+                    Image(systemName: "arrow.right.circle.fill").frame(width: 44, height: 44)
+                }.buttonStyle(.borderless).disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityLabel("搜索应用").accessibilityIdentifier("search.submit")
+            }
         }.padding(.leading, 14).padding(.trailing, 2).frame(minHeight: 52)
             .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 16))
-    }
-}
-
-struct StatCell: View {
-    let value: String
-    let title: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(value).font(.system(.title2, design: .rounded, weight: .bold)).contentTransition(.numericText())
-                .fixedSize(horizontal: false, vertical: true)
-            Text(title).font(.caption).foregroundStyle(.secondary)
-        }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
     }
 }
 

@@ -6,7 +6,6 @@ struct DownloadsView: View {
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var manager: DownloadManager
     @Environment(\.openURL) private var openURL
-    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var filter: DownloadFilter = .all
     @State private var term = ""
     @State private var importing = false
@@ -45,6 +44,7 @@ struct DownloadsView: View {
                 }.padding(.vertical, 4)
             }.listRowSeparator(.hidden)
             if let error = manager.storageError { Section { InlineIssue(message: error) } }
+            if let warning = manager.discoveryWarning { Section { InlineIssue(message: warning) } }
             if visible.isEmpty {
                 Section {
                     EmptyState(title: manager.jobs.isEmpty ? "暂无下载任务" : "没有匹配任务", message: manager.jobs.isEmpty ? "搜索应用后下载，或通过右上角导入 IPA。" : "试试其他状态，或清除搜索条件。", symbol: manager.jobs.isEmpty ? "tray.and.arrow.down" : "line.3.horizontal.decrease.circle", actionTitle: manager.jobs.isEmpty ? "搜索应用" : "显示全部", action: {
@@ -184,7 +184,7 @@ struct DownloadsView: View {
                 selection.subtract(pendingDelete); pendingDelete.removeAll(); store.infoMessage = "已删除任务"
             } catch { store.errorMessage = error.localizedDescription }
         }
-        .actionConfirmation(isPresented: Binding(get: { installing != nil }, set: { if !$0 { installing = nil } }), title: "安装 \(installing?.app.name ?? "")", message: "请先配置自己的 HTTPS 清单服务和 Surge/Loon 规则，也可导出 IPA 到签名工具。", confirmTitle: "通过代理安装") {
+        .actionConfirmation(isPresented: Binding(get: { installing != nil }, set: { if !$0 { installing = nil } }), title: "安装 \(installing?.app.name ?? "")", message: "请先配置自己的 HTTPS 清单服务和 Surge/Loon 规则，也可导出 IPA 到签名工具。", confirmTitle: "通过代理安装", destructive: false) {
             guard let job = installing, let file = manager.fileURL(job) else { return }; installing = nil
             perform {
                 let url = try await store.installation.installURL(job: job, file: file, plistServer: store.settings.plistServer)
@@ -251,6 +251,17 @@ struct DownloadTaskRow: View {
     private func speedLabel(_ speed: Double) -> some View {
         Label(speed > 0 ? "\(Int64(min(speed, Double(Int64.max / 2))).byteLabel)/s" : "正在测速…", systemImage: "speedometer")
     }
+    @ViewBuilder private var taskAction: some View {
+        switch job.status {
+        case .running, .queued:
+            Button("暂停", systemImage: "pause.fill", action: primary).buttonStyle(.bordered).controlSize(.large)
+        case .paused, .failed:
+            Button(job.status == .failed ? "重试" : "继续", systemImage: job.status == .failed ? "arrow.clockwise" : "play.fill", action: primary).buttonStyle(.bordered).controlSize(.large)
+        case .completed:
+            Button("导出", systemImage: "square.and.arrow.up", action: exporting).buttonStyle(MonochromeButtonStyle()).controlSize(.large)
+        case .processing, .pausing: ProgressView()
+        }
+    }
     @ViewBuilder private func etaLabel(_ seconds: TimeInterval?) -> some View {
         if let seconds, seconds.isFinite {
             Text(seconds < 60 ? "预计剩余 \(max(1, Int(seconds))) 秒" : seconds < 3600 ? "预计剩余 \(Int(ceil(seconds / 60))) 分钟" : "预计剩余 \(Int(ceil(min(seconds / 3600, 999)))) 小时")
@@ -281,18 +292,9 @@ struct DownloadTaskRow: View {
                     }
                 }
             }
-            HStack(alignment: .center) {
-                TaskStatusPill(status: job.status)
-                Spacer(minLength: 8)
-                switch job.status {
-                case .running, .queued:
-                    Button("暂停", systemImage: "pause.fill", action: primary).buttonStyle(.bordered).controlSize(.large)
-                case .paused, .failed:
-                    Button(job.status == .failed ? "重试" : "继续", systemImage: job.status == .failed ? "arrow.clockwise" : "play.fill", action: primary).buttonStyle(.bordered).controlSize(.large)
-                case .completed:
-                    Button("导出", systemImage: "square.and.arrow.up", action: exporting).buttonStyle(MonochromeButtonStyle()).controlSize(.large)
-                case .processing, .pausing: ProgressView()
-                }
+            ViewThatFits(in: .horizontal) {
+                HStack { TaskStatusPill(status: job.status); Spacer(minLength: 8); taskAction }
+                VStack(alignment: .leading, spacing: 10) { TaskStatusPill(status: job.status); taskAction }
             }.font(.subheadline)
             if let error = job.error { Text(error).font(.caption).foregroundStyle(.primary).lineLimit(2) }
         }.padding(.vertical, 10)

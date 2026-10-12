@@ -35,16 +35,17 @@ private struct ActionConfirmationModifier: ViewModifier {
     let title: String
     let message: String
     let confirmTitle: String
+    let destructive: Bool
     let action: () -> Void
     func body(content: Content) -> some View {
         content.sheet(isPresented: $isPresented) {
-            ActionConfirmationView(title: title, message: message, confirmTitle: confirmTitle, action: action)
+            ActionConfirmationView(title: title, message: message, confirmTitle: confirmTitle, destructive: destructive, action: action)
         }
     }
 }
 extension View {
-    func actionConfirmation(isPresented: Binding<Bool>, title: String, message: String = "", confirmTitle: String, action: @escaping () -> Void) -> some View {
-        modifier(ActionConfirmationModifier(isPresented: isPresented, title: title, message: message, confirmTitle: confirmTitle, action: action))
+    func actionConfirmation(isPresented: Binding<Bool>, title: String, message: String = "", confirmTitle: String, destructive: Bool = true, action: @escaping () -> Void) -> some View {
+        modifier(ActionConfirmationModifier(isPresented: isPresented, title: title, message: message, confirmTitle: confirmTitle, destructive: destructive, action: action))
     }
 }
 

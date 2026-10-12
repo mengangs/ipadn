@@ -22,7 +22,9 @@ python3 scripts/verify_project.py
 node scripts/runtime_smoke_test.cjs
 ```
 
-GitHub Actions 执行设备编译、模拟器测试和界面截图，产物分别为 `iPadn-unsigned-ipa`、`iPadn-interface-screenshots`、`iPadn-build-diagnostics`。测试范围与验收记录见 [VERIFICATION.md](VERIFICATION.md)。
+校验报告输出到 `build/verification.json`，不会修改受跟踪文件。
+
+GitHub Actions 对 PR、main 推送及手动构建执行设备编译、模拟器测试和界面截图，产物分别为 `iPadn-unsigned-ipa`、`iPadn-interface-screenshots`、`iPadn-build-diagnostics`。测试范围与验收记录见 [VERIFICATION.md](VERIFICATION.md)。
 
 ## 扩展
 
@@ -35,3 +37,9 @@ Release 不包含截图用的虚构数据入口。原生网络、验证桥接、
 ## 名称目录
 
 `iPadn/Resources/app-name-directory.json` 由本项目维护，字段为 `id`、`name`、`aliases`、`platform`（`itunes` / `atv9`）和可核对的 `source`。新增记录应确认名称与 Apple App ID 的对应关系，不加入下载直链或账号资料。目录只解析名称，不授予下载许可。当前目录规模有限，不宣称覆盖全部下架应用。
+
+## 数据和测试隔离
+
+Debug `--visual-preview` 使用独立的设置域、钥匙串服务和临时文件目录，不写入正式账号或下载记录。演示下载管理器不启动真实传输。发行构建不包含演示入口。
+
+清理构建产物时仅处理本仓库已忽略的 `build/`、`DerivedData/` 等生成目录；不要删除设备中的 Documents/Packages 或 Application Support/iPadn。

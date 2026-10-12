@@ -8,6 +8,7 @@ final class DownloadManager: NSObject, ObservableObject {
     static let sessionID = "iPadn.background.downloads"
     @Published private(set) var jobs: [DownloadJob] = []
     @Published var storageError: String?
+    @Published private(set) var discoveryWarning: String?
     var backgroundCompletion: (() -> Void)?
     private var tasks: [UUID: URLSessionDownloadTask] = [:]
     private var restoring = true
@@ -19,6 +20,7 @@ final class DownloadManager: NSObject, ObservableObject {
     private var lastSave = Date.distantPast
     private var transferMetrics: [UUID: TransferMetrics] = [:]
     private var progressPublishedAt: [UUID: TimeInterval] = [:]
+    private var saveJobs: ([DownloadJob]) throws -> Void = { try LocalResources.save($0, filename: LocalResources.jobsFilename) }
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.background(withIdentifier: Self.sessionID)
         config.isDiscretionary = false
@@ -30,9 +32,10 @@ final class DownloadManager: NSObject, ObservableObject {
     }()
 
     #if DEBUG
-    init(previewJobs: [DownloadJob]) {
+    init(previewJobs: [DownloadJob], saveJobs: @escaping ([DownloadJob]) throws -> Void = { _ in }) {
         super.init()
         jobs = previewJobs
+        self.saveJobs = saveJobs
         // Screenshots never create a URLSession or start real transfers.
         restoring = true
     }
@@ -66,10 +69,14 @@ final class DownloadManager: NSObject, ObservableObject {
             if let index = jobs.firstIndex(where: { $0.id == id }) {
                 if jobs[index].status == .paused || jobs[index].status == .pausing {
                     tasks.removeValue(forKey: id)
-                    jobs[index].status = .paused
-                    download.cancel(byProducingResumeData: { data in
-                        if let data = data { try? data.write(to: LocalResources.resumeURL(id), options: .atomic) }
-                    })
+                    jobs[index].status = .pausing
+                    let data: Data? = await withCheckedContinuation { continuation in
+                        download.cancel(byProducingResumeData: { continuation.resume(returning: $0) })
+                    }
+                    if let index = jobs.firstIndex(where: { $0.id == id }), jobs[index].status == .pausing {
+                        if let data { try? data.write(to: LocalResources.resumeURL(id), options: .atomic) }
+                        jobs[index].status = .paused
+                    }
                 } else if jobs[index].status == .completed || jobs[index].status == .failed {
                     tasks.removeValue(forKey: id); download.cancel()
                 } else {
@@ -105,19 +112,40 @@ final class DownloadManager: NSObject, ObservableObject {
             $0.account == asset.account && ![.failed, .completed].contains($0.status) }) else {
             throw ToolError.message("这个版本已有下载任务")
         }
-        jobs.insert(DownloadJob(app: asset.app, asset: asset, sourceURL: asset.url, expected: asset.app.size), at: 0)
-        persist(); requestNotifications(); schedule()
+        var next = jobs
+        next.insert(DownloadJob(app: asset.app, asset: asset, sourceURL: asset.url, expected: asset.app.size), at: 0)
+        try saveNewJobs(next)
+        requestNotifications(); schedule()
     }
 
     func enqueueURL(_ url: URL) throws {
-        guard url.scheme == "https" else { throw ToolError.message("下载链接必须使用 HTTPS") }
+        guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ToolError.message("下载链接必须是有效的 HTTPS 地址，不能包含账号密码") }
         guard storageError == nil else { throw ToolError.message(storageError!) }
         guard jobs.filter({ $0.status != .completed && $0.status != .failed }).count < maxQueued else {
             throw ToolError.message("已达到等待任务上限，可在设置中调整")
         }
         let name = url.deletingPathExtension().lastPathComponent
-        jobs.insert(DownloadJob(app: StoreApp(id: UUID().uuidString, name: name.isEmpty ? "导入安装包" : name), sourceURL: url), at: 0)
-        persist(); requestNotifications(); schedule()
+        var next = jobs
+        next.insert(DownloadJob(app: StoreApp(id: UUID().uuidString, name: name.isEmpty ? "导入安装包" : name), sourceURL: url), at: 0)
+        try saveNewJobs(next)
+        requestNotifications(); schedule()
+    }
+
+    func refreshFailed(_ id: UUID, asset: DownloadAsset) throws {
+        guard storageError == nil else { throw ToolError.message(storageError!) }
+        guard let index = jobs.firstIndex(where: { $0.id == id }), jobs[index].status == .failed,
+              jobs[index].account == asset.account, jobs[index].app.id == asset.app.id else {
+            throw ToolError.message("任务或账号已改变，请重新执行重试")
+        }
+        var next = jobs
+        next[index].asset = asset; next[index].sourceURL = asset.url; next[index].app = asset.app
+        next[index].error = nil
+        let staged = FileManager.default.fileExists(atPath: LocalResources.stagingURL(id).path)
+        next[index].status = staged ? .processing : .queued
+        if !staged { next[index].downloaded = 0; next[index].expected = asset.app.size }
+        try saveNewJobs(next)
+        try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
+        if staged { process(id) } else { schedule() }
     }
 
     private func schedule() {
@@ -149,12 +177,12 @@ final class DownloadManager: NSObject, ObservableObject {
         guard jobs[index].status == .running, let task = tasks[id] else { return }
         jobs[index].status = .pausing; persist()
         task.cancel(byProducingResumeData: { data in
-            if let data = data { try? data.write(to: LocalResources.resumeURL(id), options: .atomic) }
             Task { @MainActor in
+                guard let index = self.jobs.firstIndex(where: { $0.id == id }), self.jobs[index].status == .pausing,
+                      self.tasks[id]?.taskIdentifier == task.taskIdentifier else { return }
+                if let data = data { try? data.write(to: LocalResources.resumeURL(id), options: .atomic) }
                 self.tasks.removeValue(forKey: id)
-                if let index = self.jobs.firstIndex(where: { $0.id == id }), self.jobs[index].status == .pausing {
-                    self.jobs[index].status = .paused
-                }
+                self.jobs[index].status = .paused
                 self.persist(); self.schedule()
             }
         })
@@ -179,23 +207,30 @@ final class DownloadManager: NSObject, ObservableObject {
         persist()
     }
     func remove(_ id: UUID) throws {
+        guard storageError == nil else { throw ToolError.message(storageError!) }
         guard let job = jobs.first(where: { $0.id == id }) else { return }
         guard job.status != .processing, job.status != .pausing else { throw ToolError.message("请等待当前文件处理或暂停完成后再删除") }
+        let file = fileURL(job)
+        let removal = LocalResources.support.appendingPathComponent("\(id.uuidString).removing.ipa")
+        if let file { try FileManager.default.moveItem(at: file, to: removal) }
+        do { try saveNewJobs(jobs.filter { $0.id != id }) }
+        catch {
+            if let file { try FileManager.default.moveItem(at: removal, to: file) }
+            throw error
+        }
         tasks.removeValue(forKey: id)?.cancel()
         progressPublishedAt.removeValue(forKey: id)
         transferMetrics.removeValue(forKey: id)
-        if let file = fileURL(job) { try FileManager.default.removeItem(at: file) }
+        if file != nil { try? FileManager.default.removeItem(at: removal) }
         try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
         try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
         try? FileManager.default.removeItem(at: PackageIconService.cacheURL(id))
-        jobs.removeAll { $0.id == id }; persist(); schedule()
+        schedule()
     }
     func metrics(for id: UUID) -> TransferMetrics? { transferMetrics[id] }
 
     func fileURL(_ job: DownloadJob) -> URL? {
-        guard let filename = job.localFilename, filename == URL(fileURLWithPath: filename).lastPathComponent else { return nil }
-        let url = LocalResources.packages.appendingPathComponent(filename)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        job.localFilename.flatMap(LocalResources.packageURL)
     }
 
     func packageIconURL(_ job: DownloadJob) -> URL? {
@@ -225,8 +260,15 @@ final class DownloadManager: NSObject, ObservableObject {
         let inspected = try await Task.detached(priority: .userInitiated) {
             try PackageImportService.prepare(source, id: id)
         }.value
-        jobs.insert(DownloadJob(id: id, app: inspected, status: .processing), at: 0)
-        persist(); process(id)
+        guard storageError == nil else {
+            try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
+            throw ToolError.message(storageError!)
+        }
+        var next = jobs
+        next.insert(DownloadJob(id: id, app: inspected, status: .processing), at: 0)
+        do { try saveNewJobs(next) }
+        catch { try? FileManager.default.removeItem(at: LocalResources.stagingURL(id)); throw error }
+        process(id)
     }
 
     private func process(_ id: UUID) {
@@ -270,13 +312,14 @@ final class DownloadManager: NSObject, ObservableObject {
         let known = Set(jobs.compactMap(\.localFilename))
         let files = (try? FileManager.default.contentsOfDirectory(at: LocalResources.packages, includingPropertiesForKeys: nil)) ?? []
         for file in files where file.pathExtension.lowercased() == "ipa" && !known.contains(file.lastPathComponent) {
+            guard LocalResources.packageURL(file.lastPathComponent) != nil else { continue }
             Task {
                 do {
                     let app = try await Task.detached { try PackageService.inspect(file) }.value
                     guard !self.jobs.contains(where: { $0.localFilename == file.lastPathComponent }) else { return }
                     self.jobs.append(DownloadJob(app: app, status: .completed, downloaded: app.size, expected: app.size, localFilename: file.lastPathComponent))
                     self.persist()
-                } catch { self.storageError = "发现无法读取的本地 IPA：\(file.lastPathComponent)\n\(error.localizedDescription)" }
+                } catch { self.discoveryWarning = "本地 IPA 无法读取，已保留原文件；其他任务可继续使用：\(file.lastPathComponent)\n\(error.localizedDescription)" }
             }
         }
     }
@@ -291,8 +334,13 @@ final class DownloadManager: NSObject, ObservableObject {
     }
     private func persist() {
         guard storageError == nil else { return }
-        do { try LocalResources.save(jobs, filename: LocalResources.jobsFilename); lastSave = Date() }
+        do { try saveJobs(jobs); lastSave = Date() }
         catch { storageError = "无法保存下载任务：" + error.localizedDescription }
+    }
+    private func saveNewJobs(_ next: [DownloadJob]) throws {
+        // Commit the file before publishing a newly enqueued/imported/retried task.
+        try saveJobs(next)
+        jobs = next; lastSave = Date()
     }
     private func requestNotifications() {
         guard notifications else { return }
@@ -310,6 +358,14 @@ final class DownloadManager: NSObject, ObservableObject {
 }
 
 extension DownloadManager: URLSessionDownloadDelegate {
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask,
+                               willPerformHTTPRedirection response: HTTPURLResponse,
+                               newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        guard let url = request.url, url.scheme == "https", url.host != nil,
+              url.user == nil, url.password == nil else { completionHandler(nil); return }
+        completionHandler(request)
+    }
+
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                                didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard let value = downloadTask.taskDescription, let id = UUID(uuidString: value) else { return }
@@ -334,23 +390,35 @@ extension DownloadManager: URLSessionDownloadDelegate {
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         guard let value = downloadTask.taskDescription, let id = UUID(uuidString: value) else { return }
+        // A callback from an old task must never replace a newer task's staging file.
+        let received = LocalResources.support.appendingPathComponent("\(id.uuidString)-\(downloadTask.taskIdentifier).received")
         do {
             guard let response = downloadTask.response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
                 throw ToolError.message("下载失败：HTTP \((downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0)，可刷新链接后重试")
             }
-            let destination = LocalResources.stagingURL(id)
-            try? FileManager.default.removeItem(at: destination)
             // Move synchronously: URLSession deletes its temporary file as soon as this delegate returns.
-            try FileManager.default.moveItem(at: location, to: destination)
+            try FileManager.default.moveItem(at: location, to: received)
             Task { @MainActor in
+                defer { try? FileManager.default.removeItem(at: received) }
+                guard let index = self.jobs.firstIndex(where: { $0.id == id }),
+                      [.running, .pausing].contains(self.jobs[index].status),
+                      self.tasks[id]?.taskIdentifier == downloadTask.taskIdentifier || self.restoring else { return }
+                do {
+                    let destination = LocalResources.stagingURL(id)
+                    if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
+                    try FileManager.default.moveItem(at: received, to: destination)
+                } catch { self.fail(id, error: error); return }
                 self.tasks.removeValue(forKey: id)
                 self.progressPublishedAt.removeValue(forKey: id)
-                guard let index = self.jobs.firstIndex(where: { $0.id == id }) else {
-                    try? FileManager.default.removeItem(at: destination); return
-                }
                 self.jobs[index].status = .processing; self.persist(); self.schedule(); self.process(id)
             }
-        } catch { Task { @MainActor in self.fail(id, error: error) } }
+        } catch {
+            try? FileManager.default.removeItem(at: received)
+            Task { @MainActor in
+                guard self.tasks[id]?.taskIdentifier == downloadTask.taskIdentifier || self.restoring else { return }
+                self.fail(id, error: error)
+            }
+        }
     }
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -358,8 +426,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
         let resume = error.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
         Task { @MainActor in
             guard let job = self.jobs.first(where: { $0.id == id }), job.status != .completed && job.status != .processing else { return }
-            if error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled { return }
-            if let current = self.tasks[id], current.taskIdentifier != task.taskIdentifier { return }
+            guard self.tasks[id]?.taskIdentifier == task.taskIdentifier || self.restoring else { return }
             if job.status == .pausing || job.status == .paused { return }
             if let resume = resume { try? resume.write(to: LocalResources.resumeURL(id), options: .atomic) }
             else { try? FileManager.default.removeItem(at: LocalResources.resumeURL(id)) }
