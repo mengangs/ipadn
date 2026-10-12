@@ -17,7 +17,7 @@ struct PurchasedView: View {
             if let account = apple.active {
                 Section {
                     HStack(spacing: 14) {
-                        Image(systemName: "person.crop.circle.fill").font(.largeTitle).foregroundStyle(.tint)
+                        AccountAvatar(account: account)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("你的应用资料库").font(.headline)
                             Text(account.id).font(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -61,6 +61,7 @@ struct PurchasedView: View {
             Button { Task { await store.refreshOwned() } } label: { Image(systemName: "arrow.clockwise").frame(minWidth: 44, minHeight: 44) }
                 .disabled(store.ownedLoading || apple.active == nil).accessibilityLabel("同步购买记录")
         }
+        .task(id: "\(apple.activeID ?? "")|\(store.ownedRevision)|\(store.settings.store.country)|\(store.settings.store.platform.rawValue)") { await store.loadOwnedArtwork() }
         .refreshable { if apple.active != nil { await store.refreshOwned() } }
     }
 }

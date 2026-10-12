@@ -16,6 +16,8 @@ final class DownloadManager: NSObject, ObservableObject {
     private var processingIDs = Set<UUID>()
     private var notifications = true
     private var lastSave = Date.distantPast
+    private var transferMetrics: [UUID: TransferMetrics] = [:]
+    private var progressPublishedAt: [UUID: TimeInterval] = [:]
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.background(withIdentifier: Self.sessionID)
         config.isDiscretionary = false
@@ -80,6 +82,7 @@ final class DownloadManager: NSObject, ObservableObject {
             if jobs[index].status == .running && tasks[id] == nil { jobs[index].status = .paused }
             if jobs[index].status == .pausing { jobs[index].status = .paused }
             if jobs[index].status == .completed, fileURL(jobs[index]) == nil {
+                progressPublishedAt.removeValue(forKey: id)
                 jobs[index].status = .failed; jobs[index].error = "本地安装包已被移走或删除"
             }
         }
@@ -134,6 +137,8 @@ final class DownloadManager: NSObject, ObservableObject {
         }
         task.taskDescription = id.uuidString
         tasks[id] = task
+        transferMetrics.removeValue(forKey: id)
+        progressPublishedAt.removeValue(forKey: id)
         jobs[index].status = .running; jobs[index].error = nil
         persist(); task.resume()
     }
@@ -176,11 +181,15 @@ final class DownloadManager: NSObject, ObservableObject {
         guard let job = jobs.first(where: { $0.id == id }) else { return }
         guard job.status != .processing, job.status != .pausing else { throw ToolError.message("请等待当前文件处理或暂停完成后再删除") }
         tasks.removeValue(forKey: id)?.cancel()
+        progressPublishedAt.removeValue(forKey: id)
+        transferMetrics.removeValue(forKey: id)
         if let file = fileURL(job) { try FileManager.default.removeItem(at: file) }
         try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
         try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
         jobs.removeAll { $0.id == id }; persist(); schedule()
     }
+    func metrics(for id: UUID) -> TransferMetrics? { transferMetrics[id] }
+
     func fileURL(_ job: DownloadJob) -> URL? {
         guard let filename = job.localFilename, filename == URL(fileURLWithPath: filename).lastPathComponent else { return nil }
         let url = LocalResources.packages.appendingPathComponent(filename)
@@ -258,6 +267,7 @@ final class DownloadManager: NSObject, ObservableObject {
     private func fail(_ id: UUID, error: Error) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
         tasks.removeValue(forKey: id)
+        progressPublishedAt.removeValue(forKey: id)
         jobs[index].status = .failed; jobs[index].error = error.localizedDescription
         persist(); schedule()
         notify(title: "下载任务失败", body: jobs[index].app.name + "：" + error.localizedDescription)
@@ -287,9 +297,20 @@ extension DownloadManager: URLSessionDownloadDelegate {
                                didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard let value = downloadTask.taskDescription, let id = UUID(uuidString: value) else { return }
         Task { @MainActor in
-            guard let index = self.jobs.firstIndex(where: { $0.id == id }), self.jobs[index].status == .running else { return }
-            self.jobs[index].downloaded = totalBytesWritten
-            if totalBytesExpectedToWrite > 0 { self.jobs[index].expected = totalBytesExpectedToWrite }
+            guard let index = self.jobs.firstIndex(where: { $0.id == id }), self.jobs[index].status == .running,
+                  self.tasks[id]?.taskIdentifier == downloadTask.taskIdentifier else { return }
+            let now = ProcessInfo.processInfo.systemUptime
+            let finished = totalBytesExpectedToWrite > 0 && totalBytesWritten >= totalBytesExpectedToWrite
+            guard finished || now - (self.progressPublishedAt[id] ?? 0) >= 0.25 else { return }
+            self.progressPublishedAt[id] = now
+            if var metric = self.transferMetrics[id] {
+                metric.record(bytes: totalBytesWritten, at: now)
+                self.transferMetrics[id] = metric
+            } else { self.transferMetrics[id] = TransferMetrics(bytes: totalBytesWritten, sampledAt: now) }
+            var job = self.jobs[index]
+            job.downloaded = totalBytesWritten
+            job.expected = max(0, totalBytesExpectedToWrite)
+            self.jobs[index] = job
             if Date().timeIntervalSince(self.lastSave) > 1 { self.persist() }
         }
     }
@@ -306,6 +327,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
             try FileManager.default.moveItem(at: location, to: destination)
             Task { @MainActor in
                 self.tasks.removeValue(forKey: id)
+                self.progressPublishedAt.removeValue(forKey: id)
                 guard let index = self.jobs.firstIndex(where: { $0.id == id }) else {
                     try? FileManager.default.removeItem(at: destination); return
                 }

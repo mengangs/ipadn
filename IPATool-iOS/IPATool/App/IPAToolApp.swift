@@ -26,7 +26,7 @@ struct IPAToolApp: App {
                 .environmentObject(store.apple)
                 .environmentObject(store.downloads)
                 .environmentObject(store.signer)
-                .tint(Color(red: 0.06, green: 0.49, blue: 0.46))
+                .tint(UX.tint)
                 .onOpenURL { store.handleURL($0) }
         }
     }

@@ -6,6 +6,7 @@ struct DownloadsView: View {
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var manager: DownloadManager
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var filter: DownloadFilter = .all
     @State private var term = ""
     @State private var importing = false
@@ -26,14 +27,15 @@ struct DownloadsView: View {
     var body: some View {
         List(selection: $selection) {
             Section {
-                HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 16) {
+                (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(alignment: .top, spacing: 16))) {
                     StatCell(value: "\(manager.jobs.filter { DownloadFilter.active.includes($0.status) }.count)", title: "进行中")
                     StatCell(value: "\(manager.jobs.filter { $0.status == .completed }.count)", title: "已保存")
                     StatCell(value: totalSize.byteLabel, title: "本地文件")
                 }.padding(.vertical, 12)
-                HStack(spacing: 12) {
+                (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))) {
                     Button { importing = true } label: { Label("导入 IPA", systemImage: "plus.rectangle.on.folder").frame(maxWidth: .infinity, minHeight: 36) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.borderedProminent).tint(UX.buttonTint)
                     Button { addLink = true } label: { Label("链接下载", systemImage: "link").frame(maxWidth: .infinity, minHeight: 36) }
                         .buttonStyle(.bordered)
                 }.font(.subheadline.weight(.semibold)).disabled(actionBusy)
@@ -46,11 +48,12 @@ struct DownloadsView: View {
                                     .font(.subheadline.weight(filter == item ? .semibold : .regular))
                                     .padding(.horizontal, 14).frame(minHeight: 44)
                                     .foregroundStyle(filter == item ? Color.white : Color.primary)
-                                    .background(filter == item ? Color.accentColor : Color(.tertiarySystemFill), in: Capsule())
+                                    .background(filter == item ? UX.buttonTint : Color(.tertiarySystemFill), in: Capsule())
                             }.buttonStyle(.plain).accessibilityAddTraits(filter == item ? .isSelected : [])
                         }
                     }.padding(.vertical, 4)
                 }
+                }.padding(.vertical, 4)
             }.listRowSeparator(.hidden)
             if let error = manager.storageError { Section { InlineIssue(message: error) } }
             if visible.isEmpty {
@@ -98,7 +101,7 @@ struct DownloadsView: View {
                     Button("暂停全部", systemImage: "pause.circle") { manager.pauseAll(); store.infoMessage = "已暂停可暂停的任务" }
                         .disabled(!manager.jobs.contains { [.running, .queued].contains($0.status) })
                     Button("继续全部", systemImage: "play.circle") { manager.resumeAll() }
-                        .disabled(!manager.jobs.contains { [.paused, .failed].contains($0.status) })
+                        .disabled(!manager.jobs.contains { $0.status == .paused })
                 } label: { Image(systemName: "ellipsis.circle").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel("批量下载操作")
             }
         }
@@ -135,10 +138,9 @@ struct DownloadsView: View {
                         }
                         if let error = job.error { Section("错误详情") { Text(error).font(.subheadline).textSelection(.enabled) } }
                         if job.status == .completed {
-                            Section { Button("导出 IPA", systemImage: "square.and.arrow.up") {
-                                inspecting = nil
-                                if let file = manager.fileURL(job) { share = SharedFile(url: file) }
-                            } }
+                            if let file = manager.fileURL(job) {
+                                Section { ShareLink(item: file) { Label("导出 IPA", systemImage: "square.and.arrow.up") } }
+                            }
                         }
                     }.toolPage().navigationTitle("任务详情").navigationBarTitleDisplayMode(.inline)
                         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { inspecting = nil } } }
@@ -196,21 +198,49 @@ struct DownloadsView: View {
 }
 
 struct DownloadTaskRow: View {
+    @EnvironmentObject private var manager: DownloadManager
     let job: DownloadJob
     var inspecting: () -> Void
     var primary: () -> Void
     var exporting: () -> Void
+    private var byteProgress: some View {
+        Text("\(job.downloaded.byteLabel) / \(job.expected > 0 ? job.expected.byteLabel : "大小未知")")
+    }
+    @ViewBuilder private var percentage: some View {
+        if job.expected > 0 { Text("\(Int(job.progress * 100))%").foregroundStyle(.primary) }
+    }
+    private func speedLabel(_ speed: Double) -> some View {
+        Label(speed > 0 ? "\(Int64(min(speed, Double(Int64.max / 2))).byteLabel)/s" : "正在测速…", systemImage: "speedometer")
+    }
+    @ViewBuilder private func etaLabel(_ seconds: TimeInterval?) -> some View {
+        if let seconds, seconds.isFinite {
+            Text(seconds < 60 ? "预计剩余 \(max(1, Int(seconds))) 秒" : seconds < 3600 ? "预计剩余 \(Int(ceil(seconds / 60))) 分钟" : "预计剩余 \(Int(ceil(min(seconds / 3600, 999)))) 小时")
+        } else { Text(job.expected > 0 ? "正在估算剩余时间" : "总大小未知") }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Button(action: inspecting) { AppRow(app: job.app).contentShape(Rectangle()) }.buttonStyle(.plain)
-            if job.status == .running {
-                if job.expected > 0 { ProgressView(value: job.progress).accessibilityLabel("下载进度").accessibilityValue("\(Int(job.progress * 100))%") }
-                else { ProgressView().accessibilityLabel("正在下载，文件大小未知") }
-                HStack {
-                    Text("\(job.downloaded.byteLabel) / \(job.expected > 0 ? job.expected.byteLabel : "大小未知")")
-                    Spacer()
-                    if job.expected > 0 { Text("\(Int(job.progress * 100))%").monospacedDigit() }
-                }.font(.caption).foregroundStyle(.secondary)
+            if [.running, .paused, .pausing].contains(job.status) {
+                if job.expected > 0 {
+                    ProgressView(value: job.progress).tint(job.status == .paused ? .secondary : UX.tint)
+                        .accessibilityLabel("下载进度").accessibilityValue("\(Int(job.progress * 100))%")
+                } else if job.status == .running { ProgressView().accessibilityLabel("正在下载，文件大小未知") }
+                ViewThatFits(in: .horizontal) {
+                    HStack { byteProgress; Spacer(); percentage }
+                    VStack(alignment: .leading, spacing: 4) { byteProgress; percentage }
+                }.font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                if job.status == .running {
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        let metric = manager.metrics(for: job.id)
+                        let now = ProcessInfo.processInfo.systemUptime
+                        let speed = metric?.rate(at: now) ?? 0
+                        ViewThatFits(in: .horizontal) {
+                            HStack { speedLabel(speed); Spacer(); etaLabel(metric?.remaining(expected: job.expected, at: now)) }
+                            VStack(alignment: .leading, spacing: 4) { speedLabel(speed); etaLabel(metric?.remaining(expected: job.expected, at: now)) }
+                        }.font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                }
             }
             HStack(alignment: .center) {
                 TaskStatusPill(status: job.status)
@@ -221,7 +251,7 @@ struct DownloadTaskRow: View {
                 case .paused, .failed:
                     Button(job.status == .failed ? "重试" : "继续", systemImage: job.status == .failed ? "arrow.clockwise" : "play.fill", action: primary).buttonStyle(.bordered).controlSize(.large)
                 case .completed:
-                    Button("导出", systemImage: "square.and.arrow.up", action: exporting).buttonStyle(.borderedProminent).controlSize(.large)
+                    Button("导出", systemImage: "square.and.arrow.up", action: exporting).buttonStyle(.borderedProminent).tint(UX.buttonTint).controlSize(.large)
                 case .processing, .pausing: ProgressView()
                 }
             }.font(.subheadline)

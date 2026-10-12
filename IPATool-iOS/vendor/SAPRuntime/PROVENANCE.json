@@ -1,0 +1,19 @@
+{
+  "scope": "SAP runtime component provenance; not a runtime dependency",
+  "source_archive": "IPA-Tool-3.0.scripting",
+  "attributed_author": "小白脸",
+  "reference_repository": "https://github.com/ScriptingApp/Community-Scripts",
+  "reference_commit": "f9509c530b730d8be36639db5b7825cadb431898",
+  "unchanged_files": [
+    "sap.wasm",
+    "unicorn_x86.js",
+    "wasm_exec.js"
+  ],
+  "locally_adapted": [
+    "sap-signer.js"
+  ],
+  "project_authored": [
+    "index.html"
+  ],
+  "license_status": "Original embedded notices retained; complete license grant for all components not established."
+}

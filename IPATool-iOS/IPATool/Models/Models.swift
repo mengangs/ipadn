@@ -64,8 +64,9 @@ struct OwnedApp: Codable, Identifiable {
     var name: String
     var version: String
     var purchaseDate: Date?
+    var iconURL: URL?
     var storeApp: StoreApp {
-        StoreApp(id: id, name: name, bundleID: bundleID, version: version)
+        StoreApp(id: id, name: name, bundleID: bundleID, version: version, iconURL: iconURL)
     }
 }
 

@@ -2,7 +2,8 @@ import SwiftUI
 import UIKit
 
 enum UX {
-    static let tint = Color(red: 0.04, green: 0.46, blue: 0.43)
+    static let tint = Color.accentColor
+    static let buttonTint = Color(red: 0.04, green: 0.46, blue: 0.43)
     static func feedback() { UISelectionFeedbackGenerator().selectionChanged() }
 }
 
@@ -37,7 +38,7 @@ struct EmptyState: View {
             Text(message).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             if let actionTitle, let action {
-                Button(actionTitle, action: action).buttonStyle(.borderedProminent).controlSize(.large)
+                Button(actionTitle, action: action).buttonStyle(.borderedProminent).tint(UX.buttonTint).controlSize(.large)
             }
         }.padding(.vertical, 28).frame(maxWidth: .infinity).padding(.horizontal, 12)
     }

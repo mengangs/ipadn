@@ -3,6 +3,34 @@ import ZIPFoundation
 @testable import IPATool
 
 final class CoreTests: XCTestCase {
+    func testTransferRateUsesNewBytesAndExpiresWhenStalled() {
+        var metric = TransferMetrics(bytes: 1_000_000, sampledAt: 100)
+        metric.record(bytes: 1_500_000, at: 101)
+        XCTAssertEqual(metric.rate(at: 101), 500_000, accuracy: 0.1)
+        XCTAssertEqual(metric.remaining(expected: 2_500_000, at: 101), 2)
+        XCTAssertNil(metric.remaining(expected: 0, at: 101))
+        XCTAssertNil(metric.remaining(expected: 1_500_000, at: 101))
+        XCTAssertEqual(metric.rate(at: 106), 0)
+        XCTAssertNil(metric.remaining(expected: 2_500_000, at: 106))
+        metric.record(bytes: 50_000, at: 107)
+        XCTAssertEqual(metric.rate(at: 107), 0, "A restarted transfer must reset its baseline")
+        metric.record(bytes: 100_000, at: 108)
+        XCTAssertEqual(metric.rate(at: 108), 50_000, accuracy: 0.1)
+        metric.record(bytes: 900_000, at: 130)
+        XCTAssertEqual(metric.rate(at: 130), 0, "A suspension gap must not produce a stale rate")
+    }
+
+    func testPurchasedCacheWithoutArtworkStillDecodes() throws {
+        let data = Data(#"{"id":"1","bundleID":"test.app","name":"Test","version":"1.0"}"#.utf8)
+        var app = try JSONDecoder().decode(OwnedApp.self, from: data)
+        XCTAssertNil(app.iconURL)
+        app.iconURL = URL(string: "https://example.com/icon.png")
+        let roundTrip = try JSONDecoder().decode(OwnedApp.self, from: JSONEncoder().encode(app))
+        XCTAssertEqual(roundTrip.storeApp.iconURL, app.iconURL)
+        XCTAssertNil(StoreService.icon(""))
+        XCTAssertNil(StoreService.icon("file:///private/icon.png"))
+    }
+
     func testDownloadFiltersSeparateActivePausedAndFailed() {
         for status in [DownloadStatus.queued, .running, .pausing, .processing] { XCTAssertTrue(DownloadFilter.active.includes(status)) }
         for status in [DownloadStatus.paused, .failed, .completed] { XCTAssertFalse(DownloadFilter.active.includes(status)) }

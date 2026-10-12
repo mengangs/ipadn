@@ -8,16 +8,18 @@ struct AccountsView: View {
         List {
             Section {
                 PageIntro(eyebrow: apple.active == nil ? "尚未连接" : "账号已连接", title: apple.active == nil ? "连接你的应用世界" : "你好，\(apple.active?.name ?? "")", subtitle: apple.active?.id ?? "使用自己的 Apple 账号，同步已购应用与下载许可。", symbol: "person.crop.circle.badge.checkmark")
+                if let account = apple.active { AvatarEditor(account: account) }
                 NavigationLink { LoginView() } label: {
                     Label(apple.accounts.isEmpty ? "连接 Apple 账号" : "添加其他账号", systemImage: "plus.circle.fill").frame(maxWidth: .infinity, minHeight: 40)
-                }.buttonStyle(.borderedProminent).padding(.bottom, 8)
+                }.buttonStyle(.borderedProminent).tint(UX.buttonTint).padding(.bottom, 8)
             }
             if let error = apple.accountStorageError { Section { StatusBanner(text: error, symbol: "exclamationmark.triangle") } }
             if !apple.accounts.isEmpty {
                 Section("已保存账号") {
                     ForEach(apple.accounts) { account in
                         Button { apple.select(account.id); UX.feedback(); store.infoMessage = "已切换下载账号" } label: {
-                            HStack {
+                            HStack(spacing: 12) {
+                                AccountAvatar(account: account)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(account.name).font(.headline).foregroundStyle(.primary)
                                     Text(account.id).font(.caption).foregroundStyle(.secondary)
@@ -97,7 +99,7 @@ struct LoginView: View {
                         Text(busy ? "正在验证…" : verifying ? "验证并登录" : "继续登录").fontWeight(.semibold)
                         Spacer()
                     }.padding(.vertical, 6)
-                }.buttonStyle(.borderedProminent).controlSize(.large).disabled(busy || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty || (verifying && code.count != 6))
+                }.buttonStyle(.borderedProminent).tint(UX.buttonTint).controlSize(.large).disabled(busy || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty || (verifying && code.count != 6))
             } footer: { Text("凭据保存在此设备的钥匙串中。验证期间请保持应用在前台。") }
         }
         .toolPage()

@@ -17,8 +17,9 @@ final class VisualTests: XCTestCase {
         try await capture("03-downloads-light", view: RootView(), store: store)
         try await capture("04-downloads-large-text", view: RootView(), store: store, textSize: .accessibility2)
         try await capture("05-login", view: NavigationStack { LoginView() }, store: store)
+        try await capture("06-app-detail", view: NavigationStack { AppDetailView(app: a) }, store: store)
         store.tab = 0
-        try await capture("06-tablet-layout", view: RootView(), store: store, size: CGSize(width: 1024, height: 1366), regular: true)
+        try await capture("07-tablet-layout", view: RootView(), store: store, size: CGSize(width: 1024, height: 1366), regular: true)
     }
 
     @MainActor
@@ -40,8 +41,8 @@ final class VisualTests: XCTestCase {
         try await Task.sleep(nanoseconds: 1_000_000_000)
         controller.view.layoutIfNeeded()
         let format = UIGraphicsImageRendererFormat(); format.scale = 2
-        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
-            controller.view.layer.render(in: context.cgContext)
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            controller.view.drawHierarchy(in: controller.view.bounds, afterScreenUpdates: true)
         }
         XCTAssertEqual(image.size.width, size.width)
         let attachment = XCTAttachment(image: image)

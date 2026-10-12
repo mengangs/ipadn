@@ -52,6 +52,23 @@ enum StoreService {
                         externalVersionID: version["externalId"].map { plistString($0) })
     }
 
+    static func artwork(_ ids: [String], store: StoreContext) async throws -> [String: URL] {
+        let valid = ids.filter { !$0.isEmpty && $0.allSatisfy { $0.isASCII && $0.isNumber } }
+        guard !valid.isEmpty else { return [:] }
+        let url = try endpoint("https://itunes.apple.com/lookup", items: [
+            URLQueryItem(name: "id", value: valid.joined(separator: ",")),
+            URLQueryItem(name: "country", value: store.country),
+            URLQueryItem(name: "entity", value: store.platform == .iOS ? "software" : "tvSoftware")
+        ])
+        let response = try await HTTPClient.shared.json(url) as? [String: Any]
+        var icons: [String: URL] = [:]
+        for raw in response?["results"] as? [[String: Any]] ?? [] {
+            let app = mapLookup(raw)
+            if let icon = app.iconURL { icons[app.id] = icon }
+        }
+        return icons
+    }
+
     static func mapLookup(_ raw: [String: Any]) -> StoreApp {
         StoreApp(id: plistString(raw["trackId"]), name: plistString(raw["trackName"] ?? raw["trackCensoredName"]),
                  bundleID: plistString(raw["bundleId"]), version: plistString(raw["version"]),
@@ -64,9 +81,10 @@ enum StoreService {
     }
 
     static func icon(_ value: String) -> URL? {
-        URL(string: value.replacingOccurrences(of: "{w}", with: "512")
+        guard let url = URL(string: value.replacingOccurrences(of: "{w}", with: "512")
             .replacingOccurrences(of: "{h}", with: "512").replacingOccurrences(of: "{f}", with: "png")
-            .replacingOccurrences(of: "{c}", with: "bb"))
+            .replacingOccurrences(of: "{c}", with: "bb")), url.scheme == "https", url.host != nil else { return nil }
+        return url
     }
 }
 

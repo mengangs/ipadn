@@ -86,7 +86,7 @@ struct AppDetailView: View {
                         if downloadLoading { ProgressView().tint(.white) }
                         Label(downloadLoading ? "正在准备下载…" : apple.active == nil ? "登录后下载" : "下载当前版本", systemImage: apple.active == nil ? "person.crop.circle" : "arrow.down.circle.fill")
                     }.font(.headline).frame(maxWidth: .infinity).frame(minHeight: 44)
-                }.buttonStyle(.borderedProminent).controlSize(.large).disabled(downloadLoading)
+                }.buttonStyle(.borderedProminent).tint(UX.buttonTint).controlSize(.large).disabled(downloadLoading)
                 Text(apple.active.map { "使用账号 \($0.id)" } ?? "登录后获取你拥有许可的应用")
                     .font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }.padding(.horizontal, 20).padding(.vertical, 12).frame(maxWidth: 680).frame(maxWidth: .infinity).background(.regularMaterial)

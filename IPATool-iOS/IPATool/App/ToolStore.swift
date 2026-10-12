@@ -27,6 +27,8 @@ final class ToolStore: ObservableObject {
     @Published private(set) var searchError: String?
     @Published private(set) var lastSearchTerm = ""
     @Published private(set) var favorites = LocalResources.load([StoreApp].self, filename: "favorites.json") ?? []
+    @Published private(set) var ownedRevision = UUID()
+    @Published private(set) var avatars: [String: Data] = [:]
     @Published private(set) var ownedError: String?
     @Published private(set) var results: [StoreApp] = []
     @Published private(set) var searching = false
@@ -36,6 +38,9 @@ final class ToolStore: ObservableObject {
     @Published private(set) var ownedLoading = false
     @Published var errorMessage: String?
     @Published var infoMessage: String?
+    #if DEBUG
+    private var visualPreview = false
+    #endif
     private var searchTask: Task<Void, Never>?
     private var searchID = UUID()
     private var ownedByAccount = LocalResources.load([String: [OwnedApp]].self, filename: LocalResources.ownedFilename) ?? [:]
@@ -51,8 +56,12 @@ final class ToolStore: ObservableObject {
         }
         if ["https://api.scripting.fun/ipa-plist", "https://xiaobai.app/install"].contains(settings.plistServer) { settings.plistServer = "" }
         downloads.configure(settings)
+        for account in apple.accounts {
+            avatars[account.id] = try? Data(contentsOf: AvatarStorage.url(account.id))
+        }
         apple.$activeID.sink { [weak self] id in
             guard let self = self else { return }
+            self.ownedRevision = UUID()
             self.ownedError = nil
             self.owned = id.flatMap { self.ownedByAccount[$0] } ?? []
         }.store(in: &subscriptions)
@@ -117,6 +126,9 @@ final class ToolStore: ObservableObject {
     }
 
     func loadVersions(for app: StoreApp, force: Bool = false, official: Bool = false) async throws -> [AppVersion] {
+        #if DEBUG
+        if visualPreview { return [AppVersion(id: "123456789", version: "3.2.1", source: "版本资料"), AppVersion(id: "123456788", version: "3.1.0", source: "版本资料")] }
+        #endif
         let context = settings.store
         if official || context.platform == .tvOS {
             let asset = try await apple.asset(appID: app.id, versionID: nil, store: context, useCache: settings.useSignerCache)
@@ -159,13 +171,51 @@ final class ToolStore: ObservableObject {
         do {
             let apps = try await apple.ownedApps(useCache: settings.useSignerCache)
             guard apple.activeID == id else { return }
-            owned = apps; ownedByAccount[id] = apps
+            let cached = Dictionary(owned.map { ($0.id, $0.iconURL) }, uniquingKeysWith: { first, _ in first })
+            owned = apps.map { app in
+                var item = app
+                if item.iconURL == nil { item.iconURL = cached[item.id] ?? nil }
+                return item
+            }
+            ownedByAccount[id] = owned
+            ownedRevision = UUID()
             try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
         } catch is CancellationError { }
         catch { if apple.activeID == id { ownedError = error.localizedDescription } }
     }
+    func avatarData(for id: String) -> Data? { avatars[id] }
+    func setAvatar(_ data: Data?, for id: String) throws {
+        guard apple.accounts.contains(where: { $0.id == id }) else { return }
+        let url = AvatarStorage.url(id)
+        if let data { try data.write(to: url, options: [.atomic, .completeFileProtection]) }
+        else if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        avatars[id] = data
+    }
+
+    func loadOwnedArtwork() async {
+        guard let account = apple.activeID else { return }
+        let context = settings.store
+        let revision = ownedRevision
+        let ids = owned.filter { $0.iconURL == nil }.map(\.id)
+        for offset in stride(from: 0, to: ids.count, by: 20) {
+            do {
+                try Task.checkCancellation()
+                let urls = try await StoreService.artwork(Array(ids[offset..<min(offset + 20, ids.count)]), store: context)
+                try Task.checkCancellation()
+                guard apple.activeID == account, settings.store == context, ownedRevision == revision else { return }
+                for index in owned.indices { if let url = urls[owned[index].id] { owned[index].iconURL = url } }
+                ownedByAccount[account] = owned
+                try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
+                // Keep the public lookup service below its documented request budget.
+                if offset + 20 < ids.count { try await Task.sleep(nanoseconds: 3_100_000_000) }
+            } catch { return } // Artwork is optional; purchase records remain usable offline.
+        }
+    }
+
     func deleteAccount(_ id: String) throws {
         try apple.remove(id)
+        avatars.removeValue(forKey: id)
+        try? FileManager.default.removeItem(at: AvatarStorage.url(id))
         ownedByAccount.removeValue(forKey: id)
         try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
     }
@@ -202,6 +252,7 @@ final class ToolStore: ObservableObject {
 #if DEBUG
 extension ToolStore {
     func prepareVisualPreview() {
+        visualPreview = true
         results = []; hasSearched = false; searchText = ""
         favorites = [StoreApp(id: "preview-app", name: "像素日记", bundleID: "example.pixel", version: "3.2", category: "摄影与录像", size: 128_000_000)]
         searchHistory = [SearchHistoryItem(term: "效率工具", count: 3, lastUsed: Date()), SearchHistoryItem(term: "照片编辑", count: 1, lastUsed: Date())]

@@ -69,6 +69,7 @@ struct RootView: View {
     @EnvironmentObject private var signer: SAPSigner
     @EnvironmentObject private var downloads: DownloadManager
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var signerDetails = false
     private let destinations = [("发现", "magnifyingglass"), ("下载", "arrow.down.circle"), ("已购", "clock.arrow.circlepath"), ("账号", "person.crop.circle")]
     var body: some View {
         Group {
@@ -100,9 +101,29 @@ struct RootView: View {
         }
         .preferredColorScheme(store.settings.appearance == "system" ? nil : store.settings.appearance == "dark" ? .dark : .light)
         .sensoryFeedback(.selection, trigger: store.tab)
-        .sheet(isPresented: Binding(get: { signer.isPresented }, set: { if !$0 { signer.cancel() } })) {
-            SignerProgressView().environmentObject(signer).interactiveDismissDisabled()
+        .background {
+            if let web = signer.webView {
+                SignerWebView(web: web).frame(width: 1, height: 1).opacity(0.01).allowsHitTesting(false).accessibilityHidden(true)
+            }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if signer.isPresented {
+                HStack(spacing: 12) {
+                    ProgressView().accessibilityHidden(true)
+                    Button { signerDetails = true } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(signer.title).font(.subheadline.weight(.semibold))
+                            Text(signer.stage).font(.caption).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                    }.buttonStyle(.plain).accessibilityHint("查看验证进度详情")
+                    Button("取消") { signer.cancel() }.font(.subheadline).frame(minWidth: 44, minHeight: 44)
+                }.padding(.horizontal, 16).background(.regularMaterial)
+            }
+        }
+        .sheet(isPresented: $signerDetails) {
+            SignerProgressView().environmentObject(signer)
+        }
+        .onChange(of: signer.isPresented) { _, active in if !active { signerDetails = false } }
         .overlay(alignment: .top) {
             if let message = store.infoMessage {
                 HStack(alignment: .top, spacing: 12) {
@@ -139,13 +160,11 @@ struct RootView: View {
 
 struct SignerProgressView: View {
     @EnvironmentObject private var signer: SAPSigner
+    @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
             ZStack {
                 Color(.systemGroupedBackground).ignoresSafeArea()
-                if let web = signer.webView {
-                    SignerWebView(web: web).frame(width: 1, height: 1).opacity(0.01).accessibilityHidden(true)
-                }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         Image(systemName: signer.title == "准备下载" ? "arrow.down.app" : "lock.shield")
@@ -184,7 +203,7 @@ struct SignerProgressView: View {
                 }
             }
             .navigationTitle("IPA 工具箱").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { signer.cancel() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("收起") { dismiss() } } }
         }
     }
 }

@@ -1,11 +1,15 @@
-# Third-party provenance
+# 第三方组件说明
 
-The native app was initially ported from the user-supplied IPA-Tool-3.0.scripting archive, whose metadata attributes the script to 小白脸. Reference upstream: https://github.com/ScriptingApp/Community-Scripts, commit f9509c530b730d8be36639db5b7825cadb431898.
+本文件用于保留组件归属与许可证信息，不属于应用界面或操作指引。
 
-Three files under vendor/SAPRuntime/files (sap.wasm, unicorn_x86.js, wasm_exec.js) retain their original bytes. sap-signer.js is a locally maintained fork: its default proxy now resolves to the app-owned loopback service instead of the upstream project domain. Their SHA-256 values are recorded in manifest.json. They are checked into this repository, not downloaded from upstream during a build. index.html is a new minimal native bridge maintained here; it does not contain the original visual page.
+## 验证运行组件
 
-The vendored code includes a Go WebAssembly support layer and a Unicorn-based execution runtime. Existing embedded copyright/license comments are preserved. A complete license grant for all components was not established by this migration; provenance here is not a claim of original authorship or a new license grant.
+`vendor/SAPRuntime` 包含 SAP WebAssembly、Unicorn 执行组件、Go WebAssembly 支持层和本地 JavaScript 适配层，构建时校验 `manifest.json` 的 SHA-256 后打包，无需下载其他项目资源。
 
-ZIPFoundation 0.9.19 is resolved by Swift Package Manager. Its license and copyright notices remain in the package: https://github.com/weichsel/ZIPFoundation/blob/0.9.19/LICENSE.
+现有组件内嵌的版权及许可证注释均保留。运行组件的来源记录保存于同目录的 `PROVENANCE.json`；组件没有因为本地维护而变为本项目原创。未确认的许可范围不由本项目扩张或另行授予。
 
-No Apple passwords, authentication tokens, verification codes or signing certificates are included in the repository.
+## ZIPFoundation
+
+使用 Swift Package Manager 固定解析 ZIPFoundation 0.9.19。作者及许可证见组件原始 [LICENSE](https://github.com/weichsel/ZIPFoundation/blob/0.9.19/LICENSE)，打包和再分发时应保留相应声明。
+
+本仓库不包含 Apple 账号凭据、验证码、签名证书或私钥。
