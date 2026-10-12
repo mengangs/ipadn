@@ -47,10 +47,14 @@ final class CoreTests: XCTestCase {
     @MainActor
     func testSignerCancelResumesPendingJavaScript() async throws {
         let signer = SAPSigner()
+        // A fresh CI simulator can take longer than ten seconds to launch WebKit.
+        // Warm it through a real evaluation, then test cancellation of a live promise.
+        let ready = try await signer.execute(title: "准备", script: "return 'ready';", arguments: [:])
+        XCTAssertEqual(ready, "ready")
         let work = Task { @MainActor in
-            try await signer.execute(title: "测试", script: "reportStage(2); return await new Promise(() => {});", arguments: [:], timeoutSeconds: 15)
+            try await signer.execute(title: "测试", script: "reportStage(2); window.pendingTest = new Promise(() => {}); return await window.pendingTest;", arguments: [:], timeoutSeconds: 60)
         }
-        for _ in 0..<200 {
+        for _ in 0..<900 {
             if signer.stageIndex == 2 { break }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
@@ -69,7 +73,7 @@ final class CoreTests: XCTestCase {
     func testSignerTimeoutResumesPendingJavaScript() async {
         let signer = SAPSigner()
         do {
-            _ = try await signer.execute(title: "测试", script: "return await new Promise(() => {});", arguments: [:], timeoutSeconds: 1)
+            _ = try await signer.execute(title: "测试", script: "window.pendingTest = new Promise(() => {}); return await window.pendingTest;", arguments: [:], timeoutSeconds: 1)
             XCTFail("Timed-out operation returned success")
         } catch { XCTAssertTrue(error.localizedDescription.contains("已停止")) }
         XCTAssertFalse(signer.isPresented)
