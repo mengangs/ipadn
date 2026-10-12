@@ -39,16 +39,49 @@ jobs:
 
       - name: Select Xcode and report SDK
         run: |
-          if [ -d /Applications/Xcode_16.2.app ]; then
-            sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
-          elif [ -d /Applications/Xcode_16.1.app ]; then
-            sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
+          # The macos-15 runner no longer has an iOS 18.2 simulator runtime.
+          # Xcode 16.2's asset catalog compiler fails even for device builds.
+          # Xcode 26.0.1 is known to build this project successfully on this runner.
+          if [ -d /Applications/Xcode_26.0.1.app ]; then
+            sudo xcode-select -s /Applications/Xcode_26.0.1.app/Contents/Developer
           elif [ -d /Applications/Xcode_16.4.app ]; then
             sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          else
+            echo 'No compatible Xcode installation found on this macOS runner' >&2
+            exit 1
           fi
           xcodebuild -version
           xcodebuild -showsdks
           mkdir -p build
+          # Use an available simulator for the selected SDK, not a hard-coded model.
+          python3 - <<'PY'
+          import json, os, subprocess
+          sdk = subprocess.check_output(
+              ['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-version'], text=True
+          ).strip()
+          runtimes = json.loads(subprocess.check_output(
+              ['xcrun', 'simctl', 'list', 'devices', 'available', '--json'], text=True
+          ))['devices']
+          devices = [
+              (runtime, device) for runtime, values in runtimes.items()
+              if '.iOS-' in runtime
+              for device in values
+              if device.get('isAvailable') and device['name'].startswith('iPhone')
+          ]
+          if not devices:
+              raise SystemExit('No compatible iOS simulator found for selected Xcode')
+          preferred = 'iOS-' + sdk.replace('.', '-')
+          devices.sort(key=lambda entry: (
+              preferred not in entry[0],
+              entry[1]['state'] != 'Booted',
+              not entry[1]['name'].endswith('Pro'),
+              entry[1]['name'],
+          ))
+          runtime, device = devices[0]
+          print('Selected simulator:', runtime, device['name'], device['udid'])
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              env.write('SIMULATOR_ID=' + device['udid'] + '\n')
+          PY
 
       - name: Verify project and repository-local runtime
         run: |
@@ -99,7 +132,7 @@ jobs:
           set -o pipefail
           killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
           xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
-            -configuration Debug -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=latest" \
+            -configuration Debug -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
             -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
             -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 \
             -destination-timeout 120 -derivedDataPath build/TestDerivedData \
@@ -135,7 +168,7 @@ jobs:
           # XCTest can leave CoreSimulator unresponsive after shutting down its UI-test clone.
           # Restart this job's service before selecting and booting the screenshot device.
           killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
-          simulator_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); devices=[(runtime,device) for runtime,values in d["devices"].items() if ".iOS-" in runtime for device in values if device.get("isAvailable") and device["name"].startswith("iPhone")]; devices.sort(key=lambda x: (x[1]["state"] != "Booted", "iOS-18" not in x[0], x[1]["name"] != "iPhone 17 Pro", x[1]["name"])); assert devices,"No available iPhone simulator"; print(devices[0][1]["udid"])')"
+          simulator_id="$SIMULATOR_ID"
           xcrun simctl boot "$simulator_id" || true
           xcrun simctl bootstatus "$simulator_id" -b
           xcrun simctl install "$simulator_id" build/TestDerivedData/Build/Products/Debug-iphonesimulator/iPadn.app
