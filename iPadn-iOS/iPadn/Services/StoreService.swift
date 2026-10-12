@@ -123,7 +123,8 @@ enum StoreService {
                         category: (raw["genreNames"] as? [String] ?? []).joined(separator: " · "), size: size,
                         price: plistString(offer["priceFormatted"]), rating: (rating["value"] as? NSNumber)?.doubleValue ?? 0,
                         minimumOS: plistString(raw["minimumOSVersion"]),
-                        externalVersionID: version["externalId"].map { plistString($0) })
+                        externalVersionID: version["externalId"].map { plistString($0) },
+                        developerURL: MacInstallerService.safeWebsite(plistString(raw["sellerUrl"] ?? raw["websiteUrl"])))
     }
 
     static func artworkCountries(selected: String, accountCountry: String?) -> [String] {
@@ -167,7 +168,8 @@ enum StoreService {
                  size: Int64(plistString(raw["fileSizeBytes"])) ?? 0,
                  price: plistString(raw["formattedPrice"]).isEmpty ? "免费" : plistString(raw["formattedPrice"]),
                  rating: (raw["averageUserRating"] as? NSNumber)?.doubleValue ?? 0,
-                 minimumOS: plistString(raw["minimumOsVersion"]))
+                 minimumOS: plistString(raw["minimumOsVersion"]),
+                 developerURL: MacInstallerService.safeWebsite(plistString(raw["sellerUrl"])))
     }
 
     static func icon(_ value: String) -> URL? {
@@ -175,6 +177,64 @@ enum StoreService {
             .replacingOccurrences(of: "{h}", with: "512").replacingOccurrences(of: "{f}", with: "png")
             .replacingOccurrences(of: "{c}", with: "bb")), url.scheme == "https", url.host != nil else { return nil }
         return url
+    }
+}
+
+// Only direct download links published on a developer website supplied by
+// Apple's catalog are offered. Mac App Store does not publish DMG/PKG URLs.
+enum MacInstallerService {
+    struct Installer: Identifiable, Hashable {
+        let url: URL
+        var id: String { url.absoluteString }
+        var format: String { url.pathExtension.lowercased() }
+        var title: String { url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent }
+    }
+
+    static func safeWebsite(_ text: String) -> URL? {
+        guard let url = URL(string: text), url.scheme?.lowercased() == "https",
+              let host = url.host, !host.isEmpty, url.user == nil, url.password == nil,
+              !url.isFileURL, !host.lowercased().hasSuffix(".local"),
+              host.lowercased() != "localhost",
+              !host.hasPrefix("127."), !host.hasPrefix("10."),
+              !host.hasPrefix("192.168."), !host.hasPrefix("169.254."),
+              !host.hasPrefix("172.16."), !host.hasPrefix("172.17."),
+              !host.hasPrefix("172.18."), !host.hasPrefix("172.19."),
+              !host.hasPrefix("172.2"), !host.hasPrefix("172.30."), !host.hasPrefix("172.31."),
+              !host.contains(":") else { return nil }
+        return url
+    }
+
+    static func directPackage(_ url: URL) -> Bool {
+        guard safeWebsite(url.absoluteString) != nil else { return false }
+        return ["dmg", "pkg", "zip"].contains(url.pathExtension.lowercased())
+    }
+
+    static func links(in html: String, from website: URL) -> [Installer] {
+        guard let regex = try? NSRegularExpression(pattern: #"<a\b[^>]*\bhref\s*=\s*["']([^"']+)["']"#, options: [.caseInsensitive]) else { return [] }
+        let text = html as NSString
+        let matches = regex.matches(in: html, range: NSRange(location: 0, length: text.length))
+        var results: [Installer] = []
+        var seen = Set<String>()
+        for match in matches {
+            guard match.numberOfRanges > 1 else { continue }
+            let ref = text.substring(with: match.range(at: 1))
+                .replacingOccurrences(of: "&amp;", with: "&")
+                .replacingOccurrences(of: "&#38;", with: "&")
+            guard let url = URL(string: ref, relativeTo: website)?.absoluteURL,
+                  directPackage(url), seen.insert(url.absoluteString).inserted else { continue }
+            results.append(Installer(url: url))
+            if results.count == 12 { break }
+        }
+        return results
+    }
+
+    static func find(on website: URL) async throws -> [Installer] {
+        guard safeWebsite(website.absoluteString) != nil else { return [] }
+        let (data, response) = try await HTTPClient.shared.request(website)
+        guard data.count <= 2 * 1024 * 1024,
+              response.mimeType?.lowercased().contains("html") == true,
+              let html = String(data: data, encoding: .utf8) else { return [] }
+        return links(in: html, from: website)
     }
 }
 
