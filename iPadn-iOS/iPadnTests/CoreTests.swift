@@ -71,6 +71,59 @@ final class CoreTests: XCTestCase {
         XCTAssertNotNil(UIImage(named: AppIconService.Choice.flat.preview))
         XCTAssertTrue(UIApplication.shared.supportsAlternateIcons)
     }
+    func testPlatformSearchEntitiesAndIPASupport() {
+        XCTAssertEqual(AppPlatform.iOS.searchEntity, "software")
+        XCTAssertEqual(AppPlatform.iPadOS.searchEntity, "iPadSoftware")
+        XCTAssertEqual(AppPlatform.tvOS.searchEntity, "tvSoftware")
+        XCTAssertEqual(AppPlatform.macOS.searchEntity, "desktopSoftware")
+        XCTAssertEqual(AppPlatform.iPadOS.catalogPlatform, AppPlatform.iOS.rawValue)
+        XCTAssertFalse(AppPlatform.macOS.supportsIPA)
+        XCTAssertTrue(AppPlatform.iPadOS.supportsIPA)
+        XCTAssertTrue(AppPlatform.tvOS.supportsIPA)
+    }
+
+    func testActualIPAFamilyMustMatchRequestedPlatform() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        func package(family: Int) throws -> URL {
+            let url = root.appendingPathComponent("\(family).ipa")
+            let archive = try Archive(url: url, accessMode: .create)
+            let contents = [
+                "Payload/Target.app/Info.plist": try HTTPClient.encodePlist([
+                    "CFBundleIdentifier": "test.platform",
+                    "CFBundleDisplayName": "Platform Test",
+                    "CFBundleShortVersionString": "1.0",
+                    "UIDeviceFamily": [family]
+                ]),
+                "Payload/Target.app/SC_Info/Target.supp": Data([0])
+            ]
+            for (path, data) in contents {
+                let target = root.appendingPathComponent(path)
+                try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: target)
+                try archive.addEntry(with: path, relativeTo: root)
+            }
+            return url
+        }
+
+        let tvIPA = try package(family: 3)
+        let phoneIPA = try package(family: 1)
+        XCTAssertEqual(try PackageService.deviceFamilies(tvIPA), Set([3]))
+        XCTAssertEqual(try PackageService.deviceFamilies(phoneIPA), Set([1]))
+        let metadata = try HTTPClient.encodePlist(["itemId": "1"])
+        let app = StoreApp(id: "1", name: "Platform Test", bundleID: "test.platform", version: "1.0")
+        let tvAsset = DownloadAsset(app: app, url: URL(string: "https://example.com/file.ipa")!,
+                                    sinf: Data([1, 2]), metadata: metadata, externalVersionIDs: [],
+                                    platform: "appletvos", account: "example")
+        XCTAssertThrowsError(try PackageService.finish(staging: phoneIPA, id: UUID(), asset: tvAsset))
+        let iPadAsset = DownloadAsset(app: app, url: URL(string: "https://example.com/file.ipa")!,
+                                     sinf: Data([1, 2]), metadata: metadata, externalVersionIDs: [],
+                                     platform: "ipad", account: "example")
+        XCTAssertThrowsError(try PackageService.finish(staging: phoneIPA, id: UUID(), asset: iPadAsset))
+    }
+
     func testAccountStorefrontRegionsAndCrossRegionSearchMerge() {
         XCTAssertEqual(StoreService.country(forStorefront: "143441-1,29"), "US")
         XCTAssertEqual(StoreService.country(forStorefront: "143465"), "CN")
