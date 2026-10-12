@@ -26,6 +26,8 @@ node scripts/runtime_smoke_test.cjs
 
 GitHub Actions 对 PR、main 推送及手动构建执行设备编译、模拟器测试和界面截图，产物分别为 `iPadn-unsigned-ipa`、`iPadn-interface-screenshots`、`iPadn-build-diagnostics`。运行结果可在对应构建的测试步骤及产物中查看。
 
+通过 Actions 手动运行构建时，启用 `run_tests` 和 `publish_release` 可发布 GitHub Release。仅在设备编译、IPA 检查、测试与截图全部通过后发布；现有同名标签不会被覆盖。
+
 ## 扩展
 
 历史版本接口使用 `external_identifier` 和 `bundle_version` 字段，可在设置中配置地址模板及容器键。
