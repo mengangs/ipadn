@@ -128,7 +128,9 @@ struct DownloadsView: View {
                 HStack {
                     Text("已选 \(selection.count) 项").font(.subheadline)
                     Spacer()
-                    Button("删除所选", systemImage: "trash", role: .destructive) { askDelete(selection) }.disabled(selection.isEmpty)
+                    Button("删除所选", systemImage: "trash", role: .destructive) { askDelete(selection) }
+                        .disabled(selection.isEmpty)
+                        .accessibilityIdentifier("downloads.delete-selected")
                 }.padding(18).background(.regularMaterial)
             }
         }
