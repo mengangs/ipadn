@@ -1,49 +1,34 @@
-# 本次检查结果
+# 云编译与测试结果
 
-交付类型：独立 iOS 源码工程，未编译、未签名、未完成真机验收。
+2026-10-12，工程在 GitHub Actions 完成验证：
 
-## 已执行并通过
+- Xcode 26.0.1（17A400），macOS 15 runner。
+- iPhone 设备 Release 编译成功，生成未签名 IPA。
+- iOS 26 模拟器测试成功：10 个测试，0 个失败。
+- IPA ZIP 完整性和 SHA-256 已校验。
+- IPA 内五个 SAP 签名资源的 SHA-256 与用户附件全部一致。
+- App Intents 元数据包含三个操作与两个 App Shortcuts。
 
-| 检查 | 实际结果 |
-|---|---|
-| Xcode OpenStep 工程文件解析 | 82 个工程对象；所有对象引用可解析 |
-| Swift / 资源文件引用 | 21 个应用 Swift 文件、1 个原生测试文件；资源路径存在 |
-| Shared Scheme | 应用与测试 Target 引用一致 |
-| Info.plist / PrivacyInfo | plist 语法有效；HTTP 例外限定回环地址与本地联网 |
-| 图标资源 | 图标槽位的文件存在；PNG 已生成 |
-| Swift 括号与字符串词法检查 | 通过；这不是 Swift 编译或类型检查 |
-| 原 WASM 二进制 | `WebAssembly.validate` 返回 true |
-| JS / Go / Unicorn / SAP WASM 离线初始化 | Node 沙箱中初始化成功，所需入口函数存在 |
-| 签名前置条件和 KBSync 输入边界 | 未初始化签名、无效 GUID、零 DSID、uint64 溢出等检查通过 |
-| 原签名资源一致性 | 五个 SAPRuntime 文件 SHA-256 与附件一致 |
-| Python 工程脚本 | 执行成功并通过 Python 编译检查 |
-| IPA 编译脚本 | Bash 语法检查通过；未在 macOS 上执行 |
+[编译与测试运行](https://github.com/mengangs/ipadn/actions/runs/38195930796)
 
-离线 WASM 检查只证明资源可以在 Node 的浏览器环境模拟中加载，并验证基础输入校验。它不证明 WebKit 兼容性、Apple 上游握手或账号请求一定成功。
+[下载未签名 IPA](https://github.com/mengangs/ipadn/actions/runs/38195930796/artifacts/11722874325)
 
-## 已写入工程、尚未执行的原生测试
+IPA 大小：26,356,503 字节。
 
-`CoreTests.swift` 中包含 10 个测试方法，覆盖：
+IPA SHA-256：`a6e4d268342250dbef3b3079ae3b3269d381d550263ed2b002187a711a46512e`。
 
-- 搜索内容解析与商店数据映射。
-- HTTP Range 边界与无效范围。
-- 安装 manifest 的多层 URL 参数、中文名称和 URL Scheme。
-- DMAP uint64、截断数据、服务错误、嵌套上限、记录去重与字段解析。
-- 设置 / 下载任务的 JSON 往返保存。
-- IPA 二进制 plist 读取及主应用 Bundle 选择。
-- sinf 与 iTunesMetadata 的写入、路径规范化和生成 IPA。
+源码编译 commit：`1f5c9faf006a31d1aa726ac49ed5244648c0f08d`。
 
-## 尚未完成的验证
+## 原生测试范围
 
-当前环境没有 Xcode / Swift 编译器 / iOS SDK，因此没有运行 Swift 编译、XCTest、模拟器或真机测试。下列事项需在 Mac 与自己的 iPhone 上完成：
+搜索解析、商店数据映射、Range 请求、manifest URL 编码、DMAP 数值 / 截断 / 嵌套 / 去重、设置及任务保存、IPA 元数据读取、metadata 与 sinf 授权写入。
 
-1. 使用所选 Xcode SDK 编译，检查 SwiftUI、WebKit、Network、App Intents 和 ZIPFoundation API。
-2. 运行工程内的 XCTest，观察界面布局、动态字体和操作流程。
-3. 使用自己的账号验证双重认证、SAP 上游握手、有效 KBSync、Cookie 刷新、免费应用许可与购买记录。
-4. 验证实际下载、过期 URL、授权文件处理、暂停恢复、系统后台事件和中断恢复。
-5. 适配未附带的 Surge/Loon 模块，然后验证 manifest 下载、IPA 文件转发和最终安装 / 降级。
-6. 检查 App Intents 在快捷指令和共享表单中的行为。
+此外，工程引用、配置文件、图标资源和原 WASM 的离线初始化检查通过。`verification.json` 是静态检查脚本报告；其中未运行项目仅指该脚本自身，不代表 Actions 没有编译或执行测试。
 
-没有对外发送账号、密码、Cookie 或 Token，没有调用真实账号下载或购买接口。没有生成可直接安装的签名 IPA。
+## 真机仍需验证
 
-细粒度结构检查和签名资源 SHA-256 见 `verification.json`。Mac 使用方式及验收顺序见 `README.md`。
+Apple 登录与验证码、有效 SAP/KBSync 上游握手、Cookie 刷新、免费许可获取、真实已购记录、后台生命周期、实际下载授权、代理模块适配和安装 / 降级。
+
+没有提供真实 Apple 凭据，没有发送密码或 Token，没有执行真实账号购买或下载。IPA 未签名，需使用自己的证书或签名工具后安装。
+
+运行记录中的产物保留 14 天；之后可手动触发 Actions 重新编译。

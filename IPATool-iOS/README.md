@@ -2,7 +2,9 @@
 
 基于附件 `IPA-Tool-3.0.scripting` 迁移的 SwiftUI 应用，用于自己签名安装。最低 iOS 17，支持 iPhone / iPad。运行时不依赖 Scripting App。
 
-这份交付是可继续开发的源码工程，**不是已经编译或完成真机验收的 IPA**。当前环境没有 macOS、Xcode 或 iPhone，Apple 认证、实际下载、已购记录、后台生命周期及安装链路仍须在你的设备上验证。详细结果见 `VERIFICATION.md`。
+工程已通过 GitHub Actions 云编译，并生成未签名 IPA；**10 个模拟器单元测试全部通过**。编译环境为 Xcode 26.0.1，测试运行于 iOS 26 模拟器。Apple 认证、实际下载、已购记录、后台生命周期及最终安装仍需在自己的 iPhone 上验证。详细结果见 `VERIFICATION.md`。
+
+[通过的编译记录](https://github.com/mengangs/ipadn/actions/runs/38195930796) · [未签名 IPA 产物](https://github.com/mengangs/ipadn/actions/runs/38195930796/artifacts/11722874325)
 
 ## 打开和签名安装
 
@@ -122,7 +124,7 @@ xcodebuild test -project IPATool.xcodeproj -scheme IPATool \
   -destination 'platform=iOS Simulator,id=<你的模拟器 UUID>'
 ```
 
-单元测试覆盖搜索解析、DMAP 边界、Range 请求、编码保存、IPA 元数据读取以及授权文件写入。它们包含在工程里，但本次没有执行 XCTest。
+单元测试覆盖搜索解析、DMAP 边界、Range 请求、编码保存、IPA 元数据读取以及授权文件写入。这些测试已在 GitHub Actions 的 iOS 模拟器上执行，10 个全部通过。
 
 ## 真机验收顺序
 
