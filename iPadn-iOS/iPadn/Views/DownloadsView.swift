@@ -245,7 +245,7 @@ struct DownloadsView: View {
     }
     private func packageDisplayApp(_ job: DownloadJob) -> StoreApp {
         var app = job.app
-        app.iconURL = manager.packageIconURL(job) ?? (job.rawFormat == nil ? nil : job.app.iconURL)
+        app.iconURL = job.displayApp(packageIcon: manager.packageIconURL(job)).iconURL
         return app
     }
     private func primary(_ job: DownloadJob) {
@@ -278,9 +278,38 @@ struct DownloadTaskRow: View {
     let job: DownloadJob
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private var displayedApp: StoreApp {
-        var app = job.app
-        app.iconURL = manager.packageIconURL(job) ?? (job.rawFormat == nil ? nil : job.app.iconURL)
-        return app
+        job.displayApp(packageIcon: manager.packageIconURL(job))
+    }
+    private var platformBadge: some View {
+        Text(job.platformLabel)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
+            .accessibilityIdentifier("download.platform." + job.platformLabel)
+    }
+    private var appHeading: some View {
+        HStack(alignment: .top, spacing: 14) {
+            AppIcon(url: displayedApp.iconURL)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(displayedApp.name).font(.headline).lineLimit(2)
+                Text([displayedApp.category,
+                      displayedApp.version.isEmpty ? "" : "v\(displayedApp.version)"]
+                    .filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                HStack(spacing: 8) {
+                    if displayedApp.size > 0 {
+                        Text(displayedApp.size.byteLabel)
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    platformBadge
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 5)
+        .contentShape(Rectangle())
     }
     var inspecting: () -> Void
     var primary: () -> Void
@@ -327,13 +356,7 @@ struct DownloadTaskRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Button(action: inspecting) { AppRow(app: displayedApp).contentShape(Rectangle()) }.buttonStyle(.plain)
-            Text(job.platformLabel)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
-                .accessibilityIdentifier("download.platform." + job.platformLabel)
+            Button(action: inspecting) { appHeading }.buttonStyle(.plain)
             if [.running, .paused, .pausing].contains(job.status) {
                 if job.expected > 0 {
                     ProgressView(value: job.progress).tint(job.status == .paused ? .secondary : UX.tint)
