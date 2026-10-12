@@ -176,6 +176,8 @@ info = {"CFBundleDevelopmentRegion": "$(DEVELOPMENT_LANGUAGE)", "CFBundleExecuta
         "UISupportedInterfaceOrientations~ipad": ["UIInterfaceOrientationPortrait", "UIInterfaceOrientationPortraitUpsideDown", "UIInterfaceOrientationLandscapeLeft", "UIInterfaceOrientationLandscapeRight"],
         "CFBundleURLTypes": [{"CFBundleURLName": "app.local.iPadn", "CFBundleURLSchemes": ["ipadn"]}],
         "LSApplicationQueriesSchemes": ["itms-services"],
+        "CFBundleIcons": {"CFBundleAlternateIcons": {"AppIconFlat": {"CFBundleIconFiles": ["AppIconFlat60x60"], "UIPrerenderedIcon": False}}},
+        "CFBundleIcons~ipad": {"CFBundleAlternateIcons": {"AppIconFlat": {"CFBundleIconFiles": ["AppIconFlat60x60", "AppIconFlat76x76", "AppIconFlat83x83"], "UIPrerenderedIcon": False}}},
         "CFBundleDocumentTypes": [{"CFBundleTypeName": "IPA 安装包", "CFBundleTypeRole": "Viewer", "LSHandlerRank": "Alternate",
                                    "LSItemContentTypes": ["com.apple.itunes.ipa", "public.zip-archive"]}],
         "UTImportedTypeDeclarations": [{"UTTypeIdentifier": "com.apple.itunes.ipa", "UTTypeDescription": "iOS App Archive",
