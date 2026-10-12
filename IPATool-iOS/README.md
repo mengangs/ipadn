@@ -15,6 +15,8 @@
 
 支持应用搜索、iOS/tvOS 版本查询、多个 Apple 账号、已购记录、后台下载、暂停恢复、队列管理、IPA 导入导出、metadata/sinf 写入、可配置版本来源及快捷指令。
 
+1.1 已通过云编译和全部 15 个模拟器测试：[验证记录](https://github.com/mengangs/ipadn/actions/runs/38202296306)。真实账号链路仍需真机验证。
+
 ## 获取 IPA
 
 打开本仓库 [Actions](https://github.com/mengangs/ipadn/actions/workflows/ios-build.yml)，下载成功运行的 `IPATool-unsigned-ipa` 产物。先解压再用自己的签名工具签名安装。无需向 GitHub 上传账号、证书或私钥。

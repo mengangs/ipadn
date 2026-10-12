@@ -7,3 +7,5 @@
 [GitHub Actions](https://github.com/mengangs/ipadn/actions/workflows/ios-build.yml) 自动生成未签名 IPA，并执行模拟器测试。下载 `IPATool-unsigned-ipa` 产物后解压，用自己的工具签名。
 
 1.1 增加两步认证、原生准备进度、耗时、取消与超时处理。来源和依赖说明见 [第三方说明](IPATool-iOS/THIRD_PARTY_NOTICES.md)。
+
+当前 1.1 已通过云编译及 15 个模拟器测试：[构建记录](https://github.com/mengangs/ipadn/actions/runs/38202296306)。
