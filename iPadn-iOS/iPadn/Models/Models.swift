@@ -47,6 +47,7 @@ struct StoreApp: Codable, Identifiable, Hashable {
     var rating: Double = 0
     var minimumOS = ""
     var externalVersionID: String?
+    var developerURL: URL?
 }
 
 struct AppVersion: Codable, Identifiable, Hashable {
@@ -112,6 +113,8 @@ struct DownloadJob: Codable, Identifiable {
     var downloaded: Int64 = 0
     var expected: Int64 = 0
     var packageIconScanned: Bool?
+    // Non-IPA downloads are saved as raw Mac files, never processed as an IPA.
+    var rawFormat: String?
     var localFilename: String?
     var error: String?
     var createdAt = Date()
