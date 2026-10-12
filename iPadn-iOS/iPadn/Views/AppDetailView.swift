@@ -43,6 +43,21 @@ struct AppDetailView: View {
                     HStack(alignment: .top, spacing: 18) { AppIcon(url: app.iconURL, size: 64); appHeading }
                     VStack(alignment: .leading, spacing: 16) { AppIcon(url: app.iconURL, size: 64); appHeading }
                 }.padding(.vertical, 6)
+                Button { copy(app.id) } label: {
+                    HStack(spacing: 8) {
+                        Text("App ID")
+                        Text(app.id).monospacedDigit()
+                        Image(systemName: "doc.on.doc").font(.caption)
+                        Spacer(minLength: 0)
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+                    .frame(minHeight: 38)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("App ID \(app.id)，点按复制")
+                .accessibilityIdentifier("app.copy-id")
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 14) { appMetadata }
                     VStack(alignment: .leading, spacing: 6) { appMetadata }
@@ -110,18 +125,6 @@ struct AppDetailView: View {
                 }
             }
             Section("应用信息") {
-                Button { copy(app.id) } label: {
-                    HStack {
-                        Text("App ID").foregroundStyle(.primary)
-                        Spacer()
-                        Text(app.id).font(.body.monospacedDigit()).foregroundStyle(.secondary)
-                        Image(systemName: "doc.on.doc").foregroundStyle(.secondary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("App ID \(app.id)，点按复制")
-                .accessibilityIdentifier("app.copy-id")
                 if !app.bundleID.isEmpty { Text(app.bundleID).font(.footnote.monospaced()).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
                 if store.settings.store.platform != .macOS {
                     Link(destination: storeURL) { Label("在 App Store 查看", systemImage: "arrow.up.right.square") }
