@@ -10,11 +10,13 @@ final class AppIconService: ObservableObject {
         var preview: String { self == .dimensional ? "BrandMark" : "FlatBrandMark" }
         var alternateName: String? { self == .flat ? "AppIconFlat" : nil }
     }
+
     @Published private(set) var selected: Choice = .dimensional
     @Published private(set) var changing = false
     private var pending: CheckedContinuation<Void, Error>?
     private var requestID: UUID?
-    private var lastSystemAcknowledgement: (choice: Choice, date: Date)?
+    private var callbackError: Error?
+
     private var simulatesChanges: Bool {
         #if DEBUG
         return LocalResources.isPreview && !ProcessInfo.processInfo.arguments.contains("--system-icon-test")
@@ -24,19 +26,16 @@ final class AppIconService: ObservableObject {
     }
     var supported: Bool { simulatesChanges || UIApplication.shared.supportsAlternateIcons }
 
+    static func systemChoice(for alternateIconName: String?) -> Choice {
+        alternateIconName == Choice.flat.alternateName ? .flat : .dimensional
+    }
+
     init() { refresh() }
     func refresh() {
         guard !simulatesChanges else { return }
-        let observed: Choice = UIApplication.shared.alternateIconName == Choice.flat.alternateName ? .flat : .dimensional
-        // iOS may send a successful completion before alternateIconName catches up.
-        // Keep the acknowledged choice briefly rather than flashing the old checkmark.
-        if let acknowledged = lastSystemAcknowledgement {
-            if observed == acknowledged.choice || Date().timeIntervalSince(acknowledged.date) >= 10 {
-                lastSystemAcknowledgement = nil
-            } else { return }
-        }
-        selected = observed
+        selected = Self.systemChoice(for: UIApplication.shared.alternateIconName)
     }
+
     func select(_ choice: Choice) async throws {
         guard !changing else { throw ToolError.message("正在等待系统更改图标，请稍候") }
         refresh()
@@ -48,44 +47,56 @@ final class AppIconService: ObservableObject {
         changing = true
         defer { changing = false }
         if simulatesChanges { selected = choice; return }
+
         let id = UUID()
-        // Some iOS versions update alternateIconName without invoking the completion.
-        // Observe the actual system state so successful changes never leave a spinner.
-        let timeout = Task { [weak self] in
-            for _ in 0..<100 {
-                try? await Task.sleep(nanoseconds: 100_000_000)
+        callbackError = nil
+        // On some iOS builds setAlternateIconName's completion fires before
+        // alternateIconName changes, or reports an error after applying the icon.
+        // Only the observed system state can confirm which checkmark to display.
+        let observer = Task { [weak self] in
+            for attempt in 0..<80 {
+                try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled else { return }
-                if UIApplication.shared.alternateIconName == choice.alternateName {
-                    self?.finish(id, choice: choice, error: nil); return
+                guard let self, self.requestID == id else { return }
+                if Self.systemChoice(for: UIApplication.shared.alternateIconName) == choice {
+                    self.finish(id, choice: choice, error: nil)
+                    return
+                }
+                if let error = self.callbackError, attempt >= 14 {
+                    self.finish(id, choice: choice, error: error)
+                    return
                 }
             }
-            self?.finish(id, choice: choice, error: ToolError.message("系统未完成图标切换，请稍后重试。重新签名时请保留备用图标文件和 Info.plist 图标配置。"))
+            self?.finish(id, choice: choice, error: ToolError.message("系统未确认图标已更改。请重新打开应用检查图标，或检查重签名 IPA 中的备用图标文件。"))
         }
-        defer { timeout.cancel() }
+        defer { observer.cancel() }
         try await withTaskCancellationHandler(operation: {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 if Task.isCancelled { continuation.resume(throwing: CancellationError()); return }
-                requestID = id; pending = continuation
+                requestID = id
+                pending = continuation
                 UIApplication.shared.setAlternateIconName(choice.alternateName) { [weak self] error in
-                    // A nil error is a successful system callback, not a missing result.
-                    Task { @MainActor in self?.finish(id, choice: choice, error: error, acknowledged: error == nil) }
+                    Task { @MainActor in
+                        guard let self, self.requestID == id else { return }
+                        // A callback is informative; do not forge selected state.
+                        if let error { self.callbackError = error }
+                    }
                 }
             }
         }, onCancel: { [weak self] in
             Task { @MainActor in self?.finish(id, choice: choice, error: CancellationError()) }
         })
     }
-    private func finish(_ id: UUID, choice: Choice, error: Error?, acknowledged: Bool = false) {
+
+    private func finish(_ id: UUID, choice: Choice, error: Error?) {
         guard requestID == id, let continuation = pending else { return }
-        pending = nil; requestID = nil
-        if acknowledged {
-            lastSystemAcknowledgement = (choice, Date())
-            selected = choice
-            continuation.resume()
-            return
-        }
+        pending = nil; requestID = nil; callbackError = nil
         refresh()
-        if selected == choice { continuation.resume() }
-        else { continuation.resume(throwing: error ?? ToolError.message("系统未应用所选图标，请检查重新签名后的安装包是否保留备用图标文件。")) }
+        if let error, error is CancellationError { continuation.resume(throwing: error) }
+        else if selected == choice {
+            continuation.resume()
+        } else {
+            continuation.resume(throwing: error ?? ToolError.message("系统未应用所选图标，请检查备用图标配置"))
+        }
     }
 }
