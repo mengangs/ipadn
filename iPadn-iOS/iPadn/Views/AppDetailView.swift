@@ -257,7 +257,7 @@ struct AppDetailView: View {
                 showVerification = true
             }
         }
-        catch { if !Task.isCancelled { versionError = error.localizedDescription } }
+        catch { if !Task.isCancelled { versionError = AppErrorMessage.forSearch(error) } }
     }
     private func enqueueMacInstaller(_ installer: MacInstallerService.Installer) {
         do {
