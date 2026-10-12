@@ -19,7 +19,7 @@ enum DMAP {
     }
     static func string(_ name: String, _ value: String) -> Data { tag(name, Data(value.utf8)) }
     static func integer(_ data: Data) throws -> UInt64 {
-        guard [1, 4, 8].contains(data.count) else { throw ToolError.message("DMAP 整数长度错误") }
+        guard [1, 2, 4, 8].contains(data.count) else { throw ToolError.message("DMAP 整数长度错误") }
         return data.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
     }
     static func walk(_ data: Data, depth: Int = 0, visitor: (Tag) throws -> Void) throws {
