@@ -124,6 +124,49 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try PackageService.finish(staging: phoneIPA, id: UUID(), asset: iPadAsset))
     }
 
+    func testMacDeveloperInstallerLinksAndRawPackagePreservation() throws {
+        let website = URL(string: "https://developer.example.org/products/")!
+        let html = """
+        <a href="/downloads/Sample.dmg?version=2&amp;platform=mac">DMG</a>
+        <a href="https://cdn.example.org/installer.pkg">PKG</a>
+        <a href="http://example.org/insecure.dmg">Unsafe</a>
+        <a href="javascript:alert('x')">Script</a>
+        <a href="/downloads/Sample.dmg?version=2&amp;platform=mac">Duplicate</a>
+        """
+        let links = MacInstallerService.links(in: html, from: website)
+        XCTAssertEqual(links.count, 2)
+        XCTAssertEqual(links.map(\.format), ["dmg", "pkg"])
+        XCTAssertEqual(links.first?.url.absoluteString,
+                       "https://developer.example.org/downloads/Sample.dmg?version=2&platform=mac")
+        XCTAssertNil(MacInstallerService.safeWebsite("http://developer.example.org"))
+        XCTAssertNil(MacInstallerService.safeWebsite("https://127.0.0.1/secret.pkg"))
+        XCTAssertFalse(MacInstallerService.directPackage(URL(string: "https://example.org/a.ipa")!))
+
+        let app = StoreApp(id: "mac-test", name: "Mac Test", version: "1.0")
+        let id = UUID()
+        let staging = LocalResources.stagingURL(id)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        try Data("xar!test-data".utf8).write(to: staging)
+        let job = DownloadJob(id: id, app: app, rawFormat: "pkg")
+        let (filename, result) = try MacPackageStorage.finish(staging: staging, job: job)
+        let finalURL = try XCTUnwrap(LocalResources.packageURL(filename))
+        defer { try? FileManager.default.removeItem(at: finalURL) }
+        XCTAssertTrue(filename.hasSuffix(".pkg"))
+        XCTAssertEqual(result.name, app.name)
+        XCTAssertEqual(result.size, Int64(Data("xar!test-data".utf8).count))
+        XCTAssertEqual(try Data(contentsOf: finalURL), Data("xar!test-data".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
+
+        let invalidID = UUID()
+        let invalid = LocalResources.stagingURL(invalidID)
+        defer { try? FileManager.default.removeItem(at: invalid) }
+        try Data("<html>not a dmg</html>".utf8).write(to: invalid)
+        XCTAssertThrowsError(try MacPackageStorage.finish(
+            staging: invalid,
+            job: DownloadJob(id: invalidID, app: app, rawFormat: "dmg")))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: invalid.path))
+    }
+
     func testAccountStorefrontRegionsAndCrossRegionSearchMerge() {
         XCTAssertEqual(StoreService.country(forStorefront: "143441-1,29"), "US")
         XCTAssertEqual(StoreService.country(forStorefront: "143465"), "CN")
