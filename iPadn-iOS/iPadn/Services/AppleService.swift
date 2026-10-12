@@ -158,12 +158,11 @@ final class AppleService: ObservableObject {
         let artwork = song["artwork-urls"] as? [String: Any]
         let defaultArt = artwork?["default"] as? [String: Any]
         let assetInfo = song["asset-info"] as? [String: Any]
-        let rating = metadata["rating"] as? [String: Any]
         let app = StoreApp(id: plistString(song["songId"]).isEmpty ? appID : plistString(song["songId"]),
             name: plistString(metadata["bundleDisplayName"]), bundleID: plistString(metadata["softwareVersionBundleId"]),
             version: plistString(metadata["bundleShortVersionString"]), iconURL: StoreService.icon(plistString(defaultArt?["url"])),
             size: (assetInfo?["file-size"] as? NSNumber)?.int64Value ?? 0,
-            minimumOS: plistString(rating?["label"]), externalVersionID: externalID)
+            minimumOS: plistString(metadata["minimumOSVersion"] ?? metadata["minimumOsVersion"]), externalVersionID: externalID)
         let sinfRaw = (song["sinfs"] as? [[String: Any]])?.first?["sinf"]
         let sinf: Data?
         if let data = sinfRaw as? Data { sinf = data }

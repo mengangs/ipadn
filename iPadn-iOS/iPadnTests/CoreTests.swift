@@ -43,6 +43,27 @@ final class CoreTests: XCTestCase {
         }
     }
 
+    func testCorruptMetadataCannotPassInspectionOrIconExtraction() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("corrupt.ipa")
+        do {
+            let archive = try Archive(url: url, accessMode: .create)
+            let path = "Payload/Test.app/Info.plist"
+            let file = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try HTTPClient.encodePlist(["CFBundleDisplayName": "Sample", "CFBundleIdentifier": "test.crc"]).write(to: file)
+            try archive.addEntry(with: path, relativeTo: root, compressionMethod: .none)
+        }
+        var bytes = try Data(contentsOf: url)
+        let range = try XCTUnwrap(bytes.range(of: Data("Sample".utf8)))
+        bytes[range.lowerBound] = Character("T").asciiValue!
+        try bytes.write(to: url)
+        XCTAssertThrowsError(try PackageService.inspect(url), "A valid plist with an incorrect CRC must be rejected")
+        XCTAssertThrowsError(try PackageIconService.png(from: url))
+    }
+
     func testEmptyPurchaseResponseCannotReplaceCachedRecords() {
         XCTAssertThrowsError(try DMAP.validate(Data()))
         XCTAssertThrowsError(try DMAP.validate(DMAP.tag("mlcl")))
@@ -79,6 +100,42 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try manager.enqueueURL(URL(string: "https://example.com/other.ipa")!))
         XCTAssertEqual(manager.jobs.count, 1)
         XCTAssertThrowsError(try manager.enqueueURL(URL(string: "https://user:password@example.com/private.ipa")!))
+    }
+
+    @MainActor
+    func testUnexpectedCancellationDuringRestoreDoesNotLeaveRunningSlot() async throws {
+        let job = DownloadJob(app: StoreApp(id: "1", name: "Test"), status: .running)
+        let manager = DownloadManager(previewJobs: [job])
+        var settings = ToolSettings(); settings.notifications = false
+        manager.configure(settings)
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let task = session.downloadTask(with: URL(string: "https://example.com/not-requested.ipa")!)
+        task.taskDescription = job.id.uuidString
+        manager.urlSession(session, task: task, didCompleteWithError: NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled))
+        for _ in 0..<100 {
+            if manager.jobs.first?.status == .failed { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(manager.jobs.first?.status, .failed)
+    }
+
+    @MainActor
+    func testDownloadRedirectCannotDowngradeHTTPS() throws {
+        let manager = DownloadManager(previewJobs: [])
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let url = URL(string: "https://example.com/file.ipa")!
+        let task = session.downloadTask(with: url)
+        let response = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 302, httpVersion: nil, headerFields: [:]))
+        for address in ["http://example.com/insecure.ipa", "file:///private/file.ipa", "https://user:password@example.com/file.ipa"] {
+            manager.urlSession(session, task: task, willPerformHTTPRedirection: response, newRequest: URLRequest(url: URL(string: address)!)) {
+                XCTAssertNil($0)
+            }
+        }
+        manager.urlSession(session, task: task, willPerformHTTPRedirection: response, newRequest: URLRequest(url: URL(string: "https://cdn.example.com/file.ipa")!)) {
+            XCTAssertEqual($0?.url?.host, "cdn.example.com")
+        }
     }
 
     func testConcurrentLoopbackStartupSharesOneListener() async throws {

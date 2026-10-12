@@ -358,6 +358,14 @@ final class DownloadManager: NSObject, ObservableObject {
 }
 
 extension DownloadManager: URLSessionDownloadDelegate {
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask,
+                               willPerformHTTPRedirection response: HTTPURLResponse,
+                               newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        guard let url = request.url, url.scheme == "https", url.host != nil,
+              url.user == nil, url.password == nil else { completionHandler(nil); return }
+        completionHandler(request)
+    }
+
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                                didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard let value = downloadTask.taskDescription, let id = UUID(uuidString: value) else { return }
@@ -418,7 +426,6 @@ extension DownloadManager: URLSessionDownloadDelegate {
         let resume = error.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
         Task { @MainActor in
             guard let job = self.jobs.first(where: { $0.id == id }), job.status != .completed && job.status != .processing else { return }
-            if error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled { return }
             guard self.tasks[id]?.taskIdentifier == task.taskIdentifier || self.restoring else { return }
             if job.status == .pausing || job.status == .paused { return }
             if let resume = resume { try? resume.write(to: LocalResources.resumeURL(id), options: .atomic) }

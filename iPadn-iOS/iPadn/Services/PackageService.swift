@@ -21,9 +21,14 @@ enum PackageService {
     }
 
     private static func readPlist(_ entry: Entry, archive: Archive) throws -> [String: Any] {
-        guard entry.uncompressedSize <= 2 * 1024 * 1024 else { throw ToolError.message("IPA 元数据异常：plist 过大") }
+        let limit = 2 * 1024 * 1024
+        guard entry.type == .file, entry.uncompressedSize <= UInt64(limit) else { throw ToolError.message("IPA 元数据异常：plist 过大或类型无效") }
         var data = Data()
-        _ = try archive.extract(entry, consumer: { data.append($0) })
+        let checksum = try archive.extract(entry, consumer: {
+            guard data.count + $0.count <= limit else { throw ToolError.message("IPA 元数据异常：plist 过大") }
+            data.append($0)
+        })
+        guard checksum == entry.checksum else { throw ToolError.message("IPA 元数据校验失败，请重新获取完整文件") }
         guard let result = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
             throw ToolError.message("IPA plist 格式无效")
         }

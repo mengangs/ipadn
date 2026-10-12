@@ -22,7 +22,8 @@ struct HTTPByteRange: Equatable {
 }
 
 /// Only binds loopback. A random path capability protects runtime, proxy, and registered files.
-final class LoopbackServer {
+// Listener/startup state is confined to queue; the URL and file registries use lock.
+final class LoopbackServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "iPadn.loopback")
     private let lock = NSLock()
     private var listener: NWListener?

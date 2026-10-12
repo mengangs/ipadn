@@ -1,26 +1,28 @@
 import Foundation
 
-final class HTTPClient: NSObject, URLSessionTaskDelegate {
+final class HTTPClient: Sendable {
     static let shared = HTTPClient()
     static let userAgent = "Configurator/2.17 (Macintosh; OS X 15.2; 24C5089c) AppleWebKit/0620.1.16.11.6"
-    private lazy var session: URLSession = {
+    private let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 45
         config.timeoutIntervalForResource = 90
         config.httpCookieStorage = nil
         config.httpShouldSetCookies = false
-        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        return URLSession(configuration: config, delegate: RedirectPolicy(), delegateQueue: nil)
     }()
 
-    func urlSession(_ session: URLSession, task: URLSessionTask,
+    private final class RedirectPolicy: NSObject, URLSessionTaskDelegate {
+        func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        completionHandler(nil)
+            completionHandler(nil)
+        }
     }
 
     func request(_ url: URL, method: String = "GET", body: Data? = nil,
                  headers: [String: String] = [:], appleRedirects: Bool = false) async throws -> (Data, HTTPURLResponse) {
-        guard url.scheme == "https" else { throw ToolError.message("远程接口必须使用 HTTPS") }
+        guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ToolError.message("远程接口必须使用 HTTPS，不能包含账号密码") }
         var current = url
         for _ in 0..<5 {
             try Task.checkCancellation()

@@ -261,9 +261,14 @@ final class ToolStore: ObservableObject {
 
     func deleteAccount(_ id: String) throws {
         guard ownedStorageError == nil else { throw ToolError.message(ownedStorageError!) }
-        try apple.remove(id)
-        ownedByAccount.removeValue(forKey: id)
-        try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
+        var next = ownedByAccount; next.removeValue(forKey: id)
+        try LocalResources.save(next, filename: LocalResources.ownedFilename)
+        do { try apple.remove(id) }
+        catch {
+            try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
+            throw error
+        }
+        ownedByAccount = next
     }
 
     func handleURL(_ url: URL) {

@@ -85,10 +85,11 @@ enum PackageIconService {
     private static func read(_ entry: Entry, archive: Archive, limit: Int) throws -> Data? {
         guard entry.type == .file, entry.uncompressedSize <= UInt64(limit) else { return nil }
         var data = Data()
-        _ = try archive.extract(entry) { chunk in
+        let checksum = try archive.extract(entry) { chunk in
             guard data.count + chunk.count <= limit else { throw ToolError.message("图标资源过大") }
             data.append(chunk)
         }
+        guard checksum == entry.checksum else { throw ToolError.message("IPA 图标资源校验失败") }
         return data
     }
 }
