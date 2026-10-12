@@ -32,7 +32,9 @@ jobs:
 
       - name: Select Xcode and report SDK
         run: |
-          if [ -d /Applications/Xcode_16.4.app ]; then
+          if [ -d /Applications/Xcode_16.3.app ]; then
+            sudo xcode-select -s /Applications/Xcode_16.3.app/Contents/Developer
+          elif [ -d /Applications/Xcode_16.4.app ]; then
             sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
           fi
           xcodebuild -version
@@ -80,7 +82,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.run_tests
         run: |
           set -o pipefail
-          simulator_id="$(xcrun simctl list devices available --json | python3 -c 'import sys,json; d=json.load(sys.stdin); a=[v["udid"] for k,vs in d["devices"].items() if ".iOS-" in k for v in vs if v.get("isAvailable") and v["name"].startswith("iPhone")]; assert a,"No available iPhone simulator"; print(a[0])')"
+          simulator_id="$(xcrun simctl list devices available --json | python3 -c 'import sys,json; d=json.load(sys.stdin); a=[(k,v["udid"]) for k,vs in d["devices"].items() if ".iOS-" in k for v in vs if v.get("isAvailable") and v["name"].startswith("iPhone")]; assert a,"No available iPhone simulator"; a.sort(key=lambda x: ("iOS-18-4" not in x[0],x[0])); print(a[0][1])')"
           xcodebuild test -project IPATool.xcodeproj -scheme IPATool \
             -configuration Debug -destination "platform=iOS Simulator,id=$simulator_id" \
             -destination-timeout 120 -derivedDataPath build/TestDerivedData \
