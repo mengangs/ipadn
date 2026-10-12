@@ -86,6 +86,7 @@ jobs:
           echo "$simulator_id" > build/simulator-id.txt
           xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
             -configuration Debug -destination "platform=iOS Simulator,id=$simulator_id" \
+            -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
             -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 \
             -destination-timeout 120 -derivedDataPath build/TestDerivedData \
             -resultBundlePath build/TestResults.xcresult \
