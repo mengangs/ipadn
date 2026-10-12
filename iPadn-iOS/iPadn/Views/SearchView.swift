@@ -115,8 +115,14 @@ struct SearchView: View {
         } label: { Label(regions.first { $0.0 == store.settings.store.country }?.1 ?? store.settings.store.country, systemImage: "globe.asia.australia").font(.subheadline).frame(minHeight: 44) }
     }
     private var platformPicker: some View {
-        Picker("平台", selection: $store.settings.store.platform) {
-            ForEach(AppPlatform.allCases) { platform in Text(platform.title).tag(platform) }
-        }.pickerStyle(.segmented).frame(maxWidth: 180).accessibilityLabel("应用平台")
+        Menu {
+            Picker("应用平台", selection: $store.settings.store.platform) {
+                ForEach(AppPlatform.allCases) { platform in Text(platform.title).tag(platform) }
+            }
+        } label: {
+            Label(store.settings.store.platform.title, systemImage: "square.on.square")
+                .font(.subheadline).frame(minHeight: 44)
+        }
+        .accessibilityLabel("应用平台：\(store.settings.store.platform.title)")
     }
 }
