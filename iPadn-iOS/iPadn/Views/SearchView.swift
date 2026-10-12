@@ -100,6 +100,7 @@ struct SearchView: View {
         .task { await store.loadNameCatalog() }
         .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
         .onChange(of: store.settings.store) { _, _ in if store.hasSearched { store.search() } }
+        .onChange(of: apple.activeID) { _, _ in if store.hasSearched { store.search() } }
     }
     private var regionPicker: some View {
         Menu {
