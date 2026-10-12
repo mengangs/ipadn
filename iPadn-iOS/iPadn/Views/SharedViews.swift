@@ -76,6 +76,7 @@ struct RootView: View {
     @EnvironmentObject private var signer: SAPSigner
     @EnvironmentObject private var downloads: DownloadManager
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     private let destinations = [("搜索", "magnifyingglass"), ("下载", "arrow.down.circle"), ("已购", "clock.arrow.circlepath"), ("账号", "person.crop.circle")]
     var body: some View {
         Group {
@@ -112,17 +113,29 @@ struct RootView: View {
                 SignerWebView(web: web).frame(width: 1, height: 1).opacity(0.01).allowsHitTesting(false).accessibilityHidden(true)
             }
         }
-        .overlay(alignment: .bottom) {
+        // Global success notices belong above the page, never on top of
+        // AppDetailView's fixed download CTA or the tab bar.
+        .overlay(alignment: .top) {
             if let message = store.infoMessage {
                 Button { store.infoMessage = nil } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "checkmark").font(.subheadline.weight(.semibold))
                         Text(message).font(.footnote.weight(.medium)).fixedSize(horizontal: false, vertical: true)
-                    }.foregroundStyle(UX.onAccent).padding(.horizontal, 18).padding(.vertical, 13)
-                        .background(UX.buttonTint, in: RoundedRectangle(cornerRadius: 18))
-                }.buttonStyle(.plain).accessibilityLabel(message).accessibilityHint("点按关闭提示")
-                    .frame(maxWidth: 420).padding(.horizontal, 24).padding(.bottom, sizeClass == .regular ? 20 : 88)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    .foregroundStyle(UX.onAccent)
+                    .padding(.horizontal, 18).padding(.vertical, 13)
+                    .background(UX.buttonTint, in: RoundedRectangle(cornerRadius: 18))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(message)
+                .accessibilityHint("点按关闭提示")
+                .frame(maxWidth: 420)
+                .padding(.horizontal, 24)
+                // The top of the root tab container includes the navigation bar.
+                // On compact-height devices show the banner nearer the top.
+                .padding(.top, sizeClass == .regular ? 20 : verticalSizeClass == .compact ? 14 : 96)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(1)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: store.infoMessage)
