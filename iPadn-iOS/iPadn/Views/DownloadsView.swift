@@ -301,6 +301,7 @@ struct DownloadTaskRow: View {
                     if displayedApp.size > 0 {
                         Text(displayedApp.size.byteLabel)
                             .font(.caption2).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("download.size." + job.app.id)
                     }
                     Spacer(minLength: 8)
                     platformBadge
