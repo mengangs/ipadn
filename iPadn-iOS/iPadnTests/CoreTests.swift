@@ -59,6 +59,9 @@ final class CoreTests: XCTestCase {
     func testPackagedIconChoicesMatchCurrentDevice() throws {
         XCTAssertNil(AppIconService.Choice.dimensional.alternateName)
         XCTAssertEqual(AppIconService.Choice.flat.alternateName, "AppIconFlat")
+        XCTAssertEqual(AppIconService.systemChoice(for: nil), .dimensional)
+        XCTAssertEqual(AppIconService.systemChoice(for: "AppIconFlat"), .flat)
+        XCTAssertEqual(AppIconService.systemChoice(for: "some-other-icon"), .dimensional)
         // Xcode thins simulator builds to the selected device. Both idioms are
         // checked separately in the unthinned device IPA by verify_ipa.py.
         let key = UIDevice.current.userInterfaceIdiom == .pad ? "CFBundleIcons~ipad" : "CFBundleIcons"
@@ -71,6 +74,12 @@ final class CoreTests: XCTestCase {
         XCTAssertNotNil(UIImage(named: AppIconService.Choice.flat.preview))
         XCTAssertTrue(UIApplication.shared.supportsAlternateIcons)
     }
+    func testAppleCredentialError2002RequiresExplicitReauthentication() {
+        XCTAssertTrue(AppleAuthError.requiresReauthentication(["failureType": "2002"]))
+        XCTAssertFalse(AppleAuthError.requiresReauthentication(["failureType": "9610"]))
+        XCTAssertFalse(AppleAuthError.requiresReauthentication(["failureType": "2034"]))
+    }
+
     func testPlatformSearchEntitiesAndIPASupport() {
         XCTAssertEqual(AppPlatform.iOS.searchEntity, "software")
         XCTAssertEqual(AppPlatform.iPadOS.searchEntity, "iPadSoftware")
