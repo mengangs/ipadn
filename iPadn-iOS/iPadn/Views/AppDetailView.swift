@@ -14,6 +14,8 @@ struct AppDetailView: View {
     @State private var versionError: String?
     @State private var official = false
     @State private var showLogin = false
+    @State private var reauthenticationID: String?
+    @State private var retryAfterLoginVersion: String?
     @State private var showVerification = false
     @State private var pendingDownloadVersion: String?
     @State private var retryVersionsAfterVerification = false
@@ -151,7 +153,17 @@ struct AppDetailView: View {
                 .accessibilityLabel(store.isFavorite(app) ? "取消收藏" : "收藏应用")
             ShareLink(item: storeURL) { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("分享商店链接")
         }
-        .navigationDestination(isPresented: $showLogin) { LoginView() }
+        .navigationDestination(isPresented: $showLogin) {
+            LoginView(initialAccountID: reauthenticationID, onSignedIn: {
+                reauthenticationID = nil
+                guard let pending = retryAfterLoginVersion else { return }
+                retryAfterLoginVersion = nil
+                Task { @MainActor in
+                    await Task.yield()
+                    download(versionID: pending.isEmpty ? nil : pending)
+                }
+            })
+        }
         .sheet(isPresented: $showVerification, onDismiss: {
             guard verifiedForRetry else {
                 pendingDownloadVersion = nil
@@ -197,6 +209,13 @@ struct AppDetailView: View {
             let result = try await store.loadVersions(for: app, force: force, official: official)
             try Task.checkCancellation(); versions = result
         } catch is CancellationError { }
+        catch AppleAuthError.reauthenticationRequired {
+            if !Task.isCancelled {
+                reauthenticationID = apple.activeID
+                retryVersionsAfterVerification = false
+                showLogin = true
+            }
+        }
         catch AppleLoginError.verificationRequired {
             if !Task.isCancelled {
                 retryVersionsAfterVerification = true
@@ -248,6 +267,11 @@ struct AppDetailView: View {
                 pendingDownloadVersion = versionID ?? ""
                 retryVersionsAfterVerification = false
                 showVerification = true
+            }
+            catch AppleAuthError.reauthenticationRequired {
+                reauthenticationID = apple.activeID
+                retryAfterLoginVersion = versionID ?? ""
+                showLogin = true
             }
             catch is CancellationError { }
             catch { store.errorMessage = error.localizedDescription }
