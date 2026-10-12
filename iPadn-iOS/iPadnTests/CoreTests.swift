@@ -71,6 +71,29 @@ final class CoreTests: XCTestCase {
         XCTAssertNotNil(UIImage(named: AppIconService.Choice.flat.preview))
         XCTAssertTrue(UIApplication.shared.supportsAlternateIcons)
     }
+    func testAccountStorefrontRegionsAndCrossRegionSearchMerge() {
+        XCTAssertEqual(StoreService.country(forStorefront: "143441-1,29"), "US")
+        XCTAssertEqual(StoreService.country(forStorefront: "143465"), "CN")
+        XCTAssertEqual(StoreService.country(forStorefront: "143462-1,15"), "JP")
+        XCTAssertNil(StoreService.country(forStorefront: "unknown"))
+        XCTAssertEqual(StoreService.searchCountries(selected: "CN", accountCountry: "US"), ["CN", "US"])
+        XCTAssertEqual(StoreService.searchCountries(selected: "US", accountCountry: "US"), ["US"])
+        XCTAssertEqual(StoreService.artworkCountries(selected: "CN", accountCountry: "US"), ["US", "CN"])
+        XCTAssertEqual(StoreService.artworkCountries(selected: "JP", accountCountry: "CN"), ["CN", "JP", "US"])
+
+        let regional = (1...4).map { StoreApp(id: String($0), name: "Regional \($0)") }
+        let usArtwork = URL(string: "https://example.com/2.png")!
+        let account = [
+            StoreApp(id: "2", name: "Same app in another region", iconURL: usArtwork),
+            StoreApp(id: "100", name: "Only in US"),
+            StoreApp(id: "101", name: "Another US app")
+        ]
+        let results = StoreService.mergeResults(regional, account, limit: 4)
+        XCTAssertEqual(results.map(\.id), ["1", "2", "100", "3"])
+        XCTAssertEqual(results[1].iconURL, usArtwork)
+        XCTAssertEqual(Set(results.map(\.id)).count, results.count)
+    }
+
     func testPartialSettingsPreserveUserChoicesAndBoundInvalidLimits() throws {
         let legacy = Data(#"{"plistServer":"https://example.com/manifest","notifications":false,"maxConcurrentDownloads":99,"maxQueuedDownloads":-1}"#.utf8)
         let settings = try JSONDecoder().decode(ToolSettings.self, from: legacy)
