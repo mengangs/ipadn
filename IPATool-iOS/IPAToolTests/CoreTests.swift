@@ -3,6 +3,18 @@ import ZIPFoundation
 @testable import IPATool
 
 final class CoreTests: XCTestCase {
+    func testLoginPayloadUsesSecondAttemptWithCode() throws {
+        let first = try AppleLoginResponse.body(email: "test@example.com", password: "password", code: "", guid: "AABBCCDDEEFF")
+        let second = try AppleLoginResponse.body(email: "test@example.com", password: "password", code: "123456", guid: "AABBCCDDEEFF")
+        let firstBody = try XCTUnwrap(PropertyListSerialization.propertyList(from: first, format: nil) as? [String: String])
+        let secondBody = try XCTUnwrap(PropertyListSerialization.propertyList(from: second, format: nil) as? [String: String])
+        XCTAssertEqual(firstBody["attempt"], "1")
+        XCTAssertEqual(firstBody["password"], "password")
+        XCTAssertEqual(secondBody["attempt"], "2")
+        XCTAssertEqual(secondBody["password"], "password123456")
+        XCTAssertEqual(secondBody["rmp"], "0")
+    }
+
     func testAppleLoginChallengeAndRejection() {
         let challenge: [String: Any] = ["customerMessage": "MZFinance.BadLogin.Configurator_message", "failureType": ""]
         guard case .verificationRequired? = AppleLoginResponse.failure(challenge, submittedCode: false) as? AppleLoginError else {

@@ -82,7 +82,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
             values["proxy"] = base.appendingPathComponent("proxy").absoluteString
             let result: String = try await withCheckedThrowingContinuation { continuation in
                 evaluation = continuation
-                web.callAsyncJavaScript(script, arguments: values, in: nil, contentWorld: .page) { [weak self] result in
+                web.callAsyncJavaScript(script, arguments: values, in: nil, in: .page) { [weak self] result in
                     Task { @MainActor in
                         guard let self, self.operationID == id, let continuation = self.evaluation else { return }
                         self.evaluation = nil

@@ -3,7 +3,6 @@
 
   const CERTIFICATE_URL = "https://s.mzstatic.com/sap/setupCert.plist";
   const SETUP_URL = "https://fpinit.itunes.apple.com/v1/signSapSetup/legacy";
-  const DEFAULT_PROXY_URL = "http://xiaobai.com/";
   const SCRIPT_BASE_URL = (() => {
     const script = typeof document === "undefined" ? null : document.currentScript;
     const base = script && script.src
@@ -11,6 +10,7 @@
       : (typeof document === "undefined" ? "./" : document.baseURI);
     return new URL(".", base).href;
   })();
+  const DEFAULT_PROXY_URL = new URL("../proxy", SCRIPT_BASE_URL).href;
   const NATIVE_MEMORY_SHIMS = new Set([
     "_malloc", "_malloc_good_size", "_calloc", "_free",
     "_memcpy", "_memmove", "_memset", "___bzero",

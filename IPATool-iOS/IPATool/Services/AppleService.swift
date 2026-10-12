@@ -35,8 +35,7 @@ final class AppleService: ObservableObject {
         let code = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !email.isEmpty, !password.isEmpty else { throw ToolError.message("请填写 Apple 账号和密码") }
         guard code.isEmpty || (code.count == 6 && code.allSatisfy({ $0.isASCII && $0.isNumber })) else { throw ToolError.message("请输入 6 位数字验证码") }
-        let body = try HTTPClient.encodePlist(["appleId": email, "attempt": code.isEmpty ? 1 : 2, "guid": guid,
-                                               "password": password + code, "rmp": 0, "why": "signIn"])
+        let body = try AppleLoginResponse.body(email: email, password: password, code: code, guid: guid)
         let signature = try await signer.sign(body, guid: guid, useCache: useCache)
         let (raw, response) = try await HTTPClient.shared.plist(
             URL(string: "https://p25-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate/")!, body: body,
@@ -239,6 +238,11 @@ enum AppleLoginError: LocalizedError {
 }
 
 enum AppleLoginResponse {
+    static func body(email: String, password: String, code: String, guid: String) throws -> Data {
+        try HTTPClient.encodePlist(["appleId": email, "attempt": code.isEmpty ? "1" : "2",
+            "guid": guid, "password": password + code, "rmp": "0", "why": "signIn"])
+    }
+
     static func failure(_ response: [String: Any], submittedCode: Bool) -> Error? {
         if let failure = HTTPClient.appleFailure(response) { return failure }
         let message = plistString(response["customerMessage"])
