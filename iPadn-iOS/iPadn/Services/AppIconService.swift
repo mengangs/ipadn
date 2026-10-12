@@ -14,6 +14,7 @@ final class AppIconService: ObservableObject {
     @Published private(set) var changing = false
     private var pending: CheckedContinuation<Void, Error>?
     private var requestID: UUID?
+    private var lastSystemAcknowledgement: (choice: Choice, date: Date)?
     private var simulatesChanges: Bool {
         #if DEBUG
         return LocalResources.isPreview && !ProcessInfo.processInfo.arguments.contains("--system-icon-test")
@@ -26,7 +27,15 @@ final class AppIconService: ObservableObject {
     init() { refresh() }
     func refresh() {
         guard !simulatesChanges else { return }
-        selected = UIApplication.shared.alternateIconName == Choice.flat.alternateName ? .flat : .dimensional
+        let observed: Choice = UIApplication.shared.alternateIconName == Choice.flat.alternateName ? .flat : .dimensional
+        // iOS may send a successful completion before alternateIconName catches up.
+        // Keep the acknowledged choice briefly rather than flashing the old checkmark.
+        if let acknowledged = lastSystemAcknowledgement {
+            if observed == acknowledged.choice || Date().timeIntervalSince(acknowledged.date) >= 10 {
+                lastSystemAcknowledgement = nil
+            } else { return }
+        }
+        selected = observed
     }
     func select(_ choice: Choice) async throws {
         guard !changing else { throw ToolError.message("正在等待系统更改图标，请稍候") }
@@ -58,17 +67,24 @@ final class AppIconService: ObservableObject {
                 if Task.isCancelled { continuation.resume(throwing: CancellationError()); return }
                 requestID = id; pending = continuation
                 UIApplication.shared.setAlternateIconName(choice.alternateName) { [weak self] error in
-                    guard let error else { return }
-                    Task { @MainActor in self?.finish(id, choice: choice, error: error) }
+                    // A nil error is a successful system callback, not a missing result.
+                    Task { @MainActor in self?.finish(id, choice: choice, error: error, acknowledged: error == nil) }
                 }
             }
         }, onCancel: { [weak self] in
             Task { @MainActor in self?.finish(id, choice: choice, error: CancellationError()) }
         })
     }
-    private func finish(_ id: UUID, choice: Choice, error: Error?) {
+    private func finish(_ id: UUID, choice: Choice, error: Error?, acknowledged: Bool = false) {
         guard requestID == id, let continuation = pending else { return }
-        pending = nil; requestID = nil; refresh()
+        pending = nil; requestID = nil
+        if acknowledged {
+            lastSystemAcknowledgement = (choice, Date())
+            selected = choice
+            continuation.resume()
+            return
+        }
+        refresh()
         if selected == choice { continuation.resume() }
         else { continuation.resume(throwing: error ?? ToolError.message("系统未应用所选图标，请检查重新签名后的安装包是否保留备用图标文件。")) }
     }
