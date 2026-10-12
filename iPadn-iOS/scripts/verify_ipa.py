@@ -30,6 +30,7 @@ with zipfile.ZipFile(ipa) as archive:
     for filename, expected in manifest.items():
         actual = hashlib.sha256(archive.read(prefix + 'SAPRuntime/' + filename)).hexdigest()
         assert actual == expected, 'Bundled runtime hash mismatch: ' + filename
+    assert not any('localhost-test-only' in name or name.endswith('.p12') for name in archive.namelist()), 'Unexpected test or TLS private identity in IPA'
     assert prefix + 'embedded.mobileprovision' not in archive.namelist(), 'Unexpected provisioning profile'
     assert not any(name.startswith(prefix + '_CodeSignature/') for name in archive.namelist()), 'Unexpected signing envelope'
 

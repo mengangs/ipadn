@@ -29,7 +29,7 @@ struct InstallationSettingsView: View {
                         .accessibilityIdentifier("installation.certificate")
                     Button("检查证书与地址", systemImage: "checkmark.shield") { checkCertificate() }.disabled(busy)
                 } header: { Text("本地服务器") } footer: {
-                    Text("仅监听本机回环地址。默认 127.0.0.1；使用域名时须将它解析到本机。导入含私钥的 P12/PFX 服务器证书，证书须包含上述地址且受系统信任。自签名证书需先安装并信任签发 CA。本功能不会忽略 SSL 验证。")
+                    Text("仅监听本机回环地址。默认 127.0.0.1；使用域名时须将它解析到本机。导入含私钥的 P12/PFX 服务器 SSL 证书（非应用签名证书），证书须包含上述地址且受系统信任。自签名证书需先安装并信任签发 CA。本功能不会忽略 SSL 验证。")
                 }
                 Section {
                     Text("清单和 IPA 由本机提供，无需上传安装包或配置外部清单服务。安装请求发出后，请保持 iPadn 运行；大型安装包可返回 iPadn 以继续传输。")
