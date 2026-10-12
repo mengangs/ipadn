@@ -14,6 +14,10 @@ struct AppDetailView: View {
     @State private var versionError: String?
     @State private var official = false
     @State private var showLogin = false
+    @State private var showVerification = false
+    @State private var pendingDownloadVersion: String?
+    @State private var retryVersionsAfterVerification = false
+    @State private var verifiedForRetry = false
     @State private var showDescription = false
     @State private var reloadID = 0
     private var storeURL: URL { URL(string: "https://apps.apple.com/\(store.settings.store.country.lowercased())/app/id\(app.id)")! }
@@ -37,6 +41,7 @@ struct AppDetailView: View {
                     VStack(alignment: .leading, spacing: 6) { appMetadata }
                 }.font(.footnote).foregroundStyle(.secondary)
             }.listRowSeparator(.hidden)
+            if store.settings.store.platform.supportsIPA {
             Section {
                 Toggle("从 Apple 获取版本", isOn: $official).font(.subheadline)
                     .disabled(apple.active == nil || store.settings.store.platform == .tvOS)
@@ -72,7 +77,14 @@ struct AppDetailView: View {
                 }
             } header: {
                 HStack { Text("历史版本 · \(versions.count)"); Spacer(); Button("刷新") { reloadID += 1 }.disabled(versionsLoading).textCase(nil) }
-            } footer: { Text("版本可用性取决于商店地区及账号许可。") }
+            } footer: { Text("版本可用性取决于商店地区及账号许可。tvOS 安装包在下载后核验设备类型。") }
+            } else {
+                Section("Mac App Store") {
+                    Text("这是原生 macOS 应用。iPadn 可以查找应用信息，但不能将 Mac 安装包作为 IPA 下载或安装。")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Link("在 Mac App Store 查看", destination: storeURL)
+                }
+            }
             Section("应用信息") {
                 LabeledContent("App ID", value: app.id).textSelection(.enabled)
                 if !app.bundleID.isEmpty { Text(app.bundleID).font(.footnote.monospaced()).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
@@ -89,6 +101,7 @@ struct AppDetailView: View {
         .toolPage().navigationTitle("应用详情").navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 8) {
+                if store.settings.store.platform.supportsIPA {
                 Button { download(versionID: app.externalVersionID) } label: {
                     HStack(spacing: 10) {
                         if downloadLoading { ProgressView().tint(UX.onAccent) }
@@ -98,6 +111,13 @@ struct AppDetailView: View {
                 if downloadLoading { Button("取消准备下载") { downloadTask?.cancel() }.frame(minHeight: 44) }
                 Text(apple.active.map { "使用账号 \($0.id)" } ?? "登录后获取你拥有许可的应用")
                     .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                } else {
+                    Link(destination: storeURL) {
+                        Label("在 Mac App Store 查看", systemImage: "arrow.up.right.square")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(MonochromeButtonStyle())
+                }
             }.padding(.horizontal, 20).padding(.vertical, 12).frame(maxWidth: 680).frame(maxWidth: .infinity).background(.regularMaterial)
         }
         .toolbar {
@@ -106,6 +126,30 @@ struct AppDetailView: View {
             ShareLink(item: storeURL) { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("分享商店链接")
         }
         .navigationDestination(isPresented: $showLogin) { LoginView() }
+        .sheet(isPresented: $showVerification, onDismiss: {
+            guard verifiedForRetry else {
+                pendingDownloadVersion = nil
+                retryVersionsAfterVerification = false
+                return
+            }
+            verifiedForRetry = false
+            if retryVersionsAfterVerification {
+                retryVersionsAfterVerification = false
+                reloadID += 1
+            } else {
+                let pending = pendingDownloadVersion
+                pendingDownloadVersion = nil
+                if let pending { download(versionID: pending.isEmpty ? nil : pending) }
+            }
+        }) {
+            if let accountID = apple.activeID {
+                ExistingAccountVerificationView(accountID: accountID, onVerified: {
+                    verifiedForRetry = true
+                })
+                .environmentObject(store)
+                .environmentObject(apple)
+            }
+        }
         .onDisappear { downloadTask?.cancel() }
         .task(id: "\(official)-\(reloadID)-\(store.settings.store.country)-\(store.settings.store.platform.rawValue)-\(apple.activeID ?? "")") { await fetchVersions(force: reloadID > 0) }
     }
@@ -124,16 +168,31 @@ struct AppDetailView: View {
             let result = try await store.loadVersions(for: app, force: force, official: official)
             try Task.checkCancellation(); versions = result
         } catch is CancellationError { }
+        catch AppleLoginError.verificationRequired {
+            if !Task.isCancelled {
+                retryVersionsAfterVerification = true
+                showVerification = true
+            }
+        }
         catch { if !Task.isCancelled { versionError = error.localizedDescription } }
     }
     private func download(versionID: String?) {
         guard !downloadLoading else { return }
+        guard store.settings.store.platform.supportsIPA else {
+            store.errorMessage = "原生 Mac 应用需要在 Mac App Store 下载，不能导出为 IPA"
+            return
+        }
         guard apple.active != nil else { showLogin = true; return }
         if let versionID, !versionID.isEmpty, !versionID.allSatisfy({ $0.isASCII && $0.isNumber }) { store.errorMessage = "版本 ID 必须是数字"; return }
         downloadLoading = true
         downloadTask = Task {
             defer { downloadLoading = false; downloadTask = nil }
             do { try await store.startDownload(app: app, versionID: versionID?.isEmpty == true ? nil : versionID) }
+            catch AppleLoginError.verificationRequired {
+                pendingDownloadVersion = versionID ?? ""
+                retryVersionsAfterVerification = false
+                showVerification = true
+            }
             catch is CancellationError { }
             catch { store.errorMessage = error.localizedDescription }
         }
