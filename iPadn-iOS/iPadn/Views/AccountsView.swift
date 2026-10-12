@@ -130,3 +130,73 @@ struct LoginView: View {
         }
     }
 }
+
+struct ExistingAccountVerificationView: View {
+    @EnvironmentObject private var store: ToolStore
+    @EnvironmentObject private var apple: AppleService
+    @Environment(\.dismiss) private var dismiss
+    let accountID: String
+    let onVerified: () -> Void
+    @State private var code = ""
+    @State private var busy = false
+    @State private var issue: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("Apple 要求重新验证当前账号。请在受信任设备上允许登录，输入收到的六位验证码。")
+                    Text(accountID).font(.footnote).foregroundStyle(.secondary)
+                    TextField("六位验证码", text: $code)
+                        .keyboardType(.numberPad).textContentType(.oneTimeCode)
+                        .onChange(of: code) { _, value in
+                            code = String(value.filter { $0.isASCII && $0.isNumber }.prefix(6))
+                        }
+                        .accessibilityIdentifier("apple.verification.code")
+                } header: {
+                    Text("双重认证")
+                } footer: {
+                    Text("验证码只用于本次验证，不会保存。无需再次填写密码。")
+                }
+                if let issue { Section { InlineIssue(message: issue) } }
+                Section {
+                    Button {
+                        guard !busy else { return }
+                        busy = true; issue = nil
+                        Task {
+                            defer { busy = false }
+                            do {
+                                try await apple.verifyCurrentAccount(code: code, expectedID: accountID,
+                                                                     useCache: store.settings.useSignerCache)
+                                code = ""
+                                onVerified()
+                                dismiss()
+                            } catch is CancellationError {
+                                issue = "验证已取消，请重试"
+                            } catch {
+                                issue = error.localizedDescription
+                                code = ""
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if busy { ProgressView() }
+                            Text(busy ? "正在验证…" : "验证并继续下载")
+                            Spacer()
+                        }
+                    }
+                    .disabled(busy || code.count != 6)
+                    .accessibilityIdentifier("apple.verification.submit")
+                }
+            }
+            .navigationTitle("验证 Apple 账号")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }.disabled(busy)
+                }
+            }
+        }
+    }
+}
