@@ -122,7 +122,11 @@ actor VersionService {
         try Task.checkCancellation()
         if revision == cacheRevision {
             cache = cache.filter { Date().timeIntervalSince($0.value.savedAt) < 24 * 3600 }
-            if cache.count >= 200 { cache.removeValue(forKey: cache.min { $0.value.savedAt < $1.value.savedAt }!.key) }
+            if cache.count >= 200 {
+                // Also shrink oversized caches created by earlier versions in one pass.
+                cache = Dictionary(uniqueKeysWithValues: cache.sorted { $0.value.savedAt > $1.value.savedAt }
+                    .prefix(199).map { ($0.key, $0.value) })
+            }
             cache[key] = Cache(savedAt: Date(), versions: versions)
             // A disposable cache write failure must not hide a valid server result.
             try? LocalResources.save(cache, filename: LocalResources.versionsFilename)
