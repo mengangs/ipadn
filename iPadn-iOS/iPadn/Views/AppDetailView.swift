@@ -25,6 +25,8 @@ struct AppDetailView: View {
     @State private var macWebsite: URL?
     @State private var macInstallers: [MacInstallerService.Installer] = []
     @State private var macLoading = false
+    @State private var enteringMacDownloadURL = false
+    @State private var macDownloadURL = ""
     private var storeURL: URL { URL(string: "https://apps.apple.com/\(store.settings.store.country.lowercased())/app/id\(app.id)")! }
     private var filtered: [AppVersion] {
         versionSearch.isEmpty ? versions : versions.filter { $0.version.localizedCaseInsensitiveContains(versionSearch) || $0.id.contains(versionSearch) }
@@ -98,16 +100,32 @@ struct AppDetailView: View {
                         }
                         .accessibilityIdentifier("mac.download." + installer.format)
                     }
+                    Button("通过链接下载 DMG / PKG / ZIP", systemImage: "link") {
+                        enteringMacDownloadURL = true
+                    }
+                    .accessibilityIdentifier("mac.manual-download")
                     if let website = macWebsite {
                         Link("开发者网站", destination: website)
                     }
                 }
             }
             Section("应用信息") {
-                LabeledContent("App ID", value: app.id).textSelection(.enabled)
+                Button { copy(app.id) } label: {
+                    HStack {
+                        Text("App ID").foregroundStyle(.primary)
+                        Spacer()
+                        Text(app.id).font(.body.monospacedDigit()).foregroundStyle(.secondary)
+                        Image(systemName: "doc.on.doc").foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("App ID \(app.id)，点按复制")
+                .accessibilityIdentifier("app.copy-id")
                 if !app.bundleID.isEmpty { Text(app.bundleID).font(.footnote.monospaced()).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
-                Button("复制 App ID", systemImage: "doc.on.doc") { copy(app.id) }
-                Link(destination: storeURL) { Label("在 App Store 查看", systemImage: "arrow.up.right.square") }
+                if store.settings.store.platform != .macOS {
+                    Link(destination: storeURL) { Label("在 App Store 查看", systemImage: "arrow.up.right.square") }
+                }
             }
             if !app.description.isEmpty {
                 Section("应用介绍") {
@@ -139,8 +157,8 @@ struct AppDetailView: View {
                         }
                         .buttonStyle(MonochromeButtonStyle())
                     } else {
-                        Link(destination: storeURL) {
-                            Label("在 Mac App Store 查看", systemImage: "arrow.up.right.square")
+                        Button { enteringMacDownloadURL = true } label: {
+                            Label("通过链接下载 Mac 安装包", systemImage: "link")
                                 .frame(maxWidth: .infinity, minHeight: 44)
                         }
                         .buttonStyle(MonochromeButtonStyle())
@@ -152,6 +170,23 @@ struct AppDetailView: View {
             Button { store.toggleFavorite(app); UX.feedback() } label: { Image(systemName: store.isFavorite(app) ? "star.fill" : "star").frame(minWidth: 44, minHeight: 44) }
                 .accessibilityLabel(store.isFavorite(app) ? "取消收藏" : "收藏应用")
             ShareLink(item: storeURL) { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("分享商店链接")
+        }
+        .alert("下载 Mac 安装包", isPresented: $enteringMacDownloadURL) {
+            TextField("https://example.com/App.dmg", text: $macDownloadURL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("加入下载") {
+                let value = macDownloadURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let url = URL(string: value), MacInstallerService.directPackage(url) else {
+                    store.errorMessage = "请输入有效的 HTTPS 下载链接，文件需要是 DMG、PKG 或 ZIP。"
+                    return
+                }
+                enqueueMacInstaller(MacInstallerService.Installer(url: url))
+                macDownloadURL = ""
+            }
+            Button("取消", role: .cancel) { }
+        } message: {
+            Text("粘贴开发者提供的安装包直链。下载后可通过下载页导出到 Mac。")
         }
         .navigationDestination(isPresented: $showLogin) {
             LoginView(initialAccountID: reauthenticationID, onSignedIn: {
