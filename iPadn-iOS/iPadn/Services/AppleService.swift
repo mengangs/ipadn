@@ -271,7 +271,7 @@ enum AppleAuthError: LocalizedError {
         plistString(response["failureType"]) == "2002"
     }
     var errorDescription: String? {
-        "Apple 不再接受当前保存的登录凭据（2002）。请使用现在的密码重新登录；如果 Apple 需要验证，再输入六位验证码。"
+        "Apple 账号需要重新登录。请输入当前密码，并根据 Apple 的提示完成验证。"
     }
 }
 
