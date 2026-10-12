@@ -21,14 +21,15 @@ final class CoreTests: XCTestCase {
         signer.clearCache()
     }
     @MainActor
-    func testPackagedIconChoicesIncludePhoneAndPadAlternates() throws {
+    func testPackagedIconChoicesMatchCurrentDevice() throws {
         XCTAssertNil(AppIconService.Choice.dimensional.alternateName)
         XCTAssertEqual(AppIconService.Choice.flat.alternateName, "AppIconFlat")
-        for key in ["CFBundleIcons", "CFBundleIcons~ipad"] {
-            let icons = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: key) as? [String: Any])
-            let alternates = try XCTUnwrap(icons["CFBundleAlternateIcons"] as? [String: Any])
-            XCTAssertNotNil(alternates["AppIconFlat"])
-        }
+        // Xcode thins simulator builds to the selected device. Both idioms are
+        // checked separately in the unthinned device IPA by verify_ipa.py.
+        let key = UIDevice.current.userInterfaceIdiom == .pad ? "CFBundleIcons~ipad" : "CFBundleIcons"
+        let icons = try XCTUnwrap(Bundle.main.infoDictionary?[key] as? [String: Any])
+        let alternates = try XCTUnwrap(icons["CFBundleAlternateIcons"] as? [String: Any])
+        XCTAssertNotNil(alternates["AppIconFlat"])
         XCTAssertNotNil(UIImage(named: AppIconService.Choice.dimensional.preview))
         XCTAssertNotNil(UIImage(named: AppIconService.Choice.flat.preview))
         XCTAssertTrue(UIApplication.shared.supportsAlternateIcons)
