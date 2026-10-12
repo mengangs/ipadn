@@ -203,6 +203,12 @@ final class AppleService: ObservableObject {
         let (raw, _) = try await HTTPClient.shared.plist(
             URL(string: "https://buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/buyProduct")!,
             body: HTTPClient.encodePlist(payload), headers: headers)
+        // A license acquisition can independently require a new trusted-device
+        // approval, even when the previous download token was accepted.
+        if ["2034", "2042"].contains(plistString(raw["failureType"])) ||
+           plistString(raw["customerMessage"]) == "MZFinance.BadLogin.Configurator_message" {
+            throw AppleLoginError.verificationRequired
+        }
         if let error = HTTPClient.appleFailure(raw) { throw error }
         guard raw["jingleDocType"] != nil else { throw ToolError.message("未能获取免费应用许可，请先在 App Store 获取后重试") }
     }
