@@ -4,6 +4,96 @@ import ZIPFoundation
 @testable import iPadn
 
 final class CoreTests: XCTestCase {
+    func testPartialSettingsPreserveUserChoicesAndBoundInvalidLimits() throws {
+        let legacy = Data(#"{"plistServer":"https://example.com/manifest","notifications":false,"maxConcurrentDownloads":99,"maxQueuedDownloads":-1}"#.utf8)
+        let settings = try JSONDecoder().decode(ToolSettings.self, from: legacy)
+        XCTAssertEqual(settings.plistServer, "https://example.com/manifest")
+        XCTAssertFalse(settings.notifications)
+        XCTAssertEqual(settings.maxConcurrentDownloads, 6)
+        XCTAssertEqual(settings.maxQueuedDownloads, 1)
+        XCTAssertEqual(settings.versionSources.count, 2)
+        XCTAssertEqual(try JSONDecoder().decode(ToolSettings.self, from: JSONEncoder().encode(settings)), settings)
+        XCTAssertEqual(DownloadJob(app: StoreApp(id: "1", name: "Test"), downloaded: -1, expected: 100).progress, 0)
+    }
+
+    func testPackagePathsCannotEscapeOrReferenceDirectories() throws {
+        for name in ["", ".", "..", "../outside.ipa", "/outside.ipa", "folder/file.ipa", "folder\\file.ipa"] {
+            XCTAssertNil(LocalResources.packageURL(name))
+        }
+        let name = UUID().uuidString + ".ipa"
+        let file = LocalResources.packages.appendingPathComponent(name)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data("test".utf8).write(to: file)
+        XCTAssertEqual(LocalResources.packageURL(name), file.resolvingSymlinksInPath())
+        try FileManager.default.removeItem(at: file)
+        try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
+        XCTAssertNil(LocalResources.packageURL(name))
+        try FileManager.default.removeItem(at: file)
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data("private".utf8).write(to: outside)
+        defer { try? FileManager.default.removeItem(at: outside) }
+        try FileManager.default.createSymbolicLink(at: file, withDestinationURL: outside)
+        XCTAssertNil(LocalResources.packageURL(name))
+    }
+
+    func testAuthorizationArchivePathsRejectTraversal() {
+        XCTAssertTrue(PackageService.isSafeArchivePath("Payload/Test.app/SC_Info/Test.sinf"))
+        for path in ["/Payload/Test.app", "../Test.sinf", "Payload/../Test.sinf", "Payload//Test.sinf", "Payload\\Test.sinf", "Payload/./Test.sinf"] {
+            XCTAssertFalse(PackageService.isSafeArchivePath(path), path)
+        }
+    }
+
+    func testEmptyPurchaseResponseCannotReplaceCachedRecords() {
+        XCTAssertThrowsError(try DMAP.validate(Data()))
+        XCTAssertThrowsError(try DMAP.validate(DMAP.tag("mlcl")))
+        XCTAssertNoThrow(try DMAP.validate(DMAP.tag("mlog", DMAP.uint32("mstt", 200))))
+        XCTAssertThrowsError(try DMAP.validate(DMAP.tag("mlog", DMAP.uint32("mstt", 403))))
+    }
+
+    @MainActor
+    func testFailedAppleRetryKeepsTaskIdentityAndRejectsAccountChange() throws {
+        let app = StoreApp(id: "1", name: "Test", version: "1.0")
+        let asset = DownloadAsset(app: app, url: URL(string: "https://example.com/new.ipa")!, externalVersionIDs: [], platform: "ios", account: "test@example.com")
+        let job = DownloadJob(app: app, asset: asset, status: .failed, error: "expired")
+        let manager = DownloadManager(previewJobs: [job])
+        var changed = asset; changed.account = "other@example.com"
+        XCTAssertThrowsError(try manager.refreshFailed(job.id, asset: changed))
+        XCTAssertEqual(manager.jobs.first?.status, .failed)
+        try manager.refreshFailed(job.id, asset: asset)
+        XCTAssertEqual(manager.jobs.count, 1)
+        XCTAssertEqual(manager.jobs.first?.id, job.id)
+        XCTAssertEqual(manager.jobs.first?.status, .queued)
+        XCTAssertEqual(manager.jobs.first?.sourceURL, asset.url)
+        XCTAssertNil(manager.jobs.first?.error)
+    }
+
+    @MainActor
+    func testFailedPersistenceDoesNotPublishReplacementOrNewTask() {
+        let app = StoreApp(id: "1", name: "Test")
+        let asset = DownloadAsset(app: app, url: URL(string: "https://example.com/new.ipa")!, externalVersionIDs: [], platform: "ios", account: "test@example.com")
+        let job = DownloadJob(app: app, asset: asset, status: .failed, error: "keep this failure")
+        let manager = DownloadManager(previewJobs: [job], saveJobs: { _ in throw ToolError.message("disk full") })
+        XCTAssertThrowsError(try manager.refreshFailed(job.id, asset: asset))
+        XCTAssertEqual(manager.jobs.first?.error, "keep this failure")
+        XCTAssertEqual(manager.jobs.first?.status, .failed)
+        XCTAssertThrowsError(try manager.enqueueURL(URL(string: "https://example.com/other.ipa")!))
+        XCTAssertEqual(manager.jobs.count, 1)
+        XCTAssertThrowsError(try manager.enqueueURL(URL(string: "https://user:password@example.com/private.ipa")!))
+    }
+
+    func testConcurrentLoopbackStartupSharesOneListener() async throws {
+        let server = LoopbackServer()
+        async let first: Void = server.start()
+        async let second: Void = server.start()
+        _ = try await (first, second)
+        let base = try XCTUnwrap(server.baseURL)
+        let (data, response) = try await URLSession.shared.data(from: base.appendingPathComponent("runtime/index.html"))
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertFalse(data.isEmpty)
+        try await server.start()
+        XCTAssertEqual(server.baseURL, base)
+    }
+
     func testArchivedAppNameSearchDoesNotNeedAnAccountOrLiveStoreResult() {
         let removed = StoreApp(id: "100", name: "旧时光相机", bundleID: "example.camera")
         let cached = StoreApp(id: "200", name: "Unpurchased Archive", bundleID: "example.archive")

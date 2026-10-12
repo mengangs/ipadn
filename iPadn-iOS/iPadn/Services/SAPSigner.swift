@@ -19,18 +19,20 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
     private var terminalError: Error?
     private var signatureCache: [String: String] = [:]
     private var kbCache: [String: String] = [:]
+    private var cacheRevision = UUID()
 
     func sign(_ data: Data, guid: String, useCache: Bool) async throws -> String {
         let key = guid + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         try Task.checkCancellation()
         if useCache, let cached = signatureCache[key] { return cached }
+        let revision = cacheRevision
         let result = try await execute(title: "验证请求", script: """
             reportStage(1);
             await sapInitialize(guid, {proxyURL: proxy});
             try { reportStage(2); return await sapSign(body); }
             finally { await sapClose(); }
             """, arguments: ["guid": guid, "body": data.base64EncodedString()])
-        if useCache {
+        if useCache, revision == cacheRevision {
             if signatureCache.count >= 128 { signatureCache.removeAll() }
             signatureCache[key] = result
         }
@@ -44,6 +46,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
         try Task.checkCancellation()
         let key = guid + ":" + dsid
         if useCache, let cached = kbCache[key] { return cached }
+        let revision = cacheRevision
         let result = try await execute(title: "准备下载", script: """
             reportStage(1);
             await loadSapSigner();
@@ -51,7 +54,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
             await new Promise(resolve => setTimeout(resolve, 50));
             return await sapGenerateKBSync(guid, dsid);
             """, arguments: ["guid": guid, "dsid": dsid])
-        if useCache { kbCache[key] = result }
+        if useCache, revision == cacheRevision { kbCache[key] = result }
         return result
     }
 
@@ -143,7 +146,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
         webView?.stopLoading(); webView?.navigationDelegate = nil
         webView = nil; isPresented = false; operationID = nil; terminalError = nil
     }
-    func clearCache() { signatureCache.removeAll(); kbCache.removeAll() }
+    func clearCache() { cacheRevision = UUID(); signatureCache.removeAll(); kbCache.removeAll() }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.webView === webView, operationID != nil, let index = message.body as? Int, (1...2).contains(index) else { return }
         stageIndex = index

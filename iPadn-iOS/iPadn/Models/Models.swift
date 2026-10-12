@@ -97,7 +97,7 @@ struct DownloadJob: Codable, Identifiable {
     var localFilename: String?
     var error: String?
     var createdAt = Date()
-    var progress: Double { expected > 0 ? min(1, Double(downloaded) / Double(expected)) : 0 }
+    var progress: Double { expected > 0 ? min(1, max(0, Double(downloaded) / Double(expected))) : 0 }
     var account: String? { asset?.account }
 }
 
@@ -114,6 +114,26 @@ struct ToolSettings: Codable, Equatable {
         VersionSource(name: "Timbrd", urlTemplate: "https://api.timbrd.com/apple/app-version/index.php?id={id}", containerKey: "", reverse: true),
         VersionSource(name: "Bilin", urlTemplate: "https://apis.bilin.eu.org/history/{id}", containerKey: "data", reverse: false)
     ]
+
+    init() { }
+    private enum CodingKeys: String, CodingKey {
+        case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
+        case useSignerCache, appearance, plistServer, versionSources
+    }
+    init(from decoder: Decoder) throws {
+        self.init()
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        store = try values.decodeIfPresent(StoreContext.self, forKey: .store) ?? store
+        maxConcurrentDownloads = min(6, max(1, try values.decodeIfPresent(Int.self, forKey: .maxConcurrentDownloads) ?? maxConcurrentDownloads))
+        maxQueuedDownloads = min(100, max(1, try values.decodeIfPresent(Int.self, forKey: .maxQueuedDownloads) ?? maxQueuedDownloads))
+        searchLimit = min(200, max(1, try values.decodeIfPresent(Int.self, forKey: .searchLimit) ?? searchLimit))
+        notifications = try values.decodeIfPresent(Bool.self, forKey: .notifications) ?? notifications
+        useSignerCache = try values.decodeIfPresent(Bool.self, forKey: .useSignerCache) ?? useSignerCache
+        appearance = try values.decodeIfPresent(String.self, forKey: .appearance) ?? appearance
+        if !["system", "light", "dark"].contains(appearance) { appearance = "system" }
+        plistServer = try values.decodeIfPresent(String.self, forKey: .plistServer) ?? plistServer
+        versionSources = try values.decodeIfPresent([VersionSource].self, forKey: .versionSources) ?? versionSources
+    }
 }
 
 struct VersionSource: Codable, Identifiable, Equatable {
@@ -133,13 +153,13 @@ enum SearchQuery: Equatable {
         guard !text.isEmpty else { throw ToolError.message("请输入应用名称、App ID 或 App Store 链接") }
         if let url = URL(string: text), url.host?.lowercased() == "apps.apple.com" {
             let parts = url.pathComponents
-            if let id = parts.first(where: { $0.hasPrefix("id") && $0.dropFirst(2).allSatisfy(\.isNumber) && $0.count > 2 }) {
+            if let id = parts.first(where: { $0.hasPrefix("id") && $0.dropFirst(2).allSatisfy({ $0.isASCII && $0.isNumber }) && $0.count > 2 }) {
                 return .appID(String(id.dropFirst(2)), versionID: nil)
             }
             throw ToolError.message("App Store 链接中没有有效 App ID")
         }
         let parts = text.components(separatedBy: CharacterSet(charactersIn: " ,，:/+\t\n")).filter { !$0.isEmpty }
-        if (1...2).contains(parts.count), parts.allSatisfy({ $0.allSatisfy(\.isNumber) }) {
+        if (1...2).contains(parts.count), parts.allSatisfy({ $0.allSatisfy({ $0.isASCII && $0.isNumber }) }) {
             return .appID(parts[0], versionID: parts.count == 2 ? parts[1] : nil)
         }
         return .keyword(text)
@@ -147,6 +167,16 @@ enum SearchQuery: Equatable {
 }
 
 enum LocalResources {
+    static var isPreview: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("--visual-preview")
+        #else
+        return false
+        #endif
+    }
+    static var defaults: UserDefaults {
+        isPreview ? UserDefaults(suiteName: "app.local.iPadn.visual-preview")! : .standard
+    }
     static let settings = "storage_downloadConfig"
     static let searchHistory = "storage_searchHistory"
     static let guid = "storage_appleStoreMac"
@@ -157,7 +187,9 @@ enum LocalResources {
     static let ownedFilename = "owned-apps.json"
 
     static var support: URL {
-        let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let base = isPreview ? FileManager.default.temporaryDirectory.appendingPathComponent("iPadn-Preview/Support") :
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let url = base
             .appendingPathComponent("iPadn", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         var excluded = url
@@ -166,7 +198,9 @@ enum LocalResources {
         return url
     }
     static var packages: URL {
-        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let base = isPreview ? FileManager.default.temporaryDirectory.appendingPathComponent("iPadn-Preview/Documents") :
+            FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let url = base
             .appendingPathComponent("Packages", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         var excluded = url
@@ -176,9 +210,23 @@ enum LocalResources {
     }
     static func resumeURL(_ id: UUID) -> URL { support.appendingPathComponent("\(id.uuidString).resume") }
     static func stagingURL(_ id: UUID) -> URL { support.appendingPathComponent("\(id.uuidString).download") }
+    static func packageURL(_ filename: String) -> URL? {
+        guard !filename.isEmpty, filename != ".", filename != "..",
+              !filename.contains("/"), !filename.contains("\\") else { return nil }
+        let root = packages.resolvingSymlinksInPath().standardizedFileURL
+        let file = root.appendingPathComponent(filename).resolvingSymlinksInPath().standardizedFileURL
+        guard file.deletingLastPathComponent() == root,
+              (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { return nil }
+        return file
+    }
     static func load<T: Decodable>(_ type: T.Type, filename: String) -> T? {
         guard let data = try? Data(contentsOf: support.appendingPathComponent(filename)) else { return nil }
         return try? JSONDecoder().decode(type, from: data)
+    }
+    static func loadChecked<T: Decodable>(_ type: T.Type, filename: String) throws -> T? {
+        let file = support.appendingPathComponent(filename)
+        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+        return try JSONDecoder().decode(type, from: Data(contentsOf: file))
     }
     static func save<T: Encodable>(_ value: T, filename: String) throws {
         let data = try JSONEncoder().encode(value)

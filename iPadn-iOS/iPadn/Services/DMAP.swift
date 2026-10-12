@@ -53,7 +53,10 @@ enum DMAP {
         return value
     }
     static func validate(_ data: Data) throws {
-        if let status = try firstInteger(data, name: "mstt"), status != 200 {
+        guard let status = try firstInteger(data, name: "mstt") else {
+            throw ToolError.message("购买记录接口缺少状态码，已保留本机记录")
+        }
+        if status != 200 {
             throw ToolError.message("购买记录接口返回错误：\(status)")
         }
     }

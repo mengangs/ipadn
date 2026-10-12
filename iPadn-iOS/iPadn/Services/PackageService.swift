@@ -73,6 +73,7 @@ enum PackageService {
     }
 
     private static func replace(_ path: String, data: Data, archive: Archive) throws {
+        guard isSafeArchivePath(path) else { throw ToolError.message("IPA 授权文件路径无效") }
         if let entry = archive[path] { try archive.remove(entry) }
         // Use the file API rather than depending on a version-specific Provider integer type.
         let scratch = LocalResources.support.appendingPathComponent("entry-\(UUID().uuidString)", isDirectory: true)
@@ -81,6 +82,12 @@ enum PackageService {
         defer { try? FileManager.default.removeItem(at: scratch) }
         try data.write(to: file, options: .atomic)
         try archive.addEntry(with: path, relativeTo: scratch, compressionMethod: .deflate)
+    }
+
+    static func isSafeArchivePath(_ path: String) -> Bool {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        return !path.contains("\\") && !path.contains("\0") && !parts.isEmpty &&
+            parts.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
     }
 
     static func safeName(_ name: String) -> String {

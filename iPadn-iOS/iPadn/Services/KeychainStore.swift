@@ -2,7 +2,9 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    private static var service: String { (Bundle.main.bundleIdentifier ?? "iPadn") + ".accounts" }
+    private static var service: String {
+        (Bundle.main.bundleIdentifier ?? "iPadn") + (LocalResources.isPreview ? ".preview.accounts" : ".accounts")
+    }
     private static func query() -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,

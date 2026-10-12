@@ -3,6 +3,8 @@ name: Build iPadn
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       run_tests:
@@ -92,13 +94,24 @@ jobs:
             -resultBundlePath build/TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \
             2>&1 | tee build/tests.log
+          xcrun xcresulttool get test-results summary --path build/TestResults.xcresult --format json > build/test-summary.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('build/test-summary.json').read_text())
+          assert result['passedTests'] > 0, 'No passing tests were executed'
+          assert result['failedTests'] == 0, 'Tests failed'
+          print('Executed tests:', result['passedTests'], 'passed;', result['skippedTests'], 'skipped')
+          PY
 
       - name: Capture running app screenshots
         timeout-minutes: 5
         if: always() && !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.run_tests)
         run: |
           if [ ! -d build/TestDerivedData/Build/Products/Debug-iphonesimulator/iPadn.app ]; then exit 0; fi
-          simulator_id="booted"
+          simulator_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); devices=[(runtime,device) for runtime,values in d["devices"].items() if ".iOS-" in runtime for device in values if device.get("isAvailable") and device["name"].startswith("iPhone")]; devices.sort(key=lambda x: (x[1]["state"] != "Booted", "iOS-26-0" not in x[0], x[1]["name"] != "iPhone 17 Pro", x[1]["name"])); assert devices,"No available iPhone simulator"; print(devices[0][1]["udid"])')"
+          xcrun simctl boot "$simulator_id" || true
+          xcrun simctl bootstatus "$simulator_id" -b
           xcrun simctl install "$simulator_id" build/TestDerivedData/Build/Products/Debug-iphonesimulator/iPadn.app
           mkdir -p build/screenshots/native
           xcrun simctl status_bar "$simulator_id" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
@@ -142,8 +155,9 @@ jobs:
           name: iPadn-build-diagnostics
           path: |
             iPadn-iOS/build/*.log
+            iPadn-iOS/build/test-summary.json
             iPadn-iOS/build/TestResults.xcresult
-            iPadn-iOS/verification.json
+            iPadn-iOS/build/verification.json
           if-no-files-found: warn
           retention-days: 14
 

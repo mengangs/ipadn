@@ -91,14 +91,16 @@ enum StoreService {
 actor VersionService {
     struct Cache: Codable { var savedAt: Date; var versions: [AppVersion] }
     private var cache = LocalResources.load([String: Cache].self, filename: LocalResources.versionsFilename) ?? [:]
+    private var cacheRevision = UUID()
 
     func thirdParty(_ appID: String, sources: [VersionSource], force: Bool = false) async throws -> [AppVersion] {
-        guard !appID.isEmpty, appID.allSatisfy(\.isNumber) else { throw ToolError.message("App ID 必须是数字") }
+        guard !appID.isEmpty, appID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message("App ID 必须是数字") }
         let enabled = sources.filter(\.enabled)
         guard !enabled.isEmpty else { throw ToolError.message("请在设置中启用至少一个版本来源") }
-        let sourceKey = enabled.map { "\($0.urlTemplate)|\($0.containerKey)|\($0.reverse)" }.joined(separator: ";")
+        let sourceKey = enabled.map { "\($0.name)|\($0.urlTemplate)|\($0.containerKey)|\($0.reverse)" }.joined(separator: ";")
         let key = appID + "|" + sourceKey
         if !force, let entry = cache[key], Date().timeIntervalSince(entry.savedAt) < 24 * 3600 { return entry.versions }
+        let revision = cacheRevision
         let result = await withTaskGroup(of: Result<[AppVersion], Error>.self, returning: Result<[AppVersion], Error>.self) { group in
             for source in enabled {
                 group.addTask {
@@ -118,8 +120,13 @@ actor VersionService {
         }
         let versions = try result.get()
         try Task.checkCancellation()
-        cache[key] = Cache(savedAt: Date(), versions: versions)
-        try LocalResources.save(cache, filename: LocalResources.versionsFilename)
+        if revision == cacheRevision {
+            cache = cache.filter { Date().timeIntervalSince($0.value.savedAt) < 24 * 3600 }
+            if cache.count >= 200 { cache.removeValue(forKey: cache.min { $0.value.savedAt < $1.value.savedAt }!.key) }
+            cache[key] = Cache(savedAt: Date(), versions: versions)
+            // A disposable cache write failure must not hide a valid server result.
+            try? LocalResources.save(cache, filename: LocalResources.versionsFilename)
+        }
         return versions
     }
 
@@ -135,14 +142,14 @@ actor VersionService {
         let ordered = source.reverse ? Array(records.reversed()) : records
         return ordered.compactMap { record in
             let id = plistString(record["external_identifier"])
-            guard !id.isEmpty, id.allSatisfy(\.isNumber), seen.insert(id).inserted else { return nil }
+            guard !id.isEmpty, id.allSatisfy({ $0.isASCII && $0.isNumber }), seen.insert(id).inserted else { return nil }
             let version = plistString(record["bundle_version"])
             return AppVersion(id: id, version: version.isEmpty ? "未知版本" : version, source: source.name)
         }
     }
 
     func clearCache() throws {
-        cache.removeAll()
-        try LocalResources.save(cache, filename: LocalResources.versionsFilename)
+        try LocalResources.save([String: Cache](), filename: LocalResources.versionsFilename)
+        cacheRevision = UUID(); cache.removeAll()
     }
 }

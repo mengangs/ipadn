@@ -26,12 +26,16 @@ final class LoopbackServer {
     private let queue = DispatchQueue(label: "iPadn.loopback")
     private let lock = NSLock()
     private var listener: NWListener?
+    private var starters: [CheckedContinuation<Void, Error>] = []
     private var registeredFiles: [String: URL] = [:]
     private var compatibilityFiles: [String: URL] = [:]
     private let port: UInt16?
     private let compatibilityMode: Bool
     private let token = UUID().uuidString
-    private(set) var baseURL: URL?
+    private var readyURL: URL?
+    var baseURL: URL? {
+        lock.lock(); defer { lock.unlock() }; return readyURL
+    }
     private let upstreams: Set<String> = [
         "https://s.mzstatic.com/sap/setupCert.plist",
         "https://fpinit.itunes.apple.com/v1/signSapSetup/legacy"
@@ -42,40 +46,53 @@ final class LoopbackServer {
     }
 
     func start() async throws {
-        if baseURL != nil { return }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             queue.async {
+                if self.baseURL != nil { continuation.resume(); return }
+                self.starters.append(continuation)
+                guard self.listener == nil else { return }
                 do {
                     let parameters = NWParameters.tcp
                     parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: self.port.flatMap(NWEndpoint.Port.init(rawValue:)) ?? .any)
                     let listener = try NWListener(using: parameters, on: .any)
                     self.listener = listener
-                    var completed = false
-                    listener.stateUpdateHandler = { state in
+                    listener.stateUpdateHandler = { [weak self, weak listener] state in
+                        guard let self, let listener, self.listener === listener else { return }
                         switch state {
                         case .ready:
-                            guard !completed, let port = listener.port else { return }
-                            completed = true
-                            self.baseURL = URL(string: "http://127.0.0.1:\(port.rawValue)/\(self.token)/")
-                            continuation.resume()
+                            guard let port = listener.port else { return }
+                            self.lock.lock()
+                            self.readyURL = URL(string: "http://127.0.0.1:\(port.rawValue)/\(self.token)/")
+                            self.lock.unlock()
+                            self.finishStart(.success(()))
                         case .failed(let error):
-                            if !completed { completed = true; continuation.resume(throwing: error) }
+                            self.lock.lock(); self.readyURL = nil; self.lock.unlock()
+                            self.listener = nil
+                            self.finishStart(.failure(error))
                             listener.cancel()
                         case .cancelled:
-                            if !completed { completed = true; continuation.resume(throwing: ToolError.message("本地资源服务已停止")) }
+                            self.lock.lock(); self.readyURL = nil; self.lock.unlock()
+                            self.listener = nil
+                            self.finishStart(.failure(ToolError.message("本地资源服务已停止")))
                         default: break
                         }
                     }
-                    listener.newConnectionHandler = { connection in
+                    listener.newConnectionHandler = { [weak self] connection in
+                        guard let self else { connection.cancel(); return }
                         connection.start(queue: self.queue)
                         self.read(connection, accumulated: Data())
                         self.queue.asyncAfter(deadline: .now() + 120) { connection.cancel() }
                     }
                     listener.start(queue: self.queue)
-                } catch { continuation.resume(throwing: error) }
+                } catch { self.listener = nil; self.finishStart(.failure(error)) }
             }
         }
     }
+    private func finishStart(_ result: Result<Void, Error>) {
+        let pending = starters; starters.removeAll()
+        for continuation in pending { continuation.resume(with: result) }
+    }
+    deinit { listener?.cancel() }
 
     func register(_ url: URL) throws -> URL {
         guard let baseURL = baseURL, url.isFileURL else { throw ToolError.message("本地文件服务未就绪") }
