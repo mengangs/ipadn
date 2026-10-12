@@ -79,7 +79,7 @@ enum StoreService {
         case .keyword(let text):
             let url = try endpoint("https://itunes.apple.com/search", items: [
                 URLQueryItem(name: "term", value: text), URLQueryItem(name: "country", value: store.country),
-                URLQueryItem(name: "entity", value: store.platform == .iOS ? "software" : "tvSoftware"),
+                URLQueryItem(name: "entity", value: store.platform.searchEntity),
                 URLQueryItem(name: "explicit", value: "no"), URLQueryItem(name: "limit", value: String(limit))
             ])
             let data = try await HTTPClient.shared.json(url) as? [String: Any]
@@ -87,7 +87,8 @@ enum StoreService {
         case .appID(let id, _):
             if store.platform == .tvOS { return try await platformApp(id, store: store).map { [$0] } ?? [] }
             let url = try endpoint("https://itunes.apple.com/lookup", items: [
-                URLQueryItem(name: "id", value: id), URLQueryItem(name: "country", value: store.country)
+                URLQueryItem(name: "id", value: id), URLQueryItem(name: "country", value: store.country),
+                URLQueryItem(name: "entity", value: store.platform.searchEntity)
             ])
             let data = try await HTTPClient.shared.json(url) as? [String: Any]
             let apps = (data?["results"] as? [[String: Any]] ?? []).map(mapLookup)
@@ -100,7 +101,7 @@ enum StoreService {
         let url = try endpoint("https://uclient-api.itunes.apple.com/WebObjects/MZStorePlatform.woa/wa/lookup", items: [
             URLQueryItem(name: "version", value: "2"), URLQueryItem(name: "id", value: id),
             URLQueryItem(name: "p", value: "mdm-lockup"), URLQueryItem(name: "caller", value: "MDM"),
-            URLQueryItem(name: "platform", value: store.platform.rawValue), URLQueryItem(name: "cc", value: store.country)
+            URLQueryItem(name: "platform", value: store.platform.catalogPlatform), URLQueryItem(name: "cc", value: store.country)
         ])
         let data = try await HTTPClient.shared.json(url) as? [String: Any]
         guard let results = data?["results"] as? [String: Any], let raw = results[id] as? [String: Any] else { return nil }
@@ -135,7 +136,7 @@ enum StoreService {
                 let url = try endpoint("https://itunes.apple.com/lookup", items: [
                     URLQueryItem(name: "id", value: missing.joined(separator: ",")),
                     URLQueryItem(name: "country", value: country),
-                    URLQueryItem(name: "entity", value: store.platform == .iOS ? "software" : "tvSoftware")
+                    URLQueryItem(name: "entity", value: store.platform.searchEntity)
                 ])
                 let response = try await HTTPClient.shared.json(url) as? [String: Any]
                 for raw in response?["results"] as? [[String: Any]] ?? [] {
