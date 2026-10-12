@@ -254,3 +254,12 @@ enum AppleLoginResponse {
         return ToolError.message(message.isEmpty ? "Apple 未返回登录信息，请检查账号后重试。" : message)
     }
 }
+
+#if DEBUG
+extension AppleService {
+    func prepareAccountPreview() {
+        accounts = [AppleAccount(id: "demo@example.com", name: "示例账号", password: "", cookie: "", dsid: "", passwordToken: "", storeFront: "", fullStoreFront: "")]
+        activeID = accounts.first?.id
+    }
+}
+#endif

@@ -27,25 +27,6 @@ struct BrandMark: View {
     }
 }
 
-struct PageIntro: View {
-    let eyebrow: String
-    let title: String
-    let subtitle: String
-    let symbol: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                if eyebrow == "iPadn" {
-                    HStack(spacing: 10) { BrandMark(size: 32); Text("iPadn").font(.headline.weight(.semibold)) }
-                } else { Label(eyebrow, systemImage: symbol).font(.caption.weight(.semibold)).foregroundStyle(.tint) }
-                Spacer()
-            }
-            Text(title).font(.system(.largeTitle, design: .rounded, weight: .bold)).fixedSize(horizontal: false, vertical: true)
-            Text(subtitle).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }.padding(.vertical, 12).accessibilityElement(children: .combine)
-    }
-}
-
 struct EmptyState: View {
     let title: String
     let message: String
@@ -53,16 +34,16 @@ struct EmptyState: View {
     var actionTitle: String? = nil
     var action: (() -> Void)? = nil
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: symbol).font(.system(size: 34, weight: .medium)).foregroundStyle(.tint)
-                .frame(width: 76, height: 76).background(Color.accentColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 24))
+        VStack(spacing: 12) {
+            Image(systemName: symbol).font(.system(size: 24, weight: .medium)).foregroundStyle(.tint)
+                .frame(width: 52, height: 52).background(Color.accentColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 24))
             Text(title).font(.title3.bold()).multilineTextAlignment(.center)
             Text(message).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             if let actionTitle, let action {
                 Button(actionTitle, action: action).buttonStyle(MonochromeButtonStyle()).controlSize(.large)
             }
-        }.padding(.vertical, 28).frame(maxWidth: .infinity).padding(.horizontal, 12)
+        }.padding(.vertical, 18).frame(maxWidth: .infinity).padding(.horizontal, 12)
     }
 }
 
@@ -137,6 +118,8 @@ struct ToolPageStyle: ViewModifier {
     func body(content: Content) -> some View {
         content.listStyle(.insetGrouped).scrollContentBackground(.hidden)
             .background(Color(.systemGroupedBackground)).scrollDismissesKeyboard(.interactively)
+            .contentMargins(.top, 8, for: .scrollContent)
+            .listSectionSpacing(16)
     }
 }
 extension View { func toolPage() -> some View { modifier(ToolPageStyle()) } }

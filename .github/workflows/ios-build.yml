@@ -114,6 +114,9 @@ jobs:
           capture downloads-large-text --downloads --large-text
           capture login --login
           capture app-detail --detail
+          capture accounts --accounts
+          capture purchased --purchased
+          capture archived-name --archive
 
       - name: Export interface screenshots
         if: always()

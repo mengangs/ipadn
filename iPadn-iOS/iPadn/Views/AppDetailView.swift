@@ -19,21 +19,25 @@ struct AppDetailView: View {
     private var filtered: [AppVersion] {
         versionSearch.isEmpty ? versions : versions.filter { $0.version.localizedCaseInsensitiveContains(versionSearch) || $0.id.contains(versionSearch) }
     }
+    @ViewBuilder private var appMetadata: some View {
+        if app.size > 0 { Text(app.size.byteLabel) }
+        if app.rating > 0 { Label(String(format: "%.1f", app.rating), systemImage: "star") }
+        if !app.minimumOS.isEmpty { Text("iOS \(app.minimumOS)+") }
+    }
     var body: some View {
         List {
             Section {
                 ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 18) { AppIcon(url: app.iconURL, size: 88); appHeading }
-                    VStack(alignment: .leading, spacing: 16) { AppIcon(url: app.iconURL, size: 80); appHeading }
-                }.padding(.vertical, 16)
-                HStack(alignment: .top, spacing: 12) {
-                    StatCell(value: app.size > 0 ? app.size.byteLabel : "—", title: "安装包大小")
-                    StatCell(value: app.rating > 0 ? String(format: "%.1f", app.rating) : "—", title: "商店评分")
-                    StatCell(value: app.minimumOS.isEmpty ? "—" : app.minimumOS, title: "最低系统")
-                }.padding(.vertical, 8)
+                    HStack(alignment: .top, spacing: 18) { AppIcon(url: app.iconURL, size: 64); appHeading }
+                    VStack(alignment: .leading, spacing: 16) { AppIcon(url: app.iconURL, size: 64); appHeading }
+                }.padding(.vertical, 6)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 14) { appMetadata }
+                    VStack(alignment: .leading, spacing: 6) { appMetadata }
+                }.font(.footnote).foregroundStyle(.secondary)
             }.listRowSeparator(.hidden)
             Section {
-                Toggle("Apple 完整列表", isOn: $official).font(.subheadline)
+                Toggle("从 Apple 获取版本", isOn: $official).font(.subheadline)
                     .disabled(apple.active == nil || store.settings.store.platform == .tvOS)
                 if versionsLoading { HStack { ProgressView(); Text("正在查找历史版本…").foregroundStyle(.secondary) } }
                 if let versionError { InlineIssue(message: versionError) { reloadID += 1 } }

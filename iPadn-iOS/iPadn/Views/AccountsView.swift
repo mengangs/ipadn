@@ -4,51 +4,50 @@ struct AccountsView: View {
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var apple: AppleService
     @State private var deleting: AppleAccount?
+    @State private var signingOut = false
     var body: some View {
         List {
+            if let error = apple.accountStorageError { Section { InlineIssue(message: error) } }
             Section {
-                PageIntro(eyebrow: apple.active == nil ? "尚未连接" : "账号已连接", title: apple.active == nil ? "连接你的应用世界" : "你好，\(apple.active?.name ?? "")", subtitle: apple.active?.id ?? "使用自己的 Apple 账号，同步已购应用与下载许可。", symbol: "person.crop.circle.badge.checkmark")
-                if let account = apple.active { AvatarEditor(account: account) }
-                NavigationLink { LoginView() } label: {
-                    Label(apple.accounts.isEmpty ? "连接 Apple 账号" : "添加其他账号", systemImage: "plus.circle.fill").frame(maxWidth: .infinity, minHeight: 40)
-                }.buttonStyle(MonochromeButtonStyle()).padding(.bottom, 8)
-            }
-            if let error = apple.accountStorageError { Section { StatusBanner(text: error, symbol: "exclamationmark.triangle") } }
-            if !apple.accounts.isEmpty {
-                Section("已保存账号") {
-                    ForEach(apple.accounts) { account in
-                        Button { apple.select(account.id); UX.feedback(); store.infoMessage = "已切换下载账号" } label: {
-                            HStack(spacing: 12) {
-                                AccountAvatar(account: account)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(account.name).font(.headline).foregroundStyle(.primary)
-                                    Text(account.id).font(.caption).foregroundStyle(.secondary)
-                                    Text(account.id == apple.activeID ? "当前下载账号" : "点按切换").font(.caption).foregroundStyle(account.id == apple.activeID ? Color.accentColor : Color.secondary)
-                                }
-                                Spacer()
-                                if account.id == apple.activeID { Image(systemName: "checkmark.circle.fill") }
-                            }.padding(.vertical, 4)
-                        }
-                        .swipeActions { Button("移除", role: .destructive) { deleting = account } }
-                    }
-                    if apple.active != nil { Button("退出当前账号") { apple.select(nil) } }
+                ForEach(apple.accounts) { account in
+                    Button {
+                        guard apple.activeID != account.id else { return }
+                        apple.select(account.id); UX.feedback()
+                    } label: {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(account.name.isEmpty ? account.id : account.name).font(.body.weight(.medium)).foregroundStyle(.primary)
+                                if !account.name.isEmpty { Text(account.id).font(.subheadline).foregroundStyle(.secondary) }
+                            }
+                            Spacer(minLength: 8)
+                            if account.id == apple.activeID {
+                                Image(systemName: "checkmark").font(.body.weight(.semibold)).accessibilityLabel("当前账号")
+                            }
+                        }.padding(.vertical, 5).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                    .accessibilityHint(account.id == apple.activeID ? "当前下载账号" : "切换到此账号")
+                    .swipeActions { Button("移除", role: .destructive) { deleting = account } }
                 }
+                NavigationLink { LoginView() } label: { Label("添加账号", systemImage: "plus") }
+            } header: { Text("Apple 账号") } footer: {
+                Text(apple.accounts.isEmpty ? "添加账号后可同步已购应用和下载。" : "勾选的是当前下载账号。点按切换，左滑移除。")
             }
-            Section {
-                NavigationLink { SettingsView() } label: { Label("设置与扩展", systemImage: "slider.horizontal.3") }
+            Section { NavigationLink { SettingsView() } label: { Label("设置", systemImage: "gearshape") } }
+            if apple.active != nil {
+                Section { Button("退出当前账号", role: .destructive) { signingOut = true } }
             }
-            Section {
-                StatusBanner(text: "登录凭据安全保存在本机钥匙串。移除账号不会删除已下载的安装包。")
-            }.listRowBackground(Color.clear)
         }
         .toolPage().navigationTitle("账号").navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("退出当前账号？", isPresented: $signingOut, titleVisibility: .visible) {
+            Button("退出账号", role: .destructive) { apple.select(nil) }
+        } message: { Text("账号仍会保存在本机，可随时切换回来。") }
         .confirmationDialog("移除 \(deleting?.id ?? "")？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button("移除账号", role: .destructive) {
                 guard let id = deleting?.id else { return }
                 do { try store.deleteAccount(id) } catch { store.errorMessage = error.localizedDescription }
                 deleting = nil
             }
-        }
+        } message: { Text("清除此账号的本机登录信息与已购缓存，保留已下载的文件。") }
     }
 }
 
@@ -67,16 +66,14 @@ struct LoginView: View {
     var body: some View {
         Form {
             Section {
-                PageIntro(eyebrow: verifying ? "第 2 步 · 双重认证" : "第 1 步 · 账号信息", title: verifying ? "最后一步，确认是你" : "连接 Apple 账号", subtitle: verifying ? "在受信任设备上允许登录，然后输入最新的 6 位验证码。" : "登录后即可同步已购应用，获取你拥有许可的安装包。", symbol: verifying ? "lock.shield" : "person.crop.circle")
-            }.listRowBackground(Color.clear)
-
-            Section("账号信息") {
                 TextField("邮箱或手机号", text: $email).textContentType(.username).keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never).autocorrectionDisabled().focused($focus, equals: .email)
                     .disabled(busy || verifying).submitLabel(.next).onSubmit { focus = .password }
                 SecureField("账号密码", text: $password).textContentType(.password)
                     .focused($focus, equals: .password).disabled(busy || verifying).submitLabel(.go)
                     .onSubmit { if !email.isEmpty && !password.isEmpty { submit() } }
+            } header: { Text("Apple 账号") } footer: {
+                Text(verifying ? "请在受信任设备上允许登录，再输入验证码。" : "登录用于同步已购记录与下载授权。")
             }
             if verifying {
                 Section {

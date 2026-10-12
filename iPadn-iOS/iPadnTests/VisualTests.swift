@@ -18,6 +18,10 @@ final class VisualTests: XCTestCase {
         try await capture("04-downloads-large-text", view: RootView(), store: store, textSize: .accessibility2)
         try await capture("05-login", view: NavigationStack { LoginView() }, store: store)
         try await capture("06-app-detail", view: NavigationStack { AppDetailView(app: a) }, store: store)
+        store.prepareAccountPreview(); store.tab = 3
+        try await capture("08-accounts", view: RootView(), store: store)
+        store.tab = 2
+        try await capture("09-purchased", view: RootView(), store: store)
         store.tab = 0
         try await capture("07-tablet-layout", view: RootView(), store: store, size: CGSize(width: 1024, height: 1366), regular: true)
     }

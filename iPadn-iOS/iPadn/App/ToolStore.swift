@@ -28,11 +28,13 @@ final class ToolStore: ObservableObject {
     @Published private(set) var lastSearchTerm = ""
     @Published private(set) var favorites = LocalResources.load([StoreApp].self, filename: "favorites.json") ?? []
     @Published private(set) var ownedRevision = UUID()
-    @Published private(set) var avatars: [String: Data] = [:]
     @Published private(set) var ownedError: String?
     @Published private(set) var results: [StoreApp] = []
     @Published private(set) var localResults: [StoreApp] = []
     private var appCatalog = LocalResources.load([String: [StoreApp]].self, filename: "app-catalog.json") ?? [:]
+    private var nameCatalog = (LocalResources.load([AppNameEntry].self, filename: AppNameCatalog.cacheFile) ?? []) + AppNameCatalog.bundled()
+    private var catalogRequested = false
+    private var ownedAutoAttempted = Set<String>()
     @Published private(set) var searching = false
     @Published private(set) var hasSearched = false
     @Published private(set) var searchHistory: [SearchHistoryItem] = []
@@ -58,14 +60,12 @@ final class ToolStore: ObservableObject {
         }
         if ["https://api.scripting.fun/ipa-plist", "https://xiaobai.app/install"].contains(settings.plistServer) { settings.plistServer = "" }
         downloads.configure(settings)
-        for account in apple.accounts {
-            avatars[account.id] = try? Data(contentsOf: AvatarStorage.url(account.id))
-        }
         apple.$activeID.sink { [weak self] id in
             guard let self = self else { return }
             self.ownedRevision = UUID()
             self.ownedError = nil
             self.owned = id.flatMap { self.ownedByAccount[$0] } ?? []
+            self.updateLocalResults()
         }.store(in: &subscriptions)
     }
 
@@ -79,10 +79,7 @@ final class ToolStore: ObservableObject {
         let limit = settings.searchLimit
         if input != lastSearchTerm { results = [] }
         localResults = []
-        if case .keyword(let term)? = try? SearchQuery.parse(input) {
-            let known = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app) + (appCatalog[context.platform.rawValue] ?? [])
-            localResults = AppSearchIndex.search(term, apps: known)
-        }
+        updateLocalResults(for: input)
         searching = true; hasSearched = true; searchError = nil; lastSearchTerm = input
         searchTask = Task {
             defer { if self.searchID == id { self.searching = false } }
@@ -113,6 +110,39 @@ final class ToolStore: ObservableObject {
             }
         }
     }
+    private func updateLocalResults(for input: String? = nil) {
+        guard case .keyword(let term)? = try? SearchQuery.parse(input ?? lastSearchTerm) else { return }
+        let known = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app) + (appCatalog[settings.store.platform.rawValue] ?? [])
+        let saved = AppSearchIndex.search(term, apps: known)
+        let directory = AppNameCatalog.search(term, platform: settings.store.platform, entries: nameCatalog)
+        let remoteIDs = Set(results.map(\.id))
+        localResults = AppSearchIndex.unique(saved + directory).filter { !remoteIDs.contains($0.id) }
+    }
+
+    func loadNameCatalog() async {
+        guard !catalogRequested else { return }
+        catalogRequested = true
+        #if DEBUG
+        if visualPreview { return }
+        #endif
+        do {
+            let entries = try await AppNameCatalog.updated()
+            try Task.checkCancellation()
+            nameCatalog = entries + AppNameCatalog.bundled()
+            try? LocalResources.save(entries, filename: AppNameCatalog.cacheFile)
+            updateLocalResults()
+        } catch { } // Bundled and cached names remain searchable without a connection.
+    }
+
+    func ensureOwnedLoaded() async {
+        #if DEBUG
+        if visualPreview { return }
+        #endif
+        guard let id = apple.activeID, ownedByAccount[id] == nil, !ownedLoading,
+              ownedAutoAttempted.insert(id).inserted else { return }
+        await refreshOwned()
+    }
+
     func cancelSearch() { searchTask?.cancel(); searchID = UUID(); searching = false; hasSearched = !results.isEmpty || !localResults.isEmpty; searchError = nil }
     func clearSearch() { cancelSearch(); searchText = ""; results = []; localResults = []; hasSearched = false; lastSearchTerm = "" }
     func isFavorite(_ app: StoreApp) -> Bool { favorites.contains { $0.id == app.id } }
@@ -190,21 +220,16 @@ final class ToolStore: ObservableObject {
                 return item
             }
             ownedByAccount[id] = owned
+            updateLocalResults()
             ownedRevision = UUID()
             try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
         } catch is CancellationError { }
         catch { if apple.activeID == id { ownedError = error.localizedDescription } }
     }
-    func avatarData(for id: String) -> Data? { avatars[id] }
-    func setAvatar(_ data: Data?, for id: String) throws {
-        guard apple.accounts.contains(where: { $0.id == id }) else { return }
-        let url = AvatarStorage.url(id)
-        if let data { try data.write(to: url, options: [.atomic, .completeFileProtection]) }
-        else if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
-        avatars[id] = data
-    }
-
     func loadOwnedArtwork() async {
+        #if DEBUG
+        if visualPreview { return }
+        #endif
         guard let account = apple.activeID else { return }
         let context = settings.store
         let revision = ownedRevision
@@ -226,8 +251,6 @@ final class ToolStore: ObservableObject {
 
     func deleteAccount(_ id: String) throws {
         try apple.remove(id)
-        avatars.removeValue(forKey: id)
-        try? FileManager.default.removeItem(at: AvatarStorage.url(id))
         ownedByAccount.removeValue(forKey: id)
         try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
     }
@@ -263,6 +286,14 @@ final class ToolStore: ObservableObject {
 
 #if DEBUG
 extension ToolStore {
+    func prepareAccountPreview() {
+        apple.prepareAccountPreview()
+        owned = [OwnedApp(id: "preview-app", bundleID: "example.pixel", name: "像素日记", version: "3.2", purchaseDate: Date(), iconURL: nil)]
+    }
+    func prepareArchivePreview() {
+        searchText = "Forward"; lastSearchTerm = searchText; hasSearched = true
+        updateLocalResults()
+    }
     func prepareVisualPreview() {
         visualPreview = true
         results = []; hasSearched = false; searchText = ""

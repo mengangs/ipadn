@@ -14,6 +14,23 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(AppSearchIndex.search("从未记录", apps: [removed]).isEmpty)
     }
 
+    func testDirectoryFindsRemovedAppOnFirstLaunchAndMatchesOldNames() throws {
+        let entries = AppNameCatalog.bundled()
+        XCTAssertEqual(AppNameCatalog.search("forward", platform: .iOS, entries: entries).map(\.id), ["6503940939"])
+        XCTAssertEqual(AppNameCatalog.search("新视界", platform: .iOS, entries: entries).map(\.id), ["6503940939"])
+        XCTAssertTrue(AppNameCatalog.search("Forward", platform: .tvOS, entries: entries).isEmpty)
+        XCTAssertTrue(AppNameCatalog.search("  ", platform: .iOS, entries: entries).isEmpty)
+        let corrupt = Data(#"[{"id":"https://invalid","name":"Invalid","aliases":[],"platform":"itunes","source":""}]"#.utf8)
+        XCTAssertThrowsError(try AppNameCatalog.decode(corrupt))
+    }
+
+    func testPlaceholderRecordDoesNotHideMatchingCachedName() {
+        let placeholder = StoreApp(id: "100", name: "100")
+        let metadata = StoreApp(id: "100", name: "Forward - 新视界")
+        XCTAssertEqual(AppSearchIndex.search("ＦＯＲＷＡＲＤ", apps: [placeholder, metadata]).map(\.id), ["100"])
+        XCTAssertEqual(AppSearchIndex.search("Forward新视界", apps: [placeholder, metadata]).map(\.id), ["100"])
+    }
+
     func testTransferRateUsesNewBytesAndExpiresWhenStalled() {
         var metric = TransferMetrics(bytes: 1_000_000, sampledAt: 100)
         metric.record(bytes: 1_500_000, at: 101)

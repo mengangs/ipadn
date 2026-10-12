@@ -24,29 +24,18 @@ struct DownloadsView: View {
         manager.jobs.filter { filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
     }
     private var totalSize: Int64 { manager.jobs.filter { $0.status == .completed }.reduce(0) { $0 + $1.app.size } }
+    @ViewBuilder private var summary: some View {
+        Text("进行中 \(manager.jobs.filter { DownloadFilter.active.includes($0.status) }.count)")
+        Text("已保存 \(manager.jobs.filter { $0.status == .completed }.count) · \(totalSize.byteLabel)")
+    }
     var body: some View {
         List(selection: $selection) {
             Section {
-                VStack(alignment: .leading, spacing: 16) {
-                if typeSize.isAccessibilitySize {
-                    VStack(spacing: 10) {
-                        LabeledContent("进行中", value: "\(manager.jobs.filter { DownloadFilter.active.includes($0.status) }.count)")
-                        LabeledContent("已保存", value: "\(manager.jobs.filter { $0.status == .completed }.count)")
-                        LabeledContent("本地文件", value: totalSize.byteLabel)
-                    }.font(.body).padding(.vertical, 8)
-                } else {
-                    HStack(alignment: .top, spacing: 16) {
-                        StatCell(value: "\(manager.jobs.filter { DownloadFilter.active.includes($0.status) }.count)", title: "进行中")
-                        StatCell(value: "\(manager.jobs.filter { $0.status == .completed }.count)", title: "已保存")
-                        StatCell(value: totalSize.byteLabel, title: "本地文件")
-                    }.padding(.vertical, 12)
-                }
-                (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))) {
-                    Button { importing = true } label: { Label("导入 IPA", systemImage: "plus.rectangle.on.folder").frame(maxWidth: .infinity, minHeight: 36) }
-                        .buttonStyle(MonochromeButtonStyle())
-                    Button { addLink = true } label: { Label("链接下载", systemImage: "link").frame(maxWidth: .infinity, minHeight: 36) }
-                        .buttonStyle(.bordered)
-                }.font(.subheadline.weight(.semibold)).disabled(actionBusy)
+                VStack(alignment: .leading, spacing: 10) {
+                ViewThatFits(in: .horizontal) {
+                    HStack { summary; Spacer() }
+                    VStack(alignment: .leading, spacing: 4) { summary }
+                }.font(.footnote).foregroundStyle(.secondary)
                 if !manager.jobs.isEmpty { SearchInput(text: $term, placeholder: "搜索名称、版本或 Bundle ID") }
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -66,7 +55,7 @@ struct DownloadsView: View {
             if let error = manager.storageError { Section { InlineIssue(message: error) } }
             if visible.isEmpty {
                 Section {
-                    EmptyState(title: manager.jobs.isEmpty ? "把安装包整理在这里" : "这里暂时没有任务", message: manager.jobs.isEmpty ? "从文件导入 IPA，或发现应用后加入下载。" : "试试其他状态，或清除搜索条件。", symbol: manager.jobs.isEmpty ? "tray.and.arrow.down" : "line.3.horizontal.decrease.circle", actionTitle: manager.jobs.isEmpty ? "去发现应用" : "显示全部", action: {
+                    EmptyState(title: manager.jobs.isEmpty ? "暂无下载任务" : "没有匹配任务", message: manager.jobs.isEmpty ? "搜索应用后下载，或通过右上角导入 IPA。" : "试试其他状态，或清除搜索条件。", symbol: manager.jobs.isEmpty ? "tray.and.arrow.down" : "line.3.horizontal.decrease.circle", actionTitle: manager.jobs.isEmpty ? "搜索应用" : "显示全部", action: {
                         if manager.jobs.isEmpty { store.tab = 0 } else { term = ""; filter = .all }
                     })
                 }
@@ -106,11 +95,14 @@ struct DownloadsView: View {
             ToolbarItem(placement: .topBarLeading) { EditButton().disabled(manager.jobs.isEmpty) }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Button("导入 IPA", systemImage: "square.and.arrow.down") { importing = true }.disabled(actionBusy)
+                    Button("链接下载", systemImage: "link") { addLink = true }.disabled(actionBusy)
+                    Divider()
                     Button("暂停全部", systemImage: "pause.circle") { manager.pauseAll(); store.infoMessage = "已暂停可暂停的任务" }
                         .disabled(!manager.jobs.contains { [.running, .queued].contains($0.status) })
                     Button("继续全部", systemImage: "play.circle") { manager.resumeAll() }
                         .disabled(!manager.jobs.contains { $0.status == .paused })
-                } label: { Image(systemName: "ellipsis.circle").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel("批量下载操作")
+                } label: { Image(systemName: "plus").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel("导入、链接下载与批量操作")
             }
         }
         .safeAreaInset(edge: .bottom) {

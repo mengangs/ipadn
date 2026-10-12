@@ -13,6 +13,9 @@ enum AppContainer {
             store.prepareVisualPreview()
             store.settings.appearance = ProcessInfo.processInfo.arguments.contains("--dark") ? "dark" : "light"
             if ProcessInfo.processInfo.arguments.contains("--downloads") { store.tab = 1 }
+            if ProcessInfo.processInfo.arguments.contains("--accounts") { store.prepareAccountPreview(); store.tab = 3 }
+            if ProcessInfo.processInfo.arguments.contains("--purchased") { store.prepareAccountPreview(); store.tab = 2 }
+            if ProcessInfo.processInfo.arguments.contains("--archive") { store.prepareArchivePreview() }
             return store
         }
         #endif

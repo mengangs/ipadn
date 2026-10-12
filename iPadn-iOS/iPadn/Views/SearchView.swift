@@ -1,5 +1,4 @@
 import SwiftUI
-import Charts
 
 struct SearchView: View {
     @EnvironmentObject private var store: ToolStore
@@ -9,9 +8,6 @@ struct SearchView: View {
     var body: some View {
         List {
             Section {
-                if !store.hasSearched && !store.searching {
-                    PageIntro(eyebrow: "iPadn", title: "找到喜欢的应用\n留住需要的版本", subtitle: "搜索、收藏、下载，一处管理。", symbol: "square.stack.3d.up")
-                }
                 SearchInput(text: $store.searchText, placeholder: "应用名称、App ID 或链接", submit: { store.search() }, clear: { store.clearSearch() })
                 ViewThatFits(in: .horizontal) {
                     HStack { regionPicker; Spacer(minLength: 8); platformPicker }
@@ -21,7 +17,7 @@ struct SearchView: View {
             if store.searching {
                 Section {
                     HStack { ProgressView(); Text("正在查找应用").font(.subheadline); Spacer(); Button("取消") { store.cancelSearch() }.frame(minHeight: 44) }
-                    if store.results.isEmpty { ForEach(0..<3, id: \.self) { _ in AppSkeleton() } }
+                    if store.results.isEmpty && store.localResults.isEmpty { AppSkeleton() }
                 }
             }
             if let error = store.searchError {
@@ -33,12 +29,12 @@ struct SearchView: View {
                         NavigationLink { AppDetailView(app: app) } label: {
                             VStack(alignment: .leading, spacing: 6) {
                                 AppRow(app: app)
-                                Label("已保存的应用记录", systemImage: "archivebox").font(.caption).foregroundStyle(.secondary)
+                                Label("应用记录", systemImage: "archivebox").font(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }
-                } header: { Text("本地与已购 · \(store.localResults.count)") }
-                footer: { Text("包含已购、收藏、下载及查询过的应用。记录保留不代表当前仍可下载，下载以 Apple 授权结果为准。") }
+                } header: { Text("已购与目录 · \(store.localResults.count)") }
+                footer: { Text("包含已购、本机记录与 iPadn 名称目录。目录覆盖有限，下载以 Apple 授权结果为准。") }
             }
             if !store.results.isEmpty {
                 Section {
@@ -52,7 +48,7 @@ struct SearchView: View {
             }
             if !store.hasSearched && !store.searching {
                 if !store.favorites.isEmpty {
-                    Section("我的收藏 · \(store.favorites.count)") {
+                    Section("收藏 · \(store.favorites.count)") {
                         ForEach(store.favorites) { app in
                             NavigationLink { AppDetailView(app: app) } label: { AppRow(app: app) }
                                 .swipeActions { Button("取消收藏", systemImage: "star.slash") { store.toggleFavorite(app) }.tint(.gray) }
@@ -70,13 +66,6 @@ struct SearchView: View {
                                 }.frame(minHeight: 38).contentShape(Rectangle())
                             }.swipeActions { Button("删除", role: .destructive) { store.removeHistory(item.term) } }
                         }
-                        if store.searchHistory.count > 1 {
-                            DisclosureGroup("搜索统计") {
-                                Chart(Array(store.searchHistory.sorted { $0.count > $1.count }.prefix(5))) { item in
-                                    BarMark(x: .value("次数", item.count), y: .value("关键词", String(item.term.prefix(10)))).foregroundStyle(Color.accentColor.gradient)
-                                }.frame(height: 140).padding(.vertical, 12).accessibilityLabel("搜索历史频率")
-                            }.font(.subheadline)
-                        }
                     } header: { HStack { Text("最近搜索"); Spacer(); Button("清空") { confirmClear = true }.textCase(nil) } }
                 }
                 Section {
@@ -85,7 +74,7 @@ struct SearchView: View {
                 }.listRowBackground(Color.clear)
             }
         }
-        .toolPage().navigationTitle("发现").navigationBarTitleDisplayMode(.inline)
+        .toolPage().navigationTitle("搜索").navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -102,6 +91,8 @@ struct SearchView: View {
         .confirmationDialog("清空搜索历史？", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("清空历史", role: .destructive) { store.clearHistory() }
         }
+        .task { await store.loadNameCatalog() }
+        .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
         .onChange(of: store.settings.store) { _, _ in if store.hasSearched { store.search() } }
     }
     private var regionPicker: some View {

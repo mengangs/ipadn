@@ -1,6 +1,6 @@
 # 构建 iPadn
 
-项目使用 SwiftUI，最低 iOS 17，面向 iPhone 和 iPad。Xcode 工程为 `iPadn.xcodeproj`，共享 scheme 为 `iPadn`。当前版本 1.2，build 5。
+项目使用 SwiftUI，最低 iOS 17，面向 iPhone 和 iPad。Xcode 工程为 `iPadn.xcodeproj`，共享 scheme 为 `iPadn`。当前版本 1.2，build 6。
 
 ## 本地构建
 
@@ -31,3 +31,7 @@ GitHub Actions 执行设备编译、模拟器测试和界面截图，产物分�
 代理安装清单接受 name、bundleId、displayVersion、fileName；整个 query 再编码一次。文件请求通过用户配置的代理规则转发到 `http://127.0.0.1:8000/<filename>.ipa`。应用仅提供选定文件的本机服务。
 
 Release 不包含截图用的虚构数据入口。原生网络、验证桥接、队列与文件处理均在当前工程内维护；组件归属见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 名称目录
+
+`iPadn/Resources/app-name-directory.json` 由本项目维护，字段为 `id`、`name`、`aliases`、`platform`（`itunes` / `atv9`）和可核对的 `source`。新增记录应确认名称与 Apple App ID 的对应关系，不加入下载直链或账号资料。目录只解析名称，不授予下载许可。当前目录规模有限，不宣称覆盖全部下架应用。

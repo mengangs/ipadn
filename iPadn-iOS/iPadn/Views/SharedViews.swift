@@ -70,7 +70,7 @@ struct RootView: View {
     @EnvironmentObject private var downloads: DownloadManager
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var signerDetails = false
-    private let destinations = [("发现", "magnifyingglass"), ("下载", "arrow.down.circle"), ("已购", "clock.arrow.circlepath"), ("账号", "person.crop.circle")]
+    private let destinations = [("搜索", "magnifyingglass"), ("下载", "arrow.down.circle"), ("已购", "clock.arrow.circlepath"), ("账号", "person.crop.circle")]
     var body: some View {
         Group {
             if sizeClass == .regular {
@@ -91,7 +91,7 @@ struct RootView: View {
                 }
             } else {
                 TabView(selection: $store.tab) {
-                    NavigationStack { SearchView() }.tabItem { Label("发现", systemImage: "magnifyingglass") }.tag(0)
+                    NavigationStack { SearchView() }.tabItem { Label("搜索", systemImage: "magnifyingglass") }.tag(0)
                     NavigationStack { DownloadsView() }.tabItem { Label("下载", systemImage: "arrow.down.circle") }
                         .badge(downloads.jobs.filter { DownloadFilter.active.includes($0.status) }.count).tag(1)
                     NavigationStack { PurchasedView() }.tabItem { Label("已购", systemImage: "clock.arrow.circlepath") }.tag(2)

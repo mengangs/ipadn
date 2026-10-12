@@ -8,11 +8,18 @@ enum AppSearchIndex {
         }
     }
 
+    static func normalized(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(String.init).joined()
+    }
+
     static func search(_ input: String, apps: [StoreApp]) -> [StoreApp] {
         let term = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else { return [] }
-        return unique(apps).filter {
-            $0.name.localizedCaseInsensitiveContains(term) || $0.bundleID.localizedCaseInsensitiveContains(term) || $0.id == term
-        }
+        let needle = normalized(term)
+        guard !needle.isEmpty else { return [] }
+        return unique(apps.filter {
+            normalized($0.name).contains(needle) || normalized($0.bundleID).contains(needle) || $0.id == term
+        })
     }
 }

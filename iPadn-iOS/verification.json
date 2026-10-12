@@ -1,7 +1,7 @@
 {
   "passed": true,
   "app_swift_files": 25,
-  "project_objects": 93,
+  "project_objects": 95,
   "runtime_sha256": {
     "index.html": "2c8aa13604ee77ef315820239deadd9a6ee70668a39e334e4f6689cf38f7067f",
     "sap-signer.js": "b1eb48c7dce6a8b9fb8e5384600564e5c695f3ffc5369debd9bcb4d7f42d00a5",
