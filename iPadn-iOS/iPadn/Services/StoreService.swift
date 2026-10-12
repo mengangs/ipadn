@@ -86,6 +86,12 @@ enum StoreService {
                 let data = try await HTTPClient.shared.json(url) as? [String: Any]
                 return data?["results"] as? [[String: Any]] ?? []
             }
+            if store.platform == .macOS {
+                // macSoftware is the native Mac App Store catalog. Exclude
+                // unrelated mobile-only results before showing Mac installers.
+                return try await searchEntities(store.platform.searchEntity)
+                    .filter(Self.supportsNativeMac).map(mapLookup)
+            }
             guard store.platform == .tvOS else {
                 return try await searchEntities(store.platform.searchEntity).map(mapLookup)
             }
@@ -143,6 +149,14 @@ enum StoreService {
             .queryItems, let value = items.first(where: { $0.name == "appExtVrsId" })?.value,
             let number = UInt64(value), number > 0 else { return nil }
         return value
+    }
+
+    static func supportsNativeMac(_ raw: [String: Any]) -> Bool {
+        if plistString(raw["kind"]).lowercased() == "mac-software" { return true }
+        let platforms = raw["platforms"] as? [String] ?? []
+        if platforms.contains(where: { ["macos", "mac"].contains($0.lowercased()) }) { return true }
+        let devices = raw["supportedDevices"] as? [String] ?? []
+        return devices.contains(where: { $0.lowercased().hasPrefix("mac") })
     }
 
     static func supportsAppleTV(_ raw: [String: Any]) -> Bool {
