@@ -6,9 +6,10 @@ final class InteractionTests: XCTestCase {
         app.launchArguments = ["--visual-preview", "--detail"]
         app.launch()
         let copyID = app.buttons["app.copy-id"]
-        let version = app.staticTexts["v3.2.1"]
+        let version = app.descendants(matching: .any)["app.version"].firstMatch
         XCTAssertTrue(copyID.waitForExistence(timeout: 10))
-        XCTAssertTrue(version.exists)
+        XCTAssertTrue(version.waitForExistence(timeout: 5))
+        XCTAssertEqual(version.label, "v3.2.1")
         XCTAssertGreaterThan(copyID.frame.minX, version.frame.maxX)
         XCTAssertEqual(copyID.frame.midY, version.frame.midY, accuracy: 12)
         copyID.tap()

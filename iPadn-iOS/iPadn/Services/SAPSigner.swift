@@ -172,7 +172,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
         continuation?.resume(throwing: CancellationError())
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "progress")
         webView?.stopLoading(); webView?.navigationDelegate = nil
-        if reuse && UIApplication.shared.applicationState == .active {
+        if reuse && UIApplication.shared.applicationState != .background {
             reusableWebView = webView; reusableBase = server.baseURL
             idleTimeout = Task { @MainActor [weak self] in
                 do { try await Task.sleep(nanoseconds: 90_000_000_000) } catch { return }

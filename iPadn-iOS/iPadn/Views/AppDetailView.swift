@@ -241,6 +241,7 @@ struct AppDetailView: View {
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(.tint)
                     .layoutPriority(1)
+                    .accessibilityIdentifier("app.version")
                 Spacer(minLength: 4)
                 Button { copy(app.id) } label: {
                     HStack(spacing: 5) {
