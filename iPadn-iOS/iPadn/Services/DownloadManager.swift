@@ -13,6 +13,8 @@ final class DownloadManager: NSObject, ObservableObject {
     @Published private(set) var saveWarning: String?
     /// Stage text for Mac App Store packages being processed on device.
     @Published private(set) var processingDetail: [UUID: String] = [:]
+    /// Mac tasks the user asked to cancel and that have not stopped yet.
+    @Published private(set) var cancelling: Set<UUID> = []
     var backgroundCompletion: (() -> Void)?
     private var tasks: [UUID: URLSessionDownloadTask] = [:]
     private var restoring = true
@@ -281,7 +283,7 @@ final class DownloadManager: NSObject, ObservableObject {
     func cancelProcessing(_ id: UUID) {
         guard let job = jobs.first(where: { $0.id == id }), job.status == .processing,
               job.protectedMacPackage == true else { return }
-        processingDetail[id] = "正在取消…"
+        guard cancelling.insert(id).inserted else { return } // repeated taps do nothing
         MacPackageDecryptor.cancel(job: id)
     }
 
@@ -468,6 +470,7 @@ final class DownloadManager: NSObject, ObservableObject {
                 self.persist(); self.notify(title: "安装包已准备好", body: result.1.name + " " + result.1.version)
                 Task { await self.loadPackageIcons() }
             } catch is CancellationError {
+                self.cancelling.remove(id)
                 // Cancelled by the user: keep the download, continue later.
                 guard let index = self.jobs.firstIndex(where: { $0.id == id }) else { return }
                 self.jobs[index].status = .paused
@@ -475,6 +478,7 @@ final class DownloadManager: NSObject, ObservableObject {
                 self.persist(); self.schedule()
                 if self.removalAfterCancel.remove(id) != nil { try? self.remove(id) }
             } catch {
+                self.cancelling.remove(id)
                 // Retrying must download again rather than reprocess the same bad
                 // file (imported files have nothing to download and keep theirs).
                 // A protected Mac package keeps its download: its processing

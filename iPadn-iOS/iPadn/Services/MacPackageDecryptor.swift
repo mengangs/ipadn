@@ -77,6 +77,8 @@ enum MacPackageDecryptor {
     private static var cancelled = Set<UUID>()
     // Resolves the running job's caller early when it is cancelled.
     private static var finishCurrent: ((Error?) -> Void)?
+    // Callers still waiting for their turn, so a cancel releases them at once.
+    private static var waiting: [UUID: Once] = [:]
 
     private final class Once: @unchecked Sendable {
         private let lock = NSLock()
@@ -99,8 +101,10 @@ enum MacPackageDecryptor {
     static func process(job: UUID, hardwareID: String, dpInfo: Data, from source: URL, to destination: URL) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let once = Once(continuation)
+            lock.lock(); waiting[job] = once; lock.unlock()
             queue.async {
                 lock.lock()
+                waiting[job] = nil
                 let skip = cancelled.remove(job) != nil
                 if !skip { current = job; finishCurrent = { once.finish($0) } }
                 lock.unlock()
@@ -123,12 +127,14 @@ enum MacPackageDecryptor {
         lock.lock()
         let running = current == job
         let finish = running ? finishCurrent : nil
+        let queued = running ? nil : waiting.removeValue(forKey: job)
         if !running { cancelled.insert(job) }
         lock.unlock()
         if running {
             cancelFunction?()
             finish?(CancellationError())
         }
+        queued?.finish(CancellationError())
     }
 }
 
