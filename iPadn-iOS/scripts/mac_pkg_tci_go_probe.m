@@ -8,6 +8,7 @@ extern int32_t iPadnMacTCIGoGuestProbe(char *diagnostic, int32_t capacity);
 extern int32_t iPadnMacTCIGuestMemoryProbe(char *diagnostic, int32_t capacity);
 extern int32_t iPadnMacTCIMachOLoadProbe(char *diagnostic, int32_t capacity);
 extern int32_t iPadnMacTCICrossImageProbe(char *diagnostic, int32_t capacity);
+extern int32_t iPadnMacTCIServiceShimProbe(char *diagnostic, int32_t capacity);
 
 static NSString *const kGoTCIPending = @"macpkg-go-tci-pending";
 static NSString *const kGoTCIResult = @"macpkg-go-tci-result";
@@ -17,6 +18,8 @@ static NSString *const kGoTCIMachOPending = @"macpkg-go-tci-macho-pending";
 static NSString *const kGoTCIMachOResult = @"macpkg-go-tci-macho-result";
 static NSString *const kGoTCICrossPending = @"macpkg-go-tci-cross-pending";
 static NSString *const kGoTCICrossResult = @"macpkg-go-tci-cross-result";
+static NSString *const kGoTCIServicePending = @"macpkg-go-tci-service-pending";
+static NSString *const kGoTCIServiceResult = @"macpkg-go-tci-service-result";
 
 static double residentMB(void) {
     mach_task_basic_info_data_t info = {0};
@@ -31,6 +34,7 @@ static double residentMB(void) {
 @property(nonatomic, strong) UIButton *memoryTest;
 @property(nonatomic, strong) UIButton *machoTest;
 @property(nonatomic, strong) UIButton *crossTest;
+@property(nonatomic, strong) UIButton *serviceTest;
 @end
 @implementation MacGoTCITestViewController
 - (void)viewDidLoad {
@@ -42,7 +46,7 @@ static double residentMB(void) {
     header.numberOfLines = 0;
 
     UILabel *details = [[UILabel alloc] init];
-    details.text = @"v0.9 · 已通过的 Go 回调、104 MiB 内存和单个 Mach-O 装载测试保留。新测试使用 ipatool 的 Go 加载器，把两份原创 x86-64 动态库的导出/导入符号绑定在一起，并通过无 JIT TCI 验证跨库函数调用。不含 Apple 私有程序或安装包。";
+    details.text = @"v1.0 · v0.9 跨动态库调用已通过真机测试。新增无 JIT Go 模拟系统服务测试：原创动态库调用导入的服务入口，宿主 Go Hook 验证 x86 寄存器参数、内存请求及返回值。完全不含 Apple 私有代码、Apple 账号或安装包。";
     details.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     details.textColor = UIColor.secondaryLabelColor;
     details.numberOfLines = 0;
@@ -74,6 +78,13 @@ static double residentMB(void) {
     [self.crossTest addTarget:self action:@selector(confirmCrossImageProbe:) forControlEvents:UIControlEventTouchUpInside];
     self.crossTest.accessibilityIdentifier = @"go-tci-probe.cross-image";
 
+    self.serviceTest = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.serviceTest setTitle:@"验证跨动态库 Go 模拟系统服务（可选）" forState:UIControlStateNormal];
+    self.serviceTest.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    self.serviceTest.titleLabel.numberOfLines = 0;
+    [self.serviceTest addTarget:self action:@selector(confirmServiceProbe:) forControlEvents:UIControlEventTouchUpInside];
+    self.serviceTest.accessibilityIdentifier = @"go-tci-probe.service-shim";
+
     self.status = [[UILabel alloc] init];
     self.status.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightRegular];
     self.status.numberOfLines = 0;
@@ -84,31 +95,95 @@ static double residentMB(void) {
     BOOL memoryPending = [defaults boolForKey:kGoTCIMemoryPending];
     BOOL machoPending = [defaults boolForKey:kGoTCIMachOPending];
     BOOL crossPending = [defaults boolForKey:kGoTCICrossPending];
-    self.status.text = crossPending
+    BOOL servicePending = [defaults boolForKey:kGoTCIServicePending];
+    self.status.text = servicePending
+        ? @"上一次 Go 模拟系统服务测试没有正常结束，请勿反复运行。"
+        : crossPending
         ? @"上一次跨库绑定测试没有正常返回，请勿重复运行。"
         : machoPending
         ? @"上一次 Mach-O 装载测试没有正常返回，请不要反复尝试。"
         : memoryPending
         ? @"上一次 104 MiB 内存测试未正常返回。请不要重复内存压力测试。"
         : pending ? @"上一次 Go ↔ TCI 测试没有正常返回，请提供 iOS 崩溃日志。"
-        : ([defaults stringForKey:kGoTCICrossResult] ?: [defaults stringForKey:kGoTCIMachOResult] ?: [defaults stringForKey:kGoTCIMemoryResult] ?: [defaults stringForKey:kGoTCIResult] ?: @"尚未运行。");
+        : ([defaults stringForKey:kGoTCIServiceResult] ?: [defaults stringForKey:kGoTCICrossResult] ?: [defaults stringForKey:kGoTCIMachOResult] ?: [defaults stringForKey:kGoTCIMemoryResult] ?: [defaults stringForKey:kGoTCIResult] ?: @"尚未运行。");
     if (pending) self.test.enabled = NO;
     if (memoryPending) self.memoryTest.enabled = NO;
     if (machoPending) self.machoTest.enabled = NO;
     if (crossPending) self.crossTest.enabled = NO;
+    if (servicePending) self.serviceTest.enabled = NO;
 
     UIStackView *stack = [[UIStackView alloc]
-        initWithArrangedSubviews:@[header, details, self.test, self.memoryTest, self.machoTest, self.crossTest, self.status]];
+        initWithArrangedSubviews:@[header, details, self.test, self.memoryTest, self.machoTest, self.crossTest, self.serviceTest, self.status]];
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     stack.axis = UILayoutConstraintAxisVertical;
     stack.spacing = 26;
-    [self.view addSubview:stack];
+    // Additional tests are intentionally scrollable instead of hiding results
+    // below the Home indicator on smaller iPhone displays.
+    UIScrollView *scroll = [[UIScrollView alloc] init];
+    scroll.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:scroll];
+    [scroll addSubview:stack];
     UILayoutGuide *guide = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
-        [stack.topAnchor constraintEqualToAnchor:guide.topAnchor constant:34],
-        [stack.leadingAnchor constraintEqualToAnchor:guide.leadingAnchor constant:24],
-        [stack.trailingAnchor constraintEqualToAnchor:guide.trailingAnchor constant:-24]
+        [scroll.topAnchor constraintEqualToAnchor:guide.topAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:guide.bottomAnchor],
+        [scroll.leadingAnchor constraintEqualToAnchor:guide.leadingAnchor],
+        [scroll.trailingAnchor constraintEqualToAnchor:guide.trailingAnchor],
+        [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:34],
+        [stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-34],
+        [stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:24],
+        [stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-24],
+        [stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-48]
     ]];
+}
+- (void)confirmServiceProbe:(id)sender {
+    UIAlertController *alert = [UIAlertController
+        alertControllerWithTitle:@"Go 模拟系统服务测试"
+        message:@"原创 x86-64 动态库调用另一个动态库的模拟服务入口，由 Go Hook 检查参数并返回数据。这是独立的实验性测试，不会调用 Apple StoreAgent 或访问你的账号。可能异常退出，确认运行吗？"
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __weak typeof(self) weakSelf = self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"开始测试" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [weakSelf runServiceProbe];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+- (void)runServiceProbe {
+    self.serviceTest.enabled = NO;
+    self.crossTest.enabled = NO;
+    self.machoTest.enabled = NO;
+    self.memoryTest.enabled = NO;
+    self.test.enabled = NO;
+    self.status.text = @"正在验证跨动态库服务导入、Go Hook、寄存器参数和模拟内存读写…";
+    NSUserDefaults *prefs = [NSUserDefaults standardUserDefaults];
+    [prefs setBool:YES forKey:kGoTCIServicePending];
+    [prefs synchronize];
+    double before = residentMB();
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        char diagnostic[512] = {0};
+        int32_t code = iPadnMacTCIServiceShimProbe(diagnostic, (int32_t)sizeof(diagnostic));
+        NSString *message = [NSString stringWithUTF8String:diagnostic] ?: @"诊断信息编码错误";
+        double after = residentMB();
+        NSString *result = [NSString stringWithFormat:
+            @"Go 模拟系统服务：%@（返回码 %d）\n%@\n内存前 %.1f MB；后 %.1f MB\n未运行 Apple StoreAgent 或处理 PKG。",
+            code == 0 ? @"成功" : @"失败", code, message, before, after];
+        NSUserDefaults *store = [NSUserDefaults standardUserDefaults];
+        [store setObject:result forKey:kGoTCIServiceResult];
+        [store setBool:NO forKey:kGoTCIServicePending];
+        [store synchronize];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MacGoTCITestViewController *controller = weakSelf;
+            if (!controller) return;
+            controller.status.text = result;
+            controller.serviceTest.enabled = YES;
+            controller.crossTest.enabled = YES;
+            controller.serviceTest.enabled = YES;
+            controller.machoTest.enabled = YES;
+            controller.memoryTest.enabled = YES;
+            controller.test.enabled = YES;
+        });
+    });
 }
 - (void)confirmCrossImageProbe:(id)sender {
     UIAlertController *alert = [UIAlertController
@@ -123,6 +198,7 @@ static double residentMB(void) {
     [self presentViewController:alert animated:YES completion:nil];
 }
 - (void)runCrossImageProbe {
+    self.serviceTest.enabled = NO;
     self.crossTest.enabled = NO;
     self.machoTest.enabled = NO;
     self.memoryTest.enabled = NO;
@@ -170,6 +246,7 @@ static double residentMB(void) {
     [self presentViewController:alert animated:YES completion:nil];
 }
 - (void)runMachOProbe {
+    self.serviceTest.enabled = NO;
     self.machoTest.enabled = NO;
     self.memoryTest.enabled = NO;
     self.crossTest.enabled = NO;
@@ -199,6 +276,7 @@ static double residentMB(void) {
             controller.machoTest.enabled = YES;
             controller.memoryTest.enabled = YES;
             controller.crossTest.enabled = YES;
+            controller.serviceTest.enabled = YES;
             controller.test.enabled = YES;
         });
     });
@@ -217,6 +295,7 @@ static double residentMB(void) {
     [self presentViewController:alert animated:YES completion:nil];
 }
 - (void)runMemoryProbe {
+    self.serviceTest.enabled = NO;
     self.memoryTest.enabled = NO;
     self.crossTest.enabled = NO;
     self.machoTest.enabled = NO;
@@ -247,10 +326,12 @@ static double residentMB(void) {
             controller.memoryTest.enabled = YES;
             controller.machoTest.enabled = YES;
             controller.crossTest.enabled = YES;
+            controller.serviceTest.enabled = YES;
         });
     });
 }
 - (void)runProbe:(id)sender {
+    self.serviceTest.enabled = NO;
     self.test.enabled = NO;
     self.memoryTest.enabled = NO;
     self.machoTest.enabled = NO;
@@ -281,6 +362,7 @@ static double residentMB(void) {
             strongSelf.memoryTest.enabled = YES;
             strongSelf.machoTest.enabled = YES;
             strongSelf.crossTest.enabled = YES;
+            strongSelf.serviceTest.enabled = YES;
         });
     });
 }
