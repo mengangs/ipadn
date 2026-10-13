@@ -47,8 +47,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"runtime"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -64,11 +67,33 @@ type stage struct {
 }
 
 type report struct {
-	Engine    string  `json:"engine"`
-	Platform  string  `json:"platform"`
-	MaxRSSMiB float64 `json:"maxRSSMiB"`
-	Stages    []stage `json:"stages"`
-	Passed    bool    `json:"passed"`
+	Engine        string  `json:"engine"`
+	Platform      string  `json:"platform"`
+	MaxRSSMiB     float64 `json:"maxRSSMiB"`
+	DownloadedMiB float64 `json:"downloadedMiB"`
+	Stages        []stage `json:"stages"`
+	Passed        bool    `json:"passed"`
+}
+
+// Counts response bytes fetched from Apple's CDN, to size the iPhone download.
+var downloaded atomic.Int64
+
+type countingBody struct{ io.ReadCloser }
+
+func (b countingBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	downloaded.Add(int64(n))
+	return n, err
+}
+
+type countingTransport struct{ next http.RoundTripper }
+
+func (t countingTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	response, err := t.next.RoundTrip(request)
+	if response != nil && response.Body != nil {
+		response.Body = countingBody{response.Body}
+	}
+	return response, err
 }
 
 func maxRSSMiB() float64 {
@@ -88,6 +113,7 @@ func main() {
 		os.Exit(2)
 	}
 	result := report{Engine: os.Args[1], Platform: runtime.GOOS + "/" + runtime.GOARCH, Passed: true}
+	http.DefaultTransport = countingTransport{next: http.DefaultTransport}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()
 
@@ -137,6 +163,7 @@ func main() {
 		}
 	}
 	result.MaxRSSMiB = maxRSSMiB()
+	result.DownloadedMiB = float64(downloaded.Load()) / (1 << 20)
 	data, _ := json.MarshalIndent(result, "", "  ")
 	if err := os.WriteFile(os.Args[2], append(data, '\n'), 0o644); err != nil {
 		panic(err)
@@ -185,6 +212,7 @@ for name in names:
         ratio = "%.1fx" % (b["seconds"] / a["seconds"])
     lines.append("| %s | %s | %s | %s |" % (name, fmt(a), fmt(b), ratio))
 lines += ["", "Peak RSS: JIT %.0f MiB, TCI %.0f MiB." % ((jit or {}).get("maxRSSMiB", 0), (tci or {}).get("maxRSSMiB", 0)),
+          "Downloaded from Apple's CDN with an empty cache (JIT run): %.1f MiB." % (jit or {}).get("downloadedMiB", 0),
           "", "Synthetic hardware ID and DSID; no Apple ID, dpInfo or package involved. Apple files are cached on the runner only.",
           "Package decryption cost is not measured here: it needs an account-bound dpInfo."]
 text = "\n".join(lines) + "\n"

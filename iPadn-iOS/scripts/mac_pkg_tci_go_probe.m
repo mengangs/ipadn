@@ -1,5 +1,7 @@
 // Standalone ipatool Go -> Unicorn TCI -> Go guest-hook diagnostic.
-// All exercised data is synthetic, without Apple authentication or assets.
+// The five offline stages use synthetic data only. The separate, explicitly
+// confirmed v1.2 stage fetches Apple's public runtime files and runs the real
+// StoreAgent kbsync with synthetic identifiers; never an Apple account.
 #import <UIKit/UIKit.h>
 #import <mach/mach.h>
 #include <stdint.h>
@@ -9,6 +11,8 @@ extern int32_t iPadnMacTCIGuestMemoryProbe(char *diagnostic, int32_t capacity);
 extern int32_t iPadnMacTCIMachOLoadProbe(char *diagnostic, int32_t capacity);
 extern int32_t iPadnMacTCICrossImageProbe(char *diagnostic, int32_t capacity);
 extern int32_t iPadnMacTCIServiceShimProbe(char *diagnostic, int32_t capacity);
+extern int32_t iPadnMacTCIAppleAssetsProbe(char *diagnostic, int32_t capacity);
+extern int32_t iPadnMacTCIRealKBSyncProbe(char *diagnostic, int32_t capacity);
 
 // The batch invokes only the five already-existing, independently bounded,
 // synthetic compatibility probes. Never call the StoreAgent link-only export.
@@ -36,6 +40,8 @@ static NSString *const kGoTCIServiceResult = @"macpkg-go-tci-service-result";
 static NSString *const kGoTCIBatchPending = @"macpkg-go-tci-batch-pending";
 static NSString *const kGoTCIBatchProgress = @"macpkg-go-tci-batch-progress";
 static NSString *const kGoTCIBatchResult = @"macpkg-go-tci-batch-result";
+static NSString *const kGoTCIRealPending = @"macpkg-go-tci-real-storeagent-pending";
+static NSString *const kGoTCIRealResult = @"macpkg-go-tci-real-storeagent-result";
 
 static double residentMB(void) {
     mach_task_basic_info_data_t info = {0};
@@ -43,6 +49,14 @@ static double residentMB(void) {
     return task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
                      (task_info_t)&info, &size) == KERN_SUCCESS
         ? (double)info.resident_size / 1048576.0 : -1.0;
+}
+
+// Peak physical footprint, the figure iOS uses for memory-limit termination.
+static double peakFootprintMB(void) {
+    task_vm_info_data_t info = {0};
+    mach_msg_type_number_t size = TASK_VM_INFO_COUNT;
+    return task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &size) == KERN_SUCCESS
+        ? (double)info.ledger_phys_footprint_peak / 1048576.0 : -1.0;
 }
 @interface MacGoTCITestViewController : UIViewController
 @property(nonatomic, strong) UILabel *status;
@@ -52,6 +66,7 @@ static double residentMB(void) {
 @property(nonatomic, strong) UIButton *crossTest;
 @property(nonatomic, strong) UIButton *serviceTest;
 @property(nonatomic, strong) UIButton *batchTest;
+@property(nonatomic, strong) UIButton *realStoreAgentTest;
 @property(nonatomic, strong) UIButton *advancedToggle;
 @property(nonatomic, strong) UIButton *reportButton;
 @property(nonatomic, strong) UIStackView *individualTests;
@@ -66,7 +81,7 @@ static double residentMB(void) {
     header.numberOfLines = 0;
 
     UILabel *details = [[UILabel alloc] init];
-    details.text = @"v1.1 · 一次点击完成目前全部五项离线兼容性检查，并保存分阶段报告。可选择展开单项测试。全程不使用 Apple 账号、私有框架或安装包；合成测试全部通过仍不代表官方 Mac PKG 可以下载或处理。";
+    details.text = @"v1.2 · 五项离线兼容性检查之外，新增可选的真实 Apple StoreAgent 测试：从 Apple 官方更新服务器下载并校验运行文件，在无 JIT 解释器中执行 kbsync 并计时。全程不使用 Apple 账号、不下载或解密任何 Mac 安装包。";
     details.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     details.textColor = UIColor.secondaryLabelColor;
     details.numberOfLines = 0;
@@ -112,6 +127,13 @@ static double residentMB(void) {
     [self.batchTest addTarget:self action:@selector(confirmBatchProbe:) forControlEvents:UIControlEventTouchUpInside];
     self.batchTest.accessibilityIdentifier = @"go-tci-probe.batch";
 
+    self.realStoreAgentTest = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.realStoreAgentTest setTitle:@"运行真实 Apple StoreAgent 测试（需联网，可选）" forState:UIControlStateNormal];
+    self.realStoreAgentTest.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    self.realStoreAgentTest.titleLabel.numberOfLines = 0;
+    [self.realStoreAgentTest addTarget:self action:@selector(confirmRealStoreAgentProbe:) forControlEvents:UIControlEventTouchUpInside];
+    self.realStoreAgentTest.accessibilityIdentifier = @"go-tci-probe.real-storeagent";
+
     self.advancedToggle = [UIButton buttonWithType:UIButtonTypeSystem];
     [self.advancedToggle setTitle:@"显示单项测试" forState:UIControlStateNormal];
     self.advancedToggle.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
@@ -142,8 +164,12 @@ static double residentMB(void) {
     BOOL crossPending = [defaults boolForKey:kGoTCICrossPending];
     BOOL servicePending = [defaults boolForKey:kGoTCIServicePending];
     BOOL batchPending = [defaults boolForKey:kGoTCIBatchPending];
+    BOOL realPending = [defaults boolForKey:kGoTCIRealPending];
     NSInteger lastStage = [defaults integerForKey:kGoTCIBatchProgress];
-    self.status.text = batchPending
+    self.status.text = realPending
+        ? [NSString stringWithFormat:@"上一次真实 StoreAgent 测试没有正常结束（可能被系统因内存或时间终止）。请勿反复运行，并提供 iOS 崩溃日志。已保存的进度：\n%@",
+            [defaults stringForKey:kGoTCIRealResult] ?: @"没有已完成的阶段。"]
+        : batchPending
         ? [NSString stringWithFormat:@"上次批量测试在第 %ld/5 项中断。为避免重复触发闪退，批量运行已停用；以下是已保存的报告：\n%@", (long)lastStage,
             [defaults stringForKey:kGoTCIBatchResult] ?: @"没有已完成的结果。"]
         : servicePending
@@ -155,17 +181,18 @@ static double residentMB(void) {
         : memoryPending
         ? @"上一次 104 MiB 内存测试未正常返回。请不要重复内存压力测试。"
         : pending ? @"上一次 Go ↔ TCI 测试没有正常返回，请提供 iOS 崩溃日志。"
-        : ([defaults stringForKey:kGoTCIBatchResult] ?: [defaults stringForKey:kGoTCIServiceResult] ?: [defaults stringForKey:kGoTCICrossResult] ?: [defaults stringForKey:kGoTCIMachOResult] ?: [defaults stringForKey:kGoTCIMemoryResult] ?: [defaults stringForKey:kGoTCIResult] ?: @"尚未运行。");
+        : ([defaults stringForKey:kGoTCIRealResult] ?: [defaults stringForKey:kGoTCIBatchResult] ?: [defaults stringForKey:kGoTCIServiceResult] ?: [defaults stringForKey:kGoTCICrossResult] ?: [defaults stringForKey:kGoTCIMachOResult] ?: [defaults stringForKey:kGoTCIMemoryResult] ?: [defaults stringForKey:kGoTCIResult] ?: @"尚未运行。");
     if (pending) self.test.enabled = NO;
     if (memoryPending) self.memoryTest.enabled = NO;
     if (machoPending) self.machoTest.enabled = NO;
     if (crossPending) self.crossTest.enabled = NO;
     if (servicePending) self.serviceTest.enabled = NO;
     if (batchPending) self.batchTest.enabled = NO;
+    if (realPending) self.realStoreAgentTest.enabled = NO;
     self.reportButton.enabled = self.status.text.length > 0;
 
     UIStackView *stack = [[UIStackView alloc]
-        initWithArrangedSubviews:@[header, details, self.batchTest, self.advancedToggle, self.individualTests, self.reportButton, self.status]];
+        initWithArrangedSubviews:@[header, details, self.batchTest, self.realStoreAgentTest, self.advancedToggle, self.individualTests, self.reportButton, self.status]];
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     stack.axis = UILayoutConstraintAxisVertical;
     stack.spacing = 26;
@@ -275,6 +302,90 @@ static double residentMB(void) {
             controller.machoTest.enabled = YES;
             controller.crossTest.enabled = YES;
             controller.serviceTest.enabled = YES;
+            controller.reportButton.enabled = YES;
+        });
+    });
+}
+- (void)confirmRealStoreAgentProbe:(id)sender {
+    UIAlertController *alert = [UIAlertController
+        alertControllerWithTitle:@"真实 Apple StoreAgent 测试"
+        message:@"将从 Apple 官方软件更新服务器（swcdn.apple.com）下载 macOS 更新包中的 StoreAgent 运行文件，按固定 SHA-256 校验后缓存在本测试 App 内，然后在无 JIT 解释器中运行 Apple SAP 初始化和 kbsync 并计时。\n\n使用合成设备标识，不需要也不会读取 Apple 账号，不下载或解密任何 Mac 安装包。首次运行需要下载数十 MB，建议连接 Wi-Fi；执行可能需要几分钟，期间请保持 App 在前台。可能因内存或时间限制被系统终止。要继续吗？"
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __weak typeof(self) weakSelf = self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"开始测试" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [weakSelf runRealStoreAgentProbe];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+- (void)setAllTestsEnabled:(BOOL)enabled {
+    for (UIButton *button in @[self.batchTest, self.realStoreAgentTest, self.test, self.memoryTest,
+                               self.machoTest, self.crossTest, self.serviceTest]) {
+        button.enabled = enabled;
+    }
+}
+- (void)runRealStoreAgentProbe {
+    [self setAllTestsEnabled:NO];
+    [self.reportButton setTitle:@"复制诊断结果" forState:UIControlStateNormal];
+    // Keep the screen on: the interpreter run can take minutes.
+    [UIApplication sharedApplication].idleTimerDisabled = YES;
+    NSString *intro = @"真实 Apple StoreAgent / 无 JIT TCI 诊断 v1.2\n合成设备与账号标识；未使用 Apple 账号，未下载或解密 Mac 安装包。\n";
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setObject:intro forKey:kGoTCIRealResult];
+    [defaults setBool:YES forKey:kGoTCIRealPending];
+    [defaults synchronize];
+    self.status.text = [intro stringByAppendingString:@"\n进行中 [1/2] 下载并校验 Apple 运行文件…"];
+    double before = residentMB();
+    __weak typeof(self) weakSelf = self;
+    __block UIBackgroundTaskIdentifier background = UIBackgroundTaskInvalid;
+    background = [[UIApplication sharedApplication]
+        beginBackgroundTaskWithName:@"Real StoreAgent probe" expirationHandler:^{
+            [[UIApplication sharedApplication] endBackgroundTask:background];
+            background = UIBackgroundTaskInvalid;
+        }];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSMutableString *report = [intro mutableCopy];
+        NSArray<NSString *> *names = @[@"下载并校验 Apple 运行文件", @"真实 SAP 初始化与 StoreAgent kbsync"];
+        BOOL success = YES;
+        for (NSUInteger index = 0; index < names.count; index++) {
+            NSString *progress = [NSString stringWithFormat:@"%@\n进行中 [%lu/2] %@…（可能需要几分钟）",
+                                  report, (unsigned long)index + 1, names[index]];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                MacGoTCITestViewController *controller = weakSelf;
+                if (controller) controller.status.text = progress;
+            });
+            char diagnostic[1024] = {0};
+            CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
+            int32_t code = index == 0
+                ? iPadnMacTCIAppleAssetsProbe(diagnostic, (int32_t)sizeof(diagnostic))
+                : iPadnMacTCIRealKBSyncProbe(diagnostic, (int32_t)sizeof(diagnostic));
+            NSString *detail = [NSString stringWithUTF8String:diagnostic] ?: @"诊断文本编码失败";
+            [report appendFormat:@"\n[%lu/2] %@：%@（返回码 %d，%.1f 秒）\n%@\n",
+                (unsigned long)index + 1, names[index], code == 0 ? @"通过" : @"失败", code,
+                CFAbsoluteTimeGetCurrent() - start, detail];
+            NSUserDefaults *storage = [NSUserDefaults standardUserDefaults];
+            [storage setObject:report forKey:kGoTCIRealResult];
+            [storage synchronize];
+            if (code != 0) { success = NO; break; }
+        }
+        [report appendFormat:@"\n总结果：%@\n常驻内存 %.1f → %.1f MB；进程物理内存峰值 %.1f MB\n",
+            success ? @"真实 StoreAgent kbsync 在本机无 JIT 解释器中完成" : @"已在出错阶段停止",
+            before, residentMB(), peakFootprintMB()];
+        [report appendString:@"Mac PKG 解密（需要账号授权的 dpInfo）与导出：未测试。"];
+        NSUserDefaults *storage = [NSUserDefaults standardUserDefaults];
+        [storage setObject:report forKey:kGoTCIRealResult];
+        [storage setBool:NO forKey:kGoTCIRealPending];
+        [storage synchronize];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [UIApplication sharedApplication].idleTimerDisabled = NO;
+            if (background != UIBackgroundTaskInvalid) {
+                [[UIApplication sharedApplication] endBackgroundTask:background];
+                background = UIBackgroundTaskInvalid;
+            }
+            MacGoTCITestViewController *controller = weakSelf;
+            if (!controller) return;
+            controller.status.text = report;
+            [controller setAllTestsEnabled:YES];
             controller.reportButton.enabled = YES;
         });
     });

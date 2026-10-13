@@ -17,6 +17,9 @@ cd "$ROOT"
 git clone --no-checkout --filter=blob:none https://github.com/majd/ipatool.git ipatool
 git -C ipatool checkout --detach "$IPATOOL_COMMIT"
 test "$(git -C ipatool rev-parse HEAD)" = "$IPATOOL_COMMIT"
+# Lift ipatool's 1-minute per-guest-call bound so the v1.2 real StoreAgent
+# stage on the slower TCI interpreter is timed instead of aborted.
+patch -d ipatool -p1 < "$PROJECT_ROOT/iPadn-iOS/scripts/ipatool-host-benchmark.patch"
 
 # Generate a tiny independently authored macOS x86-64 Mach-O dylib.
 # It contains no Apple private framework, license, installer or DRM data.
@@ -197,6 +200,10 @@ import (
     "context"
     _ "embed"
     "fmt"
+    "io"
+    "net/http"
+    "sync"
+    "sync/atomic"
     "time"
     "unsafe"
     "github.com/majd/ipatool/v2/internal/sap/assets"
@@ -556,6 +563,107 @@ func iPadnMacTCIGuestMemoryProbe(output *C.char, capacity C.int32_t) C.int32_t {
     report("TCI 的 scratch 32 MiB + heap 64 MiB + stack 8 MiB 映射、首末页读写均通过（合计 104 MiB 模拟内存）；未加载 StoreAgent")
     return 0
 }
+// ---- v1.2: Apple's real StoreAgent on the iPhone (no account) ----
+
+var (
+    downloadCounterOnce sync.Once
+    downloadedBytes     atomic.Int64
+)
+
+type countingBody struct{ io.ReadCloser }
+
+func (b countingBody) Read(p []byte) (int, error) {
+    n, err := b.ReadCloser.Read(p)
+    downloadedBytes.Add(int64(n))
+    return n, err
+}
+
+type countingTransport struct{ next http.RoundTripper }
+
+func (t countingTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+    response, err := t.next.RoundTrip(request)
+    if response != nil && response.Body != nil {
+        response.Body = countingBody{response.Body}
+    }
+    return response, err
+}
+
+func writeDiagnostic(output *C.char, capacity C.int32_t, msg string) {
+    if output == nil || capacity < 2 || capacity > 4096 { return }
+    dst := unsafe.Slice((*byte)(unsafe.Pointer(output)), int(capacity))
+    n := copy(dst[:len(dst)-1], msg)
+    dst[n] = 0
+}
+
+// Fetches ipatool's pinned Apple runtime files from Apple's public software
+// update CDN (or the app's cache) and verifies their SHA-256 digests.
+//export iPadnMacTCIAppleAssetsProbe
+func iPadnMacTCIAppleAssetsProbe(output *C.char, capacity C.int32_t) C.int32_t {
+    downloadCounterOnce.Do(func() {
+        http.DefaultTransport = countingTransport{next: http.DefaultTransport}
+    })
+    ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+    defer cancel()
+    start := time.Now()
+    before := downloadedBytes.Load()
+    bundle, err := assets.Load(ctx)
+    if err != nil {
+        writeDiagnostic(output, capacity, fmt.Sprintf("下载或校验 Apple 运行文件失败：%v", err))
+        return -90
+    }
+    image, err := assets.LoadStoreAgent(ctx)
+    if err != nil {
+        writeDiagnostic(output, capacity, fmt.Sprintf("下载或校验 storeagent 失败：%v", err))
+        return -91
+    }
+    writeDiagnostic(output, capacity, fmt.Sprintf(
+        "Apple 运行文件 SHA-256 校验通过：CommerceKit %d B，CommerceCore %d B，CoreFP %d B，CoreFP.icxs %d B，storeagent %d B。本次下载 %.1f MiB，用时 %.1f 秒（之后使用 App 缓存）。",
+        len(bundle.CommerceKit), len(bundle.CommerceCore), len(bundle.CoreFP), len(bundle.CoreFPICXS),
+        len(image), float64(downloadedBytes.Load()-before)/(1<<20), time.Since(start).Seconds()))
+    return 0
+}
+
+// Runs Apple's real SAP initialization and StoreAgent kbsync on the no-JIT
+// interpreter with a synthetic hardware ID and DSID. No account is involved
+// and the kbsync output is discarded (only its length is reported).
+//export iPadnMacTCIRealKBSyncProbe
+func iPadnMacTCIRealKBSyncProbe(output *C.char, capacity C.int32_t) C.int32_t {
+    ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
+    defer cancel()
+    bundle, err := assets.Load(ctx)
+    if err != nil {
+        writeDiagnostic(output, capacity, fmt.Sprintf("读取已校验的 Apple 运行文件失败：%v", err))
+        return -92
+    }
+    hardware := []byte{0x02, 0, 0, 0, 0, 1}
+    sapStart := time.Now()
+    guest, err := machine.Open(ctx, bundle)
+    if err != nil {
+        writeDiagnostic(output, capacity, fmt.Sprintf("启动 Apple SAP 运行环境失败：%v", err))
+        return -93
+    }
+    session, err := guest.Initialize(hardware)
+    if err != nil {
+        _ = guest.Close()
+        writeDiagnostic(output, capacity, fmt.Sprintf("Apple SAP 初始化失败（%.1f 秒）：%v", time.Since(sapStart).Seconds(), err))
+        return -94
+    }
+    _ = guest.Teardown(session)
+    _ = guest.Close()
+    sapSeconds := time.Since(sapStart).Seconds()
+    kbStart := time.Now()
+    blob, err := machine.GenerateKBSync(ctx, bundle, hardware, 1)
+    kbSeconds := time.Since(kbStart).Seconds()
+    if err != nil {
+        writeDiagnostic(output, capacity, fmt.Sprintf("Apple SAP 初始化 %.1f 秒成功；StoreAgent kbsync 失败（%.1f 秒）：%v", sapSeconds, kbSeconds, err))
+        return -95
+    }
+    writeDiagnostic(output, capacity, fmt.Sprintf(
+        "真实 Apple SAP 初始化 %.1f 秒；真实 StoreAgent kbsync（合成设备与账号标识）%.1f 秒，输出 %d 字节。CI 主机参考：TCI 约 28 秒，JIT 约 14 秒。",
+        sapSeconds, kbSeconds, len(blob)))
+    return 0
+}
+
 func main() {}
 GOEOF
 
@@ -601,8 +709,8 @@ cat > "$APP/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Mac PKG Go TCI Probe</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-<key>CFBundleShortVersionString</key><string>1.1</string>
-<key>CFBundleVersion</key><string>11</string>
+<key>CFBundleShortVersionString</key><string>1.2</string>
+<key>CFBundleVersion</key><string>12</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>MinimumOSVersion</key><string>15.0</string>
 <key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
@@ -622,7 +730,9 @@ cat > "$APP/Source.txt" <<TXT
 Independent Go and no-JIT TCI diagnostic.
 TCI GPL-2.0: https://github.com/Naville/unicorn/tree/53471ef9cf480fab094bf13db3e5d2f9e2c30dc5
 ipatool MIT: https://github.com/majd/ipatool/tree/$IPATOOL_COMMIT
-Does not execute StoreAgent, download Apple assets or use Apple credentials.
+Never uses Apple credentials, dpInfo or packages. Only the user-confirmed v1.2
+stage downloads Apple's public macOS update files (pinned SHA-256, cached in
+the app) and runs StoreAgent kbsync with a synthetic hardware ID and DSID.
 TXT
 plutil -lint "$APP/Info.plist"
 xcrun vtool -show-build "$APP/MacPKGGoTCIProbe"
@@ -631,5 +741,6 @@ cp -R "$APP" "$ROOT/out/go-package/Payload/"
   /usr/bin/zip -qr -X "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa" Payload)
 test -s "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa"
 du -h "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa"
-echo "Go ↔ no-JIT TCI v1.1 iPhone diagnostic IPA built but NOT run by CI."
-echo "NO StoreAgent initialization, Apple asset retrieval, authorization, Mac PKG download or decryption performed."
+xcrun nm -g "$ROOT/out/libMacPKGTCIStoreAgentBridge.a" | grep 'iPadnMacTCIRealKBSyncProbe'
+echo "Go ↔ no-JIT TCI v1.2 iPhone diagnostic IPA built but NOT run by CI."
+echo "CI performed no Apple account authorization, Mac PKG download or decryption."
