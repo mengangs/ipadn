@@ -136,4 +136,48 @@ xcrun file "$ROOT/out/MacPKGTCIStoreAgentBridge-link-only"
 du -h "$ROOT/out/libMacPKGTCIStoreAgentBridge.a" \
   "$ROOT/out/MacPKGTCIStoreAgentBridge-link-only"
 echo "Build-only proof: Go StoreAgent code and no-JIT Unicorn TCI link together for iPhoneOS arm64."
-echo "NO StoreAgent initialization, Apple asset retrieval, authorization, macOS PKG download or decryption performed."
+# Separate, user-triggered executable for testing the Go/c-archive/TCI path.
+APP="$ROOT/out/MacPKGGoTCIProbe.app"
+mkdir -p "$APP" "$ROOT/out/go-package/Payload"
+cat > "$APP/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>org.ipadn.macpkg-go-tci-probe</string>
+<key>CFBundleExecutable</key><string>MacPKGGoTCIProbe</string>
+<key>CFBundleDisplayName</key><string>Mac PKG Go+TCI测试</string>
+<key>CFBundleName</key><string>Mac PKG Go TCI Probe</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+<key>CFBundleShortVersionString</key><string>0.6</string>
+<key>CFBundleVersion</key><string>6</string>
+<key>LSRequiresIPhoneOS</key><true/>
+<key>MinimumOSVersion</key><string>15.0</string>
+<key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
+<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+<key>UILaunchScreen</key><dict/>
+</dict></plist>
+PLIST
+"$CC" -target arm64-apple-ios15.0 -isysroot "$SDKROOT" -fobjc-arc \
+  "$PROJECT_ROOT/iPadn-iOS/scripts/mac_pkg_tci_go_probe.m" \
+  "$ROOT/out/libMacPKGTCIStoreAgentBridge.a" \
+  -Wl,-force_load,"$LIBRARY" -Wl,-export_dynamic \
+  -framework UIKit -framework Foundation -framework Security -framework CoreFoundation \
+  -lresolv -liconv -lz -lc++ -o "$APP/MacPKGGoTCIProbe"
+cp "$ROOT/source/COPYING" "$APP/GPL-2.0.txt"
+cp "$ROOT/ipatool/LICENSE" "$APP/ipatool-MIT.txt"
+cat > "$APP/Source.txt" <<TXT
+Independent Go and no-JIT TCI diagnostic.
+TCI GPL-2.0: https://github.com/Naville/unicorn/tree/53471ef9cf480fab094bf13db3e5d2f9e2c30dc5
+ipatool MIT: https://github.com/majd/ipatool/tree/$IPATOOL_COMMIT
+Does not execute StoreAgent, download Apple assets or use Apple credentials.
+TXT
+plutil -lint "$APP/Info.plist"
+xcrun vtool -show-build "$APP/MacPKGGoTCIProbe"
+cp -R "$APP" "$ROOT/out/go-package/Payload/"
+(cd "$ROOT/out/go-package" &&
+  /usr/bin/zip -qr -X "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa" Payload)
+test -s "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa"
+du -h "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa"
+echo "Go ↔ no-JIT TCI v0.6 iPhone diagnostic IPA built but NOT run by CI."
+echo "NO StoreAgent initialization, Apple asset retrieval, authorization, Mac PKG download or decryption performed."
