@@ -104,6 +104,59 @@ func iPadnMacTCIGoGuestProbe(output *C.char, capacity C.int32_t) C.int32_t {
     report(fmt.Sprintf("Go ↔ TCI 回调成功：RAX=0x%x，回调次数=%d", rax, callbacks))
     return 0
 }
+//export iPadnMacTCIGuestMemoryProbe
+func iPadnMacTCIGuestMemoryProbe(output *C.char, capacity C.int32_t) C.int32_t {
+    report := func(msg string) {
+        if output == nil || capacity < 2 || capacity > 4096 { return }
+        dst := unsafe.Slice((*byte)(unsafe.Pointer(output)), int(capacity))
+        n := copy(dst[:len(dst)-1], msg)
+        dst[n] = 0
+    }
+    engine, err := unicorn.New(context.Background())
+    if err != nil {
+        report(fmt.Sprintf("创建无 JIT 引擎失败: %v", err))
+        return -20
+    }
+    defer engine.Close()
+    // Addresses/sizes from ipatool's Machine runtime. In this isolated test,
+    // there is no Apple code, authentication, decryption or package data.
+    regions := []struct {
+        name string
+        address uint64
+        size uint64
+    }{
+        {"scratch", 0x0000300000000000, 32 << 20},
+        {"heap", 0x0000400000000000, 64 << 20},
+        {"stack", 0x0000500000000000, 8 << 20},
+    }
+    const page = 4096
+    var test [page]byte
+    for i := range test { test[i] = byte(i*31 + 7) }
+    for index, region := range regions {
+        if err = engine.MemMap(region.address, region.size); err != nil {
+            report(fmt.Sprintf("第 %d 个区域 %s (%d MiB) 映射失败: %v",
+                index+1, region.name, region.size>>20, err))
+            return -21
+        }
+        for _, address := range []uint64{region.address, region.address+region.size-page} {
+            if err = engine.MemWrite(address, test[:]); err != nil {
+                report(fmt.Sprintf("%s 写入 0x%x 失败: %v", region.name, address, err))
+                return -22
+            }
+            var readback [page]byte
+            if err = engine.MemReadInto(readback[:], address); err != nil {
+                report(fmt.Sprintf("%s 读取 0x%x 失败: %v", region.name, address, err))
+                return -23
+            }
+            if readback != test {
+                report(fmt.Sprintf("%s 在 0x%x 数据不一致", region.name, address))
+                return -24
+            }
+        }
+    }
+    report("TCI 的 scratch 32 MiB + heap 64 MiB + stack 8 MiB 映射、首末页读写均通过（合计 104 MiB 模拟内存）；未加载 StoreAgent")
+    return 0
+}
 func main() {}
 GOEOF
 
@@ -149,8 +202,8 @@ cat > "$APP/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Mac PKG Go TCI Probe</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-<key>CFBundleShortVersionString</key><string>0.6</string>
-<key>CFBundleVersion</key><string>6</string>
+<key>CFBundleShortVersionString</key><string>0.7</string>
+<key>CFBundleVersion</key><string>7</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>MinimumOSVersion</key><string>15.0</string>
 <key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
@@ -179,5 +232,5 @@ cp -R "$APP" "$ROOT/out/go-package/Payload/"
   /usr/bin/zip -qr -X "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa" Payload)
 test -s "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa"
 du -h "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa"
-echo "Go ↔ no-JIT TCI v0.6 iPhone diagnostic IPA built but NOT run by CI."
+echo "Go ↔ no-JIT TCI v0.7 iPhone diagnostic IPA built but NOT run by CI."
 echo "NO StoreAgent initialization, Apple asset retrieval, authorization, Mac PKG download or decryption performed."
