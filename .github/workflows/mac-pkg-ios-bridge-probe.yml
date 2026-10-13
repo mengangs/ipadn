@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'iPadn-iOS/scripts/probe_mac_pkg_ios_bridge.sh'
+      - 'iPadn-iOS/scripts/mac_pkg_runtime_probe.m'
       - '.github/workflows/mac-pkg-ios-bridge-probe.yml'
   workflow_dispatch:
 
