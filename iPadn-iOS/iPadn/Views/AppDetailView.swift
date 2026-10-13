@@ -25,6 +25,8 @@ struct AppDetailView: View {
     @State private var macWebsite: URL?
     @State private var macInstallers: [MacInstallerService.Installer] = []
     @State private var macLoading = false
+    @State private var macOfficialLoading = false
+    @State private var macOfficialTask: Task<Void, Never>?
     @State private var enteringMacDownloadURL = false
     @State private var macDownloadURL = ""
     private var storeURL: URL { URL(string: "https://apps.apple.com/\(store.settings.store.country.lowercased())/app/id\(app.id)")! }
@@ -102,6 +104,17 @@ struct AppDetailView: View {
             } footer: { Text("版本可用性取决于商店地区及账号许可。") }
             } else {
                 Section("Mac 安装包") {
+                    Button { downloadAppleMacPKG() } label: {
+                        HStack(spacing: 9) {
+                            if macOfficialLoading { ProgressView() }
+                            Label("尝试获取 Apple 官方 PKG（实验）", systemImage: "shippingbox")
+                        }
+                        .frame(minHeight: 44, alignment: .leading)
+                    }
+                    .disabled(macOfficialLoading)
+                    .accessibilityIdentifier("mac.official-pkg")
+                    Text("仅支持 Apple 直接提供的有效 PKG；受保护的软件包仍需 StoreAgent 处理，目前不会假装下载成功。")
+                        .font(.caption).foregroundStyle(.secondary)
                     if macLoading { ProgressView("查找开发者安装包…") }
                     ForEach(macInstallers) { installer in
                         Button {
@@ -226,7 +239,7 @@ struct AppDetailView: View {
                 .environmentObject(apple)
             }
         }
-        .onDisappear { downloadTask?.cancel() }
+        .onDisappear { downloadTask?.cancel(); macOfficialTask?.cancel() }
         .task(id: "\(official)-\(reloadID)-\(store.settings.store.country)-\(store.settings.store.platform.rawValue)-\(apple.activeID ?? "")") { await fetchVersions(force: reloadID > 0) }
         .task(id: "\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
             await loadMacInstallers()
@@ -267,6 +280,33 @@ struct AppDetailView: View {
             }
         }
     }
+    private func downloadAppleMacPKG() {
+        guard !macOfficialLoading else { return }
+        guard apple.active != nil else {
+            showLogin = true
+            return
+        }
+        macOfficialLoading = true
+        macOfficialTask = Task {
+            defer { macOfficialLoading = false; macOfficialTask = nil }
+            do {
+                let offer = try await apple.macPackageOffer(app, useCache: store.settings.useSignerCache)
+                try Task.checkCancellation()
+                try store.downloads.enqueueOfficialMacPackage(offer, for: app)
+                store.infoMessage = "Mac PKG 已加入下载任务，完成校验后可导出。"
+                store.tab = 1
+            } catch AppleAuthError.reauthenticationRequired {
+                reauthenticationID = apple.activeID
+                showLogin = true
+            } catch AppleLoginError.verificationRequired {
+                store.errorMessage = "Apple 账号需要重新验证，请在账号页完成验证后重试。"
+            } catch is CancellationError { }
+            catch {
+                store.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
     private func enqueueMacInstaller(_ installer: MacInstallerService.Installer) {
         do {
             try store.downloads.enqueueMacInstaller(installer.url, for: app)
