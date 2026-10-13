@@ -53,7 +53,7 @@ static double residentMB(void) {
 @property(nonatomic, strong) UIButton *serviceTest;
 @property(nonatomic, strong) UIButton *batchTest;
 @property(nonatomic, strong) UIButton *advancedToggle;
-@property(nonatomic, strong) UIButton *copyReportButton;
+@property(nonatomic, strong) UIButton *reportButton;
 @property(nonatomic, strong) UIStackView *individualTests;
 @end
 @implementation MacGoTCITestViewController
@@ -118,11 +118,11 @@ static double residentMB(void) {
     [self.advancedToggle addTarget:self action:@selector(toggleIndividualTests:) forControlEvents:UIControlEventTouchUpInside];
     self.advancedToggle.accessibilityIdentifier = @"go-tci-probe.show-individual";
 
-    self.copyReportButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.copyReportButton setTitle:@"复制诊断结果" forState:UIControlStateNormal];
-    self.copyReportButton.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
-    [self.copyReportButton addTarget:self action:@selector(copyDiagnostics:) forControlEvents:UIControlEventTouchUpInside];
-    self.copyReportButton.accessibilityIdentifier = @"go-tci-probe.copy-results";
+    self.reportButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.reportButton setTitle:@"复制诊断结果" forState:UIControlStateNormal];
+    self.reportButton.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    [self.reportButton addTarget:self action:@selector(copyDiagnostics:) forControlEvents:UIControlEventTouchUpInside];
+    self.reportButton.accessibilityIdentifier = @"go-tci-probe.copy-results";
 
     self.individualTests = [[UIStackView alloc] initWithArrangedSubviews:
         @[self.test, self.memoryTest, self.machoTest, self.crossTest, self.serviceTest]];
@@ -162,10 +162,10 @@ static double residentMB(void) {
     if (crossPending) self.crossTest.enabled = NO;
     if (servicePending) self.serviceTest.enabled = NO;
     if (batchPending) self.batchTest.enabled = NO;
-    self.copyReportButton.enabled = self.status.text.length > 0;
+    self.reportButton.enabled = self.status.text.length > 0;
 
     UIStackView *stack = [[UIStackView alloc]
-        initWithArrangedSubviews:@[header, details, self.batchTest, self.advancedToggle, self.individualTests, self.copyReportButton, self.status]];
+        initWithArrangedSubviews:@[header, details, self.batchTest, self.advancedToggle, self.individualTests, self.reportButton, self.status]];
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     stack.axis = UILayoutConstraintAxisVertical;
     stack.spacing = 26;
@@ -196,7 +196,7 @@ static double residentMB(void) {
 - (void)copyDiagnostics:(id)sender {
     if (self.status.text.length == 0) return;
     [UIPasteboard generalPasteboard].string = self.status.text;
-    [self.copyReportButton setTitle:@"报告已复制" forState:UIControlStateNormal];
+    [self.reportButton setTitle:@"报告已复制" forState:UIControlStateNormal];
 }
 - (void)confirmBatchProbe:(id)sender {
     UIAlertController *alert = [UIAlertController
@@ -218,7 +218,7 @@ static double residentMB(void) {
     self.machoTest.enabled = NO;
     self.crossTest.enabled = NO;
     self.serviceTest.enabled = NO;
-    [self.copyReportButton setTitle:@"复制诊断结果" forState:UIControlStateNormal];
+    [self.reportButton setTitle:@"复制诊断结果" forState:UIControlStateNormal];
 
     NSArray<NSString *> *stages = @[@"Go ↔ TCI 回调", @"104 MiB 模拟内存",
                                     @"单个 Mach-O 装载", @"跨 Mach-O 符号调用",
@@ -275,7 +275,7 @@ static double residentMB(void) {
             controller.machoTest.enabled = YES;
             controller.crossTest.enabled = YES;
             controller.serviceTest.enabled = YES;
-            controller.copyReportButton.enabled = YES;
+            controller.reportButton.enabled = YES;
         });
     });
 }
