@@ -33,6 +33,11 @@ cmake -S unicorn-2.1.4 -B unicorn-build \
   -DUNICORN_ARCH=x86 -DUNICORN_BUILD_TESTS=OFF -DUNICORN_INSTALL=OFF
 cmake --build unicorn-build --parallel 4
 test -s unicorn-build/libunicorn.a
+# Go's c-archive retains references to Unicorn's native C functions. The
+# native Unicorn archive MUST also be linked into the FINAL iOS executable;
+# CGO_LDFLAGS on 'go build -buildmode=c-archive' alone is insufficient.
+xcrun nm -g unicorn-build/libunicorn.a | grep -E " T _uc_version$"
+xcrun nm -g unicorn-build/libunicorn.a | grep -E " T _uc_arch_supported$"
 
 mkdir -p upstream/tools/iosbridge
 cat > upstream/tools/iosbridge/main.go <<'GOEOF'
@@ -107,6 +112,7 @@ int main(void) {
 OBJC
 "$CC" -target arm64-apple-ios15.0 -isysroot "$SDKROOT" \
   "$WORKDIR/probe.m" "$WORKDIR/out/libipadnMacBridge.a" \
+  -Wl,-force_load,"$WORKDIR/unicorn-build/libunicorn.a" \
   -framework Foundation -framework Security -framework CoreFoundation \
   -lresolv -liconv -lz -lc++ -Wl,-export_dynamic \
   -o "$WORKDIR/out/probe-ios-arm64"
@@ -140,6 +146,7 @@ PLIST
 "$CC" -target arm64-apple-ios15.0 -isysroot "$SDKROOT" \
   -fobjc-arc "$PROJECT_ROOT/iPadn-iOS/scripts/mac_pkg_runtime_probe.m" \
   "$WORKDIR/out/libipadnMacBridge.a" \
+  -Wl,-force_load,"$WORKDIR/unicorn-build/libunicorn.a" \
   -framework UIKit -framework Foundation -framework Security -framework CoreFoundation \
   -lresolv -liconv -lz -lc++ -Wl,-export_dynamic \
   -o "$APP/MacPKGProbe"
