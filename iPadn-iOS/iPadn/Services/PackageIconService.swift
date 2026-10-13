@@ -17,6 +17,36 @@ enum PackageIconService {
         return true
     }
 
+    // tvOS frequently ships its icons only inside Apple TV asset catalogs.
+    // iOS cannot reliably decode those renditions, so cache the public Apple
+    // Store artwork as a stable local fallback instead of showing a placeholder.
+    static func normalizedArtwork(_ data: Data) -> Data? {
+        guard !data.isEmpty, data.count <= 6_000_000,
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+                  kCGImageSourceThumbnailMaxPixelSize: 512
+              ] as CFDictionary) else { return nil }
+        return UIImage(cgImage: image).pngData()
+    }
+
+    static func saveCatalogArtwork(from url: URL, id: UUID) async throws -> Bool {
+        guard url.scheme?.lowercased() == "https", url.host != nil,
+              url.user == nil, url.password == nil else { return false }
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let response = response as? HTTPURLResponse,
+              (200..<300).contains(response.statusCode),
+              response.mimeType?.lowercased().hasPrefix("image/") == true,
+              let png = normalizedArtwork(data) else { return false }
+        try Task.checkCancellation()
+        let destination = cacheURL(id)
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try png.write(to: destination, options: .atomic)
+        return true
+    }
+
     static func png(from ipa: URL) throws -> Data? {
         let archive = try Archive(url: ipa, accessMode: .read)
         guard let info = archive.first(where: {

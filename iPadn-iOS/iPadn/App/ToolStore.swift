@@ -203,7 +203,11 @@ final class ToolStore: ObservableObject {
     }
 
     func startDownload(app: StoreApp, versionID: String?) async throws {
-        let asset = try await apple.asset(appID: app.id, versionID: versionID, store: settings.store, useCache: settings.useSignerCache)
+        var asset = try await apple.asset(appID: app.id, versionID: versionID,
+                                          store: settings.store, useCache: settings.useSignerCache)
+        // Apple DownloadDispatch often omits artwork even when the store
+        // listing showed it. Do not lose that listing before enqueuing.
+        if asset.app.iconURL == nil { asset.app.iconURL = app.iconURL }
         try downloads.enqueue(asset)
         tab = 1
     }

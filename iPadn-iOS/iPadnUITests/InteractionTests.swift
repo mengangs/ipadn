@@ -15,6 +15,19 @@ final class InteractionTests: XCTestCase {
         attach("21-app-id-inline", app: app)
     }
 
+    func testDownloadPlatformBadgeAlignsWithFileSize() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--visual-preview", "--downloads"]
+        app.launch()
+        let size = app.staticTexts["download.size.preview-1"].firstMatch
+        let badge = app.staticTexts["download.platform.IPA"].firstMatch
+        XCTAssertTrue(size.waitForExistence(timeout: 10))
+        XCTAssertTrue(badge.waitForExistence(timeout: 10))
+        XCTAssertGreaterThan(badge.frame.minX, size.frame.maxX)
+        XCTAssertEqual(badge.frame.midY, size.frame.midY, accuracy: 12)
+        attach("22-download-platform-inline", app: app)
+    }
+
     func testDownloadEditModeAllowsSelectingAndDeletingTasks() {
         let app = XCUIApplication()
         app.launchArguments = ["--visual-preview", "--downloads"]
