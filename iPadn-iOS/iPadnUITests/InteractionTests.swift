@@ -21,11 +21,12 @@ final class InteractionTests: XCTestCase {
         app.launchArguments = ["--visual-preview", "--downloads"]
         app.launch()
         let size = app.staticTexts["download.size.preview-1"].firstMatch
-        let badge = app.staticTexts["download.platform.IPA"].firstMatch
+        let icon = app.descendants(matching: .any)["download.platform.IPA"].firstMatch
         XCTAssertTrue(size.waitForExistence(timeout: 10))
-        XCTAssertTrue(badge.waitForExistence(timeout: 10))
-        XCTAssertGreaterThan(badge.frame.minX, size.frame.maxX)
-        XCTAssertEqual(badge.frame.midY, size.frame.midY, accuracy: 12)
+        XCTAssertTrue(icon.waitForExistence(timeout: 10))
+        // The platform glyph leads the version and size line.
+        XCTAssertLessThan(icon.frame.maxX, size.frame.minX)
+        XCTAssertEqual(icon.frame.midY, size.frame.midY, accuracy: 12)
         attach("22-download-platform-inline", app: app)
     }
 
@@ -56,13 +57,14 @@ final class InteractionTests: XCTestCase {
         app.buttons["download.filter.menu"].tap()
         app.buttons["download.filter.已完成"].tap()
         let install = app.buttons["安装"].firstMatch
-        let export = app.buttons["导出"].firstMatch
+        let share = app.buttons["分享"].firstMatch
         if !install.waitForExistence(timeout: 10) { print(app.debugDescription) }
         XCTAssertTrue(install.exists)
-        XCTAssertTrue(export.exists)
-        XCTAssertEqual(install.frame.width, export.frame.width, accuracy: 2)
-        XCTAssertEqual(install.frame.height, export.frame.height, accuracy: 2)
-        XCTAssertGreaterThanOrEqual(install.frame.height, 44)
+        XCTAssertTrue(share.exists)
+        // Compact trailing actions on the task card: 安装 capsule, then share.
+        XCTAssertEqual(install.frame.midY, share.frame.midY, accuracy: 4)
+        XCTAssertLessThan(install.frame.maxX, share.frame.minX)
+        XCTAssertGreaterThanOrEqual(share.frame.height, 44)
         attach("17-completed-actions", app: app)
         install.tap()
         let settings = app.buttons["installation.settings"]

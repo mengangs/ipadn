@@ -281,15 +281,27 @@ struct DownloadsView: View {
 struct DownloadTaskRow: View {
     @EnvironmentObject private var manager: DownloadManager
     let job: DownloadJob
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var inspecting: () -> Void
     var primary: () -> Void
     var exporting: () -> Void
     private var displayedApp: StoreApp {
         job.displayApp(packageIcon: manager.packageIconURL(job))
     }
-    private var platformBadge: some View {
-        TagBadge(text: job.platformLabel)
+    private var platformSymbol: String {
+        switch job.platformLabel {
+        case "tvOS": return "appletv"
+        case "iPad": return "ipad"
+        case "Mac": return "macbook"
+        case "iOS": return "iphone"
+        default: return "shippingbox"
+        }
+    }
+    /// Platform shown as its device glyph, like the App Store's compatibility icons.
+    private var platformIcon: some View {
+        Image(systemName: platformSymbol)
+            .font(.footnote.weight(.medium)).foregroundStyle(.secondary)
+            .frame(minWidth: 16)
+            .accessibilityLabel(job.platformLabel)
             .accessibilityIdentifier("download.platform." + job.platformLabel)
     }
     private var appHeading: some View {
@@ -298,16 +310,15 @@ struct DownloadTaskRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(displayedApp.name).font(.body.weight(.medium)).lineLimit(2)
                 HStack(spacing: 6) {
+                    platformIcon
                     if !displayedApp.version.isEmpty {
                         Text("v\(displayedApp.version)").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                     }
                     if displayedApp.size > 0 {
                         Text(displayedApp.size.byteLabel)
-                            .font(.subheadline).foregroundStyle(.secondary)
+                            .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                             .accessibilityIdentifier("download.size." + job.app.id)
                     }
-                    Spacer(minLength: 6)
-                    platformBadge
                 }
                 statusLine
             }
@@ -361,25 +372,24 @@ struct DownloadTaskRow: View {
         case .failed:
             RowCapsule(title: "重试", action: primary)
         case .completed:
-            EmptyView()
+            HStack(spacing: 8) {
+                if job.rawFormat == nil {
+                    Button("安装", action: primary)
+                        .buttonStyle(CapsuleButtonStyle(filled: true))
+                        .accessibilityIdentifier("download.install." + job.app.id)
+                }
+                Button(action: exporting) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("分享")
+                .accessibilityIdentifier("download.export." + job.app.id)
+            }
         }
     }
-    // Plain HStack labels: a Label inside a List row is laid out with the
-    // list's icon column and drifts away from its title.
-    private func actionLabel(_ title: String, _ symbol: String) -> some View {
-        HStack(spacing: 6) { Image(systemName: symbol); Text(title) }
-    }
-    private var installButton: some View {
-        Button(action: primary) { actionLabel("安装", "arrow.down.app") }
-            .buttonStyle(DownloadActionStyle())
-            .accessibilityLabel("安装").accessibilityIdentifier("download.install." + job.app.id)
-    }
-    private var exportButton: some View {
-        Button(action: exporting) { actionLabel("导出", "square.and.arrow.up") }
-            .buttonStyle(DownloadActionStyle(secondary: true))
-            .accessibilityLabel("导出").accessibilityIdentifier("download.export." + job.app.id)
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
@@ -391,15 +401,6 @@ struct DownloadTaskRow: View {
                     .animation(.linear(duration: 0.25), value: job.progress)
                     .accessibilityLabel("下载进度").accessibilityValue("\(Int(job.progress * 100))%")
             }
-            if job.status == .completed {
-                if job.rawFormat != nil {
-                    exportButton
-                } else if dynamicTypeSize.isAccessibilitySize {
-                    VStack(spacing: 10) { installButton; exportButton }
-                } else {
-                    HStack(spacing: 12) { installButton; exportButton }
-                }
-            }
             if let error = job.error {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: "exclamationmark.circle.fill")
@@ -410,20 +411,6 @@ struct DownloadTaskRow: View {
         }
         .padding(.vertical, 8)
         .animation(.snappy, value: job.status)
-    }
-}
-
-private struct DownloadActionStyle: ButtonStyle {
-    var secondary = false
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.subheadline.weight(.semibold))
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(secondary ? UX.tint : UX.onAccent)
-            .background(secondary ? AnyShapeStyle(Color(.tertiarySystemFill)) : AnyShapeStyle(UX.tint), in: Capsule())
-            .opacity(configuration.isPressed ? 0.75 : 1)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.snappy(duration: 0.15), value: configuration.isPressed)
     }
 }
 
