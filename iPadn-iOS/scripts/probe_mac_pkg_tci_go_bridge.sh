@@ -601,8 +601,8 @@ cat > "$APP/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Mac PKG Go TCI Probe</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-<key>CFBundleShortVersionString</key><string>1.0</string>
-<key>CFBundleVersion</key><string>10</string>
+<key>CFBundleShortVersionString</key><string>1.1</string>
+<key>CFBundleVersion</key><string>11</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>MinimumOSVersion</key><string>15.0</string>
 <key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
@@ -631,5 +631,5 @@ cp -R "$APP" "$ROOT/out/go-package/Payload/"
   /usr/bin/zip -qr -X "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa" Payload)
 test -s "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa"
 du -h "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa"
-echo "Go ↔ no-JIT TCI v1.0 iPhone diagnostic IPA built but NOT run by CI."
+echo "Go ↔ no-JIT TCI v1.1 iPhone diagnostic IPA built but NOT run by CI."
 echo "NO StoreAgent initialization, Apple asset retrieval, authorization, Mac PKG download or decryption performed."
