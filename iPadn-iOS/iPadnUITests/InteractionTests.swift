@@ -105,6 +105,14 @@ final class InteractionTests: XCTestCase {
         dimensional.tap(); acknowledgeSystemAlert()
         let restored = expectation(for: NSPredicate(format: "value == %@ AND isEnabled == true", "已选中"), evaluatedWith: dimensional)
         wait(for: [restored], timeout: 12)
+        if dimensional.value as? String != "已选中" {
+            // Record what the app and the system reported when the restore stalls.
+            let status = app.staticTexts["settings.icon.status"]
+            let alertTexts = app.alerts.firstMatch.staticTexts.allElementsBoundByIndex.map(\.label)
+            print("ICON-DIAG status=\(status.exists ? status.label : "none") enabled=\(dimensional.isEnabled) " +
+                  "appAlerts=\(alertTexts) springboardAlerts=\(springboard.alerts.count)")
+            attach("19b-icon-restore-stalled", app: app)
+        }
     }
 
     func testIconSelectionAndSearchSubmitControl() {
