@@ -29,8 +29,11 @@ struct DownloadsView: View {
     var body: some View {
         List {
             if !manager.jobs.isEmpty {
-                Section { SearchInput(text: $term, placeholder: "搜索名称、版本或 Bundle ID") }
-                    .listRowSeparator(.hidden)
+                Section {
+                    SearchInput(text: $term, placeholder: "搜索名称、版本或 Bundle ID", capsule: true)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                }
+                .listRowBackground(Color.clear).listRowSeparator(.hidden)
             }
             if let error = manager.storageError { Section { InlineIssue(message: error) } }
             if let warning = manager.discoveryWarning { Section { InlineIssue(message: warning) } }
@@ -70,23 +73,23 @@ struct DownloadsView: View {
                         }
                         .contextMenu {
                             if !editMode.isEditing {
-                            Button("任务详情", systemImage: "info.circle") { inspecting = job }
-                            if let file = manager.fileURL(job) {
-                                Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: file) }
-                                if job.rawFormat == nil {
-                                    Button("安装", systemImage: "square.and.arrow.down") { installing = job }
-                                }
-                                Button("复制本机链接", systemImage: "link") {
-                                    perform {
-                                        let url = try await store.installation.localURL(file: file)
-                                        UIPasteboard.general.string = url.absoluteString
-                                        store.infoMessage = "已复制本机链接，使用时请保持应用运行。"
+                                Button("任务详情", systemImage: "info.circle") { inspecting = job }
+                                if let file = manager.fileURL(job) {
+                                    Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: file) }
+                                    if job.rawFormat == nil {
+                                        Button("安装", systemImage: "square.and.arrow.down") { installing = job }
+                                    }
+                                    Button("复制本机链接", systemImage: "link") {
+                                        perform {
+                                            let url = try await store.installation.localURL(file: file)
+                                            UIPasteboard.general.string = url.absoluteString
+                                            store.infoMessage = "已复制本机链接，使用时请保持应用运行。"
+                                        }
                                     }
                                 }
-                            }
-                            if job.status != .processing && job.status != .pausing {
-                                Button("删除任务及文件", systemImage: "trash", role: .destructive) { askDelete([job.id]) }
-                            }
+                                if job.status != .processing && job.status != .pausing {
+                                    Button("删除任务及文件", systemImage: "trash", role: .destructive) { askDelete([job.id]) }
+                                }
                             }
                         }
                     } header: {

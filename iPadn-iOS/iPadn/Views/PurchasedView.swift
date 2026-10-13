@@ -7,6 +7,7 @@ struct PurchasedView: View {
     @State private var months = 0
     @State private var showLogin = false
     @State private var getting: StoreApp?
+    @State private var headerAway = false
     private var filtered: [OwnedApp] {
         let cutoff = Calendar.current.date(byAdding: .month, value: -months, to: Date()) ?? .distantPast
         return store.owned.filter {
@@ -25,6 +26,7 @@ struct PurchasedView: View {
                     .buttonStyle(.borderless)
                     .disabled(store.ownedLoading || apple.active == nil).accessibilityLabel("同步购买记录")
                 }
+                .onScrolledUnderBar { headerAway = $0 }
                 .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 16))
             }
             .listRowBackground(Color.clear).listRowSeparator(.hidden)
@@ -73,7 +75,7 @@ struct PurchasedView: View {
         .navigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
         .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
         .toolPage()
-        .navigationTitle("已购项目").toolbar(.hidden, for: .navigationBar)
+        .rootTabBar("已购项目", headerScrolledAway: headerAway)
         .task(id: "\(apple.activeID ?? "")|\(store.ownedRevision)|\(store.settings.store.country)|\(store.settings.store.platform.rawValue)") { await store.loadOwnedArtwork() }
         .refreshable { if apple.active != nil { await store.refreshOwned() } }
     }

@@ -208,7 +208,7 @@ enum StoreService {
         let size = ((offer["assets"] as? [[String: Any]])?.first?["size"] as? NSNumber)?.int64Value ?? 0
         return StoreApp(id: id, name: plistString(raw["name"]), version: plistString(version["display"]),
                         iconURL: icon(plistString(artwork["url"])), description: plistString(description["standard"]),
-                        category: (raw["genreNames"] as? [String] ?? []).joined(separator: " · "), size: size,
+                        category: (raw["genreNames"] as? [String] ?? []).map(localizedGenre).joined(separator: " · "), size: size,
                         price: plistString(offer["priceFormatted"]), rating: (rating["value"] as? NSNumber)?.doubleValue ?? 0,
                         minimumOS: plistString(raw["minimumOSVersion"]),
                         externalVersionID: latestID,
@@ -283,12 +283,27 @@ enum StoreService {
         StoreApp(id: plistString(raw["trackId"]), name: plistString(raw["trackName"] ?? raw["trackCensoredName"]),
                  bundleID: plistString(raw["bundleId"]), version: plistString(raw["version"]),
                  iconURL: icon(plistString(raw["artworkUrl512"] ?? raw["artworkUrl100"])),
-                 description: plistString(raw["description"]), category: plistString(raw["primaryGenreName"]),
+                 description: plistString(raw["description"]), category: localizedGenre(plistString(raw["primaryGenreName"])),
                  size: Int64(plistString(raw["fileSizeBytes"])) ?? 0,
                  price: plistString(raw["formattedPrice"]).isEmpty ? "免费" : plistString(raw["formattedPrice"]),
                  rating: (raw["averageUserRating"] as? NSNumber)?.doubleValue ?? 0,
                  minimumOS: plistString(raw["minimumOsVersion"]),
                  developerURL: MacInstallerService.safeWebsite(plistString(raw["sellerUrl"])))
+    }
+
+    /// The lookup APIs return English genre names in every storefront.
+    static func localizedGenre(_ name: String) -> String {
+        let names = [
+            "Books": "图书", "Business": "商务", "Developer Tools": "开发者工具", "Education": "教育",
+            "Entertainment": "娱乐", "Finance": "财务", "Food & Drink": "美食佳饮", "Games": "游戏",
+            "Graphics & Design": "图形和设计", "Health & Fitness": "健康健美", "Lifestyle": "生活",
+            "Kids": "儿童", "Magazines & Newspapers": "报刊杂志", "Medical": "医疗", "Music": "音乐",
+            "Navigation": "导航", "News": "新闻", "Photo & Video": "摄影与录像", "Productivity": "效率",
+            "Reference": "参考资料", "Shopping": "购物", "Social Networking": "社交", "Sports": "体育",
+            "Travel": "旅游", "Utilities": "工具", "Weather": "天气", "Stickers": "贴纸",
+            "Video": "视频", "Graphics and Design": "图形和设计"
+        ]
+        return names[name] ?? name
     }
 
     static func icon(_ value: String) -> URL? {

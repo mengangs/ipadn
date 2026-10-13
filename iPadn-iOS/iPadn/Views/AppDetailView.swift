@@ -32,6 +32,7 @@ struct AppDetailView: View {
     @State private var macOfficialTask: Task<Void, Never>?
     @State private var enteringMacDownloadURL = false
     @State private var macDownloadURL = ""
+    @State private var headerAway = false
     private var storeURL: URL { URL(string: "https://apps.apple.com/\(store.settings.store.country.lowercased())/app/id\(app.id)")! }
     private var filtered: [AppVersion] {
         versionSearch.isEmpty ? versions : versions.filter { $0.version.localizedCaseInsensitiveContains(versionSearch) || $0.id.contains(versionSearch) }
@@ -40,6 +41,7 @@ struct AppDetailView: View {
         List {
             Section {
                 header.listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
+                    .onScrolledUnderBar { headerAway = $0 }
                 infoStrip.listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
             }
             if store.settings.store.platform.supportsIPA { versionSection } else { macSection }
@@ -72,8 +74,19 @@ struct AppDetailView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            Button { store.toggleFavorite(app); UX.feedback() } label: { Image(systemName: store.isFavorite(app) ? "star.fill" : "star").frame(minWidth: 44, minHeight: 44) }
+            // App Store shows the small icon in the bar once the header is gone.
+            ToolbarItem(placement: .principal) {
+                AppIcon(url: app.iconURL, size: 30)
+                    .opacity(headerAway ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.18), value: headerAway)
+                    .accessibilityHidden(true)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { store.toggleFavorite(app); UX.feedback() } label: {
+                    Image(systemName: store.isFavorite(app) ? "star.fill" : "star").frame(minWidth: 44, minHeight: 44)
+                }
                 .accessibilityLabel(store.isFavorite(app) ? "取消收藏" : "收藏应用")
+            }
         }
         .alert("下载 Mac 安装包", isPresented: $enteringMacDownloadURL) {
             TextField("https://example.com/App.dmg", text: $macDownloadURL)
@@ -149,8 +162,8 @@ struct AppDetailView: View {
         HStack(alignment: .top, spacing: 16) {
             AppIcon(url: app.iconURL, size: 118)
             VStack(alignment: .leading, spacing: 4) {
-                Text(app.name.isEmpty ? app.bundleID : app.name).font(.title2.weight(.bold))
-                    .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                Text(app.name.isEmpty ? app.bundleID : app.name).font(.title3.weight(.bold))
+                    .lineLimit(2).minimumScaleFactor(0.85).fixedSize(horizontal: false, vertical: true)
                 if !app.category.isEmpty { Text(app.category).font(.subheadline).foregroundStyle(.secondary) }
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(app.version.isEmpty ? "版本待查询" : "v\(app.version)")
@@ -209,14 +222,22 @@ struct AppDetailView: View {
 
     /// Horizontal info strip under the header, as on App Store product pages.
     private var infoStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                let items = stripItems
-                ForEach(items.indices, id: \.self) { index in
-                    items[index]
-                    if index < items.count - 1 { Divider().frame(height: 36) }
-                }
-            }.padding(.horizontal, 12)
+        let items = stripItems
+        // Spread the cells across the row when they fit; scroll otherwise.
+        return ViewThatFits(in: .horizontal) {
+            stripRow(items, stretch: true).padding(.horizontal, 12)
+            ScrollView(.horizontal, showsIndicators: false) {
+                stripRow(items, stretch: false).padding(.horizontal, 12)
+            }
+        }
+    }
+
+    private func stripRow(_ items: [InfoStripItem], stretch: Bool) -> some View {
+        HStack(spacing: 0) {
+            ForEach(items.indices, id: \.self) { index in
+                items[index].frame(maxWidth: stretch ? .infinity : nil)
+                if index < items.count - 1 { Divider().frame(height: 36) }
+            }
         }
     }
 

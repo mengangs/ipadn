@@ -169,6 +169,39 @@ struct SearchInput: View {
     }
 }
 
+/// Root-tab chrome that pairs with `PageHeader`. The navigation bar stays
+/// visible (hiding it made the page jump when popping back from a pushed
+/// page); it shows the small title only once the header has scrolled away.
+struct RootTabBar: ViewModifier {
+    let title: String
+    let headerScrolledAway: Bool
+    func body(content: Content) -> some View {
+        content
+            .contentMargins(.top, 0, for: .scrollContent)
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text(title).font(.headline)
+                        .opacity(headerScrolledAway ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.18), value: headerScrolledAway)
+                        .accessibilityHidden(!headerScrolledAway)
+                }
+            }
+    }
+}
+extension View {
+    func rootTabBar(_ title: String, headerScrolledAway: Bool) -> some View {
+        modifier(RootTabBar(title: title, headerScrolledAway: headerScrolledAway))
+    }
+    /// Reports whether this view has scrolled up under the navigation bar.
+    func onScrolledUnderBar(_ action: @escaping (Bool) -> Void) -> some View {
+        onGeometryChange(for: Bool.self) { proxy in
+            proxy.frame(in: .global).maxY < 104
+        } action: { action($0) }
+    }
+}
+
 /// App Store root-tab header: large title with the trailing control (the
 /// account avatar) on the same line, instead of a separate toolbar row.
 struct PageHeader<Trailing: View>: View {

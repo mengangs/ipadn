@@ -8,11 +8,13 @@ struct SearchView: View {
     @EnvironmentObject private var apple: AppleService
     @State private var confirmClear = false
     @State private var getting: StoreApp?
+    @State private var headerAway = false
     private let regions = [("CN", "中国大陆"), ("US", "美国"), ("HK", "香港"), ("TW", "台湾"), ("JP", "日本"), ("GB", "英国"), ("SG", "新加坡"), ("CA", "加拿大"), ("AU", "澳大利亚"), ("KR", "韩国"), ("DE", "德国"), ("FR", "法国")]
     var body: some View {
         List {
             Section {
                 PageHeader(title: "搜索") { AccountMenuButton() }
+                    .onScrolledUnderBar { headerAway = $0 }
                     .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 2, trailing: 12))
                 SearchInput(text: $store.searchText, placeholder: "应用名称、App ID 或链接", capsule: true,
                             submit: { store.search() }, clear: { store.clearSearch() })
@@ -54,8 +56,7 @@ struct SearchView: View {
             }
         }
         .toolPage()
-        .navigationTitle("搜索")
-        .toolbar(.hidden, for: .navigationBar)
+        .rootTabBar("搜索", headerScrolledAway: headerAway)
         .navigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
         .actionConfirmation(isPresented: $confirmClear, title: "清除最近搜索？", confirmTitle: "清除") { withAnimation { store.clearHistory() } }
         .task { await store.loadNameCatalog() }
