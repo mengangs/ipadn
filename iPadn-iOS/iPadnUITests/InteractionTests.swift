@@ -111,12 +111,22 @@ final class InteractionTests: XCTestCase {
         flat.tap()
         XCTAssertTrue(waitUntilSelected(flat, timeout: 40))
         attach("19-system-icon-switch", app: app)
+        // Switch back in a later session, as a person would after seeing the
+        // new icon: SpringBoard refuses a second change while the first one's
+        // confirmation is still on screen.
+        app.terminate()
+        app.launch()
+        app.buttons["accounts.settings"].tap()
+        XCTAssertTrue(dimensional.waitForExistence(timeout: 10))
+        if !dimensional.isHittable { app.swipeUp() }
+        XCTAssertEqual(flat.value as? String, "已选中", "The system kept the alternate icon across launches")
         dimensional.tap()
         // The app retries a throttled change for about a minute.
         let restored = waitUntilSelected(dimensional, timeout: 90)
         if !restored {
             let status = app.staticTexts["settings.icon.status"]
             print("ICON-DIAG status=\(status.exists ? status.label : "none") enabled=\(dimensional.isEnabled)")
+            print("ICON-DIAG springboard=\(springboard.debugDescription.prefix(3000))")
             attach("19b-icon-restore-stalled", app: app)
         }
         XCTAssertTrue(restored)
