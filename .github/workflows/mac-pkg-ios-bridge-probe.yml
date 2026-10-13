@@ -6,6 +6,8 @@ on:
     paths:
       - 'iPadn-iOS/scripts/probe_mac_pkg_ios_bridge.sh'
       - 'iPadn-iOS/scripts/mac_pkg_runtime_probe.m'
+      - 'iPadn-iOS/scripts/probe_mac_pkg_ios_tci.sh'
+      - 'iPadn-iOS/scripts/mac_pkg_tci_probe.m'
       - '.github/workflows/mac-pkg-ios-bridge-probe.yml'
   workflow_dispatch:
 
@@ -35,5 +37,25 @@ jobs:
         with:
           name: MacPKGProbe-unsigned-iphoneos
           path: ${{ runner.temp }}/ipadn-macpkg-static-probe/out/MacPKGProbe-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+  ios-nojit-tci:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify iPhone SDK
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+          cmake --version
+      - name: Build no-JIT TCI interpreter and unsigned iPhone test IPA
+        run: bash iPadn-iOS/scripts/probe_mac_pkg_ios_tci.sh
+      - name: Upload standalone no-JIT iPhone IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: MacPKGTCIProbe-unsigned-iphoneos
+          path: ${{ runner.temp }}/ipadn-macpkg-tci-probe/out/MacPKGTCIProbe-unsigned.ipa
           if-no-files-found: error
           retention-days: 7
