@@ -37,6 +37,14 @@ enum AppPlatform: String, Codable, CaseIterable, Identifiable {
         case .macOS: return "Mac"
         }
     }
+    var symbol: String {
+        switch self {
+        case .iOS: return "iphone"
+        case .iPadOS: return "ipad"
+        case .tvOS: return "appletv"
+        case .macOS: return "macbook"
+        }
+    }
     var supportsIPA: Bool { self != .macOS }
     var usesIOSStore: Bool { self == .iOS || self == .iPadOS }
     var searchEntity: String {

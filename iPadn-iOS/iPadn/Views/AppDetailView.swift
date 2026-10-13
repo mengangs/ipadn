@@ -224,20 +224,11 @@ struct AppDetailView: View {
         var items: [InfoStripItem] = []
         if app.rating > 0 { items.append(InfoStripItem(caption: "评分", value: String(format: "%.1f", app.rating), detail: String(repeating: "★", count: max(0, min(5, Int(app.rating.rounded())))))) }
         if app.size > 0 { items.append(InfoStripItem(caption: "大小", value: app.size.byteLabel.components(separatedBy: " ").first ?? app.size.byteLabel, detail: app.size.byteLabel.components(separatedBy: " ").last)) }
-        items.append(InfoStripItem(caption: "平台", value: store.settings.store.platform.title, symbol: platformSymbol))
+        items.append(InfoStripItem(caption: "平台", value: store.settings.store.platform.title, symbol: store.settings.store.platform.symbol))
         if !app.minimumOS.isEmpty { items.append(InfoStripItem(caption: "系统要求", value: app.minimumOS + "+", detail: store.settings.store.platform.title)) }
         if !app.category.isEmpty { items.append(InfoStripItem(caption: "类别", value: app.category, symbol: "square.grid.2x2")) }
         items.append(InfoStripItem(caption: "地区", value: store.settings.store.country, detail: "商店"))
         return items
-    }
-
-    private var platformSymbol: String {
-        switch store.settings.store.platform {
-        case .iOS: return "iphone"
-        case .iPadOS: return "ipad"
-        case .tvOS: return "appletv"
-        case .macOS: return "macbook"
-        }
     }
 
     @ViewBuilder private var versionSection: some View {

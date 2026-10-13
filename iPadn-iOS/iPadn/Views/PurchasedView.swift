@@ -16,9 +16,21 @@ struct PurchasedView: View {
     }
     var body: some View {
         List {
+            Section {
+                PageHeader(title: "已购项目") {
+                    Button { Task { await store.refreshOwned() } } label: {
+                        Image(systemName: "arrow.clockwise").font(.body.weight(.semibold))
+                            .frame(width: 36, height: 36).background(Color(.tertiarySystemFill), in: Circle())
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(store.ownedLoading || apple.active == nil).accessibilityLabel("同步购买记录")
+                }
+                .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 16))
+            }
+            .listRowBackground(Color.clear).listRowSeparator(.hidden)
             if let account = apple.active {
                 Section {
-                    SearchInput(text: $term, placeholder: "搜索已购项目或 App ID")
+                    SearchInput(text: $term, placeholder: "搜索已购项目或 App ID", capsule: true)
                     Picker("购买时间", selection: $months) {
                         Text("全部").tag(0); Text("1 个月").tag(1); Text("6 个月").tag(6); Text("1 年").tag(12)
                     }.pickerStyle(.segmented)
@@ -60,11 +72,8 @@ struct PurchasedView: View {
         .navigationDestination(isPresented: $showLogin) { LoginView() }
         .navigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
         .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
-        .toolPage().navigationTitle("已购项目").navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            Button { Task { await store.refreshOwned() } } label: { Image(systemName: "arrow.clockwise").frame(minWidth: 44, minHeight: 44) }
-                .disabled(store.ownedLoading || apple.active == nil).accessibilityLabel("同步购买记录")
-        }
+        .toolPage()
+        .navigationTitle("已购项目").toolbar(.hidden, for: .navigationBar)
         .task(id: "\(apple.activeID ?? "")|\(store.ownedRevision)|\(store.settings.store.country)|\(store.settings.store.platform.rawValue)") { await store.loadOwnedArtwork() }
         .refreshable { if apple.active != nil { await store.refreshOwned() } }
     }

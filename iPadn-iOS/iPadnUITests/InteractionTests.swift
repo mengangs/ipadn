@@ -88,33 +88,35 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(flat.waitForExistence(timeout: 10))
         if !flat.isHittable { app.swipeUp() }
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        func acknowledgeSystemAlert() {
-            let alert = springboard.alerts.firstMatch
-            if alert.waitForExistence(timeout: 3) { alert.buttons.firstMatch.tap() }
-            else if app.alerts.firstMatch.exists { app.alerts.firstMatch.buttons.firstMatch.tap() }
+        // iOS confirms each icon change with an alert, and the completion
+        // handler only fires once it is dismissed. A throttled (EAGAIN)
+        // request is retried by the app and raises its own alert later, so
+        // keep dismissing alerts for the whole wait, as a user would.
+        func waitUntilSelected(_ button: XCUIElement, timeout: TimeInterval) -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline {
+                if button.value as? String == "已选中" && button.isEnabled { return true }
+                if springboard.alerts.firstMatch.exists { springboard.alerts.firstMatch.buttons.firstMatch.tap() }
+                else if app.alerts.firstMatch.exists { app.alerts.firstMatch.buttons.firstMatch.tap() }
+                RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+            }
+            return button.value as? String == "已选中"
         }
         if flat.isSelected {
-            dimensional.tap(); acknowledgeSystemAlert()
-            let initial = expectation(for: NSPredicate(format: "value == %@ AND isEnabled == true", "已选中"), evaluatedWith: dimensional)
-            wait(for: [initial], timeout: 12)
+            dimensional.tap()
+            XCTAssertTrue(waitUntilSelected(dimensional, timeout: 40))
         }
-        flat.tap(); acknowledgeSystemAlert()
-        let switched = expectation(for: NSPredicate(format: "value == %@ AND isEnabled == true", "已选中"), evaluatedWith: flat)
-        wait(for: [switched], timeout: 12)
+        flat.tap()
+        XCTAssertTrue(waitUntilSelected(flat, timeout: 40))
         attach("19-system-icon-switch", app: app)
-        dimensional.tap(); acknowledgeSystemAlert()
-        let restored = expectation(for: NSPredicate(format: "value == %@ AND isEnabled == true", "已选中"), evaluatedWith: dimensional)
-        // iOS throttles an immediate second icon change (EAGAIN); the app
-        // retries with back-off, so allow for that before judging.
-        wait(for: [restored], timeout: 40)
-        if dimensional.value as? String != "已选中" {
-            // Record what the app and the system reported when the restore stalls.
+        dimensional.tap()
+        let restored = waitUntilSelected(dimensional, timeout: 40)
+        if !restored {
             let status = app.staticTexts["settings.icon.status"]
-            let alertTexts = app.alerts.firstMatch.staticTexts.allElementsBoundByIndex.map(\.label)
-            print("ICON-DIAG status=\(status.exists ? status.label : "none") enabled=\(dimensional.isEnabled) " +
-                  "appAlerts=\(alertTexts) springboardAlerts=\(springboard.alerts.count)")
+            print("ICON-DIAG status=\(status.exists ? status.label : "none") enabled=\(dimensional.isEnabled)")
             attach("19b-icon-restore-stalled", app: app)
         }
+        XCTAssertTrue(restored)
     }
 
     func testIconSelectionAndSearchSubmitControl() {
@@ -137,12 +139,15 @@ final class InteractionTests: XCTestCase {
         app.terminate()
         app.launchArguments = ["--visual-preview"]
         app.launch()
-        let submit = app.buttons["search.submit"]
-        XCTAssertTrue(submit.waitForExistence(timeout: 10))
-        XCTAssertFalse(submit.isEnabled)
+        // App Store search bar: a capsule field that searches from the
+        // keyboard; the clear control appears once something is typed.
         let input = app.textFields["应用名称、App ID 或链接"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["search.submit"].exists)
+        XCTAssertFalse(app.buttons["清空输入"].exists)
         input.tap(); input.typeText("Test")
-        XCTAssertTrue(submit.isEnabled)
+        XCTAssertTrue(app.buttons["清空输入"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["切换或管理账号"].exists)
     }
     func testFiltersAndDeleteConfirmation() {
         let app = XCUIApplication()

@@ -133,32 +133,58 @@ struct InlineIssue: View {
     }
 }
 
-/// In-list search field (used where the navigation search bar is not).
+/// In-list search field. `capsule` is the App Store search-tab bar: a
+/// full-width pill that searches from the keyboard's Search key.
 struct SearchInput: View {
     @Binding var text: String
     var placeholder: String
+    var capsule = false
     var submit: (() -> Void)? = nil
     var clear: (() -> Void)? = nil
     @FocusState private var focused: Bool
+    private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
             TextField(placeholder, text: $text).textInputAutocapitalization(.never).autocorrectionDisabled()
-                .submitLabel(.search).focused($focused).onSubmit { focused = false; submit?() }
+                .submitLabel(.search).focused($focused)
+                .onSubmit { focused = false; if !trimmed.isEmpty { submit?() } }
                 .accessibilityLabel(placeholder)
             if !text.isEmpty {
-                Button { text = ""; clear?() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary).frame(width: 36, height: 36) }
+                Button { text = ""; clear?() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary).frame(width: 32, height: 32) }
                     .buttonStyle(.borderless).accessibilityLabel("清空输入")
             }
-            if let submit {
-                Button { focused = false; submit() } label: { Text("搜索").font(.subheadline.weight(.semibold)) }
+            if submit != nil && !capsule {
+                Button { focused = false; submit?() } label: { Text("搜索").font(.subheadline.weight(.semibold)) }
                     .buttonStyle(.borderless)
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(trimmed.isEmpty)
                     .accessibilityLabel("搜索应用").accessibilityIdentifier("search.submit")
             }
-        }.padding(.leading, 10).padding(.trailing, 8).frame(minHeight: 40)
-            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .padding(.leading, capsule ? 14 : 10).padding(.trailing, capsule ? 6 : 8)
+        .frame(minHeight: capsule ? 44 : 40)
+        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: capsule ? 22 : 10, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
     }
+}
+
+/// App Store root-tab header: large title with the trailing control (the
+/// account avatar) on the same line, instead of a separate toolbar row.
+struct PageHeader<Trailing: View>: View {
+    let title: String
+    @ViewBuilder var trailing: Trailing
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text(title).font(.largeTitle.weight(.bold)).lineLimit(1).minimumScaleFactor(0.7)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            trailing
+        }
+    }
+}
+extension PageHeader where Trailing == EmptyView {
+    init(title: String) { self.init(title: title) { EmptyView() } }
 }
 
 struct TaskStatusPill: View {

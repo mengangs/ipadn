@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// App Store-style search: large title, search bar, filter chips, recent
+/// App Store-style search: title with the account avatar on one line, a
+/// capsule search bar under it, filter chips, recent
 /// searches as suggestions, and result rows with a "获取" capsule.
 struct SearchView: View {
     @EnvironmentObject private var store: ToolStore
@@ -11,7 +12,10 @@ struct SearchView: View {
     var body: some View {
         List {
             Section {
-                SearchInput(text: $store.searchText, placeholder: "应用名称、App ID 或链接", submit: { store.search() }, clear: { store.clearSearch() })
+                PageHeader(title: "搜索") { AccountMenuButton() }
+                    .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 2, trailing: 12))
+                SearchInput(text: $store.searchText, placeholder: "应用名称、App ID 或链接", capsule: true,
+                            submit: { store.search() }, clear: { store.clearSearch() })
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) { regionPicker; platformPicker }
@@ -51,11 +55,8 @@ struct SearchView: View {
         }
         .toolPage()
         .navigationTitle("搜索")
-        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { AccountMenuButton() }
-        }
         .actionConfirmation(isPresented: $confirmClear, title: "清除最近搜索？", confirmTitle: "清除") { withAnimation { store.clearHistory() } }
         .task { await store.loadNameCatalog() }
         .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
@@ -143,9 +144,9 @@ struct SearchView: View {
     private var platformPicker: some View {
         Menu {
             Picker("应用平台", selection: $store.settings.store.platform) {
-                ForEach(AppPlatform.allCases) { platform in Text(platform.title).tag(platform) }
+                ForEach(AppPlatform.allCases) { platform in Label(platform.title, systemImage: platform.symbol).tag(platform) }
             }
-        } label: { chip(store.settings.store.platform.title, symbol: "apps.iphone") }
+        } label: { chip(store.settings.store.platform.title, symbol: store.settings.store.platform.symbol) }
         .accessibilityLabel("应用平台：\(store.settings.store.platform.title)")
     }
 }
