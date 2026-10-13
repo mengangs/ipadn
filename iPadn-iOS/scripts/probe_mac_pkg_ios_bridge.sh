@@ -78,4 +78,41 @@ OBJC
 xcrun file "$WORKDIR/out/probe-ios-arm64"
 du -h "$WORKDIR/out/libipadnMacBridge.a" "$WORKDIR/out/probe-ios-arm64"
 
-echo "Static build/link probe passed. Real non-jailbroken iPhone memory/code-signing/W^X runtime compatibility remains UNTESTED."
+# Build a minimal, separately installable iOS app that invokes Unicorn only
+# after a user tap. An unsigned IPA is an artifact for deliberate on-device
+# verification with the user's own code-signing profile.
+APP="$WORKDIR/out/MacPKGProbe.app"
+mkdir -p "$APP" "$WORKDIR/out/Payload"
+cat > "$APP/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>org.ipadn.macpkg-runtime-probe</string>
+<key>CFBundleExecutable</key><string>MacPKGProbe</string>
+<key>CFBundleName</key><string>Mac PKG Runtime Probe</string>
+<key>CFBundleDisplayName</key><string>Mac PKG 测试</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+<key>CFBundleShortVersionString</key><string>0.1</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>LSRequiresIPhoneOS</key><true/>
+<key>MinimumOSVersion</key><string>15.0</string>
+<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+<key>UILaunchScreen</key><dict/>
+</dict></plist>
+PLIST
+"$CC" -target arm64-apple-ios15.0 -isysroot "$SDKROOT" \
+  "${GITHUB_WORKSPACE:-$PWD}/iPadn-iOS/scripts/mac_pkg_runtime_probe.m" \
+  "$WORKDIR/out/libipadnMacBridge.a" \
+  -framework UIKit -framework Foundation -framework Security -framework CoreFoundation \
+  -lresolv -liconv -lz -lc++ -Wl,-export_dynamic \
+  -o "$APP/MacPKGProbe"
+plutil -lint "$APP/Info.plist"
+xcrun vtool -show-build "$APP/MacPKGProbe"
+cp -R "$APP" "$WORKDIR/out/Payload/"
+(cd "$WORKDIR/out" && /usr/bin/zip -qr -X MacPKGProbe-unsigned.ipa Payload)
+test -s "$WORKDIR/out/MacPKGProbe-unsigned.ipa"
+du -h "$WORKDIR/out/MacPKGProbe-unsigned.ipa"
+
+echo "Static build/link and unsigned diagnostic IPA packaging passed."
+echo "A real non-jailbroken iPhone test is STILL required for runtime JIT/W^X, memory and code-signing compatibility."
