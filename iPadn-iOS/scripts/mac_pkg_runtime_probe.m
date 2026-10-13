@@ -6,7 +6,9 @@
 #import <mach/mach.h>
 #include <stdint.h>
 
-extern int32_t iPadnMacUnicornProbe(void);
+// Detailed diagnostics distinguish missing x86 guest CPU, symbol loading,
+// and actual x86 emulator initialization errors.
+extern int32_t iPadnMacUnicornProbe(char *error, int32_t capacity);
 
 static double ResidentMemoryMB(void) {
     mach_task_basic_info_data_t info = {0};
@@ -36,7 +38,7 @@ static double ResidentMemoryMB(void) {
     description.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     description.textColor = UIColor.secondaryLabelColor;
     description.numberOfLines = 0;
-    description.text = @"仅检查普通 iPhone 能否运行静态链接的 Unicorn ARM64 引擎。不读取 Apple 账号、不下载任何安装包。测试可能导致这个独立 App 退出；不会影响 iPadn。";
+    description.text = @"检查普通 iPhone 能否初始化静态链接的 Unicorn x86-64 模拟引擎（App 本身为 ARM64）。不读取 Apple 账号、不下载安装包，可能因 iOS 执行限制导致独立测试 App 退出。";
 
     self.result = [[UILabel alloc] init];
     self.result.translatesAutoresizingMaskIntoConstraints = NO;
@@ -71,14 +73,17 @@ static double ResidentMemoryMB(void) {
     double before = ResidentMemoryMB();
     __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        int32_t result = iPadnMacUnicornProbe();
+        char diagnostic[512] = {0};
+        int32_t result = iPadnMacUnicornProbe(diagnostic, (int32_t)sizeof(diagnostic));
+        NSString *detail = [NSString stringWithUTF8String:diagnostic];
+        if (!detail) detail = @"无法解码初始化诊断信息";
         double after = ResidentMemoryMB();
         dispatch_async(dispatch_get_main_queue(), ^{
             ProbeViewController *strongSelf = weakSelf;
             if (!strongSelf) return;
             strongSelf.result.text = [NSString stringWithFormat:
-                @"Unicorn: %@ (返回码 %d)\n运行前常驻内存: %.1f MB\n运行后常驻内存: %.1f MB\n这仅验证引擎初始化，不代表 Mac PKG 解密成功。",
-                result == 0 ? @"初始化成功" : @"初始化失败", result, before, after];
+                @"Unicorn: %@ (返回码 %d)\n诊断信息: %@\n运行前常驻内存: %.1f MB\n运行后常驻内存: %.1f MB\n这仅验证引擎初始化，不代表 Mac PKG 解密成功。",
+                result == 0 ? @"初始化成功" : @"初始化失败", result, detail, before, after];
             strongSelf.runButton.enabled = YES;
         });
     });
