@@ -8,9 +8,10 @@ iPadn 是一款 iPhone / iPad 应用安装包管理工具。搜索应用、查�
 
 ## 功能
 
-- **搜索**：按名称、App ID 或 App Store 链接查找应用，切换商店地区与 iOS / tvOS 平台，保存收藏和最近搜索。
+- **搜索**：按名称、App ID 或 App Store 链接查找应用，切换商店地区与 iPhone / iPad / Apple TV / Mac 平台，保存收藏和最近搜索。
 - **历史版本**：筛选版本号或版本 ID，查询 Apple 版本列表，手动指定版本，配置其他版本来源。
 - **下载管理**：后台下载、暂停与继续、失败重试、批量整理和 IPA 导出；显示进度、速率与预计剩余时间。
+- **Mac 安装包**：用当前 Apple 账号的购买授权下载 Mac App Store 应用，在 iPhone 本机完成 Apple 安装包处理并校验为完整 PKG 后导出到 Mac；也可下载开发者官网提供的 DMG / PKG / ZIP。首次处理需从 Apple 下载约 47 MB 组件。
 - **已购与账号**：管理多个 Apple 账号，同步和搜索购买记录。
 - **文件与快捷指令**：导入 IPA 或包含 Payload 的 ZIP，添加 HTTPS 下载链接，通过快捷指令或 `ipadn://` 链接打开应用。
 

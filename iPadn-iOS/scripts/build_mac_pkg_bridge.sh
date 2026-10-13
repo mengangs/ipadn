@@ -30,7 +30,7 @@ git -C ipatool checkout --detach "$IPATOOL_COMMIT"
 test "$(git -C ipatool rev-parse HEAD)" = "$IPATOOL_COMMIT"
 # Lift ipatool's 1-minute per-guest-call bound: the interpreter is roughly
 # twice as slow as the desktop JIT and must not abort StoreAgent start-up.
-patch -d ipatool -p1 < "$project_root/scripts/ipatool-host-benchmark.patch"
+patch -d ipatool -p1 < "$project_root/scripts/ipatool-guest-timeout.patch"
 
 SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
 CC="$(xcrun --sdk iphoneos --find clang)"

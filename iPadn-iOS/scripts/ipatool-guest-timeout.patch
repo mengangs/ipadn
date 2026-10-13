@@ -1,0 +1,14 @@
+diff --git a/internal/sap/machine/machine.go b/internal/sap/machine/machine.go
+index 4f986fa..ffcb4de 100644
+--- a/internal/sap/machine/machine.go
++++ b/internal/sap/machine/machine.go
+@@ -13,7 +13,8 @@ import (
+ 	"github.com/majd/ipatool/v2/internal/sap/unicorn"
+ )
+ 
+-const sapGuestTimeout = time.Minute
++// iPadn: the no-JIT interpreter is ~2x slower than the desktop JIT.
++var sapGuestTimeout = 20 * time.Minute
+ 
+ const (
+ 	returnAddress = uint64(0x0000000100000000)
