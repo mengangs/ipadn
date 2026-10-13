@@ -251,11 +251,13 @@ final class AppleService: ObservableObject {
     // Exposing the encrypted response as a .pkg would corrupt the export.
     func macPackageOffer(_ app: StoreApp, useCache: Bool) async throws -> MacPackageOffer {
         guard let account = active else { throw ToolError.message("请先在账号页登录 Apple 账号") }
-        guard UInt64(app.id) != nil, UInt64(app.id) != 0 else {
+        guard let appNumber = UInt64(app.id), appNumber > 0 else {
             throw ToolError.message("请输入有效的 Mac 应用 ID")
         }
         let initialID = account.id
-        let country = StoreService.country(forStorefront: account.storeFront) ?? "US"
+        guard let country = StoreService.country(forStorefront: account.storeFront) else {
+            throw ToolError.message("当前账号所属商店地区尚未识别，无法可靠选择 Mac 安装包版本。")
+        }
         guard let versionID = try await MacStoreOfferService.latestVersionID(
             appID: app.id, bundleID: app.bundleID, country: country) else {
             throw ToolError.message("Apple 没有提供该应用的 Mac 专用版本，请确认商店地区和应用类型。")
@@ -264,7 +266,7 @@ final class AppleService: ObservableObject {
         guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
         let sync = try await signer.kbsync(guid: guid, dsid: account.dsid, useCache: useCache)
         let payload: [String: Any] = [
-            "guid": guid, "salableAdamId": NSNumber(value: UInt64(app.id)!),
+            "guid": guid, "salableAdamId": NSNumber(value: appNumber),
             "serialNumber": "0", "creditDisplay": "",
             "externalVersionId": versionID, "kbsync": sync
         ]
