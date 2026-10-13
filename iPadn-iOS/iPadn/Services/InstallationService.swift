@@ -15,7 +15,7 @@ final class InstallationService: ObservableObject {
         hosted = []; profileFiles = nil; isHosting = false
         if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
     }
-    private func host(_ server: LoopbackServer) {
+    private func keepHosting(_ server: LoopbackServer) {
         hosted.append(server)
         if hosted.count > 3 { hosted.removeFirst(hosted.count - 3) }
         isHosting = true
@@ -48,7 +48,7 @@ final class InstallationService: ObservableObject {
         try await server.start()
         let packageURL = try server.register(file)
         let url = try ManifestBuilder.externalInstallURL(app: job.app, packageURL: packageURL)
-        host(server)
+        keepHosting(server)
         return url
     }
 
@@ -63,7 +63,7 @@ final class InstallationService: ObservableObject {
         let packageURL = try server.register(file)
         let data = try ManifestBuilder.manifest(app: job.app, packageURL: packageURL)
         let manifestURL = try server.register(data: data, contentType: "application/xml")
-        host(server)
+        keepHosting(server)
         return try ManifestBuilder.systemURL(manifestURL: manifestURL)
     }
 

@@ -120,7 +120,6 @@ final class AppIconService: ObservableObject {
             beginReconciliation()
             return
         }
-        let code = (lastError as NSError?)?.code ?? 0
         throw ToolError.message("图标更换失败，请稍后重试")
     }
 
