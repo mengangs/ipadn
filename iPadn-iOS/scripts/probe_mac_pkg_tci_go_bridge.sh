@@ -17,7 +17,26 @@ git clone --no-checkout --filter=blob:none https://github.com/majd/ipatool.git i
 git -C ipatool checkout --detach "$IPATOOL_COMMIT"
 test "$(git -C ipatool rev-parse HEAD)" = "$IPATOOL_COMMIT"
 
+# Generate a tiny independently authored macOS x86-64 Mach-O dylib.
+# It contains no Apple private framework, license, installer or DRM data.
+cat > "$ROOT/synthetic_storeagent.s" <<'ASM'
+.text
+.globl _ipadn_synthetic_answer
+.p2align 4
+_ipadn_synthetic_answer:
+    movq $0x1234, %rax
+    addq $7, %rax
+    retq
+ASM
+"$CC" -target x86_64-apple-macos11 -c \
+  "$ROOT/synthetic_storeagent.s" -o "$ROOT/synthetic_storeagent.o"
+xcrun ld -dylib -arch x86_64 -platform_version macos 11.0 11.0 \
+  -install_name "@rpath/libipadn_synthetic.dylib" \
+  -o "$ROOT/synthetic_storeagent.dylib" "$ROOT/synthetic_storeagent.o"
+test -s "$ROOT/synthetic_storeagent.dylib"
+xcrun file "$ROOT/synthetic_storeagent.dylib"
 mkdir -p ipatool/tools/ios-tci-link
+cp "$ROOT/synthetic_storeagent.dylib" ipatool/tools/ios-tci-link/fixture.dylib
 cat > ipatool/tools/ios-tci-link/main.go <<'GOEOF'
 package main
 
@@ -27,13 +46,18 @@ package main
 import "C"
 import (
     "context"
+    _ "embed"
     "fmt"
     "time"
     "unsafe"
     "github.com/majd/ipatool/v2/internal/sap/assets"
     "github.com/majd/ipatool/v2/internal/sap/machine"
+    "github.com/majd/ipatool/v2/internal/sap/machimage"
     "github.com/majd/ipatool/v2/internal/sap/unicorn"
 )
+
+//go:embed fixture.dylib
+var syntheticMachO []byte
 
 //export iPadnMacTCIStoreAgentLinkProbe
 func iPadnMacTCIStoreAgentLinkProbe() C.int32_t {
@@ -104,6 +128,49 @@ func iPadnMacTCIGoGuestProbe(output *C.char, capacity C.int32_t) C.int32_t {
     report(fmt.Sprintf("Go ↔ TCI 回调成功：RAX=0x%x，回调次数=%d", rax, callbacks))
     return 0
 }
+//export iPadnMacTCIMachOLoadProbe
+func iPadnMacTCIMachOLoadProbe(output *C.char, capacity C.int32_t) C.int32_t {
+    report := func(msg string) {
+        if output == nil || capacity < 2 || capacity > 4096 { return }
+        dst := unsafe.Slice((*byte)(unsafe.Pointer(output)), int(capacity))
+        n := copy(dst[:len(dst)-1], msg)
+        dst[n] = 0
+    }
+    fail := func(stage string, err error, code C.int32_t) C.int32_t {
+        report(fmt.Sprintf("%s：%v", stage, err))
+        return code
+    }
+    // Read/relocate/load an original synthetic Mach-O fixture using the exact
+    // Go loader ipatool uses for StoreAgent. Guest execution remains no-JIT.
+    image, err := machimage.Open("ipadn-synthetic", syntheticMachO)
+    if err != nil { return fail("读取模拟 x86 Mach-O", err, -30) }
+    const base uint64 = 0x00001000c0000000
+    address, err := image.Export("_ipadn_synthetic_answer", base)
+    if err != nil { return fail("查询模拟符号", err, -31) }
+    if err = image.Relocate(base, func(name string) (uint64, error) {
+        return 0, fmt.Errorf("模拟代码出现意外外部依赖 %s", name)
+    }); err != nil { return fail("重定位模拟 Mach-O", err, -32) }
+    engine, err := unicorn.New(context.Background())
+    if err != nil { return fail("创建 TCI 引擎", err, -33) }
+    defer engine.Close()
+    if err = image.Load(engine); err != nil {
+        return fail("装载已重定位 Mach-O", err, -34)
+    }
+    // The synthetic code is exactly 7-byte MOV, 4-byte ADD and one-byte RET.
+    // Stop at RET (not after RET) to avoid requiring an external call frame.
+    if err = engine.StartBounded(address, address+11, 500*time.Millisecond, 64); err != nil {
+        return fail("解释执行已加载的 x86 Mach-O", err, -35)
+    }
+    rax, err := engine.RegRead(unicorn.RegRAX)
+    if err != nil { return fail("读取寄存器", err, -36) }
+    if rax != 0x123b {
+        report(fmt.Sprintf("模拟 Mach-O 执行结果不符 RAX=0x%x，预期 0x123b", rax))
+        return -37
+    }
+    report(fmt.Sprintf("真实 Go Mach-O 加载器 / 高虚拟地址 / TCI 模拟执行成功，RAX=0x%x；未加载 Apple StoreAgent", rax))
+    return 0
+}
+
 //export iPadnMacTCIGuestMemoryProbe
 func iPadnMacTCIGuestMemoryProbe(output *C.char, capacity C.int32_t) C.int32_t {
     report := func(msg string) {
@@ -202,8 +269,8 @@ cat > "$APP/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Mac PKG Go TCI Probe</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-<key>CFBundleShortVersionString</key><string>0.7</string>
-<key>CFBundleVersion</key><string>7</string>
+<key>CFBundleShortVersionString</key><string>0.8</string>
+<key>CFBundleVersion</key><string>8</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>MinimumOSVersion</key><string>15.0</string>
 <key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
@@ -232,5 +299,5 @@ cp -R "$APP" "$ROOT/out/go-package/Payload/"
   /usr/bin/zip -qr -X "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa" Payload)
 test -s "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa"
 du -h "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa"
-echo "Go ↔ no-JIT TCI v0.7 iPhone diagnostic IPA built but NOT run by CI."
+echo "Go ↔ no-JIT TCI v0.8 iPhone diagnostic IPA built but NOT run by CI."
 echo "NO StoreAgent initialization, Apple asset retrieval, authorization, Mac PKG download or decryption performed."
