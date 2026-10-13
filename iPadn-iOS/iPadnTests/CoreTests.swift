@@ -301,13 +301,18 @@ final class CoreTests: XCTestCase {
         let app = StoreApp(id: "6503940939", name: "Native Mac", version: "1")
         let url = URL(string: "https://cdn.example.org/authorized-file")!
         let manager = DownloadManager(previewJobs: [])
+        // Simulator builds never link the StoreAgent bridge, so a protected
+        // package must be refused instead of being saved as a fake PKG.
+        XCTAssertFalse(MacPackageDecryptor.isAvailable)
         let encrypted = MacPackageOffer(downloadURL: url, versionID: "112233",
-                                        displayVersion: "1.2.3", protectedByApple: true)
+                                        displayVersion: "1.2.3", protectedByApple: true, dpInfo: Data([1]),
+                                        hardwareID: "AABBCCDDEEFF")
         XCTAssertThrowsError(try manager.enqueueOfficialMacPackage(encrypted, for: app))
         XCTAssertTrue(manager.jobs.isEmpty)
         let plain = MacPackageOffer(downloadURL: url, versionID: "112233",
                                     displayVersion: "1.2.3", protectedByApple: false)
         try manager.enqueueOfficialMacPackage(plain, for: app)
+        XCTAssertNil(manager.jobs.first?.protectedMacPackage)
         XCTAssertEqual(manager.jobs.count, 1)
         XCTAssertEqual(manager.jobs.first?.rawFormat, "pkg")
         XCTAssertEqual(manager.jobs.first?.platformLabel, "Mac")
@@ -370,6 +375,16 @@ final class CoreTests: XCTestCase {
         archive += tocChecksum ?? Data(Insecure.SHA1.hash(data: toc))
         archive += heapFiles
         return archive
+    }
+
+    func testMacPackageSecretsRoundTripAndDelete() throws {
+        let id = UUID()
+        defer { MacPackageSecrets.delete(id) }
+        let entry = MacPackageSecrets.Entry(hardwareID: "AABBCCDDEEFF", dpInfo: Data([7, 8, 9]))
+        try MacPackageSecrets.save(entry, for: id)
+        XCTAssertEqual(try MacPackageSecrets.load(id), entry)
+        MacPackageSecrets.delete(id)
+        XCTAssertThrowsError(try MacPackageSecrets.load(id))
     }
 
     func testXARValidatorVerifiesTOCAndEveryFileChecksum() throws {

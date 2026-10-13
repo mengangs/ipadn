@@ -289,8 +289,10 @@ final class AppleService: ObservableObject {
         guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
         if let error = HTTPClient.appleFailure(raw) { throw error }
-        return try MacPackageOffer.validate(raw, appID: app.id,
-                                            bundleID: app.bundleID, versionID: versionID)
+        var offer = try MacPackageOffer.validate(raw, appID: app.id,
+                                                 bundleID: app.bundleID, versionID: versionID)
+        offer.hardwareID = deviceID
+        return offer
     }
 
     func ownedApps(useCache: Bool) async throws -> [OwnedApp] {
@@ -353,6 +355,8 @@ struct MacPackageOffer {
     /// Account- and device-bound key material for StoreAgent. Kept in memory
     /// only; never persisted with download jobs, logged or shown in the UI.
     var dpInfo: Data? = nil
+    /// The GUID whose kbsync authorized this offer; StoreAgent must use it too.
+    var hardwareID = ""
 
     /// ipatool's ent/download serial: a fixed prefix plus the last four bytes
     /// of the six-byte GUID.

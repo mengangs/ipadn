@@ -92,13 +92,15 @@ struct AppDetailView: View {
                     Button { downloadAppleMacPKG() } label: {
                         HStack(spacing: 9) {
                             if macOfficialLoading { ProgressView() }
-                            Label("尝试获取 Apple 官方 PKG（实验）", systemImage: "shippingbox")
+                            Label("下载 Mac App Store 安装包（PKG）", systemImage: "shippingbox")
                         }
                         .frame(minHeight: 44, alignment: .leading)
                     }
                     .disabled(macOfficialLoading)
                     .accessibilityIdentifier("mac.official-pkg")
-                    Text("仅支持 Apple 直接提供的有效 PKG；受保护的软件包仍需 StoreAgent 处理，目前不会假装下载成功。")
+                    Text(MacPackageDecryptor.isAvailable
+                         ? "使用当前 Apple 账号的购买授权下载，在本机完成 Apple 安装包处理并校验后可导出到 Mac。首次处理需从 Apple 下载约 47 MB 组件，处理大型安装包耗时较长。"
+                         : "此版本未包含 Mac 安装包处理组件，只能保存 Apple 直接提供的未加密 PKG。")
                         .font(.caption).foregroundStyle(.secondary)
                     if macLoading { ProgressView("查找开发者安装包…") }
                     ForEach(macInstallers) { installer in
@@ -298,7 +300,9 @@ struct AppDetailView: View {
                 let offer = try await apple.macPackageOffer(app, useCache: store.settings.useSignerCache)
                 try Task.checkCancellation()
                 try store.downloads.enqueueOfficialMacPackage(offer, for: app)
-                store.infoMessage = "Mac PKG 已加入下载任务，完成校验后可导出。"
+                store.infoMessage = offer.protectedByApple
+                    ? "Mac PKG 已加入下载任务。下载后会在本机处理并校验，完成后可导出。"
+                    : "Mac PKG 已加入下载任务，完成校验后可导出。"
                 store.tab = 1
             } catch AppleAuthError.reauthenticationRequired {
                 reauthenticationID = apple.activeID

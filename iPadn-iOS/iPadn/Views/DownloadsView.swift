@@ -388,6 +388,9 @@ struct DownloadTaskRow: View {
                     VStack(alignment: .leading, spacing: 10) { TaskStatusPill(status: job.status); taskAction }
                 }.font(.subheadline)
             }
+            if job.status == .processing, let detail = manager.processingDetail[job.id] {
+                Text(detail).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
             if let error = job.error { Text(error).font(.caption).foregroundStyle(.primary).lineLimit(2) }
         }.padding(.vertical, 10)
     }

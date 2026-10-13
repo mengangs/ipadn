@@ -139,6 +139,9 @@ struct DownloadJob: Codable, Identifiable {
     var packageIconScanned: Bool?
     // Non-IPA downloads are saved as raw Mac files, never processed as an IPA.
     var rawFormat: String?
+    // Mac App Store package that must be processed by StoreAgent on device;
+    // its dpInfo lives in MacPackageSecrets until processing succeeds.
+    var protectedMacPackage: Bool?
     var localFilename: String?
     var error: String?
     var createdAt = Date()

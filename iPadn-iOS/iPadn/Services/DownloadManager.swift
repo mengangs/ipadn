@@ -9,6 +9,8 @@ final class DownloadManager: NSObject, ObservableObject {
     @Published private(set) var jobs: [DownloadJob] = []
     @Published var storageError: String?
     @Published private(set) var discoveryWarning: String?
+    /// Stage text for Mac App Store packages being processed on device.
+    @Published private(set) var processingDetail: [UUID: String] = [:]
     var backgroundCompletion: (() -> Void)?
     private var tasks: [UUID: URLSessionDownloadTask] = [:]
     private var restoring = true
@@ -140,11 +142,17 @@ final class DownloadManager: NSObject, ObservableObject {
     }
 
     // The authorized Mac App Store URL is provided by Apple's account-bound
-    // dispatch. Accept it only for offers that need no StoreAgent decoding.
-    // Finished files are checked as XAR PKG before the task becomes completed.
+    // dispatch. Protected packages are processed by StoreAgent on device after
+    // the download; every finished file is verified as a XAR PKG before the
+    // task completes, and Mac tasks only offer export (never iOS install).
     func enqueueOfficialMacPackage(_ offer: MacPackageOffer, for app: StoreApp) throws {
-        guard !offer.protectedByApple else {
-            throw ToolError.message("Apple 返回的是受保护的 Mac 安装包。当前 iPhone 版还不能完成 StoreAgent 处理，因此不会保存无效 PKG。")
+        if offer.protectedByApple {
+            guard MacPackageDecryptor.isAvailable else {
+                throw ToolError.message("此版本未包含 Mac 安装包处理组件，请使用 GitHub Actions 构建的 iPadn。")
+            }
+            guard offer.dpInfo != nil, offer.hardwareID.count == 12 else {
+                throw ToolError.message("Apple 没有返回完整的 Mac 下载授权，请重试")
+            }
         }
         guard storageError == nil else { throw ToolError.message(storageError!) }
         guard jobs.filter({ $0.status != .completed && $0.status != .failed }).count < maxQueued else {
@@ -156,10 +164,15 @@ final class DownloadManager: NSObject, ObservableObject {
         }
         var macApp = app
         if !offer.displayVersion.isEmpty { macApp.version = offer.displayVersion }
+        let job = DownloadJob(app: macApp, sourceURL: offer.downloadURL, packageIconScanned: true,
+                              rawFormat: "pkg", protectedMacPackage: offer.protectedByApple ? true : nil)
+        if offer.protectedByApple, let dpInfo = offer.dpInfo {
+            try MacPackageSecrets.save(.init(hardwareID: offer.hardwareID, dpInfo: dpInfo), for: job.id)
+        }
         var next = jobs
-        next.insert(DownloadJob(app: macApp, sourceURL: offer.downloadURL,
-                                packageIconScanned: true, rawFormat: "pkg"), at: 0)
-        try saveNewJobs(next)
+        next.insert(job, at: 0)
+        do { try saveNewJobs(next) }
+        catch { MacPackageSecrets.delete(job.id); throw error }
         requestNotifications()
         schedule()
     }
@@ -271,8 +284,14 @@ final class DownloadManager: NSObject, ObservableObject {
         try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
         try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
         try? FileManager.default.removeItem(at: PackageIconService.cacheURL(id))
+        try? FileManager.default.removeItem(at: Self.decryptedURL(id))
+        MacPackageSecrets.delete(id)
         catalogArtworkAttempted.remove(id)
         schedule()
+    }
+
+    nonisolated static func decryptedURL(_ id: UUID) -> URL {
+        LocalResources.support.appendingPathComponent("\(id.uuidString).decrypted.pkg")
     }
     func metrics(for id: UUID) -> TransferMetrics? { transferMetrics[id] }
 
@@ -367,14 +386,28 @@ final class DownloadManager: NSObject, ObservableObject {
                 if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
             }
         }
+        let monitor: Task<Void, Never>? = job.protectedMacPackage == true
+            ? Task { await self.monitorMacProcessing(id) } : nil
         Task {
             defer {
+                monitor?.cancel()
+                self.processingDetail.removeValue(forKey: id)
                 self.processingIDs.remove(id)
                 if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
                 self.finishBackgroundIfReady()
             }
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
+                    if job.protectedMacPackage == true {
+                        // StoreAgent turns Apple's protected download into the
+                        // real PKG, which must then pass full XAR validation.
+                        let secret = try MacPackageSecrets.load(id)
+                        let decrypted = Self.decryptedURL(id)
+                        defer { try? FileManager.default.removeItem(at: decrypted) }
+                        try MacPackageDecryptor.decrypt(hardwareID: secret.hardwareID, dpInfo: secret.dpInfo,
+                                                        from: LocalResources.stagingURL(id), to: decrypted)
+                        return try MacPackageStorage.finish(staging: decrypted, job: job)
+                    }
                     if job.rawFormat != nil {
                         return try MacPackageStorage.finish(staging: LocalResources.stagingURL(id), job: job)
                     }
@@ -391,9 +424,26 @@ final class DownloadManager: NSObject, ObservableObject {
                 self.jobs[index].error = nil
                 try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
                 try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
+                if job.protectedMacPackage == true { MacPackageSecrets.delete(id) }
                 self.persist(); self.notify(title: "安装包已准备好", body: result.1.name + " " + result.1.version)
                 Task { await self.loadPackageIcons() }
             } catch { self.fail(id, error: error) }
+        }
+    }
+
+    private func monitorMacProcessing(_ id: UUID) async {
+        let total = (try? FileManager.default.attributesOfItem(atPath: LocalResources.stagingURL(id).path)[.size] as? NSNumber)?.int64Value ?? 0
+        while !Task.isCancelled {
+            if let status = MacPackageDecryptor.status() {
+                var text = status.stage.title
+                if status.stage == .decrypting, total > 0 {
+                    text += String(format: " %.0f%%", min(100, Double(status.bytes) * 100 / Double(total)))
+                } else if status.stage == .components {
+                    text += "（首次使用需从 Apple 下载约 47 MB）"
+                }
+                processingDetail[id] = text
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
         }
     }
 
