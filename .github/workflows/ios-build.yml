@@ -13,7 +13,7 @@ on:
         default: true
         type: boolean
       publish_release:
-        description: Publish a GitHub Release after all build, test and screenshot checks pass
+        description: Publish a GitHub Release after all build and test checks pass
         required: true
         default: false
         type: boolean
@@ -133,58 +133,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Capture running app screenshots
-        timeout-minutes: 10
-        if: always() && !cancelled() && (github.event_name != 'workflow_dispatch' || inputs.run_tests)
-        run: |
-          if [ ! -d build/TestDerivedData/Build/Products/Debug-iphonesimulator/iPadn.app ]; then exit 0; fi
-          # XCTest can leave CoreSimulator unresponsive after shutting down its UI-test clone.
-          # Restart this job's service before selecting and booting the screenshot device.
-          killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
-          # A wedged simctl call (seen after the UI tests) must fail fast and be
-          # retried, not use up the whole step.
-          limit() { seconds="$1"; shift; perl -e 'alarm shift @ARGV; exec @ARGV' "$seconds" "$@"; }
-          retry() { limit "$@" || { sleep 5; limit "$@"; }; }
-          limit 60 xcrun simctl shutdown all || true
-          simulator_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); devices=[(runtime,device) for runtime,values in d["devices"].items() if ".iOS-" in runtime for device in values if device.get("isAvailable") and device["name"].startswith("iPhone")]; devices.sort(key=lambda x: (x[1]["state"] != "Booted", "iOS-26-0" not in x[0], x[1]["name"] != "iPhone 17 Pro", x[1]["name"])); assert devices,"No available iPhone simulator"; print(devices[0][1]["udid"])')"
-          limit 120 xcrun simctl boot "$simulator_id" || true
-          retry 240 xcrun simctl bootstatus "$simulator_id" -b
-          retry 120 xcrun simctl install "$simulator_id" build/TestDerivedData/Build/Products/Debug-iphonesimulator/iPadn.app
-          mkdir -p build/screenshots/native
-          xcrun simctl status_bar "$simulator_id" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
-          capture() {
-            screenshot_name="$1"
-            shift
-            retry 60 xcrun simctl launch --terminate-running-process "$simulator_id" app.local.iPadn --visual-preview "$@"
-            sleep 3
-            retry 30 xcrun simctl io "$simulator_id" screenshot "build/screenshots/native/$screenshot_name.png"
-          }
-          capture discover-light
-          capture discover-dark --dark
-          capture downloads --downloads
-          capture downloads-large-text --downloads --large-text
-          capture login --login
-          capture app-detail --detail
-          capture accounts --accounts
-          capture purchased --purchased
-          capture archived-name --archive
-
-      - name: Export interface screenshots
-        if: always() && !cancelled()
-        run: |
-          if [ -d build/TestResults.xcresult ]; then
-            xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/screenshots
-          fi
-
-      - name: Upload interface screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: iPadn-interface-screenshots
-          path: iPadn-iOS/build/screenshots
-          if-no-files-found: warn
-          retention-days: 14
-
       - name: Upload build and test diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -254,7 +202,7 @@ jobs:
           ipa.rename(asset)
           (root / (asset.name + '.sha256')).write_text(digest + '  ' + asset.name + '\n')
           notes = Path('RELEASE_NOTES.md').read_text()
-          notes += '\n验证：设备 Release 编译与 IPA 检查通过；' + str(tests['passedTests']) + ' 项测试通过，' + str(tests['failedTests']) + ' 项失败，' + str(tests['skippedTests']) + ' 项跳过；模拟器截图步骤通过。\n'
+          notes += '\n验证：设备 Release 编译与 IPA 检查通过；' + str(tests['passedTests']) + ' 项测试通过，' + str(tests['failedTests']) + ' 项失败，' + str(tests['skippedTests']) + ' 项跳过。\n'
           (root / 'notes.md').write_text(notes)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('tag=v' + version + '\n')

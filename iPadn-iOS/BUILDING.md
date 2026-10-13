@@ -38,12 +38,11 @@ python3 scripts/verify_project.py
 
 ## 持续集成
 
-GitHub Actions 会对每个 PR 和 `main` 分支执行设备编译、IPA 检查、模拟器测试和界面截图，并上传以下产物：
+GitHub Actions 会对每个 PR 和 `main` 分支执行设备编译、IPA 检查和模拟器测试，并上传以下产物（界面效果以真机检查为准）：
 
 | 产物 | 内容 |
 | --- | --- |
 | `iPadn-unsigned-ipa` | 未签名安装包 |
-| `iPadn-interface-screenshots` | 界面截图 |
 | `iPadn-build-diagnostics` | 构建日志与测试结果 |
 
 手动运行工作流并勾选 `run_tests` 与 `publish_release`，会在全部检查通过后发布 GitHub Release，发布说明取自仓库根目录的 `RELEASE_NOTES.md`。已存在的同名标签不会被覆盖。
