@@ -206,6 +206,67 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try PackageService.finish(staging: phoneIPA, id: UUID(), asset: iPadAsset))
     }
 
+    func testAppleMacPKGOfferRejectsMobileAndIncorrectVersions() throws {
+        let metadata: [String: Any] = [
+            "itemId": "6503940939",
+            "softwareVersionExternalIdentifier": "112233",
+            "softwareVersionBundleId": "test.native.mac",
+            "bundleShortVersionString": "1.2.3",
+            "software-platform": "macos",
+            "product-type": "mac-os-app"
+        ]
+        let url = "https://cdn.example.org/authorized-file"
+        func response(_ fields: [String: Any] = [:], sinfs: [[String: Any]] = [],
+                      downloadURL: String? = nil) -> [String: Any] {
+            var values = metadata
+            for (key, value) in fields { values[key] = value }
+            return ["songList": [["metadata": values, "URL": downloadURL ?? url, "sinfs": sinfs]]]
+        }
+        let plain = try MacPackageOffer.validate(response(), appID: "6503940939",
+            bundleID: "test.native.mac", versionID: "112233")
+        XCTAssertFalse(plain.protectedByApple)
+        XCTAssertEqual(plain.displayVersion, "1.2.3")
+        XCTAssertEqual(plain.downloadURL.absoluteString, url)
+        let protected = try MacPackageOffer.validate(
+            response(sinfs: [["dpInfo": Data([1, 2, 3])]]),
+            appID: "6503940939", bundleID: "test.native.mac", versionID: "112233")
+        XCTAssertTrue(protected.protectedByApple)
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(["software-platform": "iphoneos"]), appID: "6503940939",
+            bundleID: "test.native.mac", versionID: "112233"))
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(["softwareVersionExternalIdentifier": "998877"]),
+            appID: "6503940939", bundleID: "test.native.mac", versionID: "112233"))
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(["softwareVersionBundleId": "other.app"]),
+            appID: "6503940939", bundleID: "test.native.mac", versionID: "112233"))
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(downloadURL: "http://example.org/pkg"),
+            appID: "6503940939", bundleID: "test.native.mac", versionID: "112233"))
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(sinfs: [["dpInfo": Data([1])], ["dpInfo": Data([2])]]),
+            appID: "6503940939", bundleID: "test.native.mac", versionID: "112233"))
+    }
+
+    @MainActor
+    func testOfficialMacPKGOnlyEnqueuesUnprotectedAuthorizedOffer() throws {
+        let app = StoreApp(id: "6503940939", name: "Native Mac", version: "1")
+        let url = URL(string: "https://cdn.example.org/authorized-file")!
+        let manager = DownloadManager(previewJobs: [])
+        let encrypted = MacPackageOffer(downloadURL: url, versionID: "112233",
+                                        displayVersion: "1.2.3", protectedByApple: true)
+        XCTAssertThrowsError(try manager.enqueueOfficialMacPackage(encrypted, for: app))
+        XCTAssertTrue(manager.jobs.isEmpty)
+        let plain = MacPackageOffer(downloadURL: url, versionID: "112233",
+                                    displayVersion: "1.2.3", protectedByApple: false)
+        try manager.enqueueOfficialMacPackage(plain, for: app)
+        XCTAssertEqual(manager.jobs.count, 1)
+        XCTAssertEqual(manager.jobs.first?.rawFormat, "pkg")
+        XCTAssertEqual(manager.jobs.first?.platformLabel, "Mac")
+        XCTAssertEqual(manager.jobs.first?.app.version, "1.2.3")
+        XCTAssertEqual(manager.jobs.first?.sourceURL, url)
+    }
+
     func testNativeMacSearchAndAppStoreOfferExtraction() {
         XCTAssertTrue(StoreService.supportsNativeMac(["kind": "mac-software"]))
         XCTAssertTrue(StoreService.supportsNativeMac(["supportedDevices": ["Mac14,6"]]))
