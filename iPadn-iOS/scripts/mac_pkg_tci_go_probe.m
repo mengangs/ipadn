@@ -10,6 +10,19 @@ extern int32_t iPadnMacTCIMachOLoadProbe(char *diagnostic, int32_t capacity);
 extern int32_t iPadnMacTCICrossImageProbe(char *diagnostic, int32_t capacity);
 extern int32_t iPadnMacTCIServiceShimProbe(char *diagnostic, int32_t capacity);
 
+// The batch invokes only the five already-existing, independently bounded,
+// synthetic compatibility probes. Never call the StoreAgent link-only export.
+static int32_t iPadnRunOfflineStage(NSUInteger stage, char *diagnostic, int32_t capacity) {
+    switch (stage) {
+        case 0: return iPadnMacTCIGoGuestProbe(diagnostic, capacity);
+        case 1: return iPadnMacTCIGuestMemoryProbe(diagnostic, capacity);
+        case 2: return iPadnMacTCIMachOLoadProbe(diagnostic, capacity);
+        case 3: return iPadnMacTCICrossImageProbe(diagnostic, capacity);
+        case 4: return iPadnMacTCIServiceShimProbe(diagnostic, capacity);
+        default: return -100;
+    }
+}
+
 static NSString *const kGoTCIPending = @"macpkg-go-tci-pending";
 static NSString *const kGoTCIResult = @"macpkg-go-tci-result";
 static NSString *const kGoTCIMemoryPending = @"macpkg-go-tci-memory-pending";
@@ -20,6 +33,9 @@ static NSString *const kGoTCICrossPending = @"macpkg-go-tci-cross-pending";
 static NSString *const kGoTCICrossResult = @"macpkg-go-tci-cross-result";
 static NSString *const kGoTCIServicePending = @"macpkg-go-tci-service-pending";
 static NSString *const kGoTCIServiceResult = @"macpkg-go-tci-service-result";
+static NSString *const kGoTCIBatchPending = @"macpkg-go-tci-batch-pending";
+static NSString *const kGoTCIBatchProgress = @"macpkg-go-tci-batch-progress";
+static NSString *const kGoTCIBatchResult = @"macpkg-go-tci-batch-result";
 
 static double residentMB(void) {
     mach_task_basic_info_data_t info = {0};
@@ -35,6 +51,10 @@ static double residentMB(void) {
 @property(nonatomic, strong) UIButton *machoTest;
 @property(nonatomic, strong) UIButton *crossTest;
 @property(nonatomic, strong) UIButton *serviceTest;
+@property(nonatomic, strong) UIButton *batchTest;
+@property(nonatomic, strong) UIButton *advancedToggle;
+@property(nonatomic, strong) UIButton *copyReport;
+@property(nonatomic, strong) UIStackView *individualTests;
 @end
 @implementation MacGoTCITestViewController
 - (void)viewDidLoad {
@@ -46,7 +66,7 @@ static double residentMB(void) {
     header.numberOfLines = 0;
 
     UILabel *details = [[UILabel alloc] init];
-    details.text = @"v1.0 · v0.9 跨动态库调用已通过真机测试。新增无 JIT Go 模拟系统服务测试：原创动态库调用导入的服务入口，宿主 Go Hook 验证 x86 寄存器参数、内存请求及返回值。完全不含 Apple 私有代码、Apple 账号或安装包。";
+    details.text = @"v1.1 · 一次点击完成目前全部五项离线兼容性检查，并保存分阶段报告。可选择展开单项测试。全程不使用 Apple 账号、私有框架或安装包；合成测试全部通过仍不代表官方 Mac PKG 可以下载或处理。";
     details.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     details.textColor = UIColor.secondaryLabelColor;
     details.numberOfLines = 0;
@@ -85,6 +105,31 @@ static double residentMB(void) {
     [self.serviceTest addTarget:self action:@selector(confirmServiceProbe:) forControlEvents:UIControlEventTouchUpInside];
     self.serviceTest.accessibilityIdentifier = @"go-tci-probe.service-shim";
 
+    self.batchTest = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.batchTest setTitle:@"一次运行全部 5 项兼容性测试" forState:UIControlStateNormal];
+    self.batchTest.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    self.batchTest.titleLabel.numberOfLines = 0;
+    [self.batchTest addTarget:self action:@selector(confirmBatchProbe:) forControlEvents:UIControlEventTouchUpInside];
+    self.batchTest.accessibilityIdentifier = @"go-tci-probe.batch";
+
+    self.advancedToggle = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.advancedToggle setTitle:@"显示单项测试" forState:UIControlStateNormal];
+    self.advancedToggle.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    [self.advancedToggle addTarget:self action:@selector(toggleIndividualTests:) forControlEvents:UIControlEventTouchUpInside];
+    self.advancedToggle.accessibilityIdentifier = @"go-tci-probe.show-individual";
+
+    self.copyReport = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.copyReport setTitle:@"复制诊断结果" forState:UIControlStateNormal];
+    self.copyReport.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    [self.copyReport addTarget:self action:@selector(copyDiagnostics:) forControlEvents:UIControlEventTouchUpInside];
+    self.copyReport.accessibilityIdentifier = @"go-tci-probe.copy-results";
+
+    self.individualTests = [[UIStackView alloc] initWithArrangedSubviews:
+        @[self.test, self.memoryTest, self.machoTest, self.crossTest, self.serviceTest]];
+    self.individualTests.axis = UILayoutConstraintAxisVertical;
+    self.individualTests.spacing = 18;
+    self.individualTests.hidden = YES;
+
     self.status = [[UILabel alloc] init];
     self.status.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightRegular];
     self.status.numberOfLines = 0;
@@ -96,7 +141,12 @@ static double residentMB(void) {
     BOOL machoPending = [defaults boolForKey:kGoTCIMachOPending];
     BOOL crossPending = [defaults boolForKey:kGoTCICrossPending];
     BOOL servicePending = [defaults boolForKey:kGoTCIServicePending];
-    self.status.text = servicePending
+    BOOL batchPending = [defaults boolForKey:kGoTCIBatchPending];
+    NSInteger lastStage = [defaults integerForKey:kGoTCIBatchProgress];
+    self.status.text = batchPending
+        ? [NSString stringWithFormat:@"上次批量测试在第 %ld/5 项中断。为避免重复触发闪退，批量运行已停用；以下是已保存的报告：\n%@", (long)lastStage,
+            [defaults stringForKey:kGoTCIBatchResult] ?: @"没有已完成的结果。"]
+        : servicePending
         ? @"上一次 Go 模拟系统服务测试没有正常结束，请勿反复运行。"
         : crossPending
         ? @"上一次跨库绑定测试没有正常返回，请勿重复运行。"
@@ -105,15 +155,17 @@ static double residentMB(void) {
         : memoryPending
         ? @"上一次 104 MiB 内存测试未正常返回。请不要重复内存压力测试。"
         : pending ? @"上一次 Go ↔ TCI 测试没有正常返回，请提供 iOS 崩溃日志。"
-        : ([defaults stringForKey:kGoTCIServiceResult] ?: [defaults stringForKey:kGoTCICrossResult] ?: [defaults stringForKey:kGoTCIMachOResult] ?: [defaults stringForKey:kGoTCIMemoryResult] ?: [defaults stringForKey:kGoTCIResult] ?: @"尚未运行。");
+        : ([defaults stringForKey:kGoTCIBatchResult] ?: [defaults stringForKey:kGoTCIServiceResult] ?: [defaults stringForKey:kGoTCICrossResult] ?: [defaults stringForKey:kGoTCIMachOResult] ?: [defaults stringForKey:kGoTCIMemoryResult] ?: [defaults stringForKey:kGoTCIResult] ?: @"尚未运行。");
     if (pending) self.test.enabled = NO;
     if (memoryPending) self.memoryTest.enabled = NO;
     if (machoPending) self.machoTest.enabled = NO;
     if (crossPending) self.crossTest.enabled = NO;
     if (servicePending) self.serviceTest.enabled = NO;
+    if (batchPending) self.batchTest.enabled = NO;
+    self.copyReport.enabled = self.status.text.length > 0;
 
     UIStackView *stack = [[UIStackView alloc]
-        initWithArrangedSubviews:@[header, details, self.test, self.memoryTest, self.machoTest, self.crossTest, self.serviceTest, self.status]];
+        initWithArrangedSubviews:@[header, details, self.batchTest, self.advancedToggle, self.individualTests, self.copyReport, self.status]];
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     stack.axis = UILayoutConstraintAxisVertical;
     stack.spacing = 26;
@@ -135,6 +187,97 @@ static double residentMB(void) {
         [stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-24],
         [stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-48]
     ]];
+}
+- (void)toggleIndividualTests:(id)sender {
+    self.individualTests.hidden = !self.individualTests.hidden;
+    [self.advancedToggle setTitle:self.individualTests.hidden ? @"显示单项测试" : @"收起单项测试"
+                        forState:UIControlStateNormal];
+}
+- (void)copyDiagnostics:(id)sender {
+    if (self.status.text.length == 0) return;
+    [UIPasteboard generalPasteboard].string = self.status.text;
+    [self.copyReport setTitle:@"报告已复制" forState:UIControlStateNormal];
+}
+- (void)confirmBatchProbe:(id)sender {
+    UIAlertController *alert = [UIAlertController
+        alertControllerWithTitle:@"运行全部 5 项离线测试"
+        message:@"一次按顺序验证 Go 回调、104 MiB 虚拟内存、Mach-O 装载、跨库调用、Go 模拟服务。每项结束后保存报告，首次失败即停止。内存映射和实验性代码有导致独立测试 App 退出的风险。不会运行 Apple StoreAgent、下载 PKG 或读取 Apple 账号。要开始吗？"
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __weak typeof(self) weakSelf = self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"运行全部"
+        style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [weakSelf runBatchProbe];
+        }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+- (void)runBatchProbe {
+    self.batchTest.enabled = NO;
+    self.test.enabled = NO;
+    self.memoryTest.enabled = NO;
+    self.machoTest.enabled = NO;
+    self.crossTest.enabled = NO;
+    self.serviceTest.enabled = NO;
+    [self.copyReport setTitle:@"复制诊断结果" forState:UIControlStateNormal];
+
+    NSArray<NSString *> *stages = @[@"Go ↔ TCI 回调", @"104 MiB 模拟内存",
+                                    @"单个 Mach-O 装载", @"跨 Mach-O 符号调用",
+                                    @"Go 模拟系统服务"];
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSString *intro = @"Mac PKG / Go+TCI 离线兼容性批量诊断 v1.1\\n仅使用自制模拟程序，不代表官方 Mac PKG 下载或 StoreAgent 可用。\\n";
+    [defaults setObject:intro forKey:kGoTCIBatchResult];
+    [defaults setInteger:0 forKey:kGoTCIBatchProgress];
+    [defaults setBool:YES forKey:kGoTCIBatchPending];
+    [defaults synchronize];
+    self.status.text = intro;
+    double before = residentMB();
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSMutableString *report = [intro mutableCopy];
+        BOOL success = YES;
+        for (NSUInteger index = 0; index < stages.count; index++) {
+            NSString *name = stages[index];
+            NSUserDefaults *storage = [NSUserDefaults standardUserDefaults];
+            [storage setInteger:(NSInteger)index+1 forKey:kGoTCIBatchProgress];
+            [storage setObject:report forKey:kGoTCIBatchResult];
+            [storage synchronize];
+            NSString *progress = [NSString stringWithFormat:@"%@\\n进行中 [%lu/5] %@…",
+                                  report, (unsigned long)index+1, name];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                MacGoTCITestViewController *controller = weakSelf;
+                if (controller) controller.status.text = progress;
+            });
+            char diagnostic[512] = {0};
+            int32_t code = iPadnRunOfflineStage(index, diagnostic, (int32_t)sizeof(diagnostic));
+            NSString *detail = [NSString stringWithUTF8String:diagnostic] ?: @"诊断文本编码失败";
+            [report appendFormat:@"\\n[%lu/5] %@：%@（返回码 %d）\\n%@\\n",
+                                 (unsigned long)index+1, name,
+                                 code == 0 ? @"通过" : @"失败", code, detail];
+            [storage setObject:report forKey:kGoTCIBatchResult];
+            [storage synchronize];
+            if (code != 0) { success = NO; break; }
+        }
+        double after = residentMB();
+        [report appendFormat:@"\\n总结果：%@\\n进程常驻内存 %.1f → %.1f MB\\n",
+            success ? @"5/5 项全部通过" : @"已在出错阶段停止", before, after];
+        [report appendString:@"真实 Apple StoreAgent 初始化、Mac App Store PKG 下载和导出：未测试。"];
+        NSUserDefaults *storage = [NSUserDefaults standardUserDefaults];
+        [storage setObject:report forKey:kGoTCIBatchResult];
+        [storage setBool:NO forKey:kGoTCIBatchPending];
+        [storage synchronize];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MacGoTCITestViewController *controller = weakSelf;
+            if (!controller) return;
+            controller.status.text = report;
+            controller.batchTest.enabled = YES;
+            controller.test.enabled = YES;
+            controller.memoryTest.enabled = YES;
+            controller.machoTest.enabled = YES;
+            controller.crossTest.enabled = YES;
+            controller.serviceTest.enabled = YES;
+            controller.copyReport.enabled = YES;
+        });
+    });
 }
 - (void)confirmServiceProbe:(id)sender {
     UIAlertController *alert = [UIAlertController
