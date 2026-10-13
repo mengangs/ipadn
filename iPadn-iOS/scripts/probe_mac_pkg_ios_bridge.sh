@@ -177,8 +177,8 @@ cat > "$APP/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>Mac PKG 测试</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-<key>CFBundleShortVersionString</key><string>0.3</string>
-<key>CFBundleVersion</key><string>3</string>
+<key>CFBundleShortVersionString</key><string>0.4</string>
+<key>CFBundleVersion</key><string>4</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>MinimumOSVersion</key><string>15.0</string>
 <key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
