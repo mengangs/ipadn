@@ -72,8 +72,8 @@ struct AccountsView: View {
             }
         }
         .toolPage().navigationTitle("账号").navigationBarTitleDisplayMode(.large)
-        .actionConfirmation(isPresented: $signingOut, title: "退出当前账号？", message: "账号仍保存在本机，可以随时切换回来。", confirmTitle: "退出登录") { apple.select(nil) }
-        .actionConfirmation(isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), title: "移除账号？", message: "清除此账号的本机登录信息与已购记录，保留已下载的文件。", confirmTitle: "移除账号") {
+        .actionConfirmation(isPresented: $signingOut, title: "退出当前账号？", message: "账号仍会保留，可随时切换回来。", confirmTitle: "退出登录") { apple.select(nil) }
+        .actionConfirmation(isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), title: "移除账号？", message: "已下载的安装包会保留。", confirmTitle: "移除账号") {
             guard let id = deleting?.id else { return }
             do { try store.deleteAccount(id); store.infoMessage = "已移除账号" } catch { store.errorMessage = error.localizedDescription }
             deleting = nil
@@ -120,7 +120,7 @@ struct VerificationStep: View {
         .alert("获取验证码", isPresented: $showingHelp) {
             Button("好", role: .cancel) { }
         } message: {
-            Text("在受信任的 iPhone、iPad 或 Mac 上允许登录后会显示验证码。也可以在受信任设备的「设置 → Apple 账户 → 登录与安全 → 获取验证码」中获取。验证码仅用于本次登录，不会保存。")
+            Text("在受信任的 iPhone、iPad 或 Mac 上允许登录后会显示验证码；也可以在该设备的「设置 › Apple 账户 › 登录与安全 › 获取验证码」中获取。")
         }
     }
 }
@@ -210,7 +210,7 @@ struct LoginView: View {
                 }.frame(maxWidth: .infinity)
             }
             .buttonStyle(PrimaryButtonStyle()).disabled(!canSubmit)
-            Label("账号凭据仅保存在此设备的钥匙串中，验证码不会保存。", systemImage: "lock.fill")
+            Label("你的账号信息仅保存在这台设备上。", systemImage: "lock.fill")
                 .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
         .onAppear { if email.isEmpty { focus = .email } else if password.isEmpty { focus = .password } }

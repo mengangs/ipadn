@@ -76,7 +76,7 @@ final class AppIconService: ObservableObject {
         guard !changing else { throw ToolError.message("正在等待系统处理图标切换") }
         refresh()
         guard choice != selected else { return }
-        guard supported else { throw ToolError.message("当前安装方式不支持切换应用图标") }
+        guard supported else { throw ToolError.message("当前设备不支持更换图标") }
         guard simulatesChanges || UIApplication.shared.applicationState == .active else {
             throw ToolError.message("请回到应用前台再切换图标")
         }
@@ -84,7 +84,7 @@ final class AppIconService: ObservableObject {
         defer { changing = false }
         if simulatesChanges { selected = choice; return }
         guard Self.bundledAlternateIsAvailable() else {
-            throw ToolError.message("当前安装包缺少备用图标资源，请重新签名并安装保留完整图标文件的 IPA。")
+            throw ToolError.message("当前安装的 iPadn 缺少图标资源，无法更换图标")
         }
         reconciliation?.cancel()
         reconciliation = nil
@@ -116,12 +116,12 @@ final class AppIconService: ObservableObject {
             // No final answer yet: keep watching alternateIconName instead of
             // inventing a failure; the selection updates when the system does.
             awaitingSystem = choice
-            statusHint = "系统正在处理图标更换，完成后会自动更新。"
+            statusHint = "正在更换图标…"
             beginReconciliation()
             return
         }
         let code = (lastError as NSError?)?.code ?? 0
-        throw ToolError.message("iOS 未能应用所选图标（错误 \(code)）。请稍后重试；若仍失败，请检查安装包中的备用图标资源。")
+        throw ToolError.message("图标更换失败，请稍后重试")
     }
 
     private struct IconRequestTimeout: Error {}
@@ -156,7 +156,7 @@ final class AppIconService: ObservableObject {
             }
             guard let self, self.awaitingSystem != nil else { return }
             self.awaitingSystem = nil
-            self.statusHint = "系统没有确认这次切换。请返回桌面检查；若未变化，请检查重新签名的安装包。"
+            self.statusHint = "系统未确认更换，请回到主屏幕查看"
             self.refresh()
         }
     }

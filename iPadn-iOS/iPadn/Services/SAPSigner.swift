@@ -84,7 +84,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
             try Task.checkCancellation()
             try await server.start()
             try checkActive(id)
-            guard let base = server.baseURL else { throw ToolError.message("无法启动本地验证环境") }
+            guard let base = server.baseURL else { throw ToolError.message("暂时无法完成验证，请重试") }
             let web: WKWebView
             let warm = reuseRuntime && reusableBase == base && reusableWebView != nil
             if warm, let saved = reusableWebView { web = saved }
@@ -121,7 +121,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
                             if let text = value as? String, !text.isEmpty { continuation.resume(returning: text) }
                             else { continuation.resume(throwing: ToolError.message("验证结果为空，请重试")) }
                         case .failure:
-                            continuation.resume(throwing: ToolError.message("本地验证未完成，请检查网络并重试。"))
+                            continuation.resume(throwing: ToolError.message("验证未完成，请检查网络后重试"))
                         }
                     }
                 }
@@ -204,6 +204,6 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
     }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         guard webView === self.webView, let id = operationID else { return }
-        stop(id: id, error: ToolError.message("本地验证进程已退出，可能是可用内存不足。请重试。"))
+        stop(id: id, error: ToolError.message("验证意外中断，请重试"))
     }
 }

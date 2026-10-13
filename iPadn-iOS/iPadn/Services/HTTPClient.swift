@@ -22,7 +22,7 @@ final class HTTPClient: Sendable {
 
     func request(_ url: URL, method: String = "GET", body: Data? = nil,
                  headers: [String: String] = [:], appleRedirects: Bool = false) async throws -> (Data, HTTPURLResponse) {
-        guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ToolError.message("远程接口必须使用 HTTPS，不能包含账号密码") }
+        guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ToolError.message("链接无效") }
         var current = url
         for _ in 0..<5 {
             try Task.checkCancellation()
@@ -31,18 +31,18 @@ final class HTTPClient: Sendable {
             request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
             headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
             let (data, response) = try await session.data(for: request)
-            guard let response = response as? HTTPURLResponse else { throw ToolError.message("接口响应格式错误") }
+            guard let response = response as? HTTPURLResponse else { throw ToolError.message("服务器响应异常，请稍后重试") }
             if [301, 302, 303, 307, 308].contains(response.statusCode),
                let location = response.value(forHTTPHeaderField: "Location"),
                let next = URL(string: location, relativeTo: current)?.absoluteURL {
                 guard next.scheme == "https", let host = next.host,
-                      next.user == nil, next.password == nil else { throw ToolError.message("接口返回了不安全的重定向") }
+                      next.user == nil, next.password == nil else { throw ToolError.message("服务器响应异常，请稍后重试") }
                 if appleRedirects {
                     guard host == "itunes.apple.com" || host.hasSuffix(".itunes.apple.com") else {
-                        throw ToolError.message("Apple 接口重定向到了非 Apple 地址，已停止请求")
+                        throw ToolError.message("服务器响应异常，请稍后重试")
                     }
                 } else {
-                    guard next.host == url.host else { throw ToolError.message("接口重定向到其他域名，请更新接口设置") }
+                    guard next.host == url.host else { throw ToolError.message("服务器响应异常，请稍后重试") }
                 }
                 current = next
                 continue
@@ -52,7 +52,7 @@ final class HTTPClient: Sendable {
             }
             return (data, response)
         }
-        throw ToolError.message("接口重定向次数过多")
+        throw ToolError.message("服务器响应异常，请稍后重试")
     }
 
     func json(_ url: URL) async throws -> Any {
@@ -63,7 +63,7 @@ final class HTTPClient: Sendable {
     func plist(_ url: URL, body: Data, headers: [String: String]) async throws -> ([String: Any], HTTPURLResponse) {
         let (data, response) = try await request(url, method: "POST", body: body, headers: headers, appleRedirects: true)
         guard let dictionary = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
-            throw ToolError.message("Apple 接口没有返回有效的 plist")
+            throw ToolError.message("Apple 服务器响应异常，请稍后重试")
         }
         return (dictionary, response)
     }

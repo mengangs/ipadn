@@ -88,22 +88,22 @@ final class AppleService: ObservableObject {
     func refresh(_ account: AppleAccount, useCache: Bool) async throws -> AppleAccount {
         guard activeID == account.id else { throw ToolError.message("账号已切换，请重新执行操作") }
         try await login(email: account.id, password: account.password, code: "", useCache: useCache)
-        guard let refreshed = active, refreshed.id == account.id else { throw ToolError.message("刷新登录态失败") }
+        guard let refreshed = active, refreshed.id == account.id else { throw ToolError.message("登录已过期，请重新登录") }
         return refreshed
     }
 
     func asset(appID: String, versionID: String?, store: StoreContext, useCache: Bool,
                allowLicenseAcquisition: Bool = true) async throws -> DownloadAsset {
         guard let identifier = UInt64(appID), identifier > 0,
-              appID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message("App ID 必须是有效的正整数") }
+              appID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message("App ID 只能包含数字") }
         if let versionID {
             guard let version = UInt64(versionID), version > 0,
-                  versionID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message("版本 ID 必须是有效的正整数") }
+                  versionID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message("版本 ID 只能包含数字") }
         }
         guard store.platform.supportsIPA else {
-            throw ToolError.message("原生 Mac App Store 应用不是 iOS IPA，无法使用当前下载方式获取；请在 Mac App Store 下载")
+            throw ToolError.message("Mac 应用请使用「获取 PKG」下载")
         }
-        guard let account = active else { throw ToolError.message("请先在账号页登录 Apple 账号") }
+        guard let account = active else { throw ToolError.message("请先登录 Apple 账号") }
         var targetVersion = versionID
         var tvListing: StoreApp?
         if store.platform == .tvOS {
@@ -135,7 +135,7 @@ final class AppleService: ObservableObject {
                    alternate.platform.isEmpty || tvPlatforms.contains(alternate.platform.lowercased()) {
                     asset = alternate
                 } else {
-                    throw ToolError.message("Apple 没有提供可确认的 Apple TV 安装包。请检查应用是否支持 tvOS，以及当前 Apple 账号是否可下载。")
+                    throw ToolError.message("该应用没有可下载的 Apple TV 版本")
                 }
             }
             // A missing platform field is not proof of tvOS compatibility.
@@ -146,7 +146,7 @@ final class AppleService: ObservableObject {
             if let icon = tvListing?.iconURL { asset.app.iconURL = icon }
         } else {
             guard reported.isEmpty || ["ios", "iphoneos", "ipad"].contains(reported) else {
-                throw ToolError.message("Apple 返回的安装包与当前平台不匹配，请切换正确的平台后重试。")
+                throw ToolError.message("该应用没有所选平台的版本，请切换平台后重试")
             }
             asset.platform = store.platform == .iPadOS ? "ipad" : "ios"
         }
@@ -164,7 +164,7 @@ final class AppleService: ObservableObject {
             payload[fallback ? "appExtVrsId" : "externalVersionId"] = versionID
         }
         if !fallback {
-            guard !account.dsid.isEmpty else { throw ToolError.message("登录信息缺少 DSID，请重新登录") }
+            guard !account.dsid.isEmpty else { throw ToolError.message("登录已过期，请重新登录") }
             let kbsync = try await signer.kbsync(guid: guid, dsid: account.dsid, useCache: useCache)
             // Node plist builder in the supplied source emits the returned Base64 as a string.
             payload["kbsync"] = kbsync
@@ -200,12 +200,12 @@ final class AppleService: ObservableObject {
             throw ToolError.message("Apple 没有返回该版本的下载信息")
         }
         guard let url = URL(string: plistString(song["URL"])), url.scheme == "https",
-              var metadata = song["metadata"] as? [String: Any] else { throw ToolError.message("下载信息缺少 URL 或元数据") }
+              var metadata = song["metadata"] as? [String: Any] else { throw ToolError.message("暂时无法下载，请稍后重试") }
         guard activeID == account.id else { throw ToolError.message("账号已切换，请重新执行下载") }
         metadata["appleId"] = account.id
         let externalID = plistString(metadata["softwareVersionExternalIdentifier"])
         if let requested = versionID, !externalID.isEmpty, externalID != requested {
-            throw ToolError.message("Apple 返回的版本 ID 与请求不一致，已停止下载")
+            throw ToolError.message("所选版本暂时无法下载，请换个版本重试")
         }
         let artwork = song["artwork-urls"] as? [String: Any]
         let defaultArt = artwork?["default"] as? [String: Any]
@@ -220,7 +220,7 @@ final class AppleService: ObservableObject {
         if let data = sinfRaw as? Data { sinf = data }
         else if let string = sinfRaw as? String { sinf = Data(base64Encoded: string, options: .ignoreUnknownCharacters) }
         else { sinf = nil }
-        guard let sinf = sinf, !sinf.isEmpty else { throw ToolError.message("下载信息缺少账号授权 sinf，无法生成可用安装包") }
+        guard let sinf = sinf, !sinf.isEmpty else { throw ToolError.message("此账号没有该应用的下载授权") }
         return DownloadAsset(app: app, url: url, sinf: sinf, metadata: try HTTPClient.encodePlist(metadata),
             externalVersionIDs: (metadata["softwareVersionExternalIdentifiers"] as? [Any] ?? []).map { plistString($0) },
             platform: plistString(metadata["software-platform"]), account: account.id)
@@ -255,13 +255,13 @@ final class AppleService: ObservableObject {
     // can require StoreAgent/dpInfo processing before they become valid XAR.
     // Exposing the encrypted response as a .pkg would corrupt the export.
     func macPackageOffer(_ app: StoreApp, useCache: Bool) async throws -> MacPackageOffer {
-        guard let account = active else { throw ToolError.message("请先在账号页登录 Apple 账号") }
+        guard let account = active else { throw ToolError.message("请先登录 Apple 账号") }
         guard let appNumber = UInt64(app.id), appNumber > 0 else {
             throw ToolError.message("请输入有效的 Mac 应用 ID")
         }
         let initialID = account.id
         guard let country = StoreService.country(forStorefront: account.storeFront) else {
-            throw ToolError.message("当前账号所属商店地区尚未识别，无法可靠选择 Mac 安装包版本。")
+            throw ToolError.message("无法识别此账号的商店地区，请重新登录后重试")
         }
         // nil when the app is delisted (no product page): the request then
         // omits externalVersionId and the response must still be macOS.
@@ -271,7 +271,7 @@ final class AppleService: ObservableObject {
         guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
         let deviceID = guid
         guard let serial = MacPackageOffer.serialNumber(guid: deviceID) else {
-            throw ToolError.message("设备标识无效，请重新登录")
+            throw ToolError.message("登录已过期，请重新登录")
         }
         let sync = try await signer.kbsync(guid: deviceID, dsid: account.dsid, useCache: useCache)
         // Same ent/download request as ipatool's Mac path: the serial number is
@@ -312,13 +312,13 @@ final class AppleService: ObservableObject {
         let headers = purchaseHeaders(account)
         let (login, _) = try await HTTPClient.shared.request(URL(string: base + "/login")!, method: "POST", headers: headers, appleRedirects: true)
         try DMAP.validate(login)
-        guard let session = try DMAP.firstInteger(login, name: "mlid") else { throw ToolError.message("购买记录缺少 session ID") }
+        guard let session = try DMAP.firstInteger(login, name: "mlid") else { throw ToolError.message("暂时无法同步购买记录，请稍后重试") }
         let updateBody = Data("session-id=\(session)&revision-number=(null)&query=\(query)".utf8)
         var updateHeaders = headers
         updateHeaders["X-Apple-ActionSignature"] = try await signer.sign(updateBody, guid: guid, useCache: useCache)
         let (update, _) = try await HTTPClient.shared.request(URL(string: base + "/update")!, method: "POST", body: updateBody, headers: updateHeaders, appleRedirects: true)
         try DMAP.validate(update)
-        guard let revision = try DMAP.firstInteger(update, name: "musr") else { throw ToolError.message("购买记录缺少 revision") }
+        guard let revision = try DMAP.firstInteger(update, name: "musr") else { throw ToolError.message("暂时无法同步购买记录，请稍后重试") }
         let payload = DMAP.uint32("mstc", UInt32(Date().timeIntervalSince1970)) + DMAP.uint32("mlid", session) +
             DMAP.tag("mikd", Data([2])) + DMAP.uint32("musr", revision) + DMAP.uint32("mder", 0) +
             DMAP.string("mque", query) + DMAP.tag("aetl")
@@ -390,7 +390,7 @@ struct MacPackageOffer {
         guard let songs = raw["songList"] as? [[String: Any]], songs.count == 1,
               let item = songs.first,
               let metadata = item["metadata"] as? [String: Any] else {
-            throw ToolError.message("Apple 未返回符合账号授权的 Mac 下载信息。")
+            throw ToolError.message("此账号没有该应用 Mac 版的下载授权")
         }
         let itemID = plistString(metadata["itemId"] ?? item["songId"])
         let actualVersionID = plistString(metadata["softwareVersionExternalIdentifier"])
@@ -404,12 +404,12 @@ struct MacPackageOffer {
               !actualBundleID.isEmpty,
               bundleID.isEmpty || actualBundleID == bundleID,
               platform == "macos", type == "mac-os-app" || type == "ios-app" || type.isEmpty else {
-            throw ToolError.message("Apple 返回的不是所选 Mac 应用或版本，已拒绝下载。")
+            throw ToolError.message("该应用没有可下载的 Mac 版本")
         }
         guard let text = item["URL"] as? String,
               let url = URL(string: text), url.scheme?.lowercased() == "https",
               url.host != nil, url.user == nil, url.password == nil else {
-            throw ToolError.message("Apple 没有返回安全的 Mac 安装包下载地址。")
+            throw ToolError.message("暂时无法下载 Mac 安装包，请稍后重试")
         }
         func bytes(_ value: Any?) -> Data? {
             if let value = value as? Data { return value.isEmpty ? nil : value }
@@ -419,12 +419,12 @@ struct MacPackageOffer {
         let sinfs = item["sinfs"] as? [[String: Any]] ?? []
         let dpInfos = sinfs.compactMap { bytes($0["dpInfo"]) }
         if let first = dpInfos.first, dpInfos.contains(where: { $0 != first }) {
-            throw ToolError.message("Apple 返回的 Mac 下载授权信息不一致，已停止处理。")
+            throw ToolError.message("暂时无法下载 Mac 安装包，请稍后重试")
         }
         // An iOS-style sinf without dpInfo is evidence of a mobile package,
         // which contradicts the macOS metadata checked above (as in ipatool).
         guard !sinfs.contains(where: { bytes($0["sinf"]) != nil && bytes($0["dpInfo"]) == nil }) else {
-            throw ToolError.message("Apple 返回的不是所选 Mac 应用或版本，已拒绝下载。")
+            throw ToolError.message("该应用没有可下载的 Mac 版本")
         }
         return MacPackageOffer(downloadURL: url, versionID: actualVersionID,
                                displayVersion: plistString(metadata["bundleShortVersionString"]),

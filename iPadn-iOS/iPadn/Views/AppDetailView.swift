@@ -110,7 +110,7 @@ struct AppDetailView: View {
             }
             Button("取消", role: .cancel) { }
         } message: {
-            Text("粘贴开发者提供的安装包直链。下载后可通过下载页导出到 Mac。")
+            Text("输入 DMG、PKG 或 ZIP 安装包的下载链接。")
         }
         .navigationDestination(isPresented: $showLogin) {
             LoginView(initialAccountID: reauthenticationID, onSignedIn: {
@@ -271,7 +271,7 @@ struct AppDetailView: View {
 
     @ViewBuilder private var versionSection: some View {
         Section {
-            Toggle("从 Apple 获取版本列表", isOn: $official).font(.subheadline)
+            Toggle("从 Apple 获取完整版本列表", isOn: $official).font(.subheadline)
                 .disabled(apple.active == nil || store.settings.store.platform == .tvOS)
             if versionsLoading { HStack { ProgressView(); Text("正在查找历史版本…").font(.subheadline).foregroundStyle(.secondary) } }
             if let versionError { InlineIssue(message: versionError) { reloadID += 1 } }
@@ -282,7 +282,7 @@ struct AppDetailView: View {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("版本 \(version.version)").font(.body.weight(.medium))
-                        Text("\(version.id) · \(version.source)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        Text("版本 ID \(version.id)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
                     Spacer(minLength: 8)
@@ -293,9 +293,9 @@ struct AppDetailView: View {
                 .contextMenu { Button("复制版本 ID", systemImage: "doc.on.doc") { copy(version.id) } }
             }
             if !versions.isEmpty && filtered.isEmpty { Text("没有匹配的版本。").font(.subheadline).foregroundStyle(.secondary) }
-            if filtered.count > 100 { Text("已显示前 100 个版本，输入版本号可继续查找。").font(.caption).foregroundStyle(.secondary) }
+            if filtered.count > 100 { Text("仅显示前 100 个版本，可输入版本号筛选。").font(.caption).foregroundStyle(.secondary) }
             if versions.isEmpty && !versionsLoading && versionError == nil {
-                Text("暂无历史版本，可刷新或手动输入版本 ID。").font(.subheadline).foregroundStyle(.secondary)
+                Text("暂无历史版本").font(.subheadline).foregroundStyle(.secondary)
             }
             DisclosureGroup("手动指定版本 ID") {
                 HStack {
@@ -309,14 +309,14 @@ struct AppDetailView: View {
                 Spacer()
                 Button("刷新") { reloadID += 1 }.disabled(versionsLoading).font(.body).textCase(nil)
             }
-        } footer: { Text("版本可用性取决于商店地区与账号许可。") }
+        }
     }
 
     @ViewBuilder private var macSection: some View {
         Section {
             Text(MacPackageDecryptor.isAvailable
-                 ? "使用当前 Apple 账号的购买授权下载，在本机完成 Apple 安装包处理并校验后可导出到 Mac。首次处理需从 Apple 下载约 47 MB 组件，处理大型安装包耗时较长。"
-                 : "此版本未包含 Mac 安装包处理组件，只能保存 Apple 直接提供的未加密 PKG。")
+                 ? "下载完成后可导出到 Mac 安装。"
+                 : "仅支持下载未加密的 Mac 安装包。")
                 .font(.footnote).foregroundStyle(.secondary)
             if macLoading { HStack { ProgressView(); Text("正在查找开发者安装包…").font(.subheadline).foregroundStyle(.secondary) } }
             ForEach(macInstallers) { installer in
@@ -324,14 +324,14 @@ struct AppDetailView: View {
                     Image(systemName: "shippingbox").foregroundStyle(.secondary).frame(width: 28)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(installer.title).font(.subheadline.weight(.medium)).lineLimit(2)
-                        Text("开发者官网 · " + installer.format.uppercased()).font(.caption).foregroundStyle(.secondary)
+                        Text("来自开发者网站 · " + installer.format.uppercased()).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
                     RowCapsule(title: "下载") { enqueueMacInstaller(installer) }
                         .accessibilityIdentifier("mac.download." + installer.format)
                 }
             }
-            Button("通过链接下载 DMG / PKG / ZIP", systemImage: "link") { enteringMacDownloadURL = true }
+            Button("通过链接下载", systemImage: "link") { enteringMacDownloadURL = true }
                 .accessibilityIdentifier("mac.manual-download")
             if let website = macWebsite {
                 Link(destination: website) { Label("开发者网站", systemImage: "safari") }
@@ -363,7 +363,7 @@ struct AppDetailView: View {
         catch {
             if !Task.isCancelled {
                 let message = error.localizedDescription
-                versionError = message.contains("历史版本来源暂不可用") ? message : AppErrorMessage.forSearch(error)
+                versionError = message.contains("暂时无法获取历史版本") ? message : AppErrorMessage.forSearch(error)
             }
         }
     }
@@ -380,15 +380,13 @@ struct AppDetailView: View {
                 let offer = try await apple.macPackageOffer(app, useCache: store.settings.useSignerCache)
                 try Task.checkCancellation()
                 try store.downloads.enqueueOfficialMacPackage(offer, for: app)
-                store.infoMessage = offer.protectedByApple
-                    ? "Mac PKG 已加入下载任务。下载后会在本机处理并校验，完成后可导出。"
-                    : "Mac PKG 已加入下载任务，完成校验后可导出。"
+                store.infoMessage = "已开始下载"
                 store.tab = 1
             } catch AppleAuthError.reauthenticationRequired {
                 reauthenticationID = apple.activeID
                 showLogin = true
             } catch AppleLoginError.verificationRequired {
-                store.errorMessage = "Apple 账号需要重新验证，请在账号页完成验证后重试。"
+                store.errorMessage = "请在「账号」中重新验证 Apple 账号后重试。"
             } catch is CancellationError { }
             catch {
                 store.errorMessage = error.localizedDescription
@@ -426,11 +424,11 @@ struct AppDetailView: View {
     private func download(versionID: String?) {
         guard !downloadLoading else { return }
         guard store.settings.store.platform.supportsIPA else {
-            store.errorMessage = "原生 Mac 应用需要在 Mac App Store 下载，不能导出为 IPA"
+            store.errorMessage = "Mac 应用请使用「获取 PKG」下载。"
             return
         }
         guard apple.active != nil else { showLogin = true; return }
-        if let versionID, !versionID.isEmpty, !versionID.allSatisfy({ $0.isASCII && $0.isNumber }) { store.errorMessage = "版本 ID 必须是数字"; return }
+        if let versionID, !versionID.isEmpty, !versionID.allSatisfy({ $0.isASCII && $0.isNumber }) { store.errorMessage = "版本 ID 只能包含数字"; return }
         downloadLoading = true
         downloadTask = Task {
             defer { downloadLoading = false; downloadTask = nil }

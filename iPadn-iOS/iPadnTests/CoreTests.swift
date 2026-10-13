@@ -149,8 +149,8 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(unchanged.iconURL, phone.iconURL)
         XCTAssertEqual(unchanged.size, phone.size)
 
-        XCTAssertEqual(PackageService.describePlatforms(families: [3], platforms: ["AppleTVOS"]), "Apple TV（AppleTVOS）")
-        XCTAssertEqual(PackageService.describePlatforms(families: [2, 1], platforms: ["iPhoneOS"]), "iPhone · iPad（iPhoneOS）")
+        XCTAssertEqual(PackageService.describePlatforms(families: [3], platforms: ["AppleTVOS"]), "Apple TV")
+        XCTAssertEqual(PackageService.describePlatforms(families: [2, 1], platforms: ["iPhoneOS"]), "iPhone、iPad")
         XCTAssertEqual(PackageService.describePlatforms(families: [], platforms: []), "未知")
     }
 

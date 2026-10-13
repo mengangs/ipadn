@@ -46,7 +46,7 @@ final class InstallationService: ObservableObject {
     func localInstallURL(job: DownloadJob, file: URL, host: String) async throws -> URL {
         let host = try ManifestBuilder.localHost(host)
         guard let certificate = try InstallationCertificate.load() else {
-            throw ToolError.message("请先在安装设置中导入自己的 SSL 服务器证书")
+            throw ToolError.message("请先在安装方式中创建证书")
         }
         try await certificate.validateAsync(host: host)
         let server = LoopbackServer(identity: certificate.identity, certificates: certificate.certificates, publicHost: host)
@@ -83,14 +83,14 @@ enum ManifestBuilder {
         guard !host.isEmpty, host.utf8.count <= 253, !host.contains(".."),
               host.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-") }),
               !host.hasPrefix("-"), !host.hasSuffix("-") else {
-            throw ToolError.message("请填写证书包含的 IP 或域名，不要包含协议、端口或路径")
+            throw ToolError.message("请填写有效的服务器地址")
         }
         return host
     }
     static func manifest(app: StoreApp, packageURL: URL) throws -> Data {
         guard !app.bundleID.isEmpty, !app.version.isEmpty, packageURL.scheme == "https",
               packageURL.host != nil, packageURL.user == nil, packageURL.password == nil else {
-            throw ToolError.message("安装包信息或 HTTPS 下载地址无效")
+            throw ToolError.message("无法生成安装链接")
         }
         return try PropertyListSerialization.data(fromPropertyList: ["items": [[
             "assets": [["kind": "software-package", "url": packageURL.absoluteString]],
@@ -107,11 +107,11 @@ enum ManifestBuilder {
 
     static func externalInstallURL(app: StoreApp, packageURL: URL) throws -> URL {
         guard !app.bundleID.isEmpty, !app.version.isEmpty else {
-            throw ToolError.message("安装包缺少 Bundle ID 或版本号")
+            throw ToolError.message("安装包信息不完整，无法安装")
         }
         guard let scheme = packageURL.scheme, ["http", "https"].contains(scheme),
               packageURL.host != nil, packageURL.user == nil, packageURL.password == nil else {
-            throw ToolError.message("本机安装地址无效")
+            throw ToolError.message("无法生成安装链接")
         }
         func encode(_ value: String) -> String { value.addingPercentEncoding(withAllowedCharacters: strictQuery) ?? "" }
         let query = [("bundleid", app.bundleID), ("name", app.name.isEmpty ? app.bundleID : app.name),
@@ -126,7 +126,7 @@ enum ManifestBuilder {
 
     static func systemURL(manifestURL: URL) throws -> URL {
         guard manifestURL.scheme == "https", manifestURL.host != nil, manifestURL.user == nil, manifestURL.password == nil else {
-            throw ToolError.message("安装清单必须使用 HTTPS")
+            throw ToolError.message("清单服务地址需以 https 开头")
         }
         var installer = URLComponents()
         installer.scheme = "itms-services"; installer.host = ""
@@ -137,11 +137,11 @@ enum ManifestBuilder {
 
     static func installURL(app: StoreApp, filename: String, plistServer: String) throws -> URL {
         guard !app.bundleID.isEmpty, !app.version.isEmpty else {
-            throw ToolError.message("安装包缺少 Bundle ID 或版本号")
+            throw ToolError.message("安装包信息不完整，无法安装")
         }
         guard let remote = URLComponents(string: plistServer.trimmingCharacters(in: .whitespacesAndNewlines)),
               remote.scheme == "https", remote.host != nil, remote.user == nil, remote.password == nil, remote.query == nil, remote.fragment == nil else {
-            throw ToolError.message("请先在设置中填写自己的 HTTPS 清单服务地址（不含查询参数），或导出到签名工具")
+            throw ToolError.message("请先在安装方式中填写清单服务地址")
         }
         var metadata = URLComponents()
         metadata.queryItems = [

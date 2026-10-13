@@ -133,7 +133,7 @@ enum PackageIconService {
             guard data.count + chunk.count <= limit else { throw ToolError.message("图标资源过大") }
             data.append(chunk)
         }
-        guard checksum == entry.checksum else { throw ToolError.message("IPA 图标资源校验失败") }
+        guard checksum == entry.checksum else { throw ToolError.message("安装包已损坏") }
         return data
     }
 }

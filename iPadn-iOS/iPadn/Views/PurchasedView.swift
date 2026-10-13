@@ -61,14 +61,14 @@ struct PurchasedView: View {
                 } else if !store.ownedLoading && store.ownedError == nil {
                     Section {
                         if term.isEmpty && months == 0 {
-                            EmptyState(title: "暂无已购记录", message: "从 Apple 获取记录，之后可在这里查找和下载历史版本。", symbol: "clock.arrow.circlepath", actionTitle: "立即同步", action: { Task { await store.refreshOwned() } })
+                            EmptyState(title: "暂无已购记录", message: "同步后可在这里查找并下载你获取过的应用。", symbol: "clock.arrow.circlepath", actionTitle: "立即同步", action: { Task { await store.refreshOwned() } })
                         } else {
-                            EmptyState(title: "没有匹配的应用", message: "换个关键词，或清除时间筛选。", symbol: "line.3.horizontal.decrease.circle", actionTitle: "清除筛选", action: { term = ""; months = 0 })
+                            EmptyState(title: "没有匹配的应用", message: "换个关键词，或调整时间范围。", symbol: "line.3.horizontal.decrease.circle", actionTitle: "清除筛选", action: { term = ""; months = 0 })
                         }
                     }
                 }
             } else {
-                Section { EmptyState(title: "尚未登录", message: "登录后可同步此账号的购买记录。", symbol: "person.crop.circle.badge.checkmark", actionTitle: "登录账号", action: { showLogin = true }) }
+                Section { EmptyState(title: "尚未登录", message: "登录后即可查看你获取过的应用。", symbol: "person.crop.circle.badge.checkmark", actionTitle: "登录账号", action: { showLogin = true }) }
             }
         }
         .navigationDestination(isPresented: $showLogin) { LoginView() }

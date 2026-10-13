@@ -34,8 +34,8 @@ struct PackageInstallationView: View {
                         .accessibilityIdentifier("installation.request")
                         Button {
                             if let file = manager.fileURL(job) { sharedFile = SharedFile(url: file) }
-                            else { issue = "安装包文件不可用，请检查任务详情" }
-                        } label: { Label("导出到其他安装工具", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity) }
+                            else { issue = "找不到安装包文件，请重新下载。" }
+                        } label: { Label("导出安装包", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity) }
                         .buttonStyle(.borderless)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 10)
@@ -49,9 +49,9 @@ struct PackageInstallationView: View {
                                        : store.settings.localInstallation ? "本机证书" : "代理服务")
                     }.accessibilityIdentifier("installation.settings")
                 } footer: {
-                    Text(store.settings.automaticInstallation
-                         ? "IPA 由 iPadn 在本机提供，无需描述文件或服务器；安装清单由公共清单服务生成（需联网）。安装期间请保持 iPadn 运行，系统会校验 IPA 签名与账号授权。"
-                         : "本机证书方式需先在「安装方式」中安装描述文件，并在「设置 → 通用 → 关于本机 → 证书信任设置」中完全信任，否则系统会提示无法连接 127.0.0.1；代理方式需要清单服务与规则。")
+                    Text(store.settings.automaticInstallation ? "安装完成前请勿退出 iPadn。"
+                         : store.settings.localInstallation ? "需先在安装方式中创建并信任证书。"
+                         : "需要已配置的代理规则。")
                 }
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
@@ -67,7 +67,7 @@ struct PackageInstallationView: View {
         Task { @MainActor in
             defer { busy = false }
             do {
-                guard let file = manager.fileURL(job) else { throw ToolError.message("安装包文件不可用，请检查任务详情") }
+                guard let file = manager.fileURL(job) else { throw ToolError.message("找不到安装包文件，请重新下载。") }
                 let url: URL
                 if store.settings.automaticInstallation {
                     url = try await store.installation.automaticInstallURL(job: job, file: file)
@@ -77,8 +77,8 @@ struct PackageInstallationView: View {
                     url = try await store.installation.installURL(job: job, file: file, plistServer: store.settings.plistServer)
                 }
                 openURL(url) { accepted in
-                    if accepted { message = "已向系统发送安装请求，请查看系统提示。安装是否完成以系统结果为准；请保持 iPadn 运行以提供安装文件。" }
-                    else { issue = "系统未接受安装链接。请检查安装设置，或导出给安装工具。"; store.installation.stopHosting() }
+                    if accepted { message = "请在系统弹窗中确认安装，完成前请勿退出 iPadn。" }
+                    else { issue = "无法开始安装，请检查安装方式，或导出安装包。"; store.installation.stopHosting() }
                 }
             } catch { issue = error.localizedDescription }
         }

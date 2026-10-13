@@ -14,8 +14,7 @@ struct SettingsView: View {
             Section("下载") {
                 Stepper("同时下载：\(store.settings.maxConcurrentDownloads)", value: $store.settings.maxConcurrentDownloads, in: 1...6)
                 Stepper("等待任务上限：\(store.settings.maxQueuedDownloads)", value: $store.settings.maxQueuedDownloads, in: 1...100)
-                Toggle("下载结果通知", isOn: $store.settings.notifications)
-                LabeledContent("切到后台继续下载", value: "支持")
+                Toggle("下载完成通知", isOn: $store.settings.notifications)
             }
             Section("搜索与外观") {
                 Picker("搜索结果数量", selection: $store.settings.searchLimit) {
@@ -56,7 +55,7 @@ struct SettingsView: View {
                     Text(status)
                         .accessibilityIdentifier("settings.icon.status")
                 } else if !icons.supported {
-                    Text("当前设备或安装方式不支持切换图标。")
+                    Text("当前设备不支持更换图标。")
                 }
             }
             ForEach($store.settings.versionSources) { $source in
@@ -74,26 +73,26 @@ struct SettingsView: View {
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button("移除") { let id = source.id; withAnimation { store.settings.versionSources.removeAll { $0.id == id } } }.tint(.red)
                     }
-                } header: { if source.id == store.settings.versionSources.first?.id { Text("可扩展版本来源") } }
+                } header: { if source.id == store.settings.versionSources.first?.id { Text("历史版本来源") } }
             }
             Section {
                 Button("添加版本来源", systemImage: "plus") { addingSource = true }
             } footer: {
-                Text("兼容 external_identifier / bundle_version 字段。并发查询启用的来源，使用首个有效结果；版本缓存有效期 24 小时。")
+                Text("用于查询应用的历史版本。")
             }
             Section {
-                Toggle("加速重复验证和下载准备", isOn: $store.settings.useSignerCache)
-                Button("清除签名内存缓存") { store.signer.clearCache(); store.infoMessage = "已清除签名缓存。" }
-            } header: { Text("签名引擎") } footer: {
-                Text("验证过程在本机运行，缓存仅保留在内存中；退出应用后自动清除。")
+                Toggle("加快重复下载", isOn: $store.settings.useSignerCache)
+                Button("清除缓存") { store.signer.clearCache(); store.infoMessage = "已清除缓存" }
+            } header: { Text("性能") } footer: {
+                Text("缓存仅在本次运行期间保留。")
             }
             Section {
                 NavigationLink { InstallationSettingsView() } label: { Label("安装设置", systemImage: "arrow.down.app") }
                     .accessibilityIdentifier("settings.installation")
             }
             Section("维护") {
-                Button("清除版本查询缓存") { clearCache = true }
-                Button("导出诊断摘要") {
+                Button("清除历史版本缓存") { clearCache = true }
+                Button("导出诊断信息") {
                     do { share = SharedFile(url: try store.exportDiagnostics()) } catch { store.errorMessage = error.localizedDescription }
                 }
                 Button("恢复默认设置", role: .destructive) { resetSettings = true }
@@ -113,9 +112,9 @@ struct SettingsView: View {
         } message: { Text(iconIssue ?? "") }
         .sheet(isPresented: $addingSource) { AddVersionSourceView() }
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
-        .actionConfirmation(isPresented: $resetSettings, title: "恢复默认设置？", message: "保留账号、下载文件、已购记录和历史版本缓存。", confirmTitle: "恢复默认设置") { store.settings = ToolSettings() }
-        .actionConfirmation(isPresented: $clearCache, title: "清除版本查询缓存？", confirmTitle: "清除缓存") {
-            Task { do { try await store.versions.clearCache(); store.infoMessage = "已清除版本查询缓存" } catch { store.errorMessage = error.localizedDescription } }
+        .actionConfirmation(isPresented: $resetSettings, title: "恢复默认设置？", message: "账号、已下载的安装包和已购记录不受影响。", confirmTitle: "恢复默认设置") { store.settings = ToolSettings() }
+        .actionConfirmation(isPresented: $clearCache, title: "清除历史版本缓存？", confirmTitle: "清除缓存") {
+            Task { do { try await store.versions.clearCache(); store.infoMessage = "已清除缓存" } catch { store.errorMessage = error.localizedDescription } }
         }
     }
 }
@@ -127,13 +126,13 @@ struct VersionSourceEditor: View {
             Section("来源设置") {
                 Toggle("启用", isOn: $source.enabled)
                 TextField("来源名称", text: $source.name)
-                TextField("HTTPS 地址，使用 {id} 占位符", text: $source.urlTemplate)
+                TextField("接口地址，用 {id} 代表 App ID", text: $source.urlTemplate)
                     .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                TextField("列表容器键，顶层数组留空", text: $source.containerKey)
+                TextField("列表字段名（可留空）", text: $source.containerKey)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
-                Toggle("反转接口结果顺序", isOn: $source.reverse)
+                Toggle("倒序显示", isOn: $source.reverse)
             }
-            Section("支持的 JSON 格式") {
+            Section("接口格式") {
                 Text("[{\"external_identifier\":\"123\",\"bundle_version\":\"1.0\"}]")
                     .font(.caption.monospaced()).textSelection(.enabled)
                 Text("若返回 {\"data\":[…]}，列表容器键填写 data。")
@@ -158,7 +157,7 @@ struct AddVersionSourceView: View {
                             guard !source.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                                   source.urlTemplate.contains("{id}"),
                                   let url = URL(string: source.urlTemplate.replacingOccurrences(of: "{id}", with: "123")),
-                                  url.scheme == "https", url.host != nil else { error = "请填写来源名称和带 {id} 的 HTTPS 接口地址"; return }
+                                  url.scheme == "https", url.host != nil else { error = "请填写名称，以及包含 {id} 的 https 接口地址"; return }
                             store.settings.versionSources.append(source); dismiss()
                         }
                     }

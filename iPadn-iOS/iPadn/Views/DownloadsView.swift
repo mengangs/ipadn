@@ -39,7 +39,7 @@ struct DownloadsView: View {
             if let warning = manager.discoveryWarning { Section { InlineIssue(message: warning) } }
             if visible.isEmpty {
                 Section {
-                    EmptyState(title: manager.jobs.isEmpty ? "暂无下载任务" : "没有匹配任务", message: manager.jobs.isEmpty ? "搜索应用后下载，或通过右上角导入 IPA。" : "试试其他状态，或清除搜索条件。", symbol: manager.jobs.isEmpty ? "tray.and.arrow.down" : "line.3.horizontal.decrease.circle", actionTitle: manager.jobs.isEmpty ? "搜索应用" : "显示全部", action: {
+                    EmptyState(title: manager.jobs.isEmpty ? "暂无下载任务" : "没有匹配任务", message: manager.jobs.isEmpty ? "在搜索中获取应用，或点按右上角的 + 导入安装包。" : "试试其他筛选条件。", symbol: manager.jobs.isEmpty ? "tray.and.arrow.down" : "line.3.horizontal.decrease.circle", actionTitle: manager.jobs.isEmpty ? "搜索应用" : "显示全部", action: {
                         if manager.jobs.isEmpty { store.tab = 0 } else { term = ""; filter = .all }
                     })
                 }
@@ -83,7 +83,7 @@ struct DownloadsView: View {
                                         perform {
                                             let url = try await store.installation.localURL(file: file)
                                             UIPasteboard.general.string = url.absoluteString
-                                            store.infoMessage = "已复制本机链接，使用时请保持应用运行。"
+                                            store.infoMessage = "已复制链接"
                                         }
                                     }
                                 }
@@ -158,7 +158,7 @@ struct DownloadsView: View {
                     Label("导入 IPA", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }.buttonStyle(.plain).accessibilityIdentifier("downloads.import")
                 Button { nextAction = .link; showingActions = false } label: {
-                    Label("链接下载", systemImage: "link").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    Label("通过链接下载", systemImage: "link").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }.buttonStyle(.plain)
                 if manager.jobs.contains(where: { [.running, .queued, .paused].contains($0.status) }) {
                     Divider()
@@ -187,15 +187,14 @@ struct DownloadsView: View {
                     Form {
                         Section { AppRow(app: packageDisplayApp(job)); TaskStatusPill(status: job.status) }
                         Section("任务信息") {
-                            LabeledContent("创建时间", value: job.createdAt.formatted(date: .abbreviated, time: .shortened))
-                            LabeledContent("已传输", value: job.downloaded.byteLabel)
-                            if let account = job.account { Text(account).font(.footnote).textSelection(.enabled) }
-                            if let filename = job.localFilename { Text(filename).font(.footnote.monospaced()).textSelection(.enabled) }
+                            LabeledContent("添加时间", value: job.createdAt.formatted(date: .abbreviated, time: .shortened))
+                            if job.status != .completed { LabeledContent("已下载", value: job.downloaded.byteLabel) }
+                            if let account = job.account { LabeledContent("Apple 账号", value: account) }
                         }
-                        if let error = job.error { Section("错误详情") { Text(error).font(.subheadline).textSelection(.enabled) } }
+                        if let error = job.error { Section("未完成原因") { Text(error).font(.subheadline) } }
                         if job.status == .completed {
                             if let file = manager.fileURL(job) {
-                                if job.rawFormat == nil { Section { PackagePlatformRow(file: file) } footer: { Text("读取自安装包本身的 Info.plist，用于确认下载的是哪个平台的文件。") } }
+                                if job.rawFormat == nil { Section { PackagePlatformRow(file: file) } }
                                 Section { ShareLink(item: file) { Label("导出文件", systemImage: "square.and.arrow.up") } }
                             }
                         }
@@ -209,12 +208,12 @@ struct DownloadsView: View {
             Button("加入下载") {
                 do {
                     guard let url = URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines)) else { throw ToolError.message("链接无效") }
-                    try manager.enqueueURL(url); link = ""; filter = .all; term = ""; store.infoMessage = "已加入下载队列"
+                    try manager.enqueueURL(url); link = ""; filter = .all; term = ""; store.infoMessage = "已开始下载"
                 } catch { store.errorMessage = error.localizedDescription }
             }
             Button("取消", role: .cancel) { }
-        } message: { Text("填写可直接下载 IPA 文件的 HTTPS 地址。") }
-        .actionConfirmation(isPresented: $confirmingDelete, title: "删除 \(pendingDelete.count) 项任务？", message: "本地安装包也会删除，此操作无法撤销。", confirmTitle: "删除任务与文件") {
+        } message: { Text("输入 IPA 安装包的下载链接。") }
+        .actionConfirmation(isPresented: $confirmingDelete, title: "删除 \(pendingDelete.count) 项任务？", message: "已下载的安装包也会一并删除。", confirmTitle: "删除任务与文件") {
             do {
                 for id in pendingDelete { try manager.remove(id) }
                 selection.subtract(pendingDelete); pendingDelete.removeAll()
@@ -270,7 +269,7 @@ struct DownloadsView: View {
     }
     private func askDelete(_ ids: Set<UUID>) {
         pendingDelete = Set(manager.jobs.filter { ids.contains($0.id) && $0.status != .processing && $0.status != .pausing }.map(\.id))
-        if pendingDelete.isEmpty { store.infoMessage = "这些任务正在处理，请稍后再删除。" }
+        if pendingDelete.isEmpty { store.infoMessage = "任务处理完成后才能删除" }
         else { confirmingDelete = true }
     }
     private func perform(_ operation: @escaping () async throws -> Void) {
@@ -434,12 +433,12 @@ private struct PackagePlatformRow: View {
     let file: URL
     @State private var summary: String?
     var body: some View {
-        LabeledContent("安装包平台", value: summary ?? "读取中…")
+        LabeledContent("适用设备", value: summary ?? "…")
             .accessibilityIdentifier("download.package-platform")
             .task(id: file) {
                 let url = file
                 summary = await Task.detached(priority: .utility) {
-                    (try? PackageService.platformSummary(url)) ?? "无法读取"
+                    (try? PackageService.platformSummary(url)) ?? "未知"
                 }.value
             }
     }

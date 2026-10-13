@@ -101,7 +101,7 @@ final class LoopbackServer: @unchecked Sendable {
                         case .cancelled:
                             self.lock.lock(); self.readyURL = nil; self.lock.unlock()
                             self.listener = nil
-                            self.finishStart(.failure(ToolError.message("本地资源服务已停止")))
+                            self.finishStart(.failure(ToolError.message("安装已中断，请重试")))
                         default: break
                         }
                     }
@@ -143,7 +143,7 @@ final class LoopbackServer: @unchecked Sendable {
     deinit { listener?.cancel() }
 
     func register(_ url: URL) throws -> URL {
-        guard let baseURL = baseURL, url.isFileURL else { throw ToolError.message("本地文件服务未就绪") }
+        guard let baseURL = baseURL, url.isFileURL else { throw ToolError.message("安装服务未就绪，请重试") }
         let key = UUID().uuidString
         lock.lock(); registeredFiles[key] = url
         if compatibilityMode { compatibilityFiles[url.lastPathComponent] = url }
@@ -152,7 +152,7 @@ final class LoopbackServer: @unchecked Sendable {
     }
 
     func register(data: Data, contentType: String) throws -> URL {
-        guard let baseURL else { throw ToolError.message("本地文件服务未就绪") }
+        guard let baseURL else { throw ToolError.message("安装服务未就绪，请重试") }
         let key = UUID().uuidString
         lock.lock(); registeredData[key] = (data, contentType); lock.unlock()
         return baseURL.appendingPathComponent("data").appendingPathComponent(key)

@@ -277,7 +277,7 @@ final class ToolStore: ObservableObject {
     }
 
     func refreshDownload(_ job: DownloadJob) async throws {
-        guard job.status == .failed, job.asset != nil else { throw ToolError.message("只有失败的 Apple 下载任务可以刷新链接") }
+        guard job.status == .failed, job.asset != nil else { throw ToolError.message("此任务无法重试") }
         guard apple.activeID == job.account else { throw ToolError.message("请先切换至原下载账号：\(job.account ?? "")") }
         let platform: AppPlatform
         switch job.asset?.platform.lowercased() {

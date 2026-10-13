@@ -8,7 +8,7 @@ enum ToolError: LocalizedError {
 /// A non-2xx response, kept typed so callers can tell "not found" apart.
 struct HTTPStatusError: LocalizedError {
     let code: Int
-    var errorDescription: String? { "网络请求失败：HTTP \(code)" }
+    var errorDescription: String? { code == 404 ? "找不到相关内容" : "网络请求失败（\(code)），请稍后重试" }
 }
 
 enum AppErrorMessage {
@@ -19,16 +19,16 @@ enum AppErrorMessage {
             return "网络连接暂时不可用，请检查网络后重试。"
         }
         if error is AppleAuthError || error is AppleLoginError {
-            return "Apple 账号需要重新登录，请到「账号」页面验证后再试。"
+            return "请到「账号」中重新登录 Apple 账号后再试。"
         }
         let message = error.localizedDescription
         if message.contains("2002") || message.contains("Your password has changed") {
             return "Apple 账号需要重新登录，请到「账号」页面更新密码。"
         }
-        if message.contains("HTTP") || message.contains("JSON") || message.contains("itunes.apple.com") {
+        if error is HTTPStatusError || message.contains("HTTP") || message.contains("JSON") || message.contains("itunes.apple.com") {
             return "商店暂时无法返回结果，请稍后重试或更换地区。"
         }
-        return "暂时无法完成搜索，请检查网络、商店地区或应用 ID 后重试。"
+        return "暂时无法完成搜索，请稍后重试。"
     }
 }
  

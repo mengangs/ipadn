@@ -486,7 +486,7 @@ actor VersionService {
                     return item
                 }
             }
-            throw ToolError.message("历史版本来源暂不可用，可使用「从 Apple 获取版本」或手动指定版本 ID。")
+            throw ToolError.message("暂时无法获取历史版本，可打开「从 Apple 获取完整版本列表」或手动输入版本 ID")
         }
         if revision == cacheRevision {
             cache = cache.filter { Date().timeIntervalSince($0.value.savedAt) < 7 * 86400 }
@@ -528,11 +528,11 @@ actor VersionService {
     private static func fetch(_ id: String, source: VersionSource) async throws -> [AppVersion] {
         guard source.urlTemplate.contains("{id}"),
               let url = URL(string: source.urlTemplate.replacingOccurrences(of: "{id}", with: id)), url.scheme == "https" else {
-            throw ToolError.message("\(source.name)：需要带 {id} 的 HTTPS 接口地址")
+            throw ToolError.message("\(source.name)：接口地址无效")
         }
         let object = try await HTTPClient.shared.json(url)
         let value: Any? = source.containerKey.isEmpty ? object : (object as? [String: Any])?[source.containerKey]
-        guard let records = value as? [[String: Any]] else { throw ToolError.message("\(source.name)：版本列表格式不兼容") }
+        guard let records = value as? [[String: Any]] else { throw ToolError.message("\(source.name)：暂时无法读取版本列表") }
         var seen = Set<String>()
         let ordered = source.reverse ? Array(records.suffix(2000).reversed()) : Array(records.prefix(2000))
         return ordered.compactMap { record in

@@ -37,13 +37,13 @@ struct SearchView: View {
             }
             if !store.results.isEmpty {
                 Section {
-                    ForEach(store.results) { app in resultRow(app, note: app.tvOSCandidate == true ? "Apple TV 兼容性待确认" : nil) }
+                    ForEach(store.results) { app in resultRow(app, note: app.tvOSCandidate == true ? "可能支持 Apple TV" : nil) }
                 } header: { Text("\(store.results.count) 个结果") }
             }
             if !store.localResults.isEmpty {
                 Section {
-                    ForEach(store.localResults) { app in resultRow(app, note: "已购或目录记录") }
-                } header: { Text("已购与目录") }
+                    ForEach(store.localResults) { app in resultRow(app, note: nil) }
+                } header: { Text("更多结果") }
             }
             if store.results.isEmpty && store.localResults.isEmpty && store.hasSearched && !store.searching && store.searchError == nil {
                 Section {
@@ -117,10 +117,6 @@ struct SearchView: View {
                 Text("收藏").font(.title3.weight(.bold)).foregroundStyle(.primary).textCase(nil)
             }
         }
-        Section {
-            Label("输入「App ID 版本 ID」可直接定位指定版本", systemImage: "lightbulb")
-                .font(.footnote).foregroundStyle(.secondary)
-        }.listRowBackground(Color.clear)
     }
 
     private func chip(_ title: String, symbol: String) -> some View {

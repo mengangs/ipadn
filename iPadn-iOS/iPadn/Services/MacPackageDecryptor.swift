@@ -9,10 +9,10 @@ enum MacPackageDecryptor {
         case idle = 0, components, starting, decrypting
         var title: String {
             switch self {
-            case .idle: return "准备处理 Mac 安装包"
-            case .components: return "获取 Apple 安装包处理组件"
-            case .starting: return "启动安装包处理组件"
-            case .decrypting: return "正在处理 Mac 安装包"
+            case .idle: return "准备中"
+            case .components: return "正在下载所需组件"
+            case .starting: return "准备中"
+            case .decrypting: return "正在处理"
             }
         }
     }
@@ -37,10 +37,10 @@ enum MacPackageDecryptor {
     /// time; concurrent calls wait inside the bridge.
     static func decrypt(hardwareID: String, dpInfo: Data, from source: URL, to destination: URL) throws {
         guard let decryptFunction else {
-            throw ToolError.message("此版本未包含 Mac 安装包处理组件，请使用 GitHub Actions 构建的 iPadn。")
+            throw ToolError.message("当前版本不支持下载此 Mac 安装包")
         }
         guard hardwareID.count == 12, hardwareID.allSatisfy(\.isHexDigit), !dpInfo.isEmpty else {
-            throw ToolError.message("Mac 下载授权信息无效，请重新获取")
+            throw ToolError.message("下载授权已失效，请重新获取")
         }
         var message = [CChar](repeating: 0, count: 1024)
         let code = dpInfo.withUnsafeBytes { raw -> Int32 in
@@ -105,7 +105,7 @@ enum MacPackageSecrets {
         let status = SecItemCopyMatching(request as CFDictionary, &result)
         guard status == errSecSuccess, let data = result as? Data,
               let entry = try? JSONDecoder().decode(Entry.self, from: data) else {
-            throw ToolError.message("Mac 下载授权已失效，请删除任务后重新获取")
+            throw ToolError.message("下载授权已失效，请删除任务后重新获取")
         }
         return entry
     }

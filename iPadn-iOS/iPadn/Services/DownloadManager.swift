@@ -102,7 +102,7 @@ final class DownloadManager: NSObject, ObservableObject {
         restoring = false
         for job in jobs where job.status == .processing {
             if FileManager.default.fileExists(atPath: LocalResources.stagingURL(job.id).path) { process(job.id) }
-            else { fail(job.id, error: ToolError.message("待处理下载文件不存在，请重试")) }
+            else { fail(job.id, error: ToolError.message("下载文件丢失，请重试")) }
         }
         discoverLocalFiles()
         persist(); schedule()
@@ -125,7 +125,7 @@ final class DownloadManager: NSObject, ObservableObject {
 
     func enqueueMacInstaller(_ url: URL, for app: StoreApp) throws {
         guard MacInstallerService.directPackage(url) else {
-            throw ToolError.message("只支持开发者网站提供的 HTTPS DMG、PKG 或 ZIP 文件")
+            throw ToolError.message("仅支持 DMG、PKG 或 ZIP 安装包链接")
         }
         guard storageError == nil else { throw ToolError.message(storageError!) }
         guard jobs.filter({ $0.status != .completed && $0.status != .failed }).count < maxQueued else {
@@ -148,10 +148,10 @@ final class DownloadManager: NSObject, ObservableObject {
     func enqueueOfficialMacPackage(_ offer: MacPackageOffer, for app: StoreApp) throws {
         if offer.protectedByApple {
             guard MacPackageDecryptor.isAvailable else {
-                throw ToolError.message("此版本未包含 Mac 安装包处理组件，请使用 GitHub Actions 构建的 iPadn。")
+                throw ToolError.message("当前版本不支持下载此 Mac 安装包")
             }
             guard offer.dpInfo != nil, offer.hardwareID.count == 12 else {
-                throw ToolError.message("Apple 没有返回完整的 Mac 下载授权，请重试")
+                throw ToolError.message("暂时无法下载 Mac 安装包，请重试")
             }
         }
         guard storageError == nil else { throw ToolError.message(storageError!) }
@@ -178,7 +178,7 @@ final class DownloadManager: NSObject, ObservableObject {
     }
 
     func enqueueURL(_ url: URL) throws {
-        guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ToolError.message("下载链接必须是有效的 HTTPS 地址，不能包含账号密码") }
+        guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ToolError.message("请输入有效的下载链接") }
         guard storageError == nil else { throw ToolError.message(storageError!) }
         guard jobs.filter({ $0.status != .completed && $0.status != .failed }).count < maxQueued else {
             throw ToolError.message("已达到等待任务上限，可在设置中调整")
@@ -194,7 +194,7 @@ final class DownloadManager: NSObject, ObservableObject {
         guard storageError == nil else { throw ToolError.message(storageError!) }
         guard let index = jobs.firstIndex(where: { $0.id == id }), jobs[index].status == .failed,
               jobs[index].account == asset.account, jobs[index].app.id == asset.app.id else {
-            throw ToolError.message("任务或账号已改变，请重新执行重试")
+            throw ToolError.message("账号已切换，请重新下载")
         }
         var next = jobs
         next[index].asset = asset; next[index].sourceURL = asset.url; next[index].app = asset.app
@@ -453,7 +453,7 @@ final class DownloadManager: NSObject, ObservableObject {
                 if status.stage == .decrypting, total > 0 {
                     text += String(format: " %.0f%%", min(100, Double(status.bytes) * 100 / Double(total)))
                 } else if status.stage == .components {
-                    text += "（首次使用需从 Apple 下载约 47 MB）"
+                    text += "（首次需下载约 47 MB）"
                 }
                 processingDetail[id] = text
             }
@@ -560,7 +560,7 @@ enum MacPackageStorage {
         let filename = "\(job.id.uuidString)-\(PackageService.safeName(job.app.name).prefix(40)).\(format)"
         let destination = LocalResources.packages.appendingPathComponent(filename)
         guard !FileManager.default.fileExists(atPath: destination.path) else {
-            throw ToolError.message("文件名已存在，停止覆盖原始安装包")
+            throw ToolError.message("同名安装包已存在")
         }
         try FileManager.default.moveItem(at: staging, to: destination)
         var app = job.app
@@ -606,7 +606,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
         let received = LocalResources.support.appendingPathComponent("\(id.uuidString)-\(downloadTask.taskIdentifier).received")
         do {
             guard let response = downloadTask.response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
-                throw ToolError.message("下载失败：HTTP \((downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0)，可刷新链接后重试")
+                throw ToolError.message("下载失败（\((downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0)），请重试")
             }
             // Move synchronously: URLSession deletes its temporary file as soon as this delegate returns.
             try FileManager.default.moveItem(at: location, to: received)

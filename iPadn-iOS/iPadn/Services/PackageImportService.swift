@@ -3,7 +3,7 @@ import Foundation
 enum PackageImportService {
     static func prepare(_ source: URL, id: UUID) throws -> StoreApp {
         guard source.isFileURL, ["ipa", "zip"].contains(source.pathExtension.lowercased()) else {
-            throw ToolError.message("请选择 IPA 安装包，或包含 Payload 的 ZIP 文件")
+            throw ToolError.message("请选择 IPA 安装包")
         }
         let access = source.startAccessingSecurityScopedResource()
         defer { if access { source.stopAccessingSecurityScopedResource() } }

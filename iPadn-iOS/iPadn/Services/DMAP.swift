@@ -54,10 +54,10 @@ enum DMAP {
     }
     static func validate(_ data: Data) throws {
         guard let status = try firstInteger(data, name: "mstt") else {
-            throw ToolError.message("购买记录接口缺少状态码，已保留本机记录")
+            throw ToolError.message("暂时无法同步购买记录，请稍后重试")
         }
         if status != 200 {
-            throw ToolError.message("购买记录接口返回错误：\(status)")
+            throw ToolError.message("暂时无法同步购买记录（\(status)），请稍后重试")
         }
     }
     static func ownedApps(_ data: Data) throws -> [OwnedApp] {
