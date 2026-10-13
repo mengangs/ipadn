@@ -1,0 +1,32 @@
+name: Clean up old workflow runs
+
+# Run by hand from the Actions tab to delete old build records.
+on:
+  workflow_dispatch:
+    inputs:
+      keep:
+        description: Number of most recent runs to keep
+        required: true
+        default: '3'
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete all but the most recent runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ inputs.keep }}
+        run: |
+          set -euo pipefail
+          # Newest first; skip this run and anything still queued or running.
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
+            --jq '.workflow_runs[] | select(.status == "completed") | .id' > runs.txt
+          total=$(wc -l < runs.txt)
+          echo "Completed runs: $total, keeping the newest $KEEP"
+          tail -n +"$((KEEP + 1))" runs.txt | while read -r id; do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/runs/$id" >/dev/null && echo "Deleted $id" || echo "Could not delete $id"
+          done
