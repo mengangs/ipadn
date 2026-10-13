@@ -224,7 +224,7 @@ static double residentMB(void) {
                                     @"单个 Mach-O 装载", @"跨 Mach-O 符号调用",
                                     @"Go 模拟系统服务"];
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    NSString *intro = @"Mac PKG / Go+TCI 离线兼容性批量诊断 v1.1\\n仅使用自制模拟程序，不代表官方 Mac PKG 下载或 StoreAgent 可用。\\n";
+    NSString *intro = @"Mac PKG / Go+TCI 离线兼容性批量诊断 v1.1\n仅使用自制模拟程序，不代表官方 Mac PKG 下载或 StoreAgent 可用。\n";
     [defaults setObject:intro forKey:kGoTCIBatchResult];
     [defaults setInteger:0 forKey:kGoTCIBatchProgress];
     [defaults setBool:YES forKey:kGoTCIBatchPending];
@@ -241,7 +241,7 @@ static double residentMB(void) {
             [storage setInteger:(NSInteger)index+1 forKey:kGoTCIBatchProgress];
             [storage setObject:report forKey:kGoTCIBatchResult];
             [storage synchronize];
-            NSString *progress = [NSString stringWithFormat:@"%@\\n进行中 [%lu/5] %@…",
+            NSString *progress = [NSString stringWithFormat:@"%@\n进行中 [%lu/5] %@…",
                                   report, (unsigned long)index+1, name];
             dispatch_async(dispatch_get_main_queue(), ^{
                 MacGoTCITestViewController *controller = weakSelf;
@@ -250,7 +250,7 @@ static double residentMB(void) {
             char diagnostic[512] = {0};
             int32_t code = iPadnRunOfflineStage(index, diagnostic, (int32_t)sizeof(diagnostic));
             NSString *detail = [NSString stringWithUTF8String:diagnostic] ?: @"诊断文本编码失败";
-            [report appendFormat:@"\\n[%lu/5] %@：%@（返回码 %d）\\n%@\\n",
+            [report appendFormat:@"\n[%lu/5] %@：%@（返回码 %d）\n%@\n",
                                  (unsigned long)index+1, name,
                                  code == 0 ? @"通过" : @"失败", code, detail];
             [storage setObject:report forKey:kGoTCIBatchResult];
@@ -258,7 +258,7 @@ static double residentMB(void) {
             if (code != 0) { success = NO; break; }
         }
         double after = residentMB();
-        [report appendFormat:@"\\n总结果：%@\\n进程常驻内存 %.1f → %.1f MB\\n",
+        [report appendFormat:@"\n总结果：%@\n进程常驻内存 %.1f → %.1f MB\n",
             success ? @"5/5 项全部通过" : @"已在出错阶段停止", before, after];
         [report appendString:@"真实 Apple StoreAgent 初始化、Mac App Store PKG 下载和导出：未测试。"];
         NSUserDefaults *storage = [NSUserDefaults standardUserDefaults];
