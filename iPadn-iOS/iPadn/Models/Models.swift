@@ -5,6 +5,12 @@ enum ToolError: LocalizedError {
     var errorDescription: String? { if case .message(let text) = self { return text }; return nil }
 }
 
+/// A non-2xx response, kept typed so callers can tell "not found" apart.
+struct HTTPStatusError: LocalizedError {
+    let code: Int
+    var errorDescription: String? { code == 404 ? "找不到相关内容" : "网络请求失败（\(code)），请稍后重试" }
+}
+
 enum AppErrorMessage {
     static func forSearch(_ error: Error) -> String {
         if error is CancellationError { return "" }
@@ -13,16 +19,16 @@ enum AppErrorMessage {
             return "网络连接暂时不可用，请检查网络后重试。"
         }
         if error is AppleAuthError || error is AppleLoginError {
-            return "Apple 账号需要重新登录，请到「账号」页面验证后再试。"
+            return "请到「账号」中重新登录 Apple 账号后再试。"
         }
         let message = error.localizedDescription
         if message.contains("2002") || message.contains("Your password has changed") {
             return "Apple 账号需要重新登录，请到「账号」页面更新密码。"
         }
-        if message.contains("HTTP") || message.contains("JSON") || message.contains("itunes.apple.com") {
+        if error is HTTPStatusError || message.contains("HTTP") || message.contains("JSON") || message.contains("itunes.apple.com") {
             return "商店暂时无法返回结果，请稍后重试或更换地区。"
         }
-        return "暂时无法完成搜索，请检查网络、商店地区或应用 ID 后重试。"
+        return "暂时无法完成搜索，请稍后重试。"
     }
 }
  
@@ -37,6 +43,14 @@ enum AppPlatform: String, Codable, CaseIterable, Identifiable {
         case .macOS: return "Mac"
         }
     }
+    var symbol: String {
+        switch self {
+        case .iOS: return "iphone"
+        case .iPadOS: return "ipad"
+        case .tvOS: return "appletv"
+        case .macOS: return "macbook"
+        }
+    }
     var supportsIPA: Bool { self != .macOS }
     var usesIOSStore: Bool { self == .iOS || self == .iPadOS }
     var searchEntity: String {
@@ -44,7 +58,7 @@ enum AppPlatform: String, Codable, CaseIterable, Identifiable {
         case .iOS: return "software"
         case .iPadOS: return "iPadSoftware"
         case .tvOS: return "software,tvSoftware"
-        case .macOS: return "desktopSoftware"
+        case .macOS: return "macSoftware"
         }
     }
     var catalogPlatform: String { self == .iPadOS ? AppPlatform.iOS.rawValue : rawValue }
@@ -72,6 +86,13 @@ struct StoreApp: Codable, Identifiable, Hashable {
     // tvSoftware search is unavailable for some storefronts; candidate
     // listings are not proof of compatibility with Apple TV.
     var tvOSCandidate: Bool?
+    // No public listing in any storefront (removed from sale); the App ID
+    // still works for accounts that own it.
+    var delisted: Bool?
+    static let delistedPlaceholder = "未在公开商店找到"
+    var isDelisted: Bool { delisted == true || category == Self.delistedPlaceholder }
+    /// Category for display; never the legacy delisted placeholder.
+    var displayCategory: String { category == Self.delistedPlaceholder ? "" : category }
 }
 
 struct AppVersion: Codable, Identifiable, Hashable {
@@ -137,8 +158,13 @@ struct DownloadJob: Codable, Identifiable {
     var downloaded: Int64 = 0
     var expected: Int64 = 0
     var packageIconScanned: Bool?
+    // The cached icon of a tvOS job is the Apple TV catalog artwork.
+    var appleTVArtwork: Bool?
     // Non-IPA downloads are saved as raw Mac files, never processed as an IPA.
     var rawFormat: String?
+    // Mac App Store package that must be processed by StoreAgent on device;
+    // its dpInfo lives in MacPackageSecrets until processing succeeds.
+    var protectedMacPackage: Bool?
     var localFilename: String?
     var error: String?
     var createdAt = Date()
@@ -176,6 +202,8 @@ struct ToolSettings: Codable, Equatable {
     var useSignerCache = true
     var appearance = "system"
     var plistServer = ""
+    /// One-tap installation through the public loopback certificate (default).
+    var automaticInstallation = true
     var localInstallation = true
     var localInstallHost = "127.0.0.1"
     var versionSources: [VersionSource] = [
@@ -187,6 +215,7 @@ struct ToolSettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
         case useSignerCache, appearance, plistServer, versionSources, localInstallation, localInstallHost
+        case automaticInstallation
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -202,6 +231,7 @@ struct ToolSettings: Codable, Equatable {
         plistServer = try values.decodeIfPresent(String.self, forKey: .plistServer) ?? plistServer
         localInstallation = try values.decodeIfPresent(Bool.self, forKey: .localInstallation) ?? plistServer.isEmpty
         localInstallHost = try values.decodeIfPresent(String.self, forKey: .localInstallHost) ?? localInstallHost
+        automaticInstallation = try values.decodeIfPresent(Bool.self, forKey: .automaticInstallation) ?? automaticInstallation
         versionSources = try values.decodeIfPresent([VersionSource].self, forKey: .versionSources) ?? versionSources
     }
 }

@@ -35,17 +35,25 @@ enum InstallationCertificate {
         let status = SecPKCS12Import(data as CFData, [kSecImportExportPassphrase as String: password] as CFDictionary, &result)
         guard status == errSecSuccess, let items = result as? [[String: Any]], let item = items.first,
               let value = item[kSecImportItemIdentity as String], CFGetTypeID(value as CFTypeRef) == SecIdentityGetTypeID() else {
-            throw ToolError.message("无法导入 SSL 证书（\(status)），请检查密码和 P12/PFX 文件是否包含服务器私钥。")
+            throw ToolError.message("无法导入证书，请检查密码是否正确")
         }
         let identity = value as! SecIdentity
         var certificate: SecCertificate?
         guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess, let certificate else {
-            throw ToolError.message("SSL 证书缺少服务器证书")
+            throw ToolError.message("证书无效")
         }
         let chain = item[kSecImportItemCertChain as String] as? [SecCertificate] ?? [certificate]
         return Identity(identity: identity, certificates: chain, name: SecCertificateCopySubjectSummary(certificate) as String? ?? "本地安装证书")
     }
+    #if DEBUG
+    // Visual preview / UI tests run unsigned, where the simulator keychain
+    // is unavailable (errSecMissingEntitlement). Keep their data in memory.
+    private static var previewStorage: Data?
+    #endif
     private static func stored() throws -> Stored? {
+        #if DEBUG
+        if LocalResources.isPreview { return try previewStorage.map { try JSONDecoder().decode(Stored.self, from: $0) } }
+        #endif
         var request = query; request[kSecReturnData as String] = true; request[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
         let status = SecItemCopyMatching(request as CFDictionary, &result)
@@ -64,6 +72,9 @@ enum InstallationCertificate {
     static func save(data: Data, password: String, localRoot: Data? = nil, localIdentifier: UUID? = nil) throws {
         _ = try importPKCS12(data, password: password)
         let encoded = try JSONEncoder().encode(Stored(data: data, password: password, localRoot: localRoot, localIdentifier: localIdentifier))
+        #if DEBUG
+        if LocalResources.isPreview { previewStorage = encoded; return }
+        #endif
         let attributes: [String: Any] = [kSecValueData as String: encoded,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)

@@ -1,49 +1,56 @@
-# 构建 iPadn
+# 自行编译 iPadn
 
-项目使用 SwiftUI，最低 iOS 17，面向 iPhone 和 iPad。Xcode 工程为 `iPadn.xcodeproj`，共享 scheme 为 `iPadn`。当前版本 1.3.0，build 12。
+iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad。当前版本为 1.4.0（build 13）。
 
-## 本地构建
+## 准备
 
-在 Mac 安装 Xcode 后，从本目录运行：
+- 一台装有 Xcode 26 的 Mac
+- Python 3
+- Go 1.26：用于编译 Mac 安装包处理组件。不编译这个组件也能构建应用，只是不能下载需要处理的 Mac 安装包。
+
+## 构建未签名 IPA
+
+在 `iPadn-iOS` 目录运行：
 
 ```bash
-python3 scripts/assemble_runtime.py
 bash scripts/build_unsigned_ipa.sh
 ```
 
-输出为 `build/iPadn-unsigned.ipa`。验证运行组件由本仓库提供，ZIPFoundation 0.9.19 由 Swift Package Manager 解析。
+输出为 `build/iPadn-unsigned.ipa`。脚本会先校验并打包验证组件，再尝试编译 Mac 安装包处理组件；没有安装 Go 时会跳过该组件。设置 `IPADN_REQUIRE_MACPKG=1` 可要求必须包含它。
 
-新增 Swift 文件后，运行 `python3 scripts/generate_project.py` 更新工程。
+用 Xcode 打开 `iPadn.xcodeproj`，选择共享 scheme `iPadn`，即可运行和调试。
 
-## 检查
+## 修改工程
+
+工程文件由脚本生成。新增或删除 Swift 文件后运行：
 
 ```bash
+python3 scripts/generate_project.py
 python3 scripts/verify_project.py
-node scripts/runtime_smoke_test.cjs
 ```
 
-校验报告输出到 `build/verification.json`，不会修改受跟踪文件。
+## 测试
 
-GitHub Actions 对 PR、main 推送及手动构建执行设备编译、模拟器测试和界面截图，产物分别为 `iPadn-unsigned-ipa`、`iPadn-interface-screenshots`、`iPadn-build-diagnostics`。运行结果可在对应构建的测试步骤及产物中查看。
+- `iPadnTests`：单元测试与安装测试
+- `iPadnUITests`：界面交互测试
 
-通过 Actions 手动运行构建时，启用 `run_tests` 和 `publish_release` 可发布 GitHub Release。仅在设备编译、IPA 检查、测试与截图全部通过后发布；现有同名标签不会被覆盖。
+用 `--visual-preview` 参数启动时会使用演示数据和独立的存储空间，不会读写真实的账号或下载记录。Release 构建不包含演示数据。
+
+## 持续集成
+
+GitHub Actions 会对每个 PR 和 `main` 分支执行设备编译、IPA 检查、模拟器测试和界面截图，并上传以下产物：
+
+| 产物 | 内容 |
+| --- | --- |
+| `iPadn-unsigned-ipa` | 未签名安装包 |
+| `iPadn-interface-screenshots` | 界面截图 |
+| `iPadn-build-diagnostics` | 构建日志与测试结果 |
+
+手动运行工作流并勾选 `run_tests` 与 `publish_release`，会在全部检查通过后发布 GitHub Release，发布说明取自仓库根目录的 `RELEASE_NOTES.md`。已存在的同名标签不会被覆盖。
 
 ## 扩展
 
-历史版本接口使用 `external_identifier` 和 `bundle_version` 字段，可在设置中配置地址模板及容器键。
+- **历史版本来源**：接口返回包含 `external_identifier` 与 `bundle_version` 字段的列表即可，可在应用设置中添加。
+- **下架应用名称目录**：`iPadn/Resources/app-name-directory.json`，每条记录包含 `id`、`name`、`aliases`、`platform`（`itunes` / `atv9`）和可核对的 `source`。只收录名称与 App ID 的对应关系，不收录下载链接或账号信息。
 
-代理安装清单接受 name、bundleId、displayVersion、fileName；整个 query 再编码一次。文件请求通过用户配置的代理规则转发到 `http://127.0.0.1:8000/<filename>.ipa`。应用仅提供选定文件的本机服务。
-
-本地安装使用系统 Network / Security / CryptoKit，在本机生成 X.509 CA 与服务器证书并编码 PKCS#12；安装密钥和公开 CA 保存在独立钥匙串。首次需要用户在系统中安装并信任 CA。应用不覆盖系统 TLS 信任策略。
-
-Release 不包含截图用的虚构数据入口。原生网络、验证桥接、队列与文件处理均在当前工程内维护；组件归属见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-
-## 名称目录
-
-`iPadn/Resources/app-name-directory.json` 由本项目维护，字段为 `id`、`name`、`aliases`、`platform`（`itunes` / `atv9`）和可核对的 `source`。新增记录应确认名称与 Apple App ID 的对应关系，不加入下载直链或账号资料。目录只解析名称，不授予下载许可。当前目录规模有限，不宣称覆盖全部下架应用。
-
-## 数据和测试隔离
-
-Debug `--visual-preview` 使用独立的设置域、钥匙串服务和临时文件目录，不写入正式账号或下载记录。演示下载管理器不启动真实传输。发行构建不包含演示入口。
-
-清理构建产物时仅处理本仓库已忽略的 `build/`、`DerivedData/` 等生成目录；不要删除设备中的 Documents/Packages 或 Application Support/iPadn。
+第三方组件及许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

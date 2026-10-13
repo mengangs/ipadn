@@ -12,12 +12,35 @@ enum StoreService {
     // search region can differ from the account's purchase region.
     static func country(forStorefront storefront: String) -> String? {
         let identifier = String(storefront.split(separator: "-").first ?? "")
-        return [
-            "143441": "US", "143465": "CN", "143463": "HK", "143470": "TW",
-            "143462": "JP", "143444": "GB", "143464": "SG", "143455": "CA",
-            "143460": "AU", "143466": "KR", "143443": "DE", "143442": "FR"
-        ][identifier]
+        return storefrontCountries[identifier]
     }
+
+    // Storefront ID -> ISO country, from ipatool's storefront table (MIT).
+    private static let storefrontCountries: [String: String] = [
+        "143441": "US", "143442": "FR", "143443": "DE", "143444": "GB", "143445": "AT", "143446": "BE",
+        "143447": "FI", "143448": "GR", "143449": "IE", "143450": "IT", "143451": "LU", "143452": "NL",
+        "143453": "PT", "143454": "ES", "143455": "CA", "143456": "SE", "143457": "NO", "143458": "DK",
+        "143459": "CH", "143460": "AU", "143461": "NZ", "143462": "JP", "143463": "HK", "143464": "SG",
+        "143465": "CN", "143466": "KR", "143467": "IN", "143468": "MX", "143469": "RU", "143470": "TW",
+        "143471": "VN", "143472": "ZA", "143473": "MY", "143474": "PH", "143475": "TH", "143476": "ID",
+        "143477": "PK", "143478": "PL", "143479": "SA", "143480": "TR", "143481": "AE", "143482": "HU",
+        "143483": "CL", "143484": "NP", "143485": "PA", "143486": "LK", "143487": "RO", "143488": "MV",
+        "143489": "CZ", "143490": "BD", "143491": "IL", "143492": "UA", "143493": "KW", "143494": "HR",
+        "143495": "CR", "143496": "SK", "143497": "LB", "143498": "QA", "143499": "SI", "143500": "RS",
+        "143501": "CO", "143502": "VE", "143503": "BR", "143504": "GT", "143505": "AR", "143506": "SV",
+        "143507": "PE", "143508": "DO", "143509": "EC", "143510": "HN", "143511": "JM", "143512": "NI",
+        "143513": "PY", "143514": "UY", "143515": "MO", "143516": "EG", "143517": "KZ", "143518": "EE",
+        "143519": "LV", "143520": "LT", "143521": "MT", "143522": "LI", "143523": "MD", "143524": "AM",
+        "143525": "BW", "143526": "BG", "143527": "CI", "143528": "JO", "143529": "KE", "143530": "MK",
+        "143531": "MG", "143532": "ML", "143533": "MU", "143534": "NE", "143535": "SN", "143536": "TN",
+        "143537": "UG", "143538": "AI", "143539": "BS", "143540": "AG", "143541": "BB", "143542": "BM",
+        "143543": "VG", "143544": "KY", "143545": "DM", "143546": "GD", "143547": "MS", "143548": "KN",
+        "143549": "LC", "143550": "VC", "143551": "TT", "143552": "TC", "143553": "GY", "143554": "SR",
+        "143555": "BZ", "143556": "BO", "143557": "CY", "143558": "IS", "143559": "BH", "143560": "BN",
+        "143561": "NG", "143562": "OM", "143563": "DZ", "143564": "AO", "143565": "BY", "143566": "UZ",
+        "143568": "AZ", "143571": "YE", "143572": "TZ", "143573": "GH", "143575": "AL", "143592": "MN",
+        "143615": "GE", "143617": "IQ"
+    ]
 
     static func searchCountries(selected: String, accountCountry: String?) -> [String] {
         var countries = [selected.uppercased()]
@@ -58,8 +81,29 @@ enum StoreService {
         return Array(merged.prefix(max(0, limit)))
     }
 
+    /// Storefronts tried, in order, when an App ID is not listed in the
+    /// selected or account region (apps are often region-limited).
+    static let fallbackCountries = ["US", "CN", "HK", "TW", "JP", "GB", "SG", "CA", "AU", "KR", "DE", "FR"]
+
     static func search(_ query: SearchQuery, store: StoreContext, limit: Int,
                        accountCountry: String? = nil) async throws -> [StoreApp] {
+        if case .appID = query {
+            var tried = Set<String>()
+            var firstError: Error?
+            for country in searchCountries(selected: store.country, accountCountry: accountCountry) + fallbackCountries
+            where tried.insert(country).inserted {
+                try Task.checkCancellation()
+                var regional = store
+                regional.country = country
+                do {
+                    let apps = try await searchInCountry(query, store: regional, limit: limit)
+                    if !apps.isEmpty { return apps }
+                } catch is CancellationError { throw CancellationError() }
+                catch { if firstError == nil { firstError = error } }
+            }
+            if let firstError, tried.count == 1 { throw firstError }
+            return []
+        }
         let primary = try await searchInCountry(query, store: store, limit: limit)
         let countries = searchCountries(selected: store.country, accountCountry: accountCountry)
         guard countries.count > 1 else { return primary }
@@ -86,6 +130,12 @@ enum StoreService {
                 let data = try await HTTPClient.shared.json(url) as? [String: Any]
                 return data?["results"] as? [[String: Any]] ?? []
             }
+            if store.platform == .macOS {
+                // macSoftware is the native Mac App Store catalog. Exclude
+                // unrelated mobile-only results before showing Mac installers.
+                return try await searchEntities(store.platform.searchEntity)
+                    .filter(Self.supportsNativeMac).map(mapLookup)
+            }
             guard store.platform == .tvOS else {
                 return try await searchEntities(store.platform.searchEntity).map(mapLookup)
             }
@@ -98,18 +148,47 @@ enum StoreService {
                 // The tvSoftware entity is unreliable on some storefronts.
                 rows = (try? await searchEntities("software")) ?? []
             }
-            return rows.filter(Self.supportsAppleTV).map(mapLookup)
+            return await withAppleTVListings(rows.filter(Self.supportsAppleTV).map(mapLookup), store: store)
         case .appID(let id, _):
             if store.platform == .tvOS { return try await platformApp(id, store: store).map { [$0] } ?? [] }
+            // No "entity" here: on an ID lookup it requests *related* items
+            // (and is rejected for some catalogs), which broke App ID search.
             let url = try endpoint("https://itunes.apple.com/lookup", items: [
-                URLQueryItem(name: "id", value: id), URLQueryItem(name: "country", value: store.country),
-                URLQueryItem(name: "entity", value: store.platform.searchEntity)
+                URLQueryItem(name: "id", value: id), URLQueryItem(name: "country", value: store.country)
             ])
-            let data = try await HTTPClient.shared.json(url) as? [String: Any]
-            let apps = (data?["results"] as? [[String: Any]] ?? []).map(mapLookup)
+            let rows = ((try? await HTTPClient.shared.json(url)) as? [String: Any])?["results"] as? [[String: Any]] ?? []
+            let apps = Self.idLookupMatches(rows, id: id, platform: store.platform).map(mapLookup)
             if !apps.isEmpty { return apps }
             return try await platformApp(id, store: store).map { [$0] } ?? []
         }
+    }
+
+    /// The iTunes search API describes a shared (universal purchase) App ID
+    /// with its iPhone artwork, size and version. Replace those with the
+    /// Apple TV offer so tvOS results show what will actually be downloaded.
+    static func withAppleTVListings(_ apps: [StoreApp], store: StoreContext) async -> [StoreApp] {
+        let listings = await withTaskGroup(of: (String, StoreApp?).self) { group in
+            for app in apps.prefix(20) {
+                group.addTask { (app.id, try? await platformApp(app.id, store: store)) }
+            }
+            var found: [String: StoreApp] = [:]
+            for await (id, listing) in group { if let listing { found[id] = listing } }
+            return found
+        }
+        return apps.map { app in
+            guard let tv = listings[app.id] else { return app }
+            return mergingAppleTVListing(tv, into: app)
+        }
+    }
+
+    static func mergingAppleTVListing(_ tv: StoreApp, into app: StoreApp) -> StoreApp {
+        var merged = app
+        if let icon = tv.iconURL { merged.iconURL = icon }
+        if tv.size > 0 { merged.size = tv.size }
+        if !tv.version.isEmpty { merged.version = tv.version }
+        if !tv.minimumOS.isEmpty { merged.minimumOS = tv.minimumOS }
+        if let id = tv.externalVersionID, !id.isEmpty { merged.externalVersionID = id }
+        return merged
     }
 
     static func platformApp(_ id: String, store: StoreContext) async throws -> StoreApp? {
@@ -129,7 +208,7 @@ enum StoreService {
         let size = ((offer["assets"] as? [[String: Any]])?.first?["size"] as? NSNumber)?.int64Value ?? 0
         return StoreApp(id: id, name: plistString(raw["name"]), version: plistString(version["display"]),
                         iconURL: icon(plistString(artwork["url"])), description: plistString(description["standard"]),
-                        category: (raw["genreNames"] as? [String] ?? []).joined(separator: " · "), size: size,
+                        category: (raw["genreNames"] as? [String] ?? []).map(localizedGenre).joined(separator: " · "), size: size,
                         price: plistString(offer["priceFormatted"]), rating: (rating["value"] as? NSNumber)?.doubleValue ?? 0,
                         minimumOS: plistString(raw["minimumOSVersion"]),
                         externalVersionID: latestID,
@@ -145,6 +224,19 @@ enum StoreService {
         return value
     }
 
+    static func idLookupMatches(_ rows: [[String: Any]], id: String, platform: AppPlatform) -> [[String: Any]] {
+        rows.filter { plistString($0["trackId"]) == id }
+            .filter { platform != .macOS || supportsNativeMac($0) }
+    }
+
+    static func supportsNativeMac(_ raw: [String: Any]) -> Bool {
+        if plistString(raw["kind"]).lowercased() == "mac-software" { return true }
+        let platforms = raw["platforms"] as? [String] ?? []
+        if platforms.contains(where: { ["macos", "mac"].contains($0.lowercased()) }) { return true }
+        let devices = raw["supportedDevices"] as? [String] ?? []
+        return devices.contains(where: { $0.lowercased().hasPrefix("mac") })
+    }
+
     static func supportsAppleTV(_ raw: [String: Any]) -> Bool {
         let devices = raw["supportedDevices"] as? [String] ?? []
         if devices.contains(where: { $0.lowercased().hasPrefix("appletv") }) { return true }
@@ -155,7 +247,9 @@ enum StoreService {
 
     static func artworkCountries(selected: String, accountCountry: String?) -> [String] {
         var countries = searchCountries(selected: accountCountry ?? selected, accountCountry: selected)
-        if !countries.contains("US") { countries.append("US") }
+        // Artwork is public: look in other storefronts when the app is not
+        // listed in the account's or selected region.
+        for country in fallbackCountries where !countries.contains(country) { countries.append(country) }
         return countries
     }
 
@@ -169,13 +263,12 @@ enum StoreService {
             do {
                 let url = try endpoint("https://itunes.apple.com/lookup", items: [
                     URLQueryItem(name: "id", value: missing.joined(separator: ",")),
-                    URLQueryItem(name: "country", value: country),
-                    URLQueryItem(name: "entity", value: store.platform.searchEntity)
+                    URLQueryItem(name: "country", value: country)
                 ])
                 let response = try await HTTPClient.shared.json(url) as? [String: Any]
                 for raw in response?["results"] as? [[String: Any]] ?? [] {
                     let app = mapLookup(raw)
-                    if let icon = app.iconURL { icons[app.id] = icon }
+                    if missing.contains(app.id), let icon = app.iconURL { icons[app.id] = icon }
                 }
                 missing.removeAll { icons[$0] != nil }
             } catch {
@@ -190,7 +283,7 @@ enum StoreService {
         StoreApp(id: plistString(raw["trackId"]), name: plistString(raw["trackName"] ?? raw["trackCensoredName"]),
                  bundleID: plistString(raw["bundleId"]), version: plistString(raw["version"]),
                  iconURL: icon(plistString(raw["artworkUrl512"] ?? raw["artworkUrl100"])),
-                 description: plistString(raw["description"]), category: plistString(raw["primaryGenreName"]),
+                 description: plistString(raw["description"]), category: localizedGenre(plistString(raw["primaryGenreName"])),
                  size: Int64(plistString(raw["fileSizeBytes"])) ?? 0,
                  price: plistString(raw["formattedPrice"]).isEmpty ? "免费" : plistString(raw["formattedPrice"]),
                  rating: (raw["averageUserRating"] as? NSNumber)?.doubleValue ?? 0,
@@ -198,11 +291,37 @@ enum StoreService {
                  developerURL: MacInstallerService.safeWebsite(plistString(raw["sellerUrl"])))
     }
 
+    /// The lookup APIs return English genre names in every storefront.
+    static func localizedGenre(_ name: String) -> String {
+        let names = [
+            "Books": "图书", "Business": "商务", "Developer Tools": "开发者工具", "Education": "教育",
+            "Entertainment": "娱乐", "Finance": "财务", "Food & Drink": "美食佳饮", "Games": "游戏",
+            "Graphics & Design": "图形和设计", "Health & Fitness": "健康健美", "Lifestyle": "生活",
+            "Kids": "儿童", "Magazines & Newspapers": "报刊杂志", "Medical": "医疗", "Music": "音乐",
+            "Navigation": "导航", "News": "新闻", "Photo & Video": "摄影与录像", "Productivity": "效率",
+            "Reference": "参考资料", "Shopping": "购物", "Social Networking": "社交", "Sports": "体育",
+            "Travel": "旅游", "Utilities": "工具", "Weather": "天气", "Stickers": "贴纸",
+            "Video": "视频", "Graphics and Design": "图形和设计"
+        ]
+        return names[name] ?? name
+    }
+
     static func icon(_ value: String) -> URL? {
         guard let url = URL(string: value.replacingOccurrences(of: "{w}", with: "512")
             .replacingOccurrences(of: "{h}", with: "512").replacingOccurrences(of: "{f}", with: "png")
             .replacingOccurrences(of: "{c}", with: "bb")), url.scheme == "https", url.host != nil else { return nil }
-        return url
+        return sharpArtwork(url)
+    }
+
+    /// Apple's CDN serves any size from the same path; some responses (the
+    /// download dispatch, older lookups) link a 100 px rendition. Ask for 512 px.
+    static func sharpArtwork(_ url: URL) -> URL {
+        guard let host = url.host?.lowercased(), host.hasSuffix(".mzstatic.com"),
+              url.path.contains("/image/thumb/") else { return url }
+        let last = url.lastPathComponent
+        guard last.range(of: #"^\d+x\d+[a-z]*(-\d+)?\.(jpg|jpeg|png|webp)$"#, options: [.regularExpression, .caseInsensitive]) != nil,
+              let size = Int(last.prefix { $0.isNumber }), size < 512 else { return url }
+        return url.deletingLastPathComponent().appendingPathComponent("512x512bb.png")
     }
 }
 
@@ -264,6 +383,66 @@ enum MacInstallerService {
     }
 }
 
+// Preflight for native Mac App Store packages. Apple's iOS MDM catalog may
+// return the iOS offer for a universal app even if the requested platform is
+// macOS. This parser only resolves a Mac *offer*, not a downloadable .pkg.
+// Store packages require a separate, device-compatible processing pipeline.
+enum MacStoreOfferService {
+    static func versionID(fromHTML html: String, appID: String, bundleID: String) -> String? {
+        let markers = ["id=\"serialized-server-data\"", "id='serialized-server-data'"]
+        guard let marker = markers.compactMap({ html.range(of: $0) }).first,
+              html[..<marker.lowerBound].range(of: "<script", options: .backwards) != nil,
+              let start = html[marker.upperBound...].firstIndex(of: ">"),
+              let closing = html[html.index(after: start)...].range(of: "</script>") else { return nil }
+        let json = Data(html[html.index(after: start)..<closing.lowerBound].utf8)
+        guard json.count < 3 * 1024 * 1024,
+              let data = try? JSONSerialization.jsonObject(with: json) else { return nil }
+
+        var ids = Set<String>()
+        var visited = 0
+        func visit(_ value: Any, depth: Int) {
+            visited += 1
+            guard depth < 40, visited < 50_000 else { return }
+            if let object = value as? [String: Any] {
+                if let offer = object["purchaseConfiguration"] as? [String: Any] {
+                    let platforms = offer["appPlatforms"] as? [String] ?? []
+                    let bundle = plistString(offer["bundleId"])
+                    let params = plistString(offer["buyParams"])
+                    let query = URLComponents(string: "https://example.invalid/?" + params)?.queryItems ?? []
+                    let values = Dictionary(query.map { ($0.name, $0.value ?? "") },
+                                            uniquingKeysWith: { first, _ in first })
+                    let version = values["appExtVrsId"] ?? ""
+                    if platforms.contains("mac"), values["salableAdamId"] == appID,
+                       bundleID.isEmpty || bundle == bundleID,
+                       let number = UInt64(version), number > 0 {
+                        ids.insert(version)
+                    }
+                }
+                for child in object.values { visit(child, depth: depth + 1) }
+            } else if let items = value as? [Any] {
+                for item in items { visit(item, depth: depth + 1) }
+            }
+        }
+        visit(data, depth: 0)
+        return ids.count == 1 ? ids.first : nil
+    }
+
+    static func latestVersionID(appID: String, bundleID: String, country: String) async throws -> String? {
+        guard let appNumber = UInt64(appID), appNumber > 0,
+              country.count == 2, country.allSatisfy({ $0.isASCII && $0.isLetter }) else { return nil }
+        let url = URL(string: "https://apps.apple.com/\(country.lowercased())/app/id\(appNumber)?platform=mac")!
+        let data: Data, response: HTTPURLResponse
+        do { (data, response) = try await HTTPClient.shared.request(url) }
+        // A delisted app has no product page; the caller then lets Apple
+        // pick the latest Mac version the account is entitled to.
+        catch let error as HTTPStatusError where error.code == 404 { return nil }
+        guard data.count <= 3 * 1024 * 1024,
+              response.mimeType?.lowercased().contains("html") == true,
+              let html = String(data: data, encoding: .utf8) else { return nil }
+        return versionID(fromHTML: html, appID: appID, bundleID: bundleID)
+    }
+}
+
 actor VersionService {
     struct Cache: Codable { var savedAt: Date; var versions: [AppVersion] }
     private var cache = LocalResources.load([String: Cache].self, filename: LocalResources.versionsFilename) ?? [:]
@@ -307,7 +486,7 @@ actor VersionService {
                     return item
                 }
             }
-            throw ToolError.message("历史版本来源暂不可用，可使用「从 Apple 获取版本」或手动指定版本 ID。")
+            throw ToolError.message("暂时无法获取历史版本，可打开「从 Apple 获取完整版本列表」或手动输入版本 ID")
         }
         if revision == cacheRevision {
             cache = cache.filter { Date().timeIntervalSince($0.value.savedAt) < 7 * 86400 }
@@ -349,11 +528,11 @@ actor VersionService {
     private static func fetch(_ id: String, source: VersionSource) async throws -> [AppVersion] {
         guard source.urlTemplate.contains("{id}"),
               let url = URL(string: source.urlTemplate.replacingOccurrences(of: "{id}", with: id)), url.scheme == "https" else {
-            throw ToolError.message("\(source.name)：需要带 {id} 的 HTTPS 接口地址")
+            throw ToolError.message("\(source.name)：接口地址无效")
         }
         let object = try await HTTPClient.shared.json(url)
         let value: Any? = source.containerKey.isEmpty ? object : (object as? [String: Any])?[source.containerKey]
-        guard let records = value as? [[String: Any]] else { throw ToolError.message("\(source.name)：版本列表格式不兼容") }
+        guard let records = value as? [[String: Any]] else { throw ToolError.message("\(source.name)：暂时无法读取版本列表") }
         var seen = Set<String>()
         let ordered = source.reverse ? Array(records.suffix(2000).reversed()) : Array(records.prefix(2000))
         return ordered.compactMap { record in

@@ -28,7 +28,7 @@ concurrency:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 55
     defaults:
       run:
         working-directory: iPadn-iOS
@@ -36,6 +36,12 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+
+      - name: Set up Go for the Mac PKG bridge
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.5'
+          cache: false
 
       - name: Select Xcode and report SDK
         run: |
@@ -55,10 +61,12 @@ jobs:
           node scripts/runtime_smoke_test.cjs
 
       - name: Build unsigned device IPA
+        env:
+          IPADN_REQUIRE_MACPKG: '1'
         run: |
           set -o pipefail
           bash scripts/build_unsigned_ipa.sh 2>&1 | tee build/build.log
-          python3 scripts/verify_ipa.py build/iPadn-unsigned.ipa
+          IPADN_REQUIRE_MACPKG=1 python3 scripts/verify_ipa.py build/iPadn-unsigned.ipa
           shasum -a 256 build/iPadn-unsigned.ipa > build/iPadn-unsigned.ipa.sha256
           python3 - <<'PY'
           import json, os, subprocess, plistlib, zipfile
@@ -91,7 +99,7 @@ jobs:
           compression-level: 0
 
       - name: Run simulator unit tests
-        timeout-minutes: 12
+        timeout-minutes: 18
         if: github.event_name != 'workflow_dispatch' || inputs.run_tests
         run: |
           set -o pipefail

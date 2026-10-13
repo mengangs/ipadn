@@ -49,6 +49,37 @@ final class InstallationTests: XCTestCase {
         XCTAssertEqual(payloads.first?["PayloadContent"] as? Data, first.rootCertificate)
         XCTAssertNil(profile.range(of: first.pkcs12))
     }
+    func testOneTapInstallLinkNestsManifestAndLocalPackageURL() throws {
+        let app = StoreApp(id: "1", name: "应用 & Test", bundleID: "test.app", version: "1.2")
+        let package = URL(string: "http://127.0.0.1:5123/token/files/key/%E5%BA%94%E7%94%A8.ipa")!
+        let link = try ManifestBuilder.externalInstallURL(app: app, packageURL: package)
+        XCTAssertEqual(link.scheme, "itms-services")
+        let outer = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(outer.queryItems?.first(where: { $0.name == "action" })?.value, "download-manifest")
+        XCTAssertEqual(outer.queryItems?.count, 2, "the manifest URL must not leak into separate parameters")
+        let manifest = try XCTUnwrap(URL(string: try XCTUnwrap(outer.queryItems?.first(where: { $0.name == "url" })?.value)))
+        XCTAssertEqual(manifest.scheme, "https")
+        let inner = try XCTUnwrap(URLComponents(url: manifest, resolvingAgainstBaseURL: false)).queryItems ?? []
+        XCTAssertEqual(inner.first(where: { $0.name == "fetchurl" })?.value, package.absoluteString)
+        XCTAssertEqual(inner.first(where: { $0.name == "name" })?.value, app.name)
+        XCTAssertEqual(inner.first(where: { $0.name == "bundleid" })?.value, "test.app")
+        XCTAssertThrowsError(try ManifestBuilder.externalInstallURL(
+            app: StoreApp(id: "2", name: "x"), packageURL: package))
+    }
+
+    func testPKCS12KeyDerivationMatchesPublishedVectors() {
+        func hex(_ data: Data) -> String { data.map { String(format: "%02X", $0) }.joined() }
+        let smeg = Data([0x0A, 0x58, 0xCF, 0x64, 0x53, 0x0D, 0x82, 0x3F])
+        XCTAssertEqual(hex(LocalInstallationIdentityFactory.pkcs12KDF(
+            sha256: false, id: 1, password: "smeg", salt: smeg, iterations: 1, length: 24)),
+            "8AAAE6297B6CB04642AB5B077851284EB7128F1A2A7FBCA3")
+        XCTAssertEqual(hex(LocalInstallationIdentityFactory.pkcs12KDF(
+            sha256: false, id: 2, password: "smeg", salt: smeg, iterations: 1, length: 8)), "79993DFE048D3B76")
+        let queeg = Data([0x05, 0xDE, 0xC9, 0x59, 0xAC, 0xFF, 0x72, 0xF7])
+        XCTAssertEqual(hex(LocalInstallationIdentityFactory.pkcs12KDF(
+            sha256: false, id: 1, password: "queeg", salt: queeg, iterations: 1000, length: 24)),
+            "ED2034E36328830FF09DF1E1A07DD357185DAC0D4F9EB3D4")
+    }
     func testInvalidCertificatePasswordAndUntrustedIdentityAreRejected() throws {
         let identity = try fixture()
         XCTAssertThrowsError(try identity.validate(host: "127.0.0.1"))

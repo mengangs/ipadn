@@ -13,24 +13,46 @@ struct PackageInstallationView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section { AppRow(app: job.app) }
+                Section {
+                    VStack(spacing: 14) {
+                        AppIcon(url: job.displayApp(packageIcon: manager.packageIconURL(job)).iconURL, size: 96)
+                        VStack(spacing: 4) {
+                            Text(job.app.name).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
+                            Text([job.app.version.isEmpty ? "" : "版本 \(job.app.version)", job.app.size > 0 ? job.app.size.byteLabel : ""]
+                                .filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        Button {
+                            requestInstallation()
+                        } label: {
+                            HStack(spacing: 8) {
+                                if busy { ProgressView().tint(UX.onAccent) }
+                                Text(busy ? "正在准备…" : "安装")
+                            }.frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PrimaryButtonStyle()).disabled(busy)
+                        .accessibilityIdentifier("installation.request")
+                        Button {
+                            if let file = manager.fileURL(job) { sharedFile = SharedFile(url: file) }
+                            else { issue = "找不到安装包文件，请重新下载。" }
+                        } label: { Label("导出安装包", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity) }
+                        .buttonStyle(.borderless)
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 10)
+                }
+                if let message {
+                    Section { Label(message, systemImage: "checkmark.circle.fill").font(.subheadline).foregroundStyle(.primary) }
+                }
                 Section {
                     NavigationLink { InstallationSettingsView() } label: {
-                        LabeledContent("安装方式", value: store.settings.localInstallation ? "本地 HTTPS" : "代理清单服务")
+                        LabeledContent("安装方式", value: store.settings.automaticInstallation ? "一键安装"
+                                       : store.settings.localInstallation ? "本机证书" : "代理服务")
                     }.accessibilityIdentifier("installation.settings")
-                    Button {
-                        requestInstallation()
-                    } label: {
-                        HStack { Label("请求系统安装", systemImage: "arrow.down.app"); Spacer(); if busy { ProgressView() } }
-                    }.disabled(busy).accessibilityIdentifier("installation.request")
-                    Button("导出到安装工具", systemImage: "square.and.arrow.up") {
-                        if let file = manager.fileURL(job) { sharedFile = SharedFile(url: file) }
-                        else { issue = "安装包文件不可用，请检查任务详情" }
-                    }
                 } footer: {
-                    Text("本地 HTTPS 可在安装设置中创建本机证书，首次需在系统中安装并信任；代理方式需要清单服务与规则。系统会验证 IPA 的签名和账号授权。")
+                    Text(store.settings.automaticInstallation ? "安装完成前请勿退出 iPadn。"
+                         : store.settings.localInstallation ? "需先在安装方式中创建并信任证书。"
+                         : "需要已配置的代理规则。")
                 }
-                if let message { Section { Text(message).font(.subheadline) } }
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
                 .sheet(item: $sharedFile) { ShareSheet(items: [$0.url]) }
@@ -45,16 +67,18 @@ struct PackageInstallationView: View {
         Task { @MainActor in
             defer { busy = false }
             do {
-                guard let file = manager.fileURL(job) else { throw ToolError.message("安装包文件不可用，请检查任务详情") }
+                guard let file = manager.fileURL(job) else { throw ToolError.message("找不到安装包文件，请重新下载。") }
                 let url: URL
-                if store.settings.localInstallation {
+                if store.settings.automaticInstallation {
+                    url = try await store.installation.automaticInstallURL(job: job, file: file)
+                } else if store.settings.localInstallation {
                     url = try await store.installation.localInstallURL(job: job, file: file, host: store.settings.localInstallHost)
                 } else {
                     url = try await store.installation.installURL(job: job, file: file, plistServer: store.settings.plistServer)
                 }
                 openURL(url) { accepted in
-                    if accepted { message = "已向系统发送安装请求，请查看系统提示。安装是否完成以系统结果为准；请保持 iPadn 运行以提供安装文件。" }
-                    else { issue = "系统未接受安装链接。请检查安装设置，或导出给安装工具。"; store.installation.stopHosting() }
+                    if accepted { message = "请在系统弹窗中确认安装，完成前请勿退出 iPadn。" }
+                    else { issue = "无法开始安装，请检查安装方式，或导出安装包。"; store.installation.stopHosting() }
                 }
             } catch { issue = error.localizedDescription }
         }

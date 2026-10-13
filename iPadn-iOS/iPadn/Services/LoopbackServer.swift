@@ -33,11 +33,16 @@ final class LoopbackServer: @unchecked Sendable {
     private var registeredData: [String: (Data, String)] = [:]
     private var compatibilityFiles: [String: URL] = [:]
     private let identity: SecIdentity?
+    private let chain: [SecCertificate]
     private let publicHost: String
     private let port: UInt16?
     private let compatibilityMode: Bool
     private let token = UUID().uuidString
     private var readyURL: URL?
+    // Last read/write per connection; confined to queue. Idle connections are
+    // closed, while an actively streaming multi-GB IPA is never cut off.
+    private var lastActivity: [ObjectIdentifier: DispatchTime] = [:]
+    private let idleTimeout: UInt64 = 120
     var baseURL: URL? {
         lock.lock(); defer { lock.unlock() }; return readyURL
     }
@@ -46,9 +51,10 @@ final class LoopbackServer: @unchecked Sendable {
         "https://fpinit.itunes.apple.com/v1/signSapSetup/legacy"
     ]
 
-    init(port: UInt16? = nil, compatibilityMode: Bool = false, identity: SecIdentity? = nil, publicHost: String = "127.0.0.1") {
+    init(port: UInt16? = nil, compatibilityMode: Bool = false, identity: SecIdentity? = nil,
+         certificates: [SecCertificate] = [], publicHost: String = "127.0.0.1") {
         self.port = port; self.compatibilityMode = compatibilityMode
-        self.identity = identity; self.publicHost = publicHost
+        self.identity = identity; self.chain = certificates; self.publicHost = publicHost
     }
 
     func start() async throws {
@@ -60,7 +66,12 @@ final class LoopbackServer: @unchecked Sendable {
                 do {
                     let parameters: NWParameters
                     if let identity = self.identity {
-                        guard let localIdentity = sec_identity_create(identity) else { throw ToolError.message("无法加载安装服务证书") }
+                        // Send intermediates too: iOS does not fetch a missing
+                        // issuer for the installer's TLS connection.
+                        let created = self.chain.count > 1
+                            ? sec_identity_create_with_certificates(identity, self.chain as CFArray)
+                            : sec_identity_create(identity)
+                        guard let localIdentity = created else { throw ToolError.message("无法加载安装服务证书") }
                         let tls = NWProtocolTLS.Options()
                         sec_protocol_options_set_local_identity(tls.securityProtocolOptions, localIdentity)
                         sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)
@@ -90,19 +101,39 @@ final class LoopbackServer: @unchecked Sendable {
                         case .cancelled:
                             self.lock.lock(); self.readyURL = nil; self.lock.unlock()
                             self.listener = nil
-                            self.finishStart(.failure(ToolError.message("本地资源服务已停止")))
+                            self.finishStart(.failure(ToolError.message("安装已中断，请重试")))
                         default: break
                         }
                     }
                     listener.newConnectionHandler = { [weak self] connection in
                         guard let self else { connection.cancel(); return }
+                        let id = ObjectIdentifier(connection)
+                        connection.stateUpdateHandler = { [weak self] state in
+                            switch state {
+                            case .cancelled, .failed: self?.lastActivity.removeValue(forKey: id)
+                            default: break
+                            }
+                        }
                         connection.start(queue: self.queue)
+                        self.touch(connection)
                         self.read(connection, accumulated: Data())
-                        self.queue.asyncAfter(deadline: .now() + 120) { connection.cancel() }
+                        self.watchIdle(connection)
                     }
                     listener.start(queue: self.queue)
                 } catch { self.listener = nil; self.finishStart(.failure(error)) }
             }
+        }
+    }
+    private func touch(_ connection: NWConnection) {
+        lastActivity[ObjectIdentifier(connection)] = .now()
+    }
+    private func watchIdle(_ connection: NWConnection) {
+        queue.asyncAfter(deadline: .now() + 15) { [weak self] in
+            guard let self, let last = self.lastActivity[ObjectIdentifier(connection)] else { return }
+            if DispatchTime.now().uptimeNanoseconds - last.uptimeNanoseconds >= self.idleTimeout * 1_000_000_000 {
+                self.lastActivity.removeValue(forKey: ObjectIdentifier(connection))
+                connection.cancel()
+            } else { self.watchIdle(connection) }
         }
     }
     private func finishStart(_ result: Result<Void, Error>) {
@@ -112,7 +143,7 @@ final class LoopbackServer: @unchecked Sendable {
     deinit { listener?.cancel() }
 
     func register(_ url: URL) throws -> URL {
-        guard let baseURL = baseURL, url.isFileURL else { throw ToolError.message("本地文件服务未就绪") }
+        guard let baseURL = baseURL, url.isFileURL else { throw ToolError.message("安装服务未就绪，请重试") }
         let key = UUID().uuidString
         lock.lock(); registeredFiles[key] = url
         if compatibilityMode { compatibilityFiles[url.lastPathComponent] = url }
@@ -121,7 +152,7 @@ final class LoopbackServer: @unchecked Sendable {
     }
 
     func register(data: Data, contentType: String) throws -> URL {
-        guard let baseURL else { throw ToolError.message("本地文件服务未就绪") }
+        guard let baseURL else { throw ToolError.message("安装服务未就绪，请重试") }
         let key = UUID().uuidString
         lock.lock(); registeredData[key] = (data, contentType); lock.unlock()
         return baseURL.appendingPathComponent("data").appendingPathComponent(key)
@@ -130,6 +161,7 @@ final class LoopbackServer: @unchecked Sendable {
     private func read(_ connection: NWConnection, accumulated: Data) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { data, _, ended, error in
             if error != nil { connection.cancel(); return }
+            self.touch(connection)
             var buffer = accumulated; if let data = data { buffer.append(data) }
             guard buffer.count <= 2 * 1024 * 1024 else { self.reply(connection, status: 413); return }
             let separator = Data("\r\n\r\n".utf8)
@@ -232,7 +264,10 @@ final class LoopbackServer: @unchecked Sendable {
             guard !chunk.isEmpty else { try? file.close(); connection.cancel(); return }
             connection.send(content: chunk, completion: .contentProcessed { error in
                 if error != nil { try? file.close(); connection.cancel() }
-                else { self.sendChunk(connection, file: file, remaining: remaining - UInt64(chunk.count)) }
+                else {
+                    self.touch(connection)
+                    self.sendChunk(connection, file: file, remaining: remaining - UInt64(chunk.count))
+                }
             })
         } catch { try? file.close(); connection.cancel() }
     }

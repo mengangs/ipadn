@@ -12,14 +12,16 @@ struct AppIcon: View {
                 if let localImage { Image(uiImage: localImage).resizable().interpolation(.high).scaledToFit() }
                 else { placeholder }
             } else {
-                AsyncImage(url: url) { phase in
+                AsyncImage(url: url.map(StoreService.sharpArtwork)) { phase in
                     if let image = phase.image { image.resizable().interpolation(.high).scaledToFit() }
                     else { placeholder }
                 }
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
+        .clipShape(RoundedRectangle(cornerRadius: size * UX.iconCorner, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: size * UX.iconCorner, style: .continuous)
+            .stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
         .accessibilityHidden(true)
         .task(id: url) {
             localImage = nil
@@ -31,27 +33,42 @@ struct AppIcon: View {
     }
     private var placeholder: some View {
         ZStack {
-            Color.accentColor.opacity(0.08)
-            Image(systemName: "app.dashed").font(.system(size: size * 0.42)).foregroundStyle(.secondary)
+            Color(.tertiarySystemFill)
+            Image(systemName: "app.fill").font(.system(size: size * 0.4)).foregroundStyle(.quaternary)
         }
     }
 
 }
 
-struct AppRow: View {
+/// App Store list row: icon, name, subtitle and an optional trailing action.
+struct AppRow<Accessory: View>: View {
     let app: StoreApp
+    var subtitle: String? = nil
+    @ViewBuilder var accessory: () -> Accessory
     var body: some View {
         HStack(spacing: 14) {
-            AppIcon(url: app.iconURL)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(app.name).font(.headline).lineLimit(2)
-                Text([app.category, app.version.isEmpty ? "" : "v\(app.version)"].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                if app.size > 0 { Text(app.size.byteLabel).font(.caption2).foregroundStyle(.secondary) }
+            AppIcon(url: app.iconURL, size: 64)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(app.name.isEmpty ? app.bundleID : app.name).font(.body.weight(.medium)).lineLimit(2)
+                let detail = subtitle ?? [app.displayCategory, app.version.isEmpty ? "" : "v\(app.version)"]
+                    .filter { !$0.isEmpty }.joined(separator: " · ")
+                if !detail.isEmpty {
+                    Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                }
+                HStack(spacing: 6) {
+                    if app.isDelisted { TagBadge(text: "已下架", tint: .orange) }
+                    if app.size > 0 { Text(app.size.byteLabel).font(.caption).foregroundStyle(.tertiary) }
+                }
             }
             Spacer(minLength: 8)
+            accessory()
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 4)
+    }
+}
+extension AppRow where Accessory == EmptyView {
+    init(app: StoreApp, subtitle: String? = nil) {
+        self.init(app: app, subtitle: subtitle) { EmptyView() }
     }
 }
 
@@ -77,7 +94,7 @@ struct RootView: View {
     @EnvironmentObject private var downloads: DownloadManager
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    private let destinations = [("搜索", "magnifyingglass"), ("下载", "arrow.down.circle"), ("已购", "clock.arrow.circlepath"), ("账号", "person.crop.circle")]
+    private let destinations = [("搜索", "magnifyingglass"), ("下载", "arrow.down.circle.fill"), ("已购", "bag.fill"), ("账号", "person.crop.circle.fill")]
     var body: some View {
         Group {
             if sizeClass == .regular {
@@ -88,7 +105,7 @@ struct RootView: View {
                                 Label(destinations[index].0, systemImage: destinations[index].1).tag(index)
                             }
                         }
-                        Section { Text("搜索、下载与版本管理").font(.caption).foregroundStyle(.secondary) }
+
                     }.navigationTitle("iPadn").navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
                 } detail: {
                     NavigationStack {
@@ -99,10 +116,10 @@ struct RootView: View {
             } else {
                 TabView(selection: $store.tab) {
                     NavigationStack { SearchView() }.tabItem { Label("搜索", systemImage: "magnifyingglass") }.tag(0)
-                    NavigationStack { DownloadsView() }.tabItem { Label("下载", systemImage: "arrow.down.circle") }
+                    NavigationStack { DownloadsView() }.tabItem { Label("下载", systemImage: "arrow.down.circle.fill") }
                         .badge(downloads.jobs.filter { DownloadFilter.active.includes($0.status) }.count).tag(1)
-                    NavigationStack { PurchasedView() }.tabItem { Label("已购", systemImage: "clock.arrow.circlepath") }.tag(2)
-                    NavigationStack { AccountsView() }.tabItem { Label("账号", systemImage: "person.crop.circle") }.tag(3)
+                    NavigationStack { PurchasedView() }.tabItem { Label("已购", systemImage: "bag.fill") }.tag(2)
+                    NavigationStack { AccountsView() }.tabItem { Label("账号", systemImage: "person.crop.circle.fill") }.tag(3)
                 }
             }
         }
@@ -118,13 +135,14 @@ struct RootView: View {
         .overlay(alignment: .top) {
             if let message = store.infoMessage {
                 Button { store.infoMessage = nil } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "checkmark").font(.subheadline.weight(.semibold))
-                        Text(message).font(.footnote.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text(message).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .foregroundStyle(UX.onAccent)
-                    .padding(.horizontal, 18).padding(.vertical, 13)
-                    .background(UX.buttonTint, in: RoundedRectangle(cornerRadius: 18))
+                    .padding(.horizontal, 18).padding(.vertical, 11)
+                    .background(.regularMaterial, in: Capsule())
+                    .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(message)
@@ -133,7 +151,7 @@ struct RootView: View {
                 .padding(.horizontal, 24)
                 // The top of the root tab container includes the navigation bar.
                 // On compact-height devices show the banner nearer the top.
-                .padding(.top, sizeClass == .regular ? 20 : verticalSizeClass == .compact ? 14 : 96)
+                .padding(.top, sizeClass == .regular ? 16 : verticalSizeClass == .compact ? 8 : 52)
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .zIndex(1)
             }

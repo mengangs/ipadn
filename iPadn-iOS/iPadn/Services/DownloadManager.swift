@@ -9,6 +9,8 @@ final class DownloadManager: NSObject, ObservableObject {
     @Published private(set) var jobs: [DownloadJob] = []
     @Published var storageError: String?
     @Published private(set) var discoveryWarning: String?
+    /// Stage text for Mac App Store packages being processed on device.
+    @Published private(set) var processingDetail: [UUID: String] = [:]
     var backgroundCompletion: (() -> Void)?
     private var tasks: [UUID: URLSessionDownloadTask] = [:]
     private var restoring = true
@@ -100,7 +102,7 @@ final class DownloadManager: NSObject, ObservableObject {
         restoring = false
         for job in jobs where job.status == .processing {
             if FileManager.default.fileExists(atPath: LocalResources.stagingURL(job.id).path) { process(job.id) }
-            else { fail(job.id, error: ToolError.message("待处理下载文件不存在，请重试")) }
+            else { fail(job.id, error: ToolError.message("下载文件丢失，请重试")) }
         }
         discoverLocalFiles()
         persist(); schedule()
@@ -123,7 +125,7 @@ final class DownloadManager: NSObject, ObservableObject {
 
     func enqueueMacInstaller(_ url: URL, for app: StoreApp) throws {
         guard MacInstallerService.directPackage(url) else {
-            throw ToolError.message("只支持开发者网站提供的 HTTPS DMG、PKG 或 ZIP 文件")
+            throw ToolError.message("仅支持 DMG、PKG 或 ZIP 安装包链接")
         }
         guard storageError == nil else { throw ToolError.message(storageError!) }
         guard jobs.filter({ $0.status != .completed && $0.status != .failed }).count < maxQueued else {
@@ -139,8 +141,44 @@ final class DownloadManager: NSObject, ObservableObject {
         requestNotifications(); schedule()
     }
 
+    // The authorized Mac App Store URL is provided by Apple's account-bound
+    // dispatch. Protected packages are processed by StoreAgent on device after
+    // the download; every finished file is verified as a XAR PKG before the
+    // task completes, and Mac tasks only offer export (never iOS install).
+    func enqueueOfficialMacPackage(_ offer: MacPackageOffer, for app: StoreApp) throws {
+        if offer.protectedByApple {
+            guard MacPackageDecryptor.isAvailable else {
+                throw ToolError.message("当前版本不支持下载此 Mac 安装包")
+            }
+            guard offer.dpInfo != nil, offer.hardwareID.count == 12 else {
+                throw ToolError.message("暂时无法下载 Mac 安装包，请重试")
+            }
+        }
+        guard storageError == nil else { throw ToolError.message(storageError!) }
+        guard jobs.filter({ $0.status != .completed && $0.status != .failed }).count < maxQueued else {
+            throw ToolError.message("已达到等待任务上限")
+        }
+        guard !jobs.contains(where: { $0.sourceURL == offer.downloadURL &&
+                                      ![.completed, .failed].contains($0.status) }) else {
+            throw ToolError.message("此安装包已有下载任务")
+        }
+        var macApp = app
+        if !offer.displayVersion.isEmpty { macApp.version = offer.displayVersion }
+        let job = DownloadJob(app: macApp, sourceURL: offer.downloadURL, packageIconScanned: true,
+                              rawFormat: "pkg", protectedMacPackage: offer.protectedByApple ? true : nil)
+        if offer.protectedByApple, let dpInfo = offer.dpInfo {
+            try MacPackageSecrets.save(.init(hardwareID: offer.hardwareID, dpInfo: dpInfo), for: job.id)
+        }
+        var next = jobs
+        next.insert(job, at: 0)
+        do { try saveNewJobs(next) }
+        catch { MacPackageSecrets.delete(job.id); throw error }
+        requestNotifications()
+        schedule()
+    }
+
     func enqueueURL(_ url: URL) throws {
-        guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ToolError.message("下载链接必须是有效的 HTTPS 地址，不能包含账号密码") }
+        guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ToolError.message("请输入有效的下载链接") }
         guard storageError == nil else { throw ToolError.message(storageError!) }
         guard jobs.filter({ $0.status != .completed && $0.status != .failed }).count < maxQueued else {
             throw ToolError.message("已达到等待任务上限，可在设置中调整")
@@ -156,7 +194,7 @@ final class DownloadManager: NSObject, ObservableObject {
         guard storageError == nil else { throw ToolError.message(storageError!) }
         guard let index = jobs.firstIndex(where: { $0.id == id }), jobs[index].status == .failed,
               jobs[index].account == asset.account, jobs[index].app.id == asset.app.id else {
-            throw ToolError.message("任务或账号已改变，请重新执行重试")
+            throw ToolError.message("账号已切换，请重新下载")
         }
         var next = jobs
         next[index].asset = asset; next[index].sourceURL = asset.url; next[index].app = asset.app
@@ -246,8 +284,14 @@ final class DownloadManager: NSObject, ObservableObject {
         try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
         try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
         try? FileManager.default.removeItem(at: PackageIconService.cacheURL(id))
+        try? FileManager.default.removeItem(at: Self.decryptedURL(id))
+        MacPackageSecrets.delete(id)
         catalogArtworkAttempted.remove(id)
         schedule()
+    }
+
+    nonisolated static func decryptedURL(_ id: UUID) -> URL {
+        LocalResources.support.appendingPathComponent("\(id.uuidString).decrypted.pkg")
     }
     func metrics(for id: UUID) -> TransferMetrics? { transferMetrics[id] }
 
@@ -267,8 +311,11 @@ final class DownloadManager: NSObject, ObservableObject {
         for job in jobs where job.status == .completed && job.rawFormat == nil {
             guard let file = fileURL(job), !Task.isCancelled else { continue }
             if job.packageIconScanned != true {
+                // With store artwork available, only keep a package icon that is
+                // sharp at list size (64 pt at 3x).
+                let minimum = job.displayApp(packageIcon: nil).iconURL == nil ? 0 : 180
                 _ = await Task.detached(priority: .utility) {
-                    try? PackageIconService.save(from: file, id: job.id)
+                    try? PackageIconService.save(from: file, id: job.id, minimumPixels: minimum)
                 }.value
                 guard let index = jobs.firstIndex(where: { $0.id == job.id }) else {
                     try? FileManager.default.removeItem(at: PackageIconService.cacheURL(job.id))
@@ -281,34 +328,45 @@ final class DownloadManager: NSObject, ObservableObject {
                 }
                 persist()
             }
-            guard job.platformLabel == "tvOS", packageIconURL(job) == nil,
+            // Icons cached before small package PNGs were rejected: fall back to
+            // the sharper store artwork.
+            if let cached = packageIconURL(job), job.displayApp(packageIcon: nil).iconURL != nil,
+               PackageIconService.pixelWidth(cached) < 180 {
+                try? FileManager.default.removeItem(at: cached)
+                objectWillChange.send()
+            }
+            // tvOS packages keep their icon in a layered asset catalog, and the
+            // stored artwork can be the shared App ID's iPhone icon. Replace
+            // the cached icon once with the Apple TV catalog artwork.
+            guard job.platformLabel == "tvOS", job.appleTVArtwork != true,
                   catalogArtworkAttempted.insert(job.id).inserted,
-                  let index = jobs.firstIndex(where: { $0.id == job.id }) else { continue }
-            var artwork = jobs[index].displayApp(packageIcon: nil).iconURL
-            if artwork == nil, job.app.id.allSatisfy({ $0.isASCII && $0.isNumber }) {
-                // Existing completed downloads lost their original artwork
-                // under the old logic. Recover it from the public Apple TV catalog.
+                  jobs.contains(where: { $0.id == job.id }) else { continue }
+            var tvArtwork: URL?
+            if job.app.id.allSatisfy({ $0.isASCII && $0.isNumber }) {
                 let countries = artworkCountry == "US" ? ["US"] : [artworkCountry, "US"]
                 for country in countries {
                     if Task.isCancelled { break }
                     let context = StoreContext(country: country, platform: .tvOS)
                     if let listing = try? await StoreService.platformApp(job.app.id, store: context),
                        let icon = listing.iconURL {
-                        artwork = icon
-                        if let freshIndex = jobs.firstIndex(where: { $0.id == job.id }) {
-                            jobs[freshIndex].app.iconURL = icon
-                            persist()
-                        }
+                        tvArtwork = icon
                         break
                     }
                 }
             }
-            guard let artwork, !Task.isCancelled else { continue }
+            let current = jobs.first { $0.id == job.id } ?? job
+            let fallback = packageIconURL(job) == nil ? current.displayApp(packageIcon: nil).iconURL : nil
+            guard let artwork = tvArtwork ?? fallback, !Task.isCancelled else { continue }
             if (try? await PackageIconService.saveCatalogArtwork(from: artwork, id: job.id)) == true {
                 // A download can be deleted while the artwork request is in flight.
-                guard jobs.contains(where: { $0.id == job.id }) else {
+                guard let index = jobs.firstIndex(where: { $0.id == job.id }) else {
                     try? FileManager.default.removeItem(at: PackageIconService.cacheURL(job.id))
                     continue
+                }
+                if tvArtwork != nil {
+                    jobs[index].app.iconURL = artwork
+                    jobs[index].appleTVArtwork = true
+                    persist()
                 }
                 objectWillChange.send()
             }
@@ -342,14 +400,28 @@ final class DownloadManager: NSObject, ObservableObject {
                 if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
             }
         }
+        let monitor: Task<Void, Never>? = job.protectedMacPackage == true
+            ? Task { await self.monitorMacProcessing(id) } : nil
         Task {
             defer {
+                monitor?.cancel()
+                self.processingDetail.removeValue(forKey: id)
                 self.processingIDs.remove(id)
                 if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
                 self.finishBackgroundIfReady()
             }
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
+                    if job.protectedMacPackage == true {
+                        // StoreAgent turns Apple's protected download into the
+                        // real PKG, which must then pass full XAR validation.
+                        let secret = try MacPackageSecrets.load(id)
+                        let decrypted = Self.decryptedURL(id)
+                        defer { try? FileManager.default.removeItem(at: decrypted) }
+                        try MacPackageDecryptor.decrypt(hardwareID: secret.hardwareID, dpInfo: secret.dpInfo,
+                                                        from: LocalResources.stagingURL(id), to: decrypted)
+                        return try MacPackageStorage.finish(staging: decrypted, job: job)
+                    }
                     if job.rawFormat != nil {
                         return try MacPackageStorage.finish(staging: LocalResources.stagingURL(id), job: job)
                     }
@@ -366,9 +438,26 @@ final class DownloadManager: NSObject, ObservableObject {
                 self.jobs[index].error = nil
                 try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
                 try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
+                if job.protectedMacPackage == true { MacPackageSecrets.delete(id) }
                 self.persist(); self.notify(title: "安装包已准备好", body: result.1.name + " " + result.1.version)
                 Task { await self.loadPackageIcons() }
             } catch { self.fail(id, error: error) }
+        }
+    }
+
+    private func monitorMacProcessing(_ id: UUID) async {
+        let total = (try? FileManager.default.attributesOfItem(atPath: LocalResources.stagingURL(id).path)[.size] as? NSNumber)?.int64Value ?? 0
+        while !Task.isCancelled {
+            if let status = MacPackageDecryptor.status() {
+                var text = status.stage.title
+                if status.stage == .decrypting, total > 0 {
+                    text += String(format: " %.0f%%", min(100, Double(status.bytes) * 100 / Double(total)))
+                } else if status.stage == .components {
+                    text += "（首次需下载约 47 MB）"
+                }
+                processingDetail[id] = text
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
         }
     }
 
@@ -423,8 +512,27 @@ final class DownloadManager: NSObject, ObservableObject {
 }
 
 // Mac downloads are exported as original files. Never feed them to the IPA
-// parser or iOS system installer. Check basic signatures before saving.
+// parser or iOS system installer. Reject encrypted or truncated fake PKGs.
 enum MacPackageStorage {
+    static func plausibleXARHeader(_ header: Data, fileSize: Int64) -> Bool {
+        guard header.count >= 28, fileSize >= 29,
+              header.prefix(4) == Data("xar!".utf8) else { return false }
+        func number(_ offset: Int, length: Int) -> UInt64 {
+            header[offset..<(offset + length)].reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+        }
+        let headerSize = number(4, length: 2)
+        let version = number(6, length: 2)
+        let compressedTOC = number(8, length: 8)
+        let uncompressedTOC = number(16, length: 8)
+        // Cheap header sanity check; XARValidator performs the full TOC and
+        // checksum verification afterwards.
+        return headerSize >= 28 && headerSize <= 4096 && version == 1 &&
+            compressedTOC > 0 && uncompressedTOC > 0 &&
+            uncompressedTOC <= 32 * 1024 * 1024 &&
+            headerSize < UInt64(fileSize) &&
+            compressedTOC <= UInt64(fileSize) - headerSize
+    }
+
     static func finish(staging: URL, job: DownloadJob) throws -> (String, StoreApp) {
         guard let format = job.rawFormat, ["dmg", "pkg", "zip"].contains(format),
               let length = (try FileManager.default.attributesOfItem(atPath: staging.path)[.size] as? NSNumber)?.int64Value,
@@ -434,7 +542,14 @@ enum MacPackageStorage {
         let prefix = try file.read(upToCount: 4) ?? Data()
         let valid: Bool
         switch format {
-        case "pkg": valid = prefix == Data("xar!".utf8)
+        case "pkg":
+            try file.seek(toOffset: 0)
+            let header = try file.read(upToCount: 28) ?? Data()
+            guard plausibleXARHeader(header, fileSize: length) else { valid = false; break }
+            // Inflate the TOC and verify every checksum before export, so an
+            // encrypted or damaged package can never be offered as a PKG.
+            _ = try XARValidator.validate(staging)
+            valid = true
         case "zip": valid = prefix.starts(with: [0x50, 0x4B, 0x03, 0x04])
         default:
             guard length >= 512 else { throw ToolError.message("DMG 文件不完整") }
@@ -445,7 +560,7 @@ enum MacPackageStorage {
         let filename = "\(job.id.uuidString)-\(PackageService.safeName(job.app.name).prefix(40)).\(format)"
         let destination = LocalResources.packages.appendingPathComponent(filename)
         guard !FileManager.default.fileExists(atPath: destination.path) else {
-            throw ToolError.message("文件名已存在，停止覆盖原始安装包")
+            throw ToolError.message("同名安装包已存在")
         }
         try FileManager.default.moveItem(at: staging, to: destination)
         var app = job.app
@@ -491,7 +606,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
         let received = LocalResources.support.appendingPathComponent("\(id.uuidString)-\(downloadTask.taskIdentifier).received")
         do {
             guard let response = downloadTask.response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
-                throw ToolError.message("下载失败：HTTP \((downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0)，可刷新链接后重试")
+                throw ToolError.message("下载失败（\((downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0)），请重试")
             }
             // Move synchronously: URLSession deletes its temporary file as soon as this delegate returns.
             try FileManager.default.moveItem(at: location, to: received)

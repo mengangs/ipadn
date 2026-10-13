@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import ZIPFoundation
+import CryptoKit
 @testable import iPadn
 
 final class CoreTests: XCTestCase {
@@ -62,6 +63,8 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(AppIconService.systemChoice(for: nil), .dimensional)
         XCTAssertEqual(AppIconService.systemChoice(for: "AppIconFlat"), .flat)
         XCTAssertEqual(AppIconService.systemChoice(for: "some-other-icon"), .dimensional)
+        XCTAssertTrue(AppIconService.isTransientIconError(NSError(domain: NSPOSIXErrorDomain, code: 35)))
+        XCTAssertFalse(AppIconService.isTransientIconError(NSError(domain: NSCocoaErrorDomain, code: 3072)))
         // Xcode thins simulator builds to the selected device. Both idioms are
         // checked separately in the unthinned device IPA by verify_ipa.py.
         let key = UIDevice.current.userInterfaceIdiom == .pad ? "CFBundleIcons~ipad" : "CFBundleIcons"
@@ -130,6 +133,27 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(lostArtwork.displayApp(packageIcon: nil).iconURL, storeArtwork)
     }
 
+    func testAppleTVListingReplacesSharedIPhoneDetailsAndPackagePlatformIsReadable() {
+        let phone = StoreApp(id: "1628995509", name: "TV Player", version: "2.0",
+                             iconURL: URL(string: "https://is1-ssl.mzstatic.com/image/thumb/phone.png"), size: 90_000_000)
+        let tv = StoreApp(id: phone.id, name: phone.name, version: "1.0.9",
+                          iconURL: URL(string: "https://is1-ssl.mzstatic.com/image/thumb/tv.png"), size: 30_000_000,
+                          externalVersionID: "850000001")
+        let merged = StoreService.mergingAppleTVListing(tv, into: phone)
+        XCTAssertEqual(merged.iconURL, tv.iconURL)
+        XCTAssertEqual(merged.size, 30_000_000)
+        XCTAssertEqual(merged.version, "1.0.9")
+        XCTAssertEqual(merged.externalVersionID, "850000001")
+        XCTAssertEqual(merged.name, "TV Player")
+        let unchanged = StoreService.mergingAppleTVListing(StoreApp(id: phone.id, name: ""), into: phone)
+        XCTAssertEqual(unchanged.iconURL, phone.iconURL)
+        XCTAssertEqual(unchanged.size, phone.size)
+
+        XCTAssertEqual(PackageService.describePlatforms(families: [3], platforms: ["AppleTVOS"]), "Apple TV")
+        XCTAssertEqual(PackageService.describePlatforms(families: [2, 1], platforms: ["iPhoneOS"]), "iPhone、iPad")
+        XCTAssertEqual(PackageService.describePlatforms(families: [], platforms: []), "未知")
+    }
+
     @MainActor
     func testCatalogArtworkCanBecomeLocalPNG() {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32))
@@ -147,7 +171,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(AppPlatform.iOS.searchEntity, "software")
         XCTAssertEqual(AppPlatform.iPadOS.searchEntity, "iPadSoftware")
         XCTAssertEqual(AppPlatform.tvOS.searchEntity, "software,tvSoftware")
-        XCTAssertEqual(AppPlatform.macOS.searchEntity, "desktopSoftware")
+        XCTAssertEqual(AppPlatform.macOS.searchEntity, "macSoftware")
         XCTAssertEqual(AppPlatform.iPadOS.catalogPlatform, AppPlatform.iOS.rawValue)
         XCTAssertFalse(AppPlatform.macOS.supportsIPA)
         XCTAssertTrue(AppPlatform.iPadOS.supportsIPA)
@@ -171,6 +195,7 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(VersionService.mergeSourceResults([[], []]).isEmpty)
     }
 
+    @MainActor
     func testViewingAppleHistoryNeverRequestsFreeAppLicense() {
         XCTAssertFalse(AppleService.shouldAcquireLicense(
             failure: "9610", purchased: false, allowLicenseAcquisition: false))
@@ -244,6 +269,216 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try PackageService.finish(staging: phoneIPA, id: UUID(), asset: iPadAsset))
     }
 
+    func testAppleMacPKGOfferRejectsMobileAndIncorrectVersions() throws {
+        let metadata: [String: Any] = [
+            "itemId": "6503940939",
+            "softwareVersionExternalIdentifier": "112233",
+            "softwareVersionBundleId": "test.native.mac",
+            "bundleShortVersionString": "1.2.3",
+            "software-platform": "macos",
+            "product-type": "mac-os-app"
+        ]
+        let url = "https://cdn.example.org/authorized-file"
+        func response(_ fields: [String: Any] = [:], sinfs: [[String: Any]] = [],
+                      downloadURL: String? = nil) -> [String: Any] {
+            var values = metadata
+            for (key, value) in fields { values[key] = value }
+            return ["songList": [["metadata": values, "URL": downloadURL ?? url, "sinfs": sinfs]]]
+        }
+        let plain = try MacPackageOffer.validate(response(), appID: "6503940939",
+            bundleID: "test.native.mac", versionID: "112233")
+        XCTAssertFalse(plain.protectedByApple)
+        XCTAssertEqual(plain.displayVersion, "1.2.3")
+        XCTAssertEqual(plain.downloadURL.absoluteString, url)
+        let protected = try MacPackageOffer.validate(
+            response(sinfs: [["dpInfo": Data([1, 2, 3])]]),
+            appID: "6503940939", bundleID: "test.native.mac", versionID: "112233")
+        XCTAssertTrue(protected.protectedByApple)
+        XCTAssertEqual(protected.dpInfo, Data([1, 2, 3]))
+        XCTAssertNil(plain.dpInfo)
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(sinfs: [["sinf": Data([9, 9]), "id": 0]]), appID: "6503940939",
+            bundleID: "test.native.mac", versionID: "112233"))
+        XCTAssertEqual(MacPackageOffer.serialNumber(guid: "AABBCCDDEEFF"), "VMiwqYjM3e7/")
+        XCTAssertNil(MacPackageOffer.serialNumber(guid: "AABBCCDDEE"))
+        XCTAssertNil(MacPackageOffer.serialNumber(guid: "AABBCCDDEEFG"))
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(["software-platform": "iphoneos"]), appID: "6503940939",
+            bundleID: "test.native.mac", versionID: "112233"))
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(["softwareVersionExternalIdentifier": "998877"]),
+            appID: "6503940939", bundleID: "test.native.mac", versionID: "112233"))
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(["softwareVersionBundleId": "other.app"]),
+            appID: "6503940939", bundleID: "test.native.mac", versionID: "112233"))
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(downloadURL: "http://example.org/pkg"),
+            appID: "6503940939", bundleID: "test.native.mac", versionID: "112233"))
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(sinfs: [["dpInfo": Data([1])], ["dpInfo": Data([2])]]),
+            appID: "6503940939", bundleID: "test.native.mac", versionID: "112233"))
+        // Delisted apps have no product page to read the version from: any
+        // numeric version is accepted, but it must still be macOS.
+        let delisted = try MacPackageOffer.validate(response(), appID: "6503940939",
+            bundleID: "test.native.mac", versionID: nil)
+        XCTAssertEqual(delisted.versionID, "112233")
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(["software-platform": "iphoneos"]), appID: "6503940939",
+            bundleID: "test.native.mac", versionID: nil))
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(["softwareVersionExternalIdentifier": ""]), appID: "6503940939",
+            bundleID: "test.native.mac", versionID: nil))
+    }
+
+    @MainActor
+    func testOfficialMacPKGOnlyEnqueuesUnprotectedAuthorizedOffer() throws {
+        let app = StoreApp(id: "6503940939", name: "Native Mac", version: "1")
+        let url = URL(string: "https://cdn.example.org/authorized-file")!
+        let manager = DownloadManager(previewJobs: [])
+        // Simulator builds never link the StoreAgent bridge, so a protected
+        // package must be refused instead of being saved as a fake PKG.
+        XCTAssertFalse(MacPackageDecryptor.isAvailable)
+        let encrypted = MacPackageOffer(downloadURL: url, versionID: "112233",
+                                        displayVersion: "1.2.3", protectedByApple: true, dpInfo: Data([1]),
+                                        hardwareID: "AABBCCDDEEFF")
+        XCTAssertThrowsError(try manager.enqueueOfficialMacPackage(encrypted, for: app))
+        XCTAssertTrue(manager.jobs.isEmpty)
+        let plain = MacPackageOffer(downloadURL: url, versionID: "112233",
+                                    displayVersion: "1.2.3", protectedByApple: false)
+        try manager.enqueueOfficialMacPackage(plain, for: app)
+        XCTAssertNil(manager.jobs.first?.protectedMacPackage)
+        XCTAssertEqual(manager.jobs.count, 1)
+        XCTAssertEqual(manager.jobs.first?.rawFormat, "pkg")
+        XCTAssertEqual(manager.jobs.first?.platformLabel, "Mac")
+        XCTAssertEqual(manager.jobs.first?.app.version, "1.2.3")
+        XCTAssertEqual(manager.jobs.first?.sourceURL, url)
+    }
+
+    func testMacPKGRejectsTruncatedAndFakeXARHeaders() {
+        var header = Data(repeating: 0, count: 28)
+        header.replaceSubrange(0..<4, with: Data("xar!".utf8))
+        header[5] = 28            // XAR header is 28 bytes
+        header[7] = 1             // XAR version 1
+        header[15] = 8            // 8-byte compressed TOC
+        header[23] = 16           // 16-byte uncompressed TOC
+        XCTAssertTrue(MacPackageStorage.plausibleXARHeader(header, fileSize: 100))
+        XCTAssertFalse(MacPackageStorage.plausibleXARHeader(header, fileSize: 28))
+        var fake = header
+        fake[7] = 99
+        XCTAssertFalse(MacPackageStorage.plausibleXARHeader(fake, fileSize: 100))
+        fake = header
+        fake[15] = 120
+        XCTAssertFalse(MacPackageStorage.plausibleXARHeader(fake, fileSize: 100))
+        fake = header
+        fake[0] = 0
+        XCTAssertFalse(MacPackageStorage.plausibleXARHeader(fake, fileSize: 100))
+        XCTAssertFalse(MacPackageStorage.plausibleXARHeader(Data("xar!".utf8), fileSize: 100))
+    }
+
+    // Minimal XAR as written by xar(1): zlib TOC, SHA-1 TOC checksum at heap
+    // offset 0, then each file stored uncompressed with an archived checksum.
+    static func syntheticXAR(files: [Data], tocChecksum: Data? = nil) -> Data {
+        func hex(_ data: Data) -> String {
+            Insecure.SHA1.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }
+        var heapFiles = Data()
+        var entries = ""
+        for (index, content) in files.enumerated() {
+            entries += """
+            <file id="\(index + 1)"><name>file\(index)</name><type>file</type><data>\
+            <length>\(content.count)</length><offset>\(20 + heapFiles.count)</offset>\
+            <size>\(content.count)</size><encoding style="application/octet-stream"/>\
+            <archived-checksum style="sha1">\(hex(content))</archived-checksum>\
+            <extracted-checksum style="sha1">\(hex(content))</extracted-checksum></data></file>
+            """
+            heapFiles += content
+        }
+        let xml = Data("""
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xar><toc><creation-time>2026-10-13T00:00:00</creation-time>\
+        <checksum style="sha1"><offset>0</offset><size>20</size></checksum>\(entries)</toc></xar>
+        """.utf8)
+        let deflated = try! (xml as NSData).compressed(using: .zlib) as Data
+        let adler = XARValidator.adler32(xml)
+        var toc = Data([0x78, 0x9c]) + deflated
+        toc += Data([UInt8(adler >> 24), UInt8(adler >> 16 & 0xff), UInt8(adler >> 8 & 0xff), UInt8(adler & 0xff)])
+        func bigEndian<T: FixedWidthInteger>(_ value: T) -> Data { withUnsafeBytes(of: value.bigEndian) { Data($0) } }
+        var archive = Data("xar!".utf8) + bigEndian(UInt16(28)) + bigEndian(UInt16(1))
+        archive += bigEndian(UInt64(toc.count)) + bigEndian(UInt64(xml.count)) + bigEndian(UInt32(1))
+        archive += toc
+        archive += tocChecksum ?? Data(Insecure.SHA1.hash(data: toc))
+        archive += heapFiles
+        return archive
+    }
+
+    func testXARValidatorVerifiesTOCAndEveryFileChecksum() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func check(_ data: Data) throws -> XARValidator.Report {
+            let url = root.appendingPathComponent(UUID().uuidString + ".pkg")
+            try data.write(to: url)
+            return try XARValidator.validate(url)
+        }
+        let files = [Data("Distribution".utf8), Data(repeating: 0x5a, count: 70_000)]
+        let valid = Self.syntheticXAR(files: files)
+        XCTAssertEqual(try check(valid).files, 2)
+        // Corrupt payload byte (as from a still-encrypted package).
+        var corrupted = valid
+        corrupted[corrupted.count - 10] ^= 0xff
+        XCTAssertThrowsError(try check(corrupted))
+        // Wrong stored TOC checksum.
+        XCTAssertThrowsError(try check(Self.syntheticXAR(files: files, tocChecksum: Data(repeating: 0, count: 20))))
+        // Truncated download.
+        XCTAssertThrowsError(try check(valid.prefix(valid.count - 100)))
+        // Valid header followed by unreadable (encrypted-looking) TOC bytes.
+        var scrambled = valid
+        for index in 28..<60 { scrambled[index] ^= 0xa5 }
+        XCTAssertThrowsError(try check(scrambled))
+        // Archive without any file entries.
+        XCTAssertThrowsError(try check(Self.syntheticXAR(files: [])))
+        XCTAssertEqual(XARValidator.adler32(Data("Wikipedia".utf8)), 0x11E60398)
+    }
+
+    func testAppIDLookupKeepsOnlyTheRequestedApp() {
+        let rows: [[String: Any]] = [
+            ["trackId": 414478124, "kind": "software", "trackName": "WeChat"],
+            ["trackId": 1, "kind": "software", "trackName": "Related"],
+            ["artistId": 2, "wrapperType": "artist"]
+        ]
+        XCTAssertEqual(StoreService.idLookupMatches(rows, id: "414478124", platform: .iOS).count, 1)
+        XCTAssertEqual(StoreService.idLookupMatches(rows, id: "414478124", platform: .iPadOS).count, 1)
+        XCTAssertTrue(StoreService.idLookupMatches(rows, id: "414478124", platform: .macOS).isEmpty)
+        XCTAssertEqual(StoreService.idLookupMatches(
+            [["trackId": 6503940939, "kind": "mac-software"]], id: "6503940939", platform: .macOS).count, 1)
+    }
+
+    func testNativeMacSearchAndAppStoreOfferExtraction() {
+        XCTAssertTrue(StoreService.supportsNativeMac(["kind": "mac-software"]))
+        XCTAssertTrue(StoreService.supportsNativeMac(["supportedDevices": ["Mac14,6"]]))
+        XCTAssertFalse(StoreService.supportsNativeMac(["kind": "software", "supportedDevices": ["iPhone15,2"]]))
+        let html = """
+        <html><script type="application/json" id="serialized-server-data">
+        {"data":[{"purchaseConfiguration":{"appPlatforms":["mac"],"bundleId":"test.mac.app",
+        "buyParams":"salableAdamId=6503940939&appExtVrsId=112233"}},{"purchaseConfiguration":{
+        "appPlatforms":["ios"],"bundleId":"test.mac.app",
+        "buyParams":"salableAdamId=6503940939&appExtVrsId=998877"}}]}</script></html>
+        """
+        XCTAssertEqual(MacStoreOfferService.versionID(
+            fromHTML: html, appID: "6503940939", bundleID: "test.mac.app"), "112233")
+        XCTAssertNil(MacStoreOfferService.versionID(
+            fromHTML: html, appID: "6503940939", bundleID: "wrong.bundle"))
+        XCTAssertNil(MacStoreOfferService.versionID(
+            fromHTML: html, appID: "123", bundleID: "test.mac.app"))
+        let conflicting = html.replacingOccurrences(
+            of: "\"appPlatforms\":[\"ios\"],\"bundleId\":\"test.mac.app\"",
+            with: "\"appPlatforms\":[\"mac\"],\"bundleId\":\"test.mac.app\"")
+        XCTAssertNil(MacStoreOfferService.versionID(
+            fromHTML: conflicting, appID: "6503940939", bundleID: "test.mac.app"))
+        XCTAssertNil(MacStoreOfferService.versionID(
+            fromHTML: "<html>unrelated content</html>", appID: "6503940939", bundleID: ""))
+    }
+
     func testMacDeveloperInstallerLinksAndRawPackagePreservation() throws {
         let website = URL(string: "https://developer.example.org/products/")!
         let html = """
@@ -266,15 +501,16 @@ final class CoreTests: XCTestCase {
         let id = UUID()
         let staging = LocalResources.stagingURL(id)
         defer { try? FileManager.default.removeItem(at: staging) }
-        try Data("xar!test-data".utf8).write(to: staging)
+        let package = Self.syntheticXAR(files: [Data("<installer-gui-script/>".utf8)])
+        try package.write(to: staging)
         let job = DownloadJob(id: id, app: app, rawFormat: "pkg")
         let (filename, result) = try MacPackageStorage.finish(staging: staging, job: job)
         let finalURL = try XCTUnwrap(LocalResources.packageURL(filename))
         defer { try? FileManager.default.removeItem(at: finalURL) }
         XCTAssertTrue(filename.hasSuffix(".pkg"))
         XCTAssertEqual(result.name, app.name)
-        XCTAssertEqual(result.size, Int64(Data("xar!test-data".utf8).count))
-        XCTAssertEqual(try Data(contentsOf: finalURL), Data("xar!test-data".utf8))
+        XCTAssertEqual(result.size, Int64(package.count))
+        XCTAssertEqual(try Data(contentsOf: finalURL), package)
         XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
 
         let invalidID = UUID()
@@ -291,11 +527,16 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(StoreService.country(forStorefront: "143441-1,29"), "US")
         XCTAssertEqual(StoreService.country(forStorefront: "143465"), "CN")
         XCTAssertEqual(StoreService.country(forStorefront: "143462-1,15"), "JP")
+        XCTAssertEqual(StoreService.country(forStorefront: "143467-19,29"), "IN")
+        XCTAssertEqual(StoreService.country(forStorefront: "143503"), "BR")
         XCTAssertNil(StoreService.country(forStorefront: "unknown"))
         XCTAssertEqual(StoreService.searchCountries(selected: "CN", accountCountry: "US"), ["CN", "US"])
         XCTAssertEqual(StoreService.searchCountries(selected: "US", accountCountry: "US"), ["US"])
-        XCTAssertEqual(StoreService.artworkCountries(selected: "CN", accountCountry: "US"), ["US", "CN"])
-        XCTAssertEqual(StoreService.artworkCountries(selected: "JP", accountCountry: "CN"), ["CN", "JP", "US"])
+        XCTAssertEqual(Array(StoreService.artworkCountries(selected: "CN", accountCountry: "US").prefix(3)), ["US", "CN", "HK"])
+        XCTAssertEqual(Array(StoreService.artworkCountries(selected: "JP", accountCountry: "CN").prefix(3)), ["CN", "JP", "US"])
+        let all = StoreService.artworkCountries(selected: "JP", accountCountry: "CN")
+        XCTAssertEqual(all.count, Set(all).count)
+        XCTAssertTrue(all.contains("FR"))
 
         let regional = (1...4).map { StoreApp(id: String($0), name: "Regional \($0)") }
         let usArtwork = URL(string: "https://example.com/2.png")!

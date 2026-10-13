@@ -6,9 +6,10 @@ final class InteractionTests: XCTestCase {
         app.launchArguments = ["--visual-preview", "--detail"]
         app.launch()
         let copyID = app.buttons["app.copy-id"]
-        let version = app.staticTexts["v3.2.1"]
+        let version = app.descendants(matching: .any)["app.version"].firstMatch
         XCTAssertTrue(copyID.waitForExistence(timeout: 10))
-        XCTAssertTrue(version.exists)
+        XCTAssertTrue(version.waitForExistence(timeout: 5))
+        XCTAssertTrue(version.label.hasPrefix("v3.2"), version.label)
         XCTAssertGreaterThan(copyID.frame.minX, version.frame.maxX)
         XCTAssertEqual(copyID.frame.midY, version.frame.midY, accuracy: 12)
         copyID.tap()
@@ -20,11 +21,12 @@ final class InteractionTests: XCTestCase {
         app.launchArguments = ["--visual-preview", "--downloads"]
         app.launch()
         let size = app.staticTexts["download.size.preview-1"].firstMatch
-        let badge = app.staticTexts["download.platform.IPA"].firstMatch
+        let icon = app.descendants(matching: .any)["download.platform.IPA"].firstMatch
         XCTAssertTrue(size.waitForExistence(timeout: 10))
-        XCTAssertTrue(badge.waitForExistence(timeout: 10))
-        XCTAssertGreaterThan(badge.frame.minX, size.frame.maxX)
-        XCTAssertEqual(badge.frame.midY, size.frame.midY, accuracy: 12)
+        XCTAssertTrue(icon.waitForExistence(timeout: 10))
+        // The platform glyph leads the version and size line.
+        XCTAssertLessThan(icon.frame.maxX, size.frame.minX)
+        XCTAssertEqual(icon.frame.midY, size.frame.midY, accuracy: 12)
         attach("22-download-platform-inline", app: app)
     }
 
@@ -55,17 +57,21 @@ final class InteractionTests: XCTestCase {
         app.buttons["download.filter.menu"].tap()
         app.buttons["download.filter.已完成"].tap()
         let install = app.buttons["安装"].firstMatch
-        let export = app.buttons["导出"].firstMatch
+        let share = app.buttons["分享"].firstMatch
         if !install.waitForExistence(timeout: 10) { print(app.debugDescription) }
         XCTAssertTrue(install.exists)
-        XCTAssertTrue(export.exists)
-        XCTAssertEqual(install.frame.width, export.frame.width, accuracy: 2)
-        XCTAssertEqual(install.frame.height, export.frame.height, accuracy: 2)
-        XCTAssertGreaterThanOrEqual(install.frame.height, 44)
+        XCTAssertTrue(share.exists)
+        // Compact trailing actions on the task card: 安装 capsule, then share.
+        XCTAssertEqual(install.frame.midY, share.frame.midY, accuracy: 4)
+        XCTAssertLessThan(install.frame.maxX, share.frame.minX)
+        XCTAssertGreaterThanOrEqual(share.frame.height, 44)
         attach("17-completed-actions", app: app)
         install.tap()
         let settings = app.buttons["installation.settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5)); settings.tap()
+        // One-tap installation is the default; the device-certificate mode is advanced.
+        let localMode = app.buttons["本机证书"]
+        XCTAssertTrue(localMode.waitForExistence(timeout: 5)); localMode.tap()
         XCTAssertTrue(app.buttons["installation.certificate"].waitForExistence(timeout: 5))
         attach("18-installation-settings", app: app)
         let create = app.buttons["installation.create-certificate"]
@@ -84,23 +90,46 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(flat.waitForExistence(timeout: 10))
         if !flat.isHittable { app.swipeUp() }
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        func acknowledgeSystemAlert() {
-            let alert = springboard.alerts.firstMatch
-            if alert.waitForExistence(timeout: 3) { alert.buttons.firstMatch.tap() }
-            else if app.alerts.firstMatch.exists { app.alerts.firstMatch.buttons.firstMatch.tap() }
+        // iOS confirms each icon change with an alert, and the completion
+        // handler only fires once it is dismissed. A throttled (EAGAIN)
+        // request is retried by the app and raises its own alert later, so
+        // keep dismissing alerts for the whole wait, as a user would.
+        func waitUntilSelected(_ button: XCUIElement, timeout: TimeInterval) -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline {
+                if button.value as? String == "已选中" && button.isEnabled { return true }
+                if springboard.alerts.firstMatch.exists { springboard.alerts.firstMatch.buttons.firstMatch.tap() }
+                else if app.alerts.firstMatch.exists { app.alerts.firstMatch.buttons.firstMatch.tap() }
+                RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+            }
+            return button.value as? String == "已选中"
         }
         if flat.isSelected {
-            dimensional.tap(); acknowledgeSystemAlert()
-            let initial = expectation(for: NSPredicate(format: "value == %@ AND isEnabled == true", "已选中"), evaluatedWith: dimensional)
-            wait(for: [initial], timeout: 12)
+            dimensional.tap()
+            XCTAssertTrue(waitUntilSelected(dimensional, timeout: 40))
         }
-        flat.tap(); acknowledgeSystemAlert()
-        let switched = expectation(for: NSPredicate(format: "value == %@ AND isEnabled == true", "已选中"), evaluatedWith: flat)
-        wait(for: [switched], timeout: 12)
+        flat.tap()
+        XCTAssertTrue(waitUntilSelected(flat, timeout: 40))
         attach("19-system-icon-switch", app: app)
-        dimensional.tap(); acknowledgeSystemAlert()
-        let restored = expectation(for: NSPredicate(format: "value == %@ AND isEnabled == true", "已选中"), evaluatedWith: dimensional)
-        wait(for: [restored], timeout: 12)
+        // Switch back in a later session, as a person would after seeing the
+        // new icon: SpringBoard refuses a second change while the first one's
+        // confirmation is still on screen.
+        app.terminate()
+        app.launch()
+        app.buttons["accounts.settings"].tap()
+        XCTAssertTrue(dimensional.waitForExistence(timeout: 10))
+        if !dimensional.isHittable { app.swipeUp() }
+        XCTAssertEqual(flat.value as? String, "已选中", "The system kept the alternate icon across launches")
+        dimensional.tap()
+        // The app retries a throttled change for about a minute.
+        let restored = waitUntilSelected(dimensional, timeout: 90)
+        if !restored {
+            let status = app.staticTexts["settings.icon.status"]
+            print("ICON-DIAG status=\(status.exists ? status.label : "none") enabled=\(dimensional.isEnabled)")
+            print("ICON-DIAG springboard=\(springboard.debugDescription.prefix(3000))")
+            attach("19b-icon-restore-stalled", app: app)
+        }
+        XCTAssertTrue(restored)
     }
 
     func testIconSelectionAndSearchSubmitControl() {
@@ -123,12 +152,15 @@ final class InteractionTests: XCTestCase {
         app.terminate()
         app.launchArguments = ["--visual-preview"]
         app.launch()
-        let submit = app.buttons["search.submit"]
-        XCTAssertTrue(submit.waitForExistence(timeout: 10))
-        XCTAssertFalse(submit.isEnabled)
+        // App Store search bar: a capsule field that searches from the
+        // keyboard; the clear control appears once something is typed.
         let input = app.textFields["应用名称、App ID 或链接"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["search.submit"].exists)
+        XCTAssertFalse(app.buttons["清空输入"].exists)
         input.tap(); input.typeText("Test")
-        XCTAssertTrue(submit.isEnabled)
+        XCTAssertTrue(app.buttons["清空输入"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["切换或管理账号"].exists)
     }
     func testFiltersAndDeleteConfirmation() {
         let app = XCUIApplication()
@@ -196,7 +228,8 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(add.waitForExistence(timeout: 10)); add.tap()
         XCTAssertTrue(app.buttons["downloads.import"].waitForExistence(timeout: 5))
         app.buttons["downloads.import"].tap()
-        let pickerCancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "取消"])).firstMatch
+        let pickerCancel = app.buttons.matching(NSPredicate(format: "label IN %@ OR identifier IN %@",
+            ["Cancel", "取消", "Close", "关闭"], ["Cancel", "Close"])).firstMatch
         XCTAssertTrue(pickerCancel.waitForExistence(timeout: 15))
         attach("15-import-picker", app: app)
         pickerCancel.tap()

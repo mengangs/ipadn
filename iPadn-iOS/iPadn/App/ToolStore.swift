@@ -95,6 +95,13 @@ final class ToolStore: ObservableObject {
                 // Searching an App ID should work even if saved Apple credentials expired.
                 let accountCountry = StoreService.country(forStorefront: apple.active?.storeFront ?? "")
                 var apps = try await StoreService.search(query, store: context, limit: limit, accountCountry: accountCountry)
+                if case .appID(let appID, _) = query, apps.isEmpty {
+                    // Delisted or region-limited apps have no public listing;
+                    // the account may still own them, so keep the ID usable.
+                    var fallback = knownApp(appID) ?? StoreApp(id: appID, name: "App \(appID)", price: "")
+                    fallback.delisted = true
+                    apps = [fallback]
+                }
                 if case .appID(_, let versionID) = query, let versionID {
                     apps = apps.map {
                         var result = $0
@@ -111,6 +118,7 @@ final class ToolStore: ObservableObject {
                 appCatalog[key] = Array(AppSearchIndex.unique(apps + (appCatalog[key] ?? [])).prefix(1000))
                 try? LocalResources.save(appCatalog, filename: "app-catalog.json")
                 remember(input)
+                await fillMissingArtwork(searchID: id, store: context, accountCountry: accountCountry)
             } catch is CancellationError { }
             catch {
                 if !Task.isCancelled, searchID == id {
@@ -119,6 +127,54 @@ final class ToolStore: ObservableObject {
             }
         }
     }
+    private func knownApp(_ id: String) -> StoreApp? {
+        let known = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app)
+            + appCatalog.values.flatMap { $0 } + nameCatalog.map(\.app)
+        guard var app = known.first(where: { $0.id == id }) else { return nil }
+        if app.iconURL == nil { app.iconURL = localArtwork(id) ?? known.first { $0.id == id && $0.iconURL != nil }?.iconURL }
+        return app
+    }
+
+    /// Artwork we already hold for an App ID from a download: the icon in
+    /// the package, or the artwork Apple sent with the download. Delisted
+    /// apps have no public listing, so this is often the only source.
+    func localArtwork(_ id: String) -> URL? {
+        for job in downloads.jobs where job.app.id == id {
+            if let icon = job.displayApp(packageIcon: downloads.packageIconURL(job)).iconURL { return icon }
+        }
+        return nil
+    }
+
+    /// Results from local records or other regions can lack artwork; look it
+    /// up across storefronts (artwork is public even when the app is not
+    /// available to the signed-in account's region).
+    private func fillMissingArtwork(searchID id: UUID, store context: StoreContext, accountCountry: String?) async {
+        func local(_ apps: [StoreApp]) -> [StoreApp] {
+            apps.map { app in
+                var app = app
+                if app.iconURL == nil { app.iconURL = localArtwork(app.id) }
+                return app
+            }
+        }
+        results = local(results)
+        localResults = local(localResults)
+        let missing = Array(Set((results + localResults)
+            .filter { $0.iconURL == nil && !$0.id.isEmpty && $0.id.allSatisfy({ $0.isASCII && $0.isNumber }) }
+            .map(\.id))).prefix(50)
+        guard !missing.isEmpty,
+              let icons = try? await StoreService.artwork(Array(missing), store: context, accountCountry: accountCountry),
+              !icons.isEmpty, searchID == id else { return }
+        func filled(_ apps: [StoreApp]) -> [StoreApp] {
+            apps.map { app in
+                var app = app
+                if app.iconURL == nil { app.iconURL = icons[app.id] }
+                return app
+            }
+        }
+        results = filled(results)
+        localResults = filled(localResults)
+    }
+
     private func updateLocalResults(for input: String? = nil) {
         guard case .keyword(let term)? = try? SearchQuery.parse(input ?? lastSearchTerm) else { return }
         let known = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app) + (appCatalog[settings.store.platform.rawValue] ?? [])
@@ -209,11 +265,19 @@ final class ToolStore: ObservableObject {
         // listing showed it. Do not lose that listing before enqueuing.
         if asset.app.iconURL == nil { asset.app.iconURL = app.iconURL }
         try downloads.enqueue(asset)
+        // A delisted app's only artwork may arrive with the download itself.
+        if let icon = asset.app.iconURL {
+            func patched(_ apps: [StoreApp]) -> [StoreApp] {
+                apps.map { var item = $0; if item.id == app.id && item.iconURL == nil { item.iconURL = icon }; return item }
+            }
+            results = patched(results)
+            localResults = patched(localResults)
+        }
         tab = 1
     }
 
     func refreshDownload(_ job: DownloadJob) async throws {
-        guard job.status == .failed, job.asset != nil else { throw ToolError.message("只有失败的 Apple 下载任务可以刷新链接") }
+        guard job.status == .failed, job.asset != nil else { throw ToolError.message("此任务无法重试") }
         guard apple.activeID == job.account else { throw ToolError.message("请先切换至原下载账号：\(job.account ?? "")") }
         let platform: AppPlatform
         switch job.asset?.platform.lowercased() {
