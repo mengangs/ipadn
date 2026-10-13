@@ -260,7 +260,12 @@ struct AppDetailView: View {
                 showVerification = true
             }
         }
-        catch { if !Task.isCancelled { versionError = AppErrorMessage.forSearch(error) } }
+        catch {
+            if !Task.isCancelled {
+                let message = error.localizedDescription
+                versionError = message.contains("历史版本来源暂不可用") ? message : AppErrorMessage.forSearch(error)
+            }
+        }
     }
     private func enqueueMacInstaller(_ installer: MacInstallerService.Installer) {
         do {
