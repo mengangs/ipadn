@@ -28,6 +28,13 @@ _ipadn_synthetic_answer:
     movq $0x1234, %rax
     addq $7, %rax
     retq
+
+// A synthetic host-service entry. The guest instruction is only RET;
+// a Go callback supplies its result after validating its arguments.
+.globl _ipadn_synthetic_service
+.p2align 4
+_ipadn_synthetic_service:
+    retq
 ASM
 env SDKROOT="$MACOS_SDKROOT" "$CC" -target x86_64-apple-macos11 \
   -isysroot "$MACOS_SDKROOT" -c \
@@ -68,6 +75,34 @@ test -s "$ROOT/synthetic_consumer.dylib"
 xcrun file "$ROOT/synthetic_consumer.dylib"
 xcrun nm -u "$ROOT/synthetic_consumer.dylib" | grep '_ipadn_synthetic_answer'
 cp "$ROOT/synthetic_consumer.dylib" ipatool/tools/ios-tci-link/consumer.dylib
+
+# A third original Mach-O imports a synthetic "system service" entrypoint.
+# The service is a one-byte RET stub whose result is filled by a Go hook.
+# This checks multi-image binding -> x86 caller argument -> Go hook -> RET.
+cat > "$ROOT/synthetic_service_consumer.s" <<'SERVICE_ASM'
+.text
+.globl _ipadn_synthetic_service_caller
+.globl _ipadn_synthetic_service_caller_stop
+.p2align 4
+_ipadn_synthetic_service_caller:
+    movq $0xa5, %rdi
+    movq _ipadn_synthetic_service@GOTPCREL(%rip), %r11
+    callq *%r11
+    addq $9, %rax
+_ipadn_synthetic_service_caller_stop:
+    retq
+SERVICE_ASM
+env SDKROOT="$MACOS_SDKROOT" "$CC" -target x86_64-apple-macos11 \
+  -isysroot "$MACOS_SDKROOT" -c "$ROOT/synthetic_service_consumer.s" \
+  -o "$ROOT/synthetic_service_consumer.o"
+env SDKROOT="$MACOS_SDKROOT" "$CC" -target x86_64-apple-macos11 \
+  -isysroot "$MACOS_SDKROOT" -dynamiclib \
+  -Wl,-install_name,@rpath/libipadn_service_consumer.dylib \
+  "$ROOT/synthetic_service_consumer.o" -L"$ROOT" -lipadn_synthetic \
+  -o "$ROOT/synthetic_service_consumer.dylib"
+test -s "$ROOT/synthetic_service_consumer.dylib"
+xcrun nm -u "$ROOT/synthetic_service_consumer.dylib" | grep '_ipadn_synthetic_service'
+cp "$ROOT/synthetic_service_consumer.dylib" ipatool/tools/ios-tci-link/service-consumer.dylib
 
 # Before compiling for iPhone, exercise ipatool's real Go Mach-O parser on
 # this fixture on the CI host. This catches malformed symbol tables, missing
@@ -122,6 +157,32 @@ func main() {
     }); err != nil { panic(fmt.Errorf("bind synthetic consumer: %w", err)) }
     if imports != 1 { panic(fmt.Errorf("expected one cross-image binding; got %d", imports)) }
     fmt.Printf("PASS: Go Mach-O external binding: provider 0x%x, consumer start 0x%x, stop 0x%x, imports %d\\n", address, entry, stop, imports)
+
+    // Validate the second call path imports exactly one custom shim symbol.
+    service, err := img.Export("_ipadn_synthetic_service", base)
+    if err != nil { panic(fmt.Errorf("export synthetic service: %w", err)) }
+    serviceBytes, err := os.ReadFile("tools/ios-tci-link/service-consumer.dylib")
+    if err != nil { panic(err) }
+    serviceCaller, err := machimage.Open("ipadn-synthetic-service-consumer", serviceBytes)
+    if err != nil { panic(fmt.Errorf("open synthetic service consumer: %w", err)) }
+    const serviceBase uint64 = 0x00001000f0000000
+    start, err := serviceCaller.Export("_ipadn_synthetic_service_caller", serviceBase)
+    if err != nil { panic(fmt.Errorf("export service caller: %w", err)) }
+    halt, err := serviceCaller.Export("_ipadn_synthetic_service_caller_stop", serviceBase)
+    if err != nil { panic(fmt.Errorf("export service stop: %w", err)) }
+    if start >= halt || halt-start > 128 {
+        panic(fmt.Errorf("invalid service instruction range: %x..%x", start, halt))
+    }
+    services := 0
+    if err := serviceCaller.Relocate(serviceBase, func(symbol string)(uint64,error) {
+        if symbol != "_ipadn_synthetic_service" {
+            return 0, fmt.Errorf("unexpected system-service import: %s", symbol)
+        }
+        services++
+        return service, nil
+    }); err != nil { panic(fmt.Errorf("resolve synthetic system service: %w", err)) }
+    if services != 1 { panic(fmt.Errorf("expected one service import, got %d", services)) }
+    fmt.Printf("PASS: synthetic system-service import to Go shim: 0x%x -> 0x%x, imports=%d\\n", start, service, services)
 }
 FIXTURE_GO
 (cd ipatool && go run ./tools/ios-tci-fixture-check)
@@ -149,6 +210,9 @@ var syntheticMachO []byte
 
 //go:embed consumer.dylib
 var syntheticMachOConsumer []byte
+
+//go:embed service-consumer.dylib
+var syntheticMachOServiceConsumer []byte
 
 //export iPadnMacTCIStoreAgentLinkProbe
 func iPadnMacTCIStoreAgentLinkProbe() C.int32_t {
@@ -429,8 +493,8 @@ cat > "$APP/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Mac PKG Go TCI Probe</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-<key>CFBundleShortVersionString</key><string>0.9</string>
-<key>CFBundleVersion</key><string>9</string>
+<key>CFBundleShortVersionString</key><string>1.0</string>
+<key>CFBundleVersion</key><string>10</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>MinimumOSVersion</key><string>15.0</string>
 <key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
@@ -459,5 +523,5 @@ cp -R "$APP" "$ROOT/out/go-package/Payload/"
   /usr/bin/zip -qr -X "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa" Payload)
 test -s "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa"
 du -h "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa"
-echo "Go ↔ no-JIT TCI v0.9 iPhone diagnostic IPA built but NOT run by CI."
+echo "Go ↔ no-JIT TCI v1.0 iPhone diagnostic IPA built but NOT run by CI."
 echo "NO StoreAgent initialization, Apple asset retrieval, authorization, Mac PKG download or decryption performed."
