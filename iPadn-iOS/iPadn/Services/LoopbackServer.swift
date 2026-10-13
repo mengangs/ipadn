@@ -38,6 +38,10 @@ final class LoopbackServer: @unchecked Sendable {
     private let compatibilityMode: Bool
     private let token = UUID().uuidString
     private var readyURL: URL?
+    // Last read/write per connection; confined to queue. Idle connections are
+    // closed, while an actively streaming multi-GB IPA is never cut off.
+    private var lastActivity: [ObjectIdentifier: DispatchTime] = [:]
+    private let idleTimeout: UInt64 = 120
     var baseURL: URL? {
         lock.lock(); defer { lock.unlock() }; return readyURL
     }
@@ -96,13 +100,33 @@ final class LoopbackServer: @unchecked Sendable {
                     }
                     listener.newConnectionHandler = { [weak self] connection in
                         guard let self else { connection.cancel(); return }
+                        let id = ObjectIdentifier(connection)
+                        connection.stateUpdateHandler = { [weak self] state in
+                            switch state {
+                            case .cancelled, .failed: self?.lastActivity.removeValue(forKey: id)
+                            default: break
+                            }
+                        }
                         connection.start(queue: self.queue)
+                        self.touch(connection)
                         self.read(connection, accumulated: Data())
-                        self.queue.asyncAfter(deadline: .now() + 120) { connection.cancel() }
+                        self.watchIdle(connection)
                     }
                     listener.start(queue: self.queue)
                 } catch { self.listener = nil; self.finishStart(.failure(error)) }
             }
+        }
+    }
+    private func touch(_ connection: NWConnection) {
+        lastActivity[ObjectIdentifier(connection)] = .now()
+    }
+    private func watchIdle(_ connection: NWConnection) {
+        queue.asyncAfter(deadline: .now() + 15) { [weak self] in
+            guard let self, let last = self.lastActivity[ObjectIdentifier(connection)] else { return }
+            if DispatchTime.now().uptimeNanoseconds - last.uptimeNanoseconds >= self.idleTimeout * 1_000_000_000 {
+                self.lastActivity.removeValue(forKey: ObjectIdentifier(connection))
+                connection.cancel()
+            } else { self.watchIdle(connection) }
         }
     }
     private func finishStart(_ result: Result<Void, Error>) {
@@ -130,6 +154,7 @@ final class LoopbackServer: @unchecked Sendable {
     private func read(_ connection: NWConnection, accumulated: Data) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { data, _, ended, error in
             if error != nil { connection.cancel(); return }
+            self.touch(connection)
             var buffer = accumulated; if let data = data { buffer.append(data) }
             guard buffer.count <= 2 * 1024 * 1024 else { self.reply(connection, status: 413); return }
             let separator = Data("\r\n\r\n".utf8)
@@ -232,7 +257,10 @@ final class LoopbackServer: @unchecked Sendable {
             guard !chunk.isEmpty else { try? file.close(); connection.cancel(); return }
             connection.send(content: chunk, completion: .contentProcessed { error in
                 if error != nil { try? file.close(); connection.cancel() }
-                else { self.sendChunk(connection, file: file, remaining: remaining - UInt64(chunk.count)) }
+                else {
+                    self.touch(connection)
+                    self.sendChunk(connection, file: file, remaining: remaining - UInt64(chunk.count))
+                }
             })
         } catch { try? file.close(); connection.cancel() }
     }

@@ -475,6 +475,8 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(StoreService.country(forStorefront: "143441-1,29"), "US")
         XCTAssertEqual(StoreService.country(forStorefront: "143465"), "CN")
         XCTAssertEqual(StoreService.country(forStorefront: "143462-1,15"), "JP")
+        XCTAssertEqual(StoreService.country(forStorefront: "143467-19,29"), "IN")
+        XCTAssertEqual(StoreService.country(forStorefront: "143503"), "BR")
         XCTAssertNil(StoreService.country(forStorefront: "unknown"))
         XCTAssertEqual(StoreService.searchCountries(selected: "CN", accountCountry: "US"), ["CN", "US"])
         XCTAssertEqual(StoreService.searchCountries(selected: "US", accountCountry: "US"), ["US"])
