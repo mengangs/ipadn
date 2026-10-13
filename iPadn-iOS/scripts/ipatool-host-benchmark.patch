@@ -1,0 +1,45 @@
+diff --git a/internal/sap/machine/machine.go b/internal/sap/machine/machine.go
+index 4f986fa..ffcb4de 100644
+--- a/internal/sap/machine/machine.go
++++ b/internal/sap/machine/machine.go
+@@ -13,7 +13,8 @@ import (
+ 	"github.com/majd/ipatool/v2/internal/sap/unicorn"
+ )
+ 
+-const sapGuestTimeout = time.Minute
++// iPadn benchmark: allow slow interpreters to finish so they can be timed.
++var sapGuestTimeout = 20 * time.Minute
+ 
+ const (
+ 	returnAddress = uint64(0x0000000100000000)
+diff --git a/internal/sap/unicorn/library_unix.go b/internal/sap/unicorn/library_unix.go
+index 50bb905..617b0c0 100644
+--- a/internal/sap/unicorn/library_unix.go
++++ b/internal/sap/unicorn/library_unix.go
+@@ -5,14 +5,23 @@ package unicorn
+ import (
+ 	"context"
+ 	"fmt"
++	"os"
+ 
+ 	"github.com/ebitengine/purego"
+ )
+ 
+ func openLibrary(ctx context.Context) (library, error) {
+-	paths, err := cachedRuntimePaths(ctx)
+-	if err != nil {
+-		return library{}, err
++	// iPadn benchmark: load a locally built Unicorn (for example the no-JIT
++	// TCI interpreter) instead of the checksum-pinned desktop JIT artifact.
++	var paths runtimePaths
++	if override := os.Getenv("IPADN_UNICORN_LIBRARY"); override != "" {
++		paths.library = override
++	} else {
++		var err error
++		paths, err = cachedRuntimePaths(ctx)
++		if err != nil {
++			return library{}, err
++		}
+ 	}
+ 
+ 	if err := ctx.Err(); err != nil {
