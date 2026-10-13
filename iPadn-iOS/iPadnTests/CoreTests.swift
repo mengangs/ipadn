@@ -267,6 +267,27 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(manager.jobs.first?.sourceURL, url)
     }
 
+    func testMacPKGRejectsTruncatedAndFakeXARHeaders() {
+        var header = Data(repeating: 0, count: 28)
+        header.replaceSubrange(0..<4, with: Data("xar!".utf8))
+        header[5] = 28            // XAR header is 28 bytes
+        header[7] = 1             // XAR version 1
+        header[15] = 8            // 8-byte compressed TOC
+        header[23] = 16           // 16-byte uncompressed TOC
+        XCTAssertTrue(MacPackageStorage.plausibleXARHeader(header, fileSize: 100))
+        XCTAssertFalse(MacPackageStorage.plausibleXARHeader(header, fileSize: 28))
+        var fake = header
+        fake[7] = 99
+        XCTAssertFalse(MacPackageStorage.plausibleXARHeader(fake, fileSize: 100))
+        fake = header
+        fake[15] = 120
+        XCTAssertFalse(MacPackageStorage.plausibleXARHeader(fake, fileSize: 100))
+        fake = header
+        fake[0] = 0
+        XCTAssertFalse(MacPackageStorage.plausibleXARHeader(fake, fileSize: 100))
+        XCTAssertFalse(MacPackageStorage.plausibleXARHeader(Data("xar!".utf8), fileSize: 100))
+    }
+
     func testNativeMacSearchAndAppStoreOfferExtraction() {
         XCTAssertTrue(StoreService.supportsNativeMac(["kind": "mac-software"]))
         XCTAssertTrue(StoreService.supportsNativeMac(["supportedDevices": ["Mac14,6"]]))
