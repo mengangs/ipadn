@@ -30,8 +30,8 @@ _ipadn_synthetic_answer:
 ASM
 "$CC" -target x86_64-apple-macos11 -c \
   "$ROOT/synthetic_storeagent.s" -o "$ROOT/synthetic_storeagent.o"
-xcrun ld -dylib -arch x86_64 -platform_version macos 11.0 11.0 \
-  -install_name "@rpath/libipadn_synthetic.dylib" \
+"$CC" -target x86_64-apple-macos11 -dynamiclib \
+  -Wl,-install_name,@rpath/libipadn_synthetic.dylib \
   -o "$ROOT/synthetic_storeagent.dylib" "$ROOT/synthetic_storeagent.o"
 test -s "$ROOT/synthetic_storeagent.dylib"
 xcrun file "$ROOT/synthetic_storeagent.dylib"
