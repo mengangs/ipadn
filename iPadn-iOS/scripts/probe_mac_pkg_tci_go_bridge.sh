@@ -41,6 +41,34 @@ xcrun file "$ROOT/synthetic_storeagent.dylib"
 mkdir -p ipatool/tools/ios-tci-link
 cp "$ROOT/synthetic_storeagent.dylib" ipatool/tools/ios-tci-link/fixture.dylib
 
+# A second ORIGINAL x86-64 dylib imports the provider's exported function via
+# its non-lazy GOT entry. Exercises ipatool's Mach-O BIND_TYPE_POINTER resolver.
+cp "$ROOT/synthetic_storeagent.dylib" "$ROOT/libipadn_synthetic.dylib"
+cat > "$ROOT/synthetic_consumer.s" <<'CONSUMER_ASM'
+.text
+.globl _ipadn_synthetic_consumer
+.globl _ipadn_synthetic_consumer_stop
+.p2align 4
+_ipadn_synthetic_consumer:
+    movq _ipadn_synthetic_answer@GOTPCREL(%rip), %r11
+    callq *%r11
+    addq $9, %rax
+_ipadn_synthetic_consumer_stop:
+    retq
+CONSUMER_ASM
+env SDKROOT="$MACOS_SDKROOT" "$CC" -target x86_64-apple-macos11 \
+  -isysroot "$MACOS_SDKROOT" -c "$ROOT/synthetic_consumer.s" \
+  -o "$ROOT/synthetic_consumer.o"
+env SDKROOT="$MACOS_SDKROOT" "$CC" -target x86_64-apple-macos11 \
+  -isysroot "$MACOS_SDKROOT" -dynamiclib \
+  -Wl,-install_name,@rpath/libipadn_consumer.dylib \
+  "$ROOT/synthetic_consumer.o" -L"$ROOT" -lipadn_synthetic \
+  -o "$ROOT/synthetic_consumer.dylib"
+test -s "$ROOT/synthetic_consumer.dylib"
+xcrun file "$ROOT/synthetic_consumer.dylib"
+xcrun nm -u "$ROOT/synthetic_consumer.dylib" | grep '_ipadn_synthetic_answer'
+cp "$ROOT/synthetic_consumer.dylib" ipatool/tools/ios-tci-link/consumer.dylib
+
 # Before compiling for iPhone, exercise ipatool's real Go Mach-O parser on
 # this fixture on the CI host. This catches malformed symbol tables, missing
 # x86_64 slices, and relocation mistakes without installing any app.
@@ -72,7 +100,28 @@ func main() {
     }); err != nil {
         panic(fmt.Errorf("relocate synthetic fixture: %w", err))
     }
-    fmt.Printf("PASS: authentic Go Mach-O parser, synthetic export and relocation (guest address 0x%x)\\n", address)
+    consumerBytes, err := os.ReadFile("tools/ios-tci-link/consumer.dylib")
+    if err != nil { panic(err) }
+    consumer, err := machimage.Open("ipadn-ci-consumer", consumerBytes)
+    if err != nil { panic(fmt.Errorf("open synthetic consumer: %w", err)) }
+    const consumerBase uint64 = 0x00001000e0000000
+    entry, err := consumer.Export("_ipadn_synthetic_consumer", consumerBase)
+    if err != nil { panic(fmt.Errorf("export synthetic consumer: %w", err)) }
+    stop, err := consumer.Export("_ipadn_synthetic_consumer_stop", consumerBase)
+    if err != nil { panic(fmt.Errorf("export synthetic consumer stop: %w", err)) }
+    if entry >= stop || stop-entry > 128 {
+        panic(fmt.Errorf("invalid imported call range: start=0x%x stop=0x%x", entry, stop))
+    }
+    imports := 0
+    if err := consumer.Relocate(consumerBase, func(symbol string) (uint64, error) {
+        if symbol != "_ipadn_synthetic_answer" {
+            return 0, fmt.Errorf("unexpected consumer import: %s", symbol)
+        }
+        imports++
+        return address, nil
+    }); err != nil { panic(fmt.Errorf("bind synthetic consumer: %w", err)) }
+    if imports != 1 { panic(fmt.Errorf("expected one cross-image binding; got %d", imports)) }
+    fmt.Printf("PASS: Go Mach-O external binding: provider 0x%x, consumer start 0x%x, stop 0x%x, imports %d\\n", address, entry, stop, imports)
 }
 FIXTURE_GO
 (cd ipatool && go run ./tools/ios-tci-fixture-check)
@@ -97,6 +146,9 @@ import (
 
 //go:embed fixture.dylib
 var syntheticMachO []byte
+
+//go:embed consumer.dylib
+var syntheticMachOConsumer []byte
 
 //export iPadnMacTCIStoreAgentLinkProbe
 func iPadnMacTCIStoreAgentLinkProbe() C.int32_t {
@@ -308,8 +360,8 @@ cat > "$APP/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Mac PKG Go TCI Probe</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-<key>CFBundleShortVersionString</key><string>0.8</string>
-<key>CFBundleVersion</key><string>8</string>
+<key>CFBundleShortVersionString</key><string>0.9</string>
+<key>CFBundleVersion</key><string>9</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>MinimumOSVersion</key><string>15.0</string>
 <key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
@@ -338,5 +390,5 @@ cp -R "$APP" "$ROOT/out/go-package/Payload/"
   /usr/bin/zip -qr -X "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa" Payload)
 test -s "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa"
 du -h "$ROOT/out/MacPKGGoTCIProbe-unsigned.ipa"
-echo "Go ↔ no-JIT TCI v0.8 iPhone diagnostic IPA built but NOT run by CI."
+echo "Go ↔ no-JIT TCI v0.9 iPhone diagnostic IPA built but NOT run by CI."
 echo "NO StoreAgent initialization, Apple asset retrieval, authorization, Mac PKG download or decryption performed."
