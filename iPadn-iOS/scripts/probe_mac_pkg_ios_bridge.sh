@@ -53,6 +53,7 @@ import "C"
 import (
     "context"
     "fmt"
+    "time"
     "unsafe"
 
     "github.com/majd/ipatool/v2/internal/sap/unicorn"
@@ -87,6 +88,46 @@ func iPadnMacUnicornProbe(out *C.char, capacity C.int32_t) C.int32_t {
         uint32(major), uint32(minor)))
     return 0
 }
+//export iPadnMacExecutionProbe
+func iPadnMacExecutionProbe(out *C.char, capacity C.int32_t) C.int32_t {
+    engine, err := unicorn.New(context.Background())
+    if err != nil {
+        storeError(out, capacity, fmt.Sprintf("创建引擎失败: %v", err))
+        return -10
+    }
+    defer engine.Close()
+    // mov rax,0x1234; add rax,7 -> 0x123b
+    // Fixed, non-user-supplied guest code; never touches file/network/DRM.
+    code := []byte{0x48, 0xc7, 0xc0, 0x34, 0x12, 0x00, 0x00,
+                   0x48, 0x83, 0xc0, 0x07}
+    const address uint64 = 0x100000
+    if err := engine.MemMap(address, 0x1000); err != nil {
+        storeError(out, capacity, fmt.Sprintf("分配 x86 虚拟内存失败: %v", err))
+        return -11
+    }
+    if err := engine.MemWrite(address, code); err != nil {
+        storeError(out, capacity, fmt.Sprintf("写入 x86 指令失败: %v", err))
+        return -12
+    }
+    if err := engine.StartBounded(address, address+uint64(len(code)),
+                                  500*time.Millisecond, 64); err != nil {
+        storeError(out, capacity, fmt.Sprintf("执行 x86 指令失败: %v", err))
+        return -13
+    }
+    rax, err := engine.RegRead(unicorn.RegRAX)
+    if err != nil {
+        storeError(out, capacity, fmt.Sprintf("读取 RAX 失败: %v", err))
+        return -14
+    }
+    if rax != 0x123b {
+        storeError(out, capacity, fmt.Sprintf(
+            "执行结果错误: RAX=0x%x，预期 0x123b", rax))
+        return -15
+    }
+    storeError(out, capacity, fmt.Sprintf(
+        "x86-64 指令实际执行成功，RAX=0x%x，时间上限 500ms，指令上限 64", rax))
+    return 0
+}
 func main() {}
 GOEOF
 
@@ -105,8 +146,10 @@ xcrun nm -g "$WORKDIR/out/libipadnMacBridge.a" | grep "iPadnMacUnicornProbe"
 cat > "$WORKDIR/probe.m" <<'OBJC'
 #include <stdint.h>
 extern int32_t iPadnMacUnicornProbe(char *error, int32_t capacity);
+extern int32_t iPadnMacExecutionProbe(char *error, int32_t capacity);
 int main(void) {
     char diagnostic[512] = {0};
+    // Link-time symbol validation only; no execution on the CI host.
     return (int)iPadnMacUnicornProbe(diagnostic, (int32_t)sizeof(diagnostic));
 }
 OBJC
@@ -134,8 +177,8 @@ cat > "$APP/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>Mac PKG 测试</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-<key>CFBundleShortVersionString</key><string>0.2</string>
-<key>CFBundleVersion</key><string>2</string>
+<key>CFBundleShortVersionString</key><string>0.3</string>
+<key>CFBundleVersion</key><string>3</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>MinimumOSVersion</key><string>15.0</string>
 <key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
