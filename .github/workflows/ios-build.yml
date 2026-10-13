@@ -141,18 +141,23 @@ jobs:
           # XCTest can leave CoreSimulator unresponsive after shutting down its UI-test clone.
           # Restart this job's service before selecting and booting the screenshot device.
           killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
+          # A wedged simctl call (seen after the UI tests) must fail fast and be
+          # retried, not use up the whole step.
+          limit() { seconds="$1"; shift; perl -e 'alarm shift @ARGV; exec @ARGV' "$seconds" "$@"; }
+          retry() { limit "$@" || { sleep 5; limit "$@"; }; }
+          limit 60 xcrun simctl shutdown all || true
           simulator_id="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); devices=[(runtime,device) for runtime,values in d["devices"].items() if ".iOS-" in runtime for device in values if device.get("isAvailable") and device["name"].startswith("iPhone")]; devices.sort(key=lambda x: (x[1]["state"] != "Booted", "iOS-26-0" not in x[0], x[1]["name"] != "iPhone 17 Pro", x[1]["name"])); assert devices,"No available iPhone simulator"; print(devices[0][1]["udid"])')"
-          xcrun simctl boot "$simulator_id" || true
-          xcrun simctl bootstatus "$simulator_id" -b
-          xcrun simctl install "$simulator_id" build/TestDerivedData/Build/Products/Debug-iphonesimulator/iPadn.app
+          limit 120 xcrun simctl boot "$simulator_id" || true
+          retry 240 xcrun simctl bootstatus "$simulator_id" -b
+          retry 120 xcrun simctl install "$simulator_id" build/TestDerivedData/Build/Products/Debug-iphonesimulator/iPadn.app
           mkdir -p build/screenshots/native
           xcrun simctl status_bar "$simulator_id" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
           capture() {
             screenshot_name="$1"
             shift
-            xcrun simctl launch --terminate-running-process "$simulator_id" app.local.iPadn --visual-preview "$@"
+            retry 60 xcrun simctl launch --terminate-running-process "$simulator_id" app.local.iPadn --visual-preview "$@"
             sleep 3
-            xcrun simctl io "$simulator_id" screenshot "build/screenshots/native/$screenshot_name.png"
+            retry 30 xcrun simctl io "$simulator_id" screenshot "build/screenshots/native/$screenshot_name.png"
           }
           capture discover-light
           capture discover-dark --dark
