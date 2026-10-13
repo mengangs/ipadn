@@ -8,6 +8,7 @@ IPATOOL_COMMIT="4484b55d366e177ae6c89758c61588712c572fad"
 ROOT="${RUNNER_TEMP:-/tmp}/ipadn-macpkg-tci-probe"
 PROJECT_ROOT="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
+MACOS_SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
 CC="$(xcrun --sdk iphoneos --find clang)"
 LIBRARY="$ROOT/build/libunicorn.a"
 test -s "$LIBRARY" || { echo 'Build the pinned TCI library first.' >&2; exit 1; }
@@ -28,9 +29,11 @@ _ipadn_synthetic_answer:
     addq $7, %rax
     retq
 ASM
-"$CC" -target x86_64-apple-macos11 -c \
+env SDKROOT="$MACOS_SDKROOT" "$CC" -target x86_64-apple-macos11 \
+  -isysroot "$MACOS_SDKROOT" -c \
   "$ROOT/synthetic_storeagent.s" -o "$ROOT/synthetic_storeagent.o"
-"$CC" -target x86_64-apple-macos11 -dynamiclib \
+env SDKROOT="$MACOS_SDKROOT" "$CC" -target x86_64-apple-macos11 \
+  -isysroot "$MACOS_SDKROOT" -dynamiclib \
   -Wl,-install_name,@rpath/libipadn_synthetic.dylib \
   -o "$ROOT/synthetic_storeagent.dylib" "$ROOT/synthetic_storeagent.o"
 test -s "$ROOT/synthetic_storeagent.dylib"
