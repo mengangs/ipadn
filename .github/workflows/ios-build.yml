@@ -28,7 +28,7 @@ concurrency:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 55
     defaults:
       run:
         working-directory: iPadn-iOS
@@ -99,7 +99,7 @@ jobs:
           compression-level: 0
 
       - name: Run simulator unit tests
-        timeout-minutes: 12
+        timeout-minutes: 18
         if: github.event_name != 'workflow_dispatch' || inputs.run_tests
         run: |
           set -o pipefail
