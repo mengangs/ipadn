@@ -144,6 +144,18 @@ struct DownloadJob: Codable, Identifiable {
     var createdAt = Date()
     var progress: Double { expected > 0 ? min(1, max(0, Double(downloaded) / Double(expected))) : 0 }
     var account: String? { asset?.account }
+    // IPA metadata usually contains no artwork; keep the App Store icon
+    // already associated with the authorized download.
+    func completing(with inspected: StoreApp) -> StoreApp {
+        var completed = inspected
+        completed.iconURL = inspected.iconURL ?? app.iconURL ?? asset?.app.iconURL
+        return completed
+    }
+    func displayApp(packageIcon: URL?) -> StoreApp {
+        var displayed = app
+        displayed.iconURL = packageIcon ?? app.iconURL ?? asset?.app.iconURL
+        return displayed
+    }
     var platformLabel: String {
         if rawFormat != nil { return "Mac" }
         switch asset?.platform.lowercased() {
