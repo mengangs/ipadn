@@ -404,8 +404,27 @@ final class DownloadManager: NSObject, ObservableObject {
 }
 
 // Mac downloads are exported as original files. Never feed them to the IPA
-// parser or iOS system installer. Check basic signatures before saving.
+// parser or iOS system installer. Reject encrypted or truncated fake PKGs.
 enum MacPackageStorage {
+    static func plausibleXARHeader(_ header: Data, fileSize: Int64) -> Bool {
+        guard header.count >= 28, fileSize >= 29,
+              header.prefix(4) == Data("xar!".utf8) else { return false }
+        func number(_ offset: Int, length: Int) -> UInt64 {
+            header[offset..<(offset + length)].reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+        }
+        let headerSize = number(4, length: 2)
+        let version = number(6, length: 2)
+        let compressedTOC = number(8, length: 8)
+        let uncompressedTOC = number(16, length: 8)
+        // Basic XAR sanity only. A full checksum/TOC validation still needs
+        // the dedicated Mac Store package processing pipeline.
+        return headerSize >= 28 && headerSize <= 4096 && version == 1 &&
+            compressedTOC > 0 && uncompressedTOC > 0 &&
+            uncompressedTOC <= 32 * 1024 * 1024 &&
+            headerSize < UInt64(fileSize) &&
+            compressedTOC <= UInt64(fileSize) - headerSize
+    }
+
     static func finish(staging: URL, job: DownloadJob) throws -> (String, StoreApp) {
         guard let format = job.rawFormat, ["dmg", "pkg", "zip"].contains(format),
               let length = (try FileManager.default.attributesOfItem(atPath: staging.path)[.size] as? NSNumber)?.int64Value,
@@ -415,7 +434,10 @@ enum MacPackageStorage {
         let prefix = try file.read(upToCount: 4) ?? Data()
         let valid: Bool
         switch format {
-        case "pkg": valid = prefix == Data("xar!".utf8)
+        case "pkg":
+            try file.seek(toOffset: 0)
+            let header = try file.read(upToCount: 28) ?? Data()
+            valid = plausibleXARHeader(header, fileSize: length)
         case "zip": valid = prefix.starts(with: [0x50, 0x4B, 0x03, 0x04])
         default:
             guard length >= 512 else { throw ToolError.message("DMG 文件不完整") }
