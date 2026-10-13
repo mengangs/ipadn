@@ -262,6 +262,75 @@ func iPadnMacTCIMachOLoadProbe(output *C.char, capacity C.int32_t) C.int32_t {
     return 0
 }
 
+//export iPadnMacTCICrossImageProbe
+func iPadnMacTCICrossImageProbe(output *C.char, capacity C.int32_t) C.int32_t {
+    report := func(msg string) {
+        if output == nil || capacity < 2 || capacity > 4096 { return }
+        dst := unsafe.Slice((*byte)(unsafe.Pointer(output)), int(capacity))
+        n := copy(dst[:len(dst)-1], msg)
+        dst[n] = 0
+    }
+    fail := func(stage string, err error, code C.int32_t) C.int32_t {
+        report(fmt.Sprintf("%s: %v", stage, err))
+        return code
+    }
+    // Both provider/consumer are ORIGINAL synthetic macOS x86-64 dylibs.
+    // This imports a symbol from one image into the GOT of another image.
+    provider, err := machimage.Open("synthetic-provider", syntheticMachO)
+    if err != nil { return fail("读取函数提供库", err, -40) }
+    consumer, err := machimage.Open("synthetic-consumer", syntheticMachOConsumer)
+    if err != nil { return fail("读取函数调用库", err, -41) }
+    const providerBase uint64 = 0x00001000c0000000
+    const consumerBase uint64 = 0x00001000e0000000
+    providerFn, err := provider.Export("_ipadn_synthetic_answer", providerBase)
+    if err != nil { return fail("解析提供库符号", err, -42) }
+    entry, err := consumer.Export("_ipadn_synthetic_consumer", consumerBase)
+    if err != nil { return fail("解析调用库入口", err, -43) }
+    stop, err := consumer.Export("_ipadn_synthetic_consumer_stop", consumerBase)
+    if err != nil { return fail("解析调用库结束地址", err, -44) }
+    if entry >= stop || stop-entry > 128 {
+        report(fmt.Sprintf("调用入口异常：start=0x%x stop=0x%x", entry, stop))
+        return -45
+    }
+    if err = provider.Relocate(providerBase, func(name string) (uint64, error) {
+        return 0, fmt.Errorf("提供库有未知符号 %s", name)
+    }); err != nil { return fail("重定位提供库", err, -46) }
+    imports := 0
+    if err = consumer.Relocate(consumerBase, func(name string) (uint64, error) {
+        if name != "_ipadn_synthetic_answer" {
+            return 0, fmt.Errorf("未预期外部符号 %s", name)
+        }
+        imports++
+        return providerFn, nil
+    }); err != nil { return fail("跨镜像符号绑定", err, -47) }
+    if imports != 1 {
+        report(fmt.Sprintf("跨镜像符号绑定数量异常：%d", imports))
+        return -48
+    }
+    engine, err := unicorn.New(context.Background())
+    if err != nil { return fail("创建无 JIT 引擎", err, -49) }
+    defer engine.Close()
+    if err = provider.Load(engine); err != nil { return fail("加载提供库", err, -50) }
+    if err = consumer.Load(engine); err != nil { return fail("加载调用库", err, -51) }
+    if err = engine.MemMap(0x3ff000, 0x1000); err != nil {
+        return fail("映射 x86 调用栈", err, -52)
+    }
+    if err = engine.RegWrite(unicorn.RegRSP, 0x3fff00); err != nil {
+        return fail("设置 x86 调用栈", err, -53)
+    }
+    if err = engine.StartBounded(entry, stop, 500*time.Millisecond, 128); err != nil {
+        return fail("解释执行跨镜像函数调用", err, -54)
+    }
+    rax, err := engine.RegRead(unicorn.RegRAX)
+    if err != nil { return fail("读取 x86 计算结果", err, -55) }
+    if rax != 0x1244 {
+        report(fmt.Sprintf("跨镜像函数返回结果错误：RAX=0x%x，预期 0x1244", rax))
+        return -56
+    }
+    report(fmt.Sprintf("两份原创 Mach-O 动态库之间绑定、函数调用和返回成功；绑定次数=%d，RAX=0x%x；未加载 Apple StoreAgent", imports, rax))
+    return 0
+}
+
 //export iPadnMacTCIGuestMemoryProbe
 func iPadnMacTCIGuestMemoryProbe(output *C.char, capacity C.int32_t) C.int32_t {
     report := func(msg string) {
