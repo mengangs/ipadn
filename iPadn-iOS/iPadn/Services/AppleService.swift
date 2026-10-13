@@ -338,8 +338,11 @@ final class AppleService: ObservableObject {
         guard activeID == account.id else { throw ToolError.message("账号已切换，请重新加载购买记录") }
         let (items, _) = try await HTTPClient.shared.request(URL(string: base + "/databases/\(revision)/items")!,
             method: "POST", body: body, headers: itemHeaders, appleRedirects: true)
-        try DMAP.validate(items)
-        return try DMAP.ownedApps(items)
+        // Large accounts return megabytes of tags: parse off the main thread.
+        return try await Task.detached(priority: .userInitiated) {
+            try DMAP.validate(items)
+            return try DMAP.ownedApps(items)
+        }.value
     }
 
     private func authHeaders(_ account: AppleAccount) -> [String: String] {

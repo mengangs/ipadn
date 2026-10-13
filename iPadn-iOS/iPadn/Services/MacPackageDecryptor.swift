@@ -67,7 +67,45 @@ enum MacPackageDecryptor {
         return (stage, bytes)
     }
 
-    static func cancel() { cancelFunction?() }
+    // The bridge processes one package at a time and reports one global
+    // status. Jobs therefore queue here, on a dedicated thread (the call
+    // blocks for minutes and must not hold a Swift concurrency thread), and
+    // the status belongs only to the job recorded as current.
+    private static let queue = DispatchQueue(label: "iPadn.mac-package", qos: .userInitiated)
+    private static let lock = NSLock()
+    private static var current: UUID?
+    private static var cancelled = Set<UUID>()
+
+    /// The job whose package is being processed right now, if any.
+    static var currentJob: UUID? { lock.lock(); defer { lock.unlock() }; return current }
+
+    /// Queues the job and waits for its turn; throws CancellationError if it
+    /// is cancelled while waiting or while being processed.
+    static func process(job: UUID, hardwareID: String, dpInfo: Data, from source: URL, to destination: URL) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            queue.async {
+                lock.lock()
+                let skip = cancelled.remove(job) != nil
+                if !skip { current = job }
+                lock.unlock()
+                if skip { continuation.resume(throwing: CancellationError()); return }
+                defer { lock.lock(); current = nil; cancelled.remove(job); lock.unlock() }
+                do {
+                    try decrypt(hardwareID: hardwareID, dpInfo: dpInfo, from: source, to: destination)
+                    continuation.resume()
+                } catch { continuation.resume(throwing: error) }
+            }
+        }
+    }
+
+    /// Cancels a job that is waiting or being processed.
+    static func cancel(job: UUID) {
+        lock.lock()
+        let running = current == job
+        if !running { cancelled.insert(job) }
+        lock.unlock()
+        if running { cancelFunction?() }
+    }
 }
 
 // dpInfo is account- and device-bound key material for one download. It is

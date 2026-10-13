@@ -373,6 +373,10 @@ struct DownloadTaskRow: View {
         case .queued:
             Button(action: primary) { ProgressRing(progress: nil) }
                 .buttonStyle(.borderless).accessibilityLabel("等待下载，点按暂停")
+        case .processing where job.protectedMacPackage == true:
+            // Mac packages can take minutes to process; let the user stop it.
+            RowCapsule(title: "取消") { manager.cancelProcessing(job.id) }
+                .accessibilityLabel("取消处理")
         case .pausing, .processing:
             ProgressView().frame(width: 44, height: 44)
         case .paused:
