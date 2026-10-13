@@ -22,12 +22,15 @@ echo "$UNICORN_SHA256  unicorn.tar.gz" | shasum -a 256 -c -
 tar -xzf unicorn.tar.gz
 patch -d unicorn-2.1.4 -p1 < upstream/tools/patches/unicorn-ios.patch
 
+# Unicorn's build target is the emulated guest CPU (x86). It is NOT the
+# native iPhone executable architecture (arm64, set above). See ipatool's
+# own tools/build-ios.sh for matching UNICORN_ARCH=x86.
 cmake -S unicorn-2.1.4 -B unicorn-build \
   -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT="$SDKROOT" \
   -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
   -DCMAKE_C_FLAGS="-target arm64-apple-ios15.0" \
   -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
-  -DUNICORN_ARCH=arm64 -DUNICORN_BUILD_TESTS=OFF -DUNICORN_INSTALL=OFF
+  -DUNICORN_ARCH=x86 -DUNICORN_BUILD_TESTS=OFF -DUNICORN_INSTALL=OFF
 cmake --build unicorn-build --parallel 4
 test -s unicorn-build/libunicorn.a
 
@@ -37,18 +40,46 @@ package main
 
 /*
 #include <stdint.h>
+#include <stdbool.h>
+extern unsigned int uc_version(unsigned int *major, unsigned int *minor);
+extern bool uc_arch_supported(int arch);
 */
 import "C"
 import (
     "context"
+    "fmt"
+    "unsafe"
+
     "github.com/majd/ipatool/v2/internal/sap/unicorn"
 )
 
+func storeError(out *C.char, capacity C.int32_t, message string) {
+    if out == nil || capacity < 2 || capacity > 4096 { return }
+    buf := unsafe.Slice((*byte)(unsafe.Pointer(out)), int(capacity))
+    copied := copy(buf[:len(buf)-1], message)
+    buf[copied] = 0
+}
+
 //export iPadnMacUnicornProbe
-func iPadnMacUnicornProbe() C.int32_t {
+func iPadnMacUnicornProbe(out *C.char, capacity C.int32_t) C.int32_t {
+    // The *host binary* must be iPhoneOS arm64, but the *guest ISA* here
+    // must be x86-64, as used by Apple's Mac StoreAgent.
+    var major, minor C.uint
+    C.uc_version(&major, &minor)
+    if C.uc_arch_supported(4) == C.bool(false) { // UC_ARCH_X86 = 4
+        storeError(out, capacity, fmt.Sprintf(
+            "已链接 Unicorn %d.%d，但不包含 x86-64 模拟目标。", uint32(major), uint32(minor)))
+        return -2
+    }
     engine, err := unicorn.New(context.Background())
-    if err != nil { return -1 }
+    if err != nil {
+        storeError(out, capacity, fmt.Sprintf("Unicorn %d.%d / x86-64: %v",
+            uint32(major), uint32(minor), err))
+        return -1
+    }
     defer engine.Close()
+    storeError(out, capacity, fmt.Sprintf("Unicorn %d.%d / x86-64 初始化成功",
+        uint32(major), uint32(minor)))
     return 0
 }
 func main() {}
@@ -68,8 +99,11 @@ xcrun nm -g "$WORKDIR/out/libipadnMacBridge.a" | grep "iPadnMacUnicornProbe"
 # by a standard iOS application (not just built as a jailbroken CLI).
 cat > "$WORKDIR/probe.m" <<'OBJC'
 #include <stdint.h>
-extern int32_t iPadnMacUnicornProbe(void);
-int main(void) { return (int)iPadnMacUnicornProbe(); }
+extern int32_t iPadnMacUnicornProbe(char *error, int32_t capacity);
+int main(void) {
+    char diagnostic[512] = {0};
+    return (int)iPadnMacUnicornProbe(diagnostic, (int32_t)sizeof(diagnostic));
+}
 OBJC
 "$CC" -target arm64-apple-ios15.0 -isysroot "$SDKROOT" \
   "$WORKDIR/probe.m" "$WORKDIR/out/libipadnMacBridge.a" \
