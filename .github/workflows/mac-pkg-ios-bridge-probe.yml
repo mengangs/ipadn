@@ -9,6 +9,7 @@ on:
       - 'iPadn-iOS/scripts/probe_mac_pkg_ios_tci.sh'
       - 'iPadn-iOS/scripts/probe_mac_pkg_tci_go_bridge.sh'
       - 'iPadn-iOS/scripts/mac_pkg_tci_probe.m'
+      - 'iPadn-iOS/scripts/mac_pkg_tci_host_smoke.c'
       - '.github/workflows/mac-pkg-ios-bridge-probe.yml'
   workflow_dispatch:
 
@@ -57,6 +58,20 @@ jobs:
           cmake --version
       - name: Build no-JIT TCI interpreter and unsigned iPhone test IPA
         run: bash iPadn-iOS/scripts/probe_mac_pkg_ios_tci.sh
+      - name: Run native macOS TCI StoreAgent-style memory and code-hook regression
+        run: |
+          set -euo pipefail
+          ROOT="${RUNNER_TEMP}/ipadn-macpkg-tci-probe"
+          cmake -S "$ROOT/source" -B "$ROOT/build-host" \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+            -DUNICORN_ARCH=x86 -DUNICORN_INTERPRETER=ON \
+            -DUNICORN_BUILD_TESTS=OFF -DUNICORN_INSTALL=OFF
+          cmake --build "$ROOT/build-host" --parallel 4
+          clang -I"$ROOT/source/include" \
+            iPadn-iOS/scripts/mac_pkg_tci_host_smoke.c \
+            -Wl,-force_load,"$ROOT/build-host/libunicorn.a" \
+            -liconv -lz -lc++ -o "$ROOT/out/MacPKGTCIHostSmoke"
+          "$ROOT/out/MacPKGTCIHostSmoke"
       - name: Static-link ipatool Go StoreAgent against no-JIT TCI for iPhoneOS
         run: bash iPadn-iOS/scripts/probe_mac_pkg_tci_go_bridge.sh
       - name: Upload standalone no-JIT iPhone IPA
