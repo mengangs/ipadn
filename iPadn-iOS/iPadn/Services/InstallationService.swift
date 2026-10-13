@@ -25,22 +25,22 @@ final class InstallationService: ObservableObject {
         }
         return url
     }
-    /// One-tap installation: no profile, certificate or server to configure.
+    /// One-tap installation. installd only requires the *manifest* to be
+    /// HTTPS; the package itself may come over plain HTTP. The IPA is served
+    /// from this device on 127.0.0.1 and a public manifest generator returns
+    /// a manifest pointing at it, so no certificate, profile or server setup
+    /// is needed. Only name, bundle ID, version and the local URL leave the
+    /// device; the IPA never does.
     func automaticInstallURL(job: DownloadJob, file: URL) async throws -> URL {
-        let (certificate, host) = try await LoopbackCertificate.current()
-        guard await LoopbackCertificate.resolvesToLoopback(host) else {
-            throw ToolError.message("当前网络的 DNS 拦截了本机安装地址（\(host)）。请切换 Wi-Fi 或蜂窝网络后重试，或在安装设置中改用本机证书。")
-        }
-        let server = LoopbackServer(identity: certificate.identity, certificates: certificate.certificates, publicHost: host)
+        let server = LoopbackServer()
         try await server.start()
         let packageURL = try server.register(file)
-        let data = try ManifestBuilder.manifest(app: job.app, packageURL: packageURL)
-        let manifestURL = try server.register(data: data, contentType: "application/xml")
+        let url = try ManifestBuilder.externalInstallURL(app: job.app, packageURL: packageURL)
         stopHosting(); localFiles = server; isHosting = true
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "iPadn installation") { [weak self] in
             Task { @MainActor in self?.stopHosting() }
         }
-        return try ManifestBuilder.systemURL(manifestURL: manifestURL)
+        return url
     }
 
     func localInstallURL(job: DownloadJob, file: URL, host: String) async throws -> URL {
@@ -98,6 +98,32 @@ enum ManifestBuilder {
                          "kind": "software", "title": app.name]
         ]]], format: .xml, options: 0)
     }
+    static let manifestGenerator = "https://api.palera.in/genPlist"
+
+    /// RFC 3986 unreserved characters only (ASCII), so '&', '=' and non-ASCII
+    /// text survive being nested inside another URL's query.
+    private static let strictQuery = CharacterSet(charactersIn:
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+
+    static func externalInstallURL(app: StoreApp, packageURL: URL) throws -> URL {
+        guard !app.bundleID.isEmpty, !app.version.isEmpty else {
+            throw ToolError.message("安装包缺少 Bundle ID 或版本号")
+        }
+        guard let scheme = packageURL.scheme, ["http", "https"].contains(scheme),
+              packageURL.host != nil, packageURL.user == nil, packageURL.password == nil else {
+            throw ToolError.message("本机安装地址无效")
+        }
+        func encode(_ value: String) -> String { value.addingPercentEncoding(withAllowedCharacters: strictQuery) ?? "" }
+        let query = [("bundleid", app.bundleID), ("name", app.name.isEmpty ? app.bundleID : app.name),
+                     ("version", app.version), ("fetchurl", packageURL.absoluteString)]
+            .map { "\($0.0)=\(encode($0.1))" }.joined(separator: "&")
+        guard let manifest = URL(string: manifestGenerator + "?" + query),
+              let url = URL(string: "itms-services://?action=download-manifest&url=" + encode(manifest.absoluteString)) else {
+            throw ToolError.message("无法生成安装链接")
+        }
+        return url
+    }
+
     static func systemURL(manifestURL: URL) throws -> URL {
         guard manifestURL.scheme == "https", manifestURL.host != nil, manifestURL.user == nil, manifestURL.password == nil else {
             throw ToolError.message("安装清单必须使用 HTTPS")

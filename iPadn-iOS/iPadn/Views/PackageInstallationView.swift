@@ -50,8 +50,8 @@ struct PackageInstallationView: View {
                     }.accessibilityIdentifier("installation.settings")
                 } footer: {
                     Text(store.settings.automaticInstallation
-                         ? "iPadn 在本机提供安装文件，无需描述文件或服务器；首次使用需联网获取公共安装证书。安装期间请保持 iPadn 运行，系统会校验 IPA 签名与账号授权。"
-                         : "本机证书方式首次需安装并信任描述文件；代理方式需要清单服务与规则。系统会校验 IPA 签名与账号授权。")
+                         ? "IPA 由 iPadn 在本机提供，无需描述文件或服务器；安装清单由公共清单服务生成（需联网）。安装期间请保持 iPadn 运行，系统会校验 IPA 签名与账号授权。"
+                         : "本机证书方式需先在「安装方式」中安装描述文件，并在「设置 → 通用 → 关于本机 → 证书信任设置」中完全信任，否则系统会提示无法连接 127.0.0.1；代理方式需要清单服务与规则。")
                 }
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }

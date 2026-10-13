@@ -82,27 +82,6 @@ enum LocalInstallationIdentityFactory {
         return DER.sequence([DER.integer(Data([3])), contentInfo(safe), macData])
     }
 
-    /// PKCS#8 PrivateKeyInfo from a PEM private key: PKCS#8, PKCS#1 RSA or SEC1 EC.
-    static func privateKeyInfo(pem: String) throws -> Data {
-        guard let block = PEM.blocks(pem).first(where: { $0.label.hasSuffix("PRIVATE KEY") }) else {
-            throw ToolError.message("证书包缺少私钥")
-        }
-        switch block.label {
-        case "PRIVATE KEY": return block.der
-        case "RSA PRIVATE KEY": return DER.sequence([DER.integer(Data([0])), rsaAlgorithm, DER.value(0x04, block.der)])
-        case "EC PRIVATE KEY":
-            // ECPrivateKey ::= SEQUENCE { version, privateKey, [0] parameters (curve OID), [1] publicKey }
-            guard let curve = DER.contextChild(block.der, tag: 0xa0) else { throw ToolError.message("EC 私钥缺少曲线参数") }
-            let algorithm = DER.sequence([DER.oid("1.2.840.10045.2.1"), curve])
-            return DER.sequence([DER.integer(Data([0])), algorithm, DER.value(0x04, block.der)])
-        default: throw ToolError.message("不支持的私钥格式：\(block.label)")
-        }
-    }
-
-    static func certificates(pem: String) -> [Data] {
-        PEM.blocks(pem).filter { $0.label == "CERTIFICATE" }.map(\.der)
-    }
-
     private static func key() throws -> SecKey {
         var error: Unmanaged<CFError>?
         guard let key = SecKeyCreateRandomKey([kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
@@ -219,54 +198,7 @@ enum LocalInstallationIdentityFactory {
     }
 }
 
-enum PEM {
-    struct Block { let label: String; let der: Data }
-    static func blocks(_ text: String) -> [Block] {
-        var result: [Block] = []
-        var label: String?
-        var body = ""
-        for raw in text.components(separatedBy: .newlines) {
-            let line = raw.trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("-----BEGIN "), line.hasSuffix("-----") {
-                label = String(line.dropFirst(11).dropLast(5)); body = ""
-            } else if line.hasPrefix("-----END "), let current = label {
-                if let der = Data(base64Encoded: body) { result.append(Block(label: current, der: der)) }
-                label = nil
-            } else if label != nil {
-                body += line
-            }
-        }
-        return result
-    }
-}
-
 private enum DER {
-    /// Full TLV of the first element inside a context-specific constructed
-    /// child (e.g. [0]) of a top-level SEQUENCE.
-    static func contextChild(_ data: Data, tag: UInt8) -> Data? {
-        let bytes = [UInt8](data)
-        func header(_ at: Int) -> (contentStart: Int, length: Int)? {
-            guard at + 1 < bytes.count else { return nil }
-            let first = Int(bytes[at + 1])
-            if first < 0x80 { return (at + 2, first) }
-            let count = first & 0x7f
-            guard count > 0, count <= 4, at + 2 + count <= bytes.count else { return nil }
-            let length = bytes[(at + 2)..<(at + 2 + count)].reduce(0) { ($0 << 8) | Int($1) }
-            return (at + 2 + count, length)
-        }
-        guard bytes.first == 0x30, let outer = header(0) else { return nil }
-        var index = outer.contentStart
-        while index < min(bytes.count, outer.contentStart + outer.length), let item = header(index) {
-            if bytes[index] == tag, let inner = header(item.contentStart) {
-                let end = inner.contentStart + inner.length
-                guard end <= bytes.count else { return nil }
-                return Data(bytes[item.contentStart..<end])
-            }
-            index = item.contentStart + item.length
-        }
-        return nil
-    }
-
     static func value(_ tag: UInt8, _ content: Data) -> Data {
         var length = Data()
         if content.count < 128 { length.append(UInt8(content.count)) }

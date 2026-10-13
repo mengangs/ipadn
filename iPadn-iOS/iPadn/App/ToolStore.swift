@@ -95,6 +95,13 @@ final class ToolStore: ObservableObject {
                 // Searching an App ID should work even if saved Apple credentials expired.
                 let accountCountry = StoreService.country(forStorefront: apple.active?.storeFront ?? "")
                 var apps = try await StoreService.search(query, store: context, limit: limit, accountCountry: accountCountry)
+                if case .appID(let appID, _) = query, apps.isEmpty {
+                    // Delisted or region-limited apps have no public listing;
+                    // the account may still own them, so keep the ID usable.
+                    var fallback = knownApp(appID) ?? StoreApp(id: appID, name: "App \(appID)", price: "")
+                    if fallback.category.isEmpty { fallback.category = "未在公开商店找到" }
+                    apps = [fallback]
+                }
                 if case .appID(_, let versionID) = query, let versionID {
                     apps = apps.map {
                         var result = $0
@@ -111,6 +118,7 @@ final class ToolStore: ObservableObject {
                 appCatalog[key] = Array(AppSearchIndex.unique(apps + (appCatalog[key] ?? [])).prefix(1000))
                 try? LocalResources.save(appCatalog, filename: "app-catalog.json")
                 remember(input)
+                await fillMissingArtwork(searchID: id, store: context, accountCountry: accountCountry)
             } catch is CancellationError { }
             catch {
                 if !Task.isCancelled, searchID == id {
@@ -119,6 +127,33 @@ final class ToolStore: ObservableObject {
             }
         }
     }
+    private func knownApp(_ id: String) -> StoreApp? {
+        let known = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app)
+            + appCatalog.values.flatMap { $0 } + nameCatalog.map(\.app)
+        return known.first { $0.id == id }
+    }
+
+    /// Results from local records or other regions can lack artwork; look it
+    /// up across storefronts (artwork is public even when the app is not
+    /// available to the signed-in account's region).
+    private func fillMissingArtwork(searchID id: UUID, store context: StoreContext, accountCountry: String?) async {
+        let missing = Array(Set((results + localResults)
+            .filter { $0.iconURL == nil && !$0.id.isEmpty && $0.id.allSatisfy({ $0.isASCII && $0.isNumber }) }
+            .map(\.id))).prefix(50)
+        guard !missing.isEmpty,
+              let icons = try? await StoreService.artwork(Array(missing), store: context, accountCountry: accountCountry),
+              !icons.isEmpty, searchID == id else { return }
+        func filled(_ apps: [StoreApp]) -> [StoreApp] {
+            apps.map { app in
+                var app = app
+                if app.iconURL == nil { app.iconURL = icons[app.id] }
+                return app
+            }
+        }
+        results = filled(results)
+        localResults = filled(localResults)
+    }
+
     private func updateLocalResults(for input: String? = nil) {
         guard case .keyword(let term)? = try? SearchQuery.parse(input ?? lastSearchTerm) else { return }
         let known = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app) + (appCatalog[settings.store.platform.rawValue] ?? [])

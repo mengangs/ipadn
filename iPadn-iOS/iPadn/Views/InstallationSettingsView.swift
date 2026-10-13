@@ -37,9 +37,9 @@ struct InstallationSettingsView: View {
             if store.settings.automaticInstallation {
                 Section {
                     Label("无需安装描述文件、证书或配置服务器", systemImage: "checkmark.seal")
-                    Label("清单和 IPA 都由本机 iPadn 提供", systemImage: "iphone")
+                    Label("IPA 只在本机传输，不会上传", systemImage: "iphone")
                 } header: { Text("一键安装（推荐）") } footer: {
-                    Text("iPadn 在本机启动 HTTPS 服务，使用 backloop.dev 公开的开发证书（该域名始终指向本机 127.0.0.1），系统可直接信任。首次使用需联网获取证书，过期后自动更新。若所在网络的 DNS 拦截指向本机的域名，请切换网络或改用本机证书。请求安装后请保持 iPadn 运行。")
+                    Text("iPadn 在本机 127.0.0.1 提供 IPA，系统安装所需的 HTTPS 清单由公共清单服务（api.palera.in）生成，只会发送应用名称、Bundle ID、版本和本机地址。请求安装时需要联网；安装期间请保持 iPadn 运行。")
                 }
             } else if store.settings.localInstallation {
                 Section {

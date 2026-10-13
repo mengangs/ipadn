@@ -81,8 +81,29 @@ enum StoreService {
         return Array(merged.prefix(max(0, limit)))
     }
 
+    /// Storefronts tried, in order, when an App ID is not listed in the
+    /// selected or account region (apps are often region-limited).
+    static let fallbackCountries = ["US", "CN", "HK", "TW", "JP", "GB", "SG", "CA", "AU", "KR", "DE", "FR"]
+
     static func search(_ query: SearchQuery, store: StoreContext, limit: Int,
                        accountCountry: String? = nil) async throws -> [StoreApp] {
+        if case .appID = query {
+            var tried = Set<String>()
+            var firstError: Error?
+            for country in searchCountries(selected: store.country, accountCountry: accountCountry) + fallbackCountries
+            where tried.insert(country).inserted {
+                try Task.checkCancellation()
+                var regional = store
+                regional.country = country
+                do {
+                    let apps = try await searchInCountry(query, store: regional, limit: limit)
+                    if !apps.isEmpty { return apps }
+                } catch is CancellationError { throw CancellationError() }
+                catch { if firstError == nil { firstError = error } }
+            }
+            if let firstError, tried.count == 1 { throw firstError }
+            return []
+        }
         let primary = try await searchInCountry(query, store: store, limit: limit)
         let countries = searchCountries(selected: store.country, accountCountry: accountCountry)
         guard countries.count > 1 else { return primary }
@@ -198,7 +219,9 @@ enum StoreService {
 
     static func artworkCountries(selected: String, accountCountry: String?) -> [String] {
         var countries = searchCountries(selected: accountCountry ?? selected, accountCountry: selected)
-        if !countries.contains("US") { countries.append("US") }
+        // Artwork is public: look in other storefronts when the app is not
+        // listed in the account's or selected region.
+        for country in fallbackCountries where !countries.contains(country) { countries.append(country) }
         return countries
     }
 

@@ -1,12 +1,12 @@
 import SwiftUI
 import UIKit
 
-// Visual language modeled on the App Store: system blue accent, grouped
-// backgrounds, capsule action buttons, ring progress and large titles.
+// Visual language modeled on the App Store with the iPadn monochrome accent:
+// grouped backgrounds, capsule action buttons, ring progress, large titles.
 enum UX {
     static let tint = Color.accentColor
     static let buttonTint = Color.accentColor
-    static let onAccent = Color.white
+    static let onAccent = Color(uiColor: .systemBackground)
     static let iconCorner: CGFloat = 0.2237
     static func feedback() { UISelectionFeedbackGenerator().selectionChanged() }
     static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }

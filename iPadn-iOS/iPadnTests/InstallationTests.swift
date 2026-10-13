@@ -49,24 +49,22 @@ final class InstallationTests: XCTestCase {
         XCTAssertEqual(payloads.first?["PayloadContent"] as? Data, first.rootCertificate)
         XCTAssertNil(profile.range(of: first.pkcs12))
     }
-    // Self-signed, test-only EC certificate for *.example.test in the
-    // backloop.dev pack.json layout (key split into key1/key2).
-    private static let testPack = #"""
-{"cert": "-----BEGIN CERTIFICATE-----\nMIIBojCCAUigAwIBAgIUa9M+t9AOT3QwbN8oElRFfSRO90gwCgYIKoZIzj0EAwIw\nGTEXMBUGA1UEAwwOKi5leGFtcGxlLnRlc3QwHhcNMjYxMDEzMTIwMjU0WhcNMzYx\nMDEwMTIwMjU0WjAZMRcwFQYDVQQDDA4qLmV4YW1wbGUudGVzdDBZMBMGByqGSM49\nAgEGCCqGSM49AwEHA0IABJEHss/wGyfXENK8yO9p0sEx1S4ZwNgwwMkxhZaHCOri\nwdS6Xj2ZdTYhL7BCdGJxPJ8/E8CL7/8O8tbOEo2DidqjbjBsMB0GA1UdDgQWBBQE\n70TQogRjDiNZKf3BkjV76DfcFDAfBgNVHSMEGDAWgBQE70TQogRjDiNZKf3BkjV7\n6DfcFDAPBgNVHRMBAf8EBTADAQH/MBkGA1UdEQQSMBCCDiouZXhhbXBsZS50ZXN0\nMAoGCCqGSM49BAMCA0gAMEUCIFJ2ulCI5/xJynHPiALB0zPBdss3HyuagMG96KX5\nW5NiAiEAsXBsYubNKb2XA2yvNmEJ9SV9+azPmAAh7ibVpuMU5C4=\n-----END CERTIFICATE-----\n", "ca": "", "key1": "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIKSMdi2Uuw2VJcX2lBDwz/VOkwrEku8akYF64Dru/UZkoAoGCCqGSM49\nAwEHoUQDQgAEkQeyz", "key2": "/AbJ9cQ0rzI72nSwTHVLhnA2DDAyTGFlocI6uLB1LpePZl1\nNiEvsEJ0YnE8nz8TwIvv/w7y1s4SjYOJ2g==\n-----END EC PRIVATE KEY-----\n", "info": {"issuer": {"commonName": "test"}, "domains": {"commonName": "*.example.test"}}}
-"""#
-
-    func testLoopbackCertificatePackBuildsAnImportableIdentity() throws {
-        let pack = try LoopbackCertificate.parse(Data(Self.testPack.utf8))
-        XCTAssertEqual(pack.host, "ipadn.example.test")
-        let certificates = LocalInstallationIdentityFactory.certificates(pem: pack.certificatePEM)
-        XCTAssertEqual(certificates.count, 1)
-        let keyInfo = try LocalInstallationIdentityFactory.privateKeyInfo(pem: pack.keyPEM)
-        let pfx = try LocalInstallationIdentityFactory.pkcs12(privateKeyInfo: keyInfo, certificates: certificates, password: "pw")
-        let identity = try InstallationCertificate.importPKCS12(pfx, password: "pw")
-        XCTAssertEqual(identity.certificates.count, 1)
-        // Self-signed: must not pass system trust, so it would be re-fetched.
-        XCTAssertThrowsError(try identity.validate(host: pack.host))
-        XCTAssertThrowsError(try LoopbackCertificate.parse(Data("{}".utf8)))
+    func testOneTapInstallLinkNestsManifestAndLocalPackageURL() throws {
+        let app = StoreApp(id: "1", name: "应用 & Test", bundleID: "test.app", version: "1.2")
+        let package = URL(string: "http://127.0.0.1:5123/token/files/key/%E5%BA%94%E7%94%A8.ipa")!
+        let link = try ManifestBuilder.externalInstallURL(app: app, packageURL: package)
+        XCTAssertEqual(link.scheme, "itms-services")
+        let outer = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(outer.queryItems?.first(where: { $0.name == "action" })?.value, "download-manifest")
+        XCTAssertEqual(outer.queryItems?.count, 2, "the manifest URL must not leak into separate parameters")
+        let manifest = try XCTUnwrap(URL(string: try XCTUnwrap(outer.queryItems?.first(where: { $0.name == "url" })?.value)))
+        XCTAssertEqual(manifest.scheme, "https")
+        let inner = try XCTUnwrap(URLComponents(url: manifest, resolvingAgainstBaseURL: false)).queryItems ?? []
+        XCTAssertEqual(inner.first(where: { $0.name == "fetchurl" })?.value, package.absoluteString)
+        XCTAssertEqual(inner.first(where: { $0.name == "name" })?.value, app.name)
+        XCTAssertEqual(inner.first(where: { $0.name == "bundleid" })?.value, "test.app")
+        XCTAssertThrowsError(try ManifestBuilder.externalInstallURL(
+            app: StoreApp(id: "2", name: "x"), packageURL: package))
     }
 
     func testPKCS12KeyDerivationMatchesPublishedVectors() {

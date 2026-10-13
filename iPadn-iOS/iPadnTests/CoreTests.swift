@@ -500,8 +500,11 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(StoreService.country(forStorefront: "unknown"))
         XCTAssertEqual(StoreService.searchCountries(selected: "CN", accountCountry: "US"), ["CN", "US"])
         XCTAssertEqual(StoreService.searchCountries(selected: "US", accountCountry: "US"), ["US"])
-        XCTAssertEqual(StoreService.artworkCountries(selected: "CN", accountCountry: "US"), ["US", "CN"])
-        XCTAssertEqual(StoreService.artworkCountries(selected: "JP", accountCountry: "CN"), ["CN", "JP", "US"])
+        XCTAssertEqual(Array(StoreService.artworkCountries(selected: "CN", accountCountry: "US").prefix(3)), ["US", "CN", "HK"])
+        XCTAssertEqual(Array(StoreService.artworkCountries(selected: "JP", accountCountry: "CN").prefix(3)), ["CN", "JP", "US"])
+        let all = StoreService.artworkCountries(selected: "JP", accountCountry: "CN")
+        XCTAssertEqual(all.count, Set(all).count)
+        XCTAssertTrue(all.contains("FR"))
 
         let regional = (1...4).map { StoreApp(id: String($0), name: "Regional \($0)") }
         let usArtwork = URL(string: "https://example.com/2.png")!
