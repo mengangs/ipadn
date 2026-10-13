@@ -51,6 +51,7 @@ final class ToolStore: ObservableObject {
     private var searchID = UUID()
     private var ownedByAccount: [String: [OwnedApp]] = [:]
     private var subscriptions = Set<AnyCancellable>()
+    private var lastAccountID: String?
 
     init(downloadManager: DownloadManager? = nil) {
         downloads = downloadManager ?? DownloadManager()
@@ -72,6 +73,11 @@ final class ToolStore: ObservableObject {
             self.ownedError = nil
             self.owned = id.flatMap { self.ownedByAccount[$0] } ?? []
             self.updateLocalResults()
+        }.store(in: &subscriptions)
+        // A switch, sign-in or sign-out (not the restored account at launch).
+        lastAccountID = apple.activeID
+        apple.$activeID.dropFirst().removeDuplicates().sink { [weak self] id in
+            Task { @MainActor in self?.accountChanged(to: id) }
         }.store(in: &subscriptions)
     }
 
@@ -199,6 +205,27 @@ final class ToolStore: ObservableObject {
         } catch { } // Bundled and cached names remain searchable without a connection.
     }
 
+    /// Follow the new account: confirm the change, show its own storefront
+    /// (the region can still be changed by hand afterwards) and sync its
+    /// purchases in the background.
+    private func accountChanged(to id: String?) {
+        let previous = lastAccountID
+        lastAccountID = id
+        guard let id, let account = apple.accounts.first(where: { $0.id == id }) else {
+            // Removing the signed-in account reports its own confirmation.
+            if let previous, apple.accounts.contains(where: { $0.id == previous }) { infoMessage = "已退出登录" }
+            return
+        }
+        infoMessage = "已切换到 " + (account.name.isEmpty ? account.id : account.name)
+        if let country = StoreService.country(forStorefront: account.storeFront), settings.store.country != country {
+            settings.store.country = country
+        }
+        #if DEBUG
+        if visualPreview { return }
+        #endif
+        Task { await refreshOwned() }
+    }
+
     func ensureOwnedLoaded() async {
         #if DEBUG
         if visualPreview { return }
@@ -299,7 +326,8 @@ final class ToolStore: ObservableObject {
         ownedLoading = true; ownedError = nil
         defer {
             ownedLoading = false
-            if apple.activeID != id { Task { await self.ensureOwnedLoaded() } }
+            // The account changed mid-sync: sync the new one now.
+            if apple.activeID != id, apple.activeID != nil { Task { await self.refreshOwned() } }
         }
         do {
             let apps = try await apple.ownedApps(useCache: settings.useSignerCache)

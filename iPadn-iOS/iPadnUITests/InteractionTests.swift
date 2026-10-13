@@ -20,7 +20,7 @@ final class InteractionTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--visual-preview", "--downloads"]
         app.launch()
-        let size = app.staticTexts["download.size.preview-1"].firstMatch
+        let size = app.descendants(matching: .any)["download.size.preview-1"].firstMatch
         let icon = app.descendants(matching: .any)["download.platform.IPA"].firstMatch
         XCTAssertTrue(size.waitForExistence(timeout: 10))
         XCTAssertTrue(icon.waitForExistence(timeout: 10))

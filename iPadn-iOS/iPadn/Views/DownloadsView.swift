@@ -311,14 +311,12 @@ struct DownloadTaskRow: View {
                 Text(displayedApp.name).font(.body.weight(.medium)).lineLimit(2)
                 HStack(spacing: 6) {
                     platformIcon
-                    if !displayedApp.version.isEmpty {
-                        Text("v\(displayedApp.version)").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    if displayedApp.size > 0 {
-                        Text(displayedApp.size.byteLabel)
-                            .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                            .accessibilityIdentifier("download.size." + job.app.id)
-                    }
+                    // Version and size scroll once in place when the row is too narrow.
+                    MarqueeText(text: [displayedApp.version.isEmpty ? "" : "v\(displayedApp.version)",
+                                       displayedApp.size > 0 ? displayedApp.size.byteLabel : ""]
+                                    .filter { !$0.isEmpty }.joined(separator: " · "))
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("download.size." + job.app.id)
                 }
                 statusLine
             }

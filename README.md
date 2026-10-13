@@ -127,4 +127,8 @@ Apple 只允许下载你的账号拥有许可的应用。版本也可能已经�
 - [自行编译](iPadn-iOS/BUILDING.md)
 - [第三方组件与许可](iPadn-iOS/THIRD_PARTY_NOTICES.md)
 
+## 许可证
+
+iPadn 以 [GPL-2.0-or-later](LICENSE) 发布：你可以自由使用、修改和再分发，分发修改版时需要同样开放源代码。
+
 <sub>iPadn 与 Apple Inc. 无关。请只下载你拥有合法许可的应用。</sub>

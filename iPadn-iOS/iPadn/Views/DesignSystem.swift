@@ -357,3 +357,48 @@ struct ToolPageStyle: ViewModifier {
     }
 }
 extension View { func toolPage() -> some View { modifier(ToolPageStyle()) } }
+
+/// One line of text that, when it does not fit, scrolls once in place to
+/// reveal the rest and returns, instead of being cut off with an ellipsis.
+struct MarqueeText: View {
+    let text: String
+    var font: Font = .subheadline
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var textWidth: CGFloat = 0
+    @State private var boxWidth: CGFloat = 0
+    @State private var offset: CGFloat = 0
+    private var overflow: CGFloat { max(0, textWidth - boxWidth) }
+    var body: some View {
+        // The hidden copy sets the line height and takes the available width.
+        Text(text).font(font).lineLimit(1).hidden()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .leading) {
+                Text(text).font(font).lineLimit(1).fixedSize()
+                    .offset(x: offset)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { textWidth = $0 }
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { boxWidth = $0 }
+            .clipped()
+            .mask {
+                HStack(spacing: 0) {
+                    Rectangle()
+                    if overflow > 0 {
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 14)
+                    }
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(text)
+            .accessibilityAddTraits(.isStaticText)
+            .task(id: overflow) {
+                offset = 0
+                guard overflow > 1, !reduceMotion else { return }
+                do {
+                    try await Task.sleep(for: .milliseconds(900))
+                    withAnimation(.easeInOut(duration: max(0.8, Double(overflow) / 35))) { offset = -overflow - 14 }
+                    try await Task.sleep(for: .milliseconds(Int(max(0.8, Double(overflow) / 35) * 1000) + 1200))
+                    withAnimation(.easeInOut(duration: 0.45)) { offset = 0 }
+                } catch { offset = 0 }
+            }
+    }
+}
