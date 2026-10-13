@@ -264,16 +264,27 @@ final class AppleService: ObservableObject {
         }
         try Task.checkCancellation()
         guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
-        let sync = try await signer.kbsync(guid: guid, dsid: account.dsid, useCache: useCache)
+        let deviceID = guid
+        guard let serial = MacPackageOffer.serialNumber(guid: deviceID) else {
+            throw ToolError.message("设备标识无效，请重新登录")
+        }
+        let sync = try await signer.kbsync(guid: deviceID, dsid: account.dsid, useCache: useCache)
+        // Same ent/download request as ipatool's Mac path: the serial number is
+        // derived from the GUID that also seeds kbsync and later the StoreAgent
+        // dpInfo session, so all three refer to one hardware identity.
         let payload: [String: Any] = [
-            "guid": guid, "salableAdamId": NSNumber(value: appNumber),
-            "serialNumber": "0", "creditDisplay": "",
+            "guid": deviceID, "salableAdamId": String(appNumber),
+            "serialNumber": serial, "creditDisplay": "",
             "externalVersionId": versionID, "kbsync": sync
         ]
+        var headers = authHeaders(account)
+        headers["Content-Type"] = "application/x-www-form-urlencoded; charset=utf-8"
+        headers["X-Apple-Store-Front"] = account.fullStoreFront.isEmpty ? account.storeFront : account.fullStoreFront
+        headers["X-Token"] = account.passwordToken
         let endpoint = URL(string:
-            "https://downloaddispatch.itunes.apple.com/WebObjects/DownloadDispatch.woa/wa/ent/download?guid=" + guid)!
+            "https://downloaddispatch.itunes.apple.com/WebObjects/DownloadDispatch.woa/wa/ent/download?guid=" + deviceID)!
         let (raw, _) = try await HTTPClient.shared.plist(endpoint,
-            body: HTTPClient.encodePlist(payload), headers: authHeaders(account))
+            body: HTTPClient.encodePlist(payload), headers: headers)
         try Task.checkCancellation()
         guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
@@ -339,6 +350,24 @@ struct MacPackageOffer {
     let versionID: String
     let displayVersion: String
     let protectedByApple: Bool
+    /// Account- and device-bound key material for StoreAgent. Kept in memory
+    /// only; never persisted with download jobs, logged or shown in the UI.
+    var dpInfo: Data? = nil
+
+    /// ipatool's ent/download serial: a fixed prefix plus the last four bytes
+    /// of the six-byte GUID.
+    static func serialNumber(guid: String) -> String? {
+        guard guid.count == 12, guid.allSatisfy(\.isHexDigit) else { return nil }
+        var bytes: [UInt8] = [0x54, 0xc8, 0xb0, 0xa9, 0x88]
+        var index = guid.index(guid.startIndex, offsetBy: 4)
+        while index < guid.endIndex {
+            let next = guid.index(index, offsetBy: 2)
+            guard let value = UInt8(guid[index..<next], radix: 16) else { return nil }
+            bytes.append(value)
+            index = next
+        }
+        return Data(bytes).base64EncodedString()
+    }
 
     static func validate(_ raw: [String: Any], appID: String, bundleID: String,
                          versionID: String) throws -> MacPackageOffer {
@@ -365,18 +394,24 @@ struct MacPackageOffer {
               url.host != nil, url.user == nil, url.password == nil else {
             throw ToolError.message("Apple 没有返回安全的 Mac 安装包下载地址。")
         }
-        let sinfs = item["sinfs"] as? [[String: Any]] ?? []
-        let dpInfos: [Data] = sinfs.compactMap { sinf in
-            if let value = sinf["dpInfo"] as? Data { return value }
-            if let encoded = sinf["dpInfo"] as? String { return Data(base64Encoded: encoded) }
+        func bytes(_ value: Any?) -> Data? {
+            if let value = value as? Data { return value.isEmpty ? nil : value }
+            if let encoded = value as? String, let data = Data(base64Encoded: encoded), !data.isEmpty { return data }
             return nil
-        }.filter { !$0.isEmpty }
+        }
+        let sinfs = item["sinfs"] as? [[String: Any]] ?? []
+        let dpInfos = sinfs.compactMap { bytes($0["dpInfo"]) }
         if let first = dpInfos.first, dpInfos.contains(where: { $0 != first }) {
             throw ToolError.message("Apple 返回的 Mac 下载授权信息不一致，已停止处理。")
         }
+        // An iOS-style sinf without dpInfo is evidence of a mobile package,
+        // which contradicts the macOS metadata checked above (as in ipatool).
+        guard !sinfs.contains(where: { bytes($0["sinf"]) != nil && bytes($0["dpInfo"]) == nil }) else {
+            throw ToolError.message("Apple 返回的不是所选 Mac 应用或版本，已拒绝下载。")
+        }
         return MacPackageOffer(downloadURL: url, versionID: versionID,
                                displayVersion: plistString(metadata["bundleShortVersionString"]),
-                               protectedByApple: !dpInfos.isEmpty)
+                               protectedByApple: !dpInfos.isEmpty, dpInfo: dpInfos.first)
     }
 }
 

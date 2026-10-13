@@ -460,8 +460,8 @@ enum MacPackageStorage {
         let version = number(6, length: 2)
         let compressedTOC = number(8, length: 8)
         let uncompressedTOC = number(16, length: 8)
-        // Basic XAR sanity only. A full checksum/TOC validation still needs
-        // the dedicated Mac Store package processing pipeline.
+        // Cheap header sanity check; XARValidator performs the full TOC and
+        // checksum verification afterwards.
         return headerSize >= 28 && headerSize <= 4096 && version == 1 &&
             compressedTOC > 0 && uncompressedTOC > 0 &&
             uncompressedTOC <= 32 * 1024 * 1024 &&
@@ -481,7 +481,11 @@ enum MacPackageStorage {
         case "pkg":
             try file.seek(toOffset: 0)
             let header = try file.read(upToCount: 28) ?? Data()
-            valid = plausibleXARHeader(header, fileSize: length)
+            guard plausibleXARHeader(header, fileSize: length) else { valid = false; break }
+            // Inflate the TOC and verify every checksum before export, so an
+            // encrypted or damaged package can never be offered as a PKG.
+            _ = try XARValidator.validate(staging)
+            valid = true
         case "zip": valid = prefix.starts(with: [0x50, 0x4B, 0x03, 0x04])
         default:
             guard length >= 512 else { throw ToolError.message("DMG 文件不完整") }

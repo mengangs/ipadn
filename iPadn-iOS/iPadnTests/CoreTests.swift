@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import ZIPFoundation
+import CryptoKit
 @testable import iPadn
 
 final class CoreTests: XCTestCase {
@@ -270,6 +271,14 @@ final class CoreTests: XCTestCase {
             response(sinfs: [["dpInfo": Data([1, 2, 3])]]),
             appID: "6503940939", bundleID: "test.native.mac", versionID: "112233")
         XCTAssertTrue(protected.protectedByApple)
+        XCTAssertEqual(protected.dpInfo, Data([1, 2, 3]))
+        XCTAssertNil(plain.dpInfo)
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(sinfs: [["sinf": Data([9, 9]), "id": 0]]), appID: "6503940939",
+            bundleID: "test.native.mac", versionID: "112233"))
+        XCTAssertEqual(MacPackageOffer.serialNumber(guid: "AABBCCDDEEFF"), "VMiwqYjM3e7/")
+        XCTAssertNil(MacPackageOffer.serialNumber(guid: "AABBCCDDEE"))
+        XCTAssertNil(MacPackageOffer.serialNumber(guid: "AABBCCDDEEFG"))
         XCTAssertThrowsError(try MacPackageOffer.validate(
             response(["software-platform": "iphoneos"]), appID: "6503940939",
             bundleID: "test.native.mac", versionID: "112233"))
@@ -327,6 +336,71 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(MacPackageStorage.plausibleXARHeader(Data("xar!".utf8), fileSize: 100))
     }
 
+    // Minimal XAR as written by xar(1): zlib TOC, SHA-1 TOC checksum at heap
+    // offset 0, then each file stored uncompressed with an archived checksum.
+    static func syntheticXAR(files: [Data], tocChecksum: Data? = nil) -> Data {
+        func hex(_ data: Data) -> String {
+            Insecure.SHA1.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }
+        var heapFiles = Data()
+        var entries = ""
+        for (index, content) in files.enumerated() {
+            entries += """
+            <file id="\(index + 1)"><name>file\(index)</name><type>file</type><data>\
+            <length>\(content.count)</length><offset>\(20 + heapFiles.count)</offset>\
+            <size>\(content.count)</size><encoding style="application/octet-stream"/>\
+            <archived-checksum style="sha1">\(hex(content))</archived-checksum>\
+            <extracted-checksum style="sha1">\(hex(content))</extracted-checksum></data></file>
+            """
+            heapFiles += content
+        }
+        let xml = Data("""
+        <?xml version="1.0" encoding="UTF-8"?>
+        <xar><toc><creation-time>2026-10-13T00:00:00</creation-time>\
+        <checksum style="sha1"><offset>0</offset><size>20</size></checksum>\(entries)</toc></xar>
+        """.utf8)
+        let deflated = try! (xml as NSData).compressed(using: .zlib) as Data
+        let adler = XARValidator.adler32(xml)
+        var toc = Data([0x78, 0x9c]) + deflated
+        toc += Data([UInt8(adler >> 24), UInt8(adler >> 16 & 0xff), UInt8(adler >> 8 & 0xff), UInt8(adler & 0xff)])
+        func bigEndian<T: FixedWidthInteger>(_ value: T) -> Data { withUnsafeBytes(of: value.bigEndian) { Data($0) } }
+        var archive = Data("xar!".utf8) + bigEndian(UInt16(28)) + bigEndian(UInt16(1))
+        archive += bigEndian(UInt64(toc.count)) + bigEndian(UInt64(xml.count)) + bigEndian(UInt32(1))
+        archive += toc
+        archive += tocChecksum ?? Data(Insecure.SHA1.hash(data: toc))
+        archive += heapFiles
+        return archive
+    }
+
+    func testXARValidatorVerifiesTOCAndEveryFileChecksum() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func check(_ data: Data) throws -> XARValidator.Report {
+            let url = root.appendingPathComponent(UUID().uuidString + ".pkg")
+            try data.write(to: url)
+            return try XARValidator.validate(url)
+        }
+        let files = [Data("Distribution".utf8), Data(repeating: 0x5a, count: 70_000)]
+        let valid = Self.syntheticXAR(files: files)
+        XCTAssertEqual(try check(valid).files, 2)
+        // Corrupt payload byte (as from a still-encrypted package).
+        var corrupted = valid
+        corrupted[corrupted.count - 10] ^= 0xff
+        XCTAssertThrowsError(try check(corrupted))
+        // Wrong stored TOC checksum.
+        XCTAssertThrowsError(try check(Self.syntheticXAR(files: files, tocChecksum: Data(repeating: 0, count: 20))))
+        // Truncated download.
+        XCTAssertThrowsError(try check(valid.prefix(valid.count - 100)))
+        // Valid header followed by unreadable (encrypted-looking) TOC bytes.
+        var scrambled = valid
+        for index in 28..<60 { scrambled[index] ^= 0xa5 }
+        XCTAssertThrowsError(try check(scrambled))
+        // Archive without any file entries.
+        XCTAssertThrowsError(try check(Self.syntheticXAR(files: [])))
+        XCTAssertEqual(XARValidator.adler32(Data("Wikipedia".utf8)), 0x11E60398)
+    }
+
     func testNativeMacSearchAndAppStoreOfferExtraction() {
         XCTAssertTrue(StoreService.supportsNativeMac(["kind": "mac-software"]))
         XCTAssertTrue(StoreService.supportsNativeMac(["supportedDevices": ["Mac14,6"]]))
@@ -375,15 +449,16 @@ final class CoreTests: XCTestCase {
         let id = UUID()
         let staging = LocalResources.stagingURL(id)
         defer { try? FileManager.default.removeItem(at: staging) }
-        try Data("xar!test-data".utf8).write(to: staging)
+        let package = Self.syntheticXAR(files: [Data("<installer-gui-script/>".utf8)])
+        try package.write(to: staging)
         let job = DownloadJob(id: id, app: app, rawFormat: "pkg")
         let (filename, result) = try MacPackageStorage.finish(staging: staging, job: job)
         let finalURL = try XCTUnwrap(LocalResources.packageURL(filename))
         defer { try? FileManager.default.removeItem(at: finalURL) }
         XCTAssertTrue(filename.hasSuffix(".pkg"))
         XCTAssertEqual(result.name, app.name)
-        XCTAssertEqual(result.size, Int64(Data("xar!test-data".utf8).count))
-        XCTAssertEqual(try Data(contentsOf: finalURL), Data("xar!test-data".utf8))
+        XCTAssertEqual(result.size, Int64(package.count))
+        XCTAssertEqual(try Data(contentsOf: finalURL), package)
         XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
 
         let invalidID = UUID()
