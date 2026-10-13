@@ -47,7 +47,7 @@ cmake -S unicorn -B unicorn-build \
 grep -Eq '^UNICORN_INTERPRETER:BOOL=ON$' unicorn-build/CMakeCache.txt
 cmake --build unicorn-build --parallel 4
 cp unicorn-build/libunicorn.a "$output/libunicorn.a"
-xcrun nm -g "$output/libunicorn.a" | grep -q ' T _uc_emu_start$'
+xcrun nm -g "$output/libunicorn.a" | grep ' T _uc_emu_start$' >/dev/null
 
 mkdir -p ipatool/tools/ipadn-macpkg
 cp "$project_root/MacPKGBridge/bridge.go" ipatool/tools/ipadn-macpkg/bridge.go
@@ -60,7 +60,7 @@ cp "$project_root/MacPKGBridge/bridge.go" ipatool/tools/ipadn-macpkg/bridge.go
 )
 rm -f "$output/libiPadnMacPKG.h"
 for symbol in iPadnMacPKGDecrypt iPadnMacPKGStatus iPadnMacPKGCancel; do
-  xcrun nm -g "$output/libiPadnMacPKG.a" | grep -q " T _$symbol\$"
+  xcrun nm -g "$output/libiPadnMacPKG.a" | grep " T _$symbol\$" >/dev/null
 done
 
 cp unicorn/COPYING "$output/Unicorn-GPL-2.0.txt"
