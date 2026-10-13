@@ -192,6 +192,7 @@ struct DownloadsView: View {
                         if let error = job.error { Section("错误详情") { Text(error).font(.subheadline).textSelection(.enabled) } }
                         if job.status == .completed {
                             if let file = manager.fileURL(job) {
+                                if job.rawFormat == nil { Section { PackagePlatformRow(file: file) } footer: { Text("读取自安装包本身的 Info.plist，用于确认下载的是哪个平台的文件。") } }
                                 Section { ShareLink(item: file) { Label("导出文件", systemImage: "square.and.arrow.up") } }
                             }
                         }
@@ -409,5 +410,22 @@ private struct DownloadActionStyle: ButtonStyle {
             .foregroundStyle(secondary ? UX.tint : UX.onAccent)
             .background(secondary ? AnyShapeStyle(Color(.tertiarySystemFill)) : AnyShapeStyle(UX.tint), in: Capsule())
             .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+/// Reads the platforms a downloaded IPA declares (UIDeviceFamily and
+/// CFBundleSupportedPlatforms) off the main thread.
+private struct PackagePlatformRow: View {
+    let file: URL
+    @State private var summary: String?
+    var body: some View {
+        LabeledContent("安装包平台", value: summary ?? "读取中…")
+            .accessibilityIdentifier("download.package-platform")
+            .task(id: file) {
+                let url = file
+                summary = await Task.detached(priority: .utility) {
+                    (try? PackageService.platformSummary(url)) ?? "无法读取"
+                }.value
+            }
     }
 }

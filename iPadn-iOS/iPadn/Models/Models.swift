@@ -145,6 +145,8 @@ struct DownloadJob: Codable, Identifiable {
     var downloaded: Int64 = 0
     var expected: Int64 = 0
     var packageIconScanned: Bool?
+    // The cached icon of a tvOS job is the Apple TV catalog artwork.
+    var appleTVArtwork: Bool?
     // Non-IPA downloads are saved as raw Mac files, never processed as an IPA.
     var rawFormat: String?
     // Mac App Store package that must be processed by StoreAgent on device;

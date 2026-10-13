@@ -325,34 +325,38 @@ final class DownloadManager: NSObject, ObservableObject {
                 }
                 persist()
             }
-            guard job.platformLabel == "tvOS", packageIconURL(job) == nil,
+            // tvOS packages keep their icon in a layered asset catalog, and the
+            // stored artwork can be the shared App ID's iPhone icon. Replace
+            // the cached icon once with the Apple TV catalog artwork.
+            guard job.platformLabel == "tvOS", job.appleTVArtwork != true,
                   catalogArtworkAttempted.insert(job.id).inserted,
-                  let index = jobs.firstIndex(where: { $0.id == job.id }) else { continue }
-            var artwork = jobs[index].displayApp(packageIcon: nil).iconURL
-            if artwork == nil, job.app.id.allSatisfy({ $0.isASCII && $0.isNumber }) {
-                // Existing completed downloads lost their original artwork
-                // under the old logic. Recover it from the public Apple TV catalog.
+                  jobs.contains(where: { $0.id == job.id }) else { continue }
+            var tvArtwork: URL?
+            if job.app.id.allSatisfy({ $0.isASCII && $0.isNumber }) {
                 let countries = artworkCountry == "US" ? ["US"] : [artworkCountry, "US"]
                 for country in countries {
                     if Task.isCancelled { break }
                     let context = StoreContext(country: country, platform: .tvOS)
                     if let listing = try? await StoreService.platformApp(job.app.id, store: context),
                        let icon = listing.iconURL {
-                        artwork = icon
-                        if let freshIndex = jobs.firstIndex(where: { $0.id == job.id }) {
-                            jobs[freshIndex].app.iconURL = icon
-                            persist()
-                        }
+                        tvArtwork = icon
                         break
                     }
                 }
             }
-            guard let artwork, !Task.isCancelled else { continue }
+            let current = jobs.first { $0.id == job.id } ?? job
+            let fallback = packageIconURL(job) == nil ? current.displayApp(packageIcon: nil).iconURL : nil
+            guard let artwork = tvArtwork ?? fallback, !Task.isCancelled else { continue }
             if (try? await PackageIconService.saveCatalogArtwork(from: artwork, id: job.id)) == true {
                 // A download can be deleted while the artwork request is in flight.
-                guard jobs.contains(where: { $0.id == job.id }) else {
+                guard let index = jobs.firstIndex(where: { $0.id == job.id }) else {
                     try? FileManager.default.removeItem(at: PackageIconService.cacheURL(job.id))
                     continue
+                }
+                if tvArtwork != nil {
+                    jobs[index].app.iconURL = artwork
+                    jobs[index].appleTVArtwork = true
+                    persist()
                 }
                 objectWillChange.send()
             }

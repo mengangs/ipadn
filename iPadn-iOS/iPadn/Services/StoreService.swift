@@ -148,7 +148,7 @@ enum StoreService {
                 // The tvSoftware entity is unreliable on some storefronts.
                 rows = (try? await searchEntities("software")) ?? []
             }
-            return rows.filter(Self.supportsAppleTV).map(mapLookup)
+            return await withAppleTVListings(rows.filter(Self.supportsAppleTV).map(mapLookup), store: store)
         case .appID(let id, _):
             if store.platform == .tvOS { return try await platformApp(id, store: store).map { [$0] } ?? [] }
             // No "entity" here: on an ID lookup it requests *related* items
@@ -161,6 +161,34 @@ enum StoreService {
             if !apps.isEmpty { return apps }
             return try await platformApp(id, store: store).map { [$0] } ?? []
         }
+    }
+
+    /// The iTunes search API describes a shared (universal purchase) App ID
+    /// with its iPhone artwork, size and version. Replace those with the
+    /// Apple TV offer so tvOS results show what will actually be downloaded.
+    static func withAppleTVListings(_ apps: [StoreApp], store: StoreContext) async -> [StoreApp] {
+        let listings = await withTaskGroup(of: (String, StoreApp?).self) { group in
+            for app in apps.prefix(20) {
+                group.addTask { (app.id, try? await platformApp(app.id, store: store)) }
+            }
+            var found: [String: StoreApp] = [:]
+            for await (id, listing) in group { if let listing { found[id] = listing } }
+            return found
+        }
+        return apps.map { app in
+            guard let tv = listings[app.id] else { return app }
+            return mergingAppleTVListing(tv, into: app)
+        }
+    }
+
+    static func mergingAppleTVListing(_ tv: StoreApp, into app: StoreApp) -> StoreApp {
+        var merged = app
+        if let icon = tv.iconURL { merged.iconURL = icon }
+        if tv.size > 0 { merged.size = tv.size }
+        if !tv.version.isEmpty { merged.version = tv.version }
+        if !tv.minimumOS.isEmpty { merged.minimumOS = tv.minimumOS }
+        if let id = tv.externalVersionID, !id.isEmpty { merged.externalVersionID = id }
+        return merged
     }
 
     static func platformApp(_ id: String, store: StoreContext) async throws -> StoreApp? {

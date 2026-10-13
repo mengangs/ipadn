@@ -133,6 +133,27 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(lostArtwork.displayApp(packageIcon: nil).iconURL, storeArtwork)
     }
 
+    func testAppleTVListingReplacesSharedIPhoneDetailsAndPackagePlatformIsReadable() {
+        let phone = StoreApp(id: "1628995509", name: "TV Player", version: "2.0",
+                             iconURL: URL(string: "https://is1-ssl.mzstatic.com/image/thumb/phone.png"), size: 90_000_000)
+        let tv = StoreApp(id: phone.id, name: phone.name, version: "1.0.9",
+                          iconURL: URL(string: "https://is1-ssl.mzstatic.com/image/thumb/tv.png"), size: 30_000_000,
+                          externalVersionID: "850000001")
+        let merged = StoreService.mergingAppleTVListing(tv, into: phone)
+        XCTAssertEqual(merged.iconURL, tv.iconURL)
+        XCTAssertEqual(merged.size, 30_000_000)
+        XCTAssertEqual(merged.version, "1.0.9")
+        XCTAssertEqual(merged.externalVersionID, "850000001")
+        XCTAssertEqual(merged.name, "TV Player")
+        let unchanged = StoreService.mergingAppleTVListing(StoreApp(id: phone.id, name: ""), into: phone)
+        XCTAssertEqual(unchanged.iconURL, phone.iconURL)
+        XCTAssertEqual(unchanged.size, phone.size)
+
+        XCTAssertEqual(PackageService.describePlatforms(families: [3], platforms: ["AppleTVOS"]), "Apple TV（AppleTVOS）")
+        XCTAssertEqual(PackageService.describePlatforms(families: [2, 1], platforms: ["iPhoneOS"]), "iPhone · iPad（iPhoneOS）")
+        XCTAssertEqual(PackageService.describePlatforms(families: [], platforms: []), "未知")
+    }
+
     @MainActor
     func testCatalogArtworkCanBecomeLocalPNG() {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32))

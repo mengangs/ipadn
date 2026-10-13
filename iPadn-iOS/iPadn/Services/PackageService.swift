@@ -42,6 +42,20 @@ enum PackageService {
         return Set(plist["CFBundleSupportedPlatforms"] as? [String] ?? [])
     }
 
+    /// What the package itself says it runs on, for showing the user which
+    /// platform a downloaded file really is (not what was requested).
+    static func describePlatforms(families: Set<Int>, platforms: Set<String>) -> String {
+        let names: [(Int, String)] = [(1, "iPhone"), (2, "iPad"), (3, "Apple TV"), (4, "Apple Watch"), (6, "Mac"), (7, "Vision Pro")]
+        let devices = names.filter { families.contains($0.0) }.map(\.1)
+        let systems = platforms.sorted().joined(separator: ", ")
+        if devices.isEmpty { return systems.isEmpty ? "未知" : systems }
+        return systems.isEmpty ? devices.joined(separator: " · ") : devices.joined(separator: " · ") + "（\(systems)）"
+    }
+
+    static func platformSummary(_ url: URL) throws -> String {
+        describePlatforms(families: try deviceFamilies(url), platforms: try supportedPlatforms(url))
+    }
+
     private static func readPlist(_ entry: Entry, archive: Archive) throws -> [String: Any] {
         let limit = 2 * 1024 * 1024
         guard entry.type == .file, entry.uncompressedSize <= UInt64(limit) else { throw ToolError.message("IPA 元数据异常：plist 过大或类型无效") }

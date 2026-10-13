@@ -105,14 +105,16 @@ final class AppleService: ObservableObject {
         }
         guard let account = active else { throw ToolError.message("请先在账号页登录 Apple 账号") }
         var targetVersion = versionID
-        if store.platform == .tvOS, targetVersion == nil {
+        var tvListing: StoreApp?
+        if store.platform == .tvOS {
             // Always resolve the Apple TV offer in the authenticated account's
             // storefront. The user's chosen search region may differ.
             var accountStore = store
             if let country = StoreService.country(forStorefront: account.storeFront) {
                 accountStore.country = country
             }
-            targetVersion = try? await StoreService.platformApp(appID, store: accountStore)?.externalVersionID
+            tvListing = try? await StoreService.platformApp(appID, store: accountStore)
+            if targetVersion == nil { targetVersion = tvListing?.externalVersionID }
             // Delisted Apple TV purchases may have no public catalog offer.
             // Such requests still undergo strict package validation below.
         }
@@ -139,6 +141,9 @@ final class AppleService: ObservableObject {
             // A missing platform field is not proof of tvOS compatibility.
             // Final IPA validation still requires UIDeviceFamily to include Apple TV.
             asset.platform = "appletvos"
+            // The dispatch response carries the shared App ID's iPhone artwork;
+            // show the Apple TV icon instead.
+            if let icon = tvListing?.iconURL { asset.app.iconURL = icon }
         } else {
             guard reported.isEmpty || ["ios", "iphoneos", "ipad"].contains(reported) else {
                 throw ToolError.message("Apple 返回的安装包与当前平台不匹配，请切换正确的平台后重试。")
