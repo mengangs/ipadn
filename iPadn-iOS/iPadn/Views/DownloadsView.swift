@@ -422,7 +422,8 @@ struct DownloadTaskRow: View {
             }
         }
         .padding(.vertical, 8)
-        .animation(.snappy, value: job.status)
+        // No implicit animation on status changes: cross-fading the old and
+        // new status text and button title made them overlap mid-transition.
     }
 }
 

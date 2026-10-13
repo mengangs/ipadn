@@ -75,6 +75,21 @@ enum MacPackageDecryptor {
     private static let lock = NSLock()
     private static var current: UUID?
     private static var cancelled = Set<UUID>()
+    // Resolves the running job's caller early when it is cancelled.
+    private static var finishCurrent: ((Error?) -> Void)?
+
+    private final class Once: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Void, Error>?
+        init(_ continuation: CheckedContinuation<Void, Error>) { self.continuation = continuation }
+        /// Returns false if the caller was already resolved (abandoned).
+        @discardableResult func finish(_ error: Error?) -> Bool {
+            lock.lock(); let pending = continuation; continuation = nil; lock.unlock()
+            guard let pending else { return false }
+            if let error { pending.resume(throwing: error) } else { pending.resume() }
+            return true
+        }
+    }
 
     /// The job whose package is being processed right now, if any.
     static var currentJob: UUID? { lock.lock(); defer { lock.unlock() }; return current }
@@ -83,28 +98,37 @@ enum MacPackageDecryptor {
     /// is cancelled while waiting or while being processed.
     static func process(job: UUID, hardwareID: String, dpInfo: Data, from source: URL, to destination: URL) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let once = Once(continuation)
             queue.async {
                 lock.lock()
                 let skip = cancelled.remove(job) != nil
-                if !skip { current = job }
+                if !skip { current = job; finishCurrent = { once.finish($0) } }
                 lock.unlock()
-                if skip { continuation.resume(throwing: CancellationError()); return }
-                defer { lock.lock(); current = nil; cancelled.remove(job); lock.unlock() }
-                do {
-                    try decrypt(hardwareID: hardwareID, dpInfo: dpInfo, from: source, to: destination)
-                    continuation.resume()
-                } catch { continuation.resume(throwing: error) }
+                if skip { once.finish(CancellationError()); return }
+                defer { lock.lock(); current = nil; finishCurrent = nil; cancelled.remove(job); lock.unlock() }
+                var result: Error?
+                do { try decrypt(hardwareID: hardwareID, dpInfo: dpInfo, from: source, to: destination) }
+                catch { result = error }
+                // A cancelled caller has already moved on: discard any output.
+                if !once.finish(result) { try? FileManager.default.removeItem(at: destination) }
             }
         }
     }
 
     /// Cancels a job that is waiting or being processed.
+    /// The task is released at once even while Apple's component is still
+    /// starting up (it cannot be interrupted at every step); the bridge stops
+    /// as soon as it can and its result is discarded.
     static func cancel(job: UUID) {
         lock.lock()
         let running = current == job
+        let finish = running ? finishCurrent : nil
         if !running { cancelled.insert(job) }
         lock.unlock()
-        if running { cancelFunction?() }
+        if running {
+            cancelFunction?()
+            finish?(CancellationError())
+        }
     }
 }
 
