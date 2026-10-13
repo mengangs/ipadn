@@ -20,6 +20,9 @@ final class ToolStore: ObservableObject {
             do { LocalResources.defaults.set(try JSONEncoder().encode(settings), forKey: LocalResources.settings) }
             catch { errorMessage = "设置保存失败：" + error.localizedDescription }
             downloads.configure(settings)
+            // Region or platform changed: refresh the results here, so it also
+            // happens when the search page is not on screen (iPad sidebar).
+            if oldValue.store != settings.store, hasSearched { search() }
         }
     }
     @Published var tab = 0
@@ -52,6 +55,7 @@ final class ToolStore: ObservableObject {
     private var ownedByAccount: [String: [OwnedApp]] = [:]
     private var subscriptions = Set<AnyCancellable>()
     private var lastAccountID: String?
+    private var ownedArtworkAttempted = Set<String>()
 
     init(downloadManager: DownloadManager? = nil) {
         downloads = downloadManager ?? DownloadManager()
@@ -121,7 +125,9 @@ final class ToolStore: ObservableObject {
                 let remoteIDs = Set(apps.map(\.id))
                 localResults.removeAll { remoteIDs.contains($0.id) }
                 let key = context.platform.rawValue
-                appCatalog[key] = Array(AppSearchIndex.unique(apps + (appCatalog[key] ?? [])).prefix(1000))
+                // Cache real listings only, without the long descriptions (kept small for quick saves).
+                let listed = apps.filter { $0.delisted != true }.map { app -> StoreApp in var app = app; app.description = ""; return app }
+                appCatalog[key] = Array(AppSearchIndex.unique(listed + (appCatalog[key] ?? [])).prefix(1000))
                 try? LocalResources.save(appCatalog, filename: "app-catalog.json")
                 remember(input)
                 await fillMissingArtwork(searchID: id, store: context, accountCountry: accountCountry)
@@ -209,6 +215,8 @@ final class ToolStore: ObservableObject {
     /// (the region can still be changed by hand afterwards) and sync its
     /// purchases in the background.
     private func accountChanged(to id: String?) {
+        // Re-login and token refresh select the same account again: not a switch.
+        guard id != lastAccountID else { return }
         let previous = lastAccountID
         lastAccountID = id
         guard let id, let account = apple.accounts.first(where: { $0.id == id }) else {
@@ -218,7 +226,10 @@ final class ToolStore: ObservableObject {
         }
         infoMessage = "已切换到 " + (account.name.isEmpty ? account.id : account.name)
         if let country = StoreService.country(forStorefront: account.storeFront), settings.store.country != country {
+            // Changing the region re-runs the search (see settings).
             settings.store.country = country
+        } else if hasSearched {
+            search()
         }
         #if DEBUG
         if visualPreview { return }
@@ -358,16 +369,25 @@ final class ToolStore: ObservableObject {
         artworkContext.platform = .iOS
         let accountCountry = StoreService.country(forStorefront: apple.active?.storeFront ?? "")
         let revision = ownedRevision
-        let ids = owned.filter { $0.iconURL == nil }.map(\.id)
+        // Each App ID is looked up once per launch: delisted apps never resolve,
+        // and repeating them on every visit would exceed the lookup rate limit.
+        let ids = owned.filter { $0.iconURL == nil && !ownedArtworkAttempted.contains($0.id) }.map(\.id)
         for offset in stride(from: 0, to: ids.count, by: 20) {
             do {
                 try Task.checkCancellation()
-                let urls = try await StoreService.artwork(Array(ids[offset..<min(offset + 20, ids.count)]), store: artworkContext, accountCountry: accountCountry)
+                let batch = Array(ids[offset..<min(offset + 20, ids.count)])
+                let urls = try await StoreService.artwork(batch, store: artworkContext, accountCountry: accountCountry)
                 try Task.checkCancellation()
                 guard apple.activeID == account, settings.store == context, ownedRevision == revision else { return }
-                for index in owned.indices { if let url = urls[owned[index].id] { owned[index].iconURL = url } }
-                ownedByAccount[account] = owned
-                try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
+                ownedArtworkAttempted.formUnion(batch)
+                if !urls.isEmpty {
+                    // Apply the batch in one update so the list re-renders once.
+                    var updated = owned
+                    for index in updated.indices { if let url = urls[updated[index].id] { updated[index].iconURL = url } }
+                    owned = updated
+                    ownedByAccount[account] = owned
+                    try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
+                }
                 // Keep the public lookup service below its documented request budget.
                 if offset + 20 < ids.count { try await Task.sleep(nanoseconds: 3_100_000_000) }
             } catch { return } // Artwork is optional; purchase records remain usable offline.

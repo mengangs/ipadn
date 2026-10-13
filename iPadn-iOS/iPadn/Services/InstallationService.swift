@@ -5,24 +5,36 @@ import Combine
 @MainActor
 final class InstallationService: ObservableObject {
     @Published private(set) var isHosting = false
-    private var localFiles: LoopbackServer?
+    // Servers of recent installs stay up together: installd may come back to
+    // an earlier one (retry, ranged request) after another install starts.
+    private var hosted: [LoopbackServer] = []
     private var profileFiles: LoopbackServer?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
     func stopHosting() {
-        localFiles = nil; profileFiles = nil; isHosting = false
+        hosted = []; profileFiles = nil; isHosting = false
         if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
+    }
+    private func host(_ server: LoopbackServer) {
+        hosted.append(server)
+        if hosted.count > 3 { hosted.removeFirst(hosted.count - 3) }
+        isHosting = true
+        keepServingInBackground()
+    }
+    /// installd fetches the package after iPadn goes to the background; ask
+    /// for time to keep serving. Ended inside the handler, as UIKit requires.
+    private func keepServingInBackground() {
+        guard backgroundTask == .invalid else { return }
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "iPadn installation") { [weak self] in
+            MainActor.assumeIsolated { self?.stopHosting() }
+        }
     }
     func profileURL(data: Data) async throws -> URL {
         let server = LoopbackServer()
         try await server.start()
         let url = try server.register(data: data, contentType: "application/x-apple-aspen-config")
         profileFiles = server
-        if backgroundTask == .invalid {
-            backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "iPadn local certificate") { [weak self] in
-                Task { @MainActor in self?.stopHosting() }
-            }
-        }
+        keepServingInBackground()
         return url
     }
     /// One-tap installation. installd only requires the *manifest* to be
@@ -36,10 +48,7 @@ final class InstallationService: ObservableObject {
         try await server.start()
         let packageURL = try server.register(file)
         let url = try ManifestBuilder.externalInstallURL(app: job.app, packageURL: packageURL)
-        stopHosting(); localFiles = server; isHosting = true
-        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "iPadn installation") { [weak self] in
-            Task { @MainActor in self?.stopHosting() }
-        }
+        host(server)
         return url
     }
 
@@ -54,10 +63,7 @@ final class InstallationService: ObservableObject {
         let packageURL = try server.register(file)
         let data = try ManifestBuilder.manifest(app: job.app, packageURL: packageURL)
         let manifestURL = try server.register(data: data, contentType: "application/xml")
-        stopHosting(); localFiles = server; isHosting = true
-        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "iPadn installation") { [weak self] in
-            Task { @MainActor in self?.stopHosting() }
-        }
+        host(server)
         return try ManifestBuilder.systemURL(manifestURL: manifestURL)
     }
 
@@ -68,12 +74,15 @@ final class InstallationService: ObservableObject {
         let url = try ManifestBuilder.installURL(app: job.app, filename: file.lastPathComponent, plistServer: plistServer)
         try await files.start()
         _ = try files.register(file)
+        keepServingInBackground()
         return url
     }
 
     func localURL(file: URL) async throws -> URL {
         try await files.start()
-        return try files.register(file)
+        let url = try files.register(file)
+        keepServingInBackground()
+        return url
     }
 }
 

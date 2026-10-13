@@ -110,11 +110,12 @@ enum PackageIconService {
         // no executable from the IPA is extracted or loaded.
         let assetName = plistString(phone["CFBundleIconName"] ?? pad["CFBundleIconName"])
         if !assetName.isEmpty, let car = archive[prefix + "Assets.car"],
-           let data = try read(car, archive: archive, limit: 64_000_000) {
+           car.type == .file, car.uncompressedSize <= 64_000_000 {
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".bundle")
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: folder) }
-            try data.write(to: folder.appendingPathComponent("Assets.car"))
+            // Stream the catalog to disk instead of holding up to 64 MB in memory.
+            _ = try archive.extract(car, to: folder.appendingPathComponent("Assets.car"))
             let resourceInfo = ["CFBundleIdentifier": "app.local.iPadn.icon." + UUID().uuidString, "CFBundlePackageType": "BNDL"]
             try PropertyListSerialization.data(fromPropertyList: resourceInfo, format: .binary, options: 0)
                 .write(to: folder.appendingPathComponent("Info.plist"))

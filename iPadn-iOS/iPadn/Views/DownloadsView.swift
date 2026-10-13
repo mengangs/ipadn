@@ -23,10 +23,12 @@ struct DownloadsView: View {
     @State private var selection = Set<UUID>()
     @State private var editMode: EditMode = .inactive
     @State private var actionBusy = false
-    private var visible: [DownloadJob] {
+    private var filteredJobs: [DownloadJob] {
         manager.jobs.filter { filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
     }
     var body: some View {
+        // Filter once per render; rows and headers read this copy.
+        let visible = filteredJobs
         List {
             if !manager.jobs.isEmpty {
                 Section {
@@ -37,6 +39,7 @@ struct DownloadsView: View {
             }
             if let error = manager.storageError { Section { InlineIssue(message: error) } }
             if let warning = manager.discoveryWarning { Section { InlineIssue(message: warning) } }
+            if let warning = manager.saveWarning { Section { InlineIssue(message: warning) } }
             if visible.isEmpty {
                 Section {
                     EmptyState(title: manager.jobs.isEmpty ? "暂无下载任务" : "没有匹配任务", message: manager.jobs.isEmpty ? "在搜索中获取应用，或点按右上角的 + 导入安装包。" : "试试其他筛选条件。", symbol: manager.jobs.isEmpty ? "tray.and.arrow.down" : "line.3.horizontal.decrease.circle", actionTitle: manager.jobs.isEmpty ? "搜索应用" : "显示全部", action: {
@@ -214,12 +217,15 @@ struct DownloadsView: View {
             Button("取消", role: .cancel) { }
         } message: { Text("输入 IPA 安装包的下载链接。") }
         .actionConfirmation(isPresented: $confirmingDelete, title: "删除 \(pendingDelete.count) 项任务？", message: "已下载的安装包也会一并删除。", confirmTitle: "删除任务与文件") {
-            do {
-                for id in pendingDelete { try manager.remove(id) }
-                selection.subtract(pendingDelete); pendingDelete.removeAll()
-                if manager.jobs.isEmpty { editMode = .inactive }
-                store.infoMessage = "已删除任务"
-            } catch { store.errorMessage = error.localizedDescription }
+            // Delete what can be deleted; one task that just started processing
+            // must not keep the others.
+            var failure: Error?
+            for id in pendingDelete {
+                do { try manager.remove(id); selection.remove(id) } catch { failure = failure ?? error }
+            }
+            pendingDelete.removeAll()
+            if manager.jobs.isEmpty { editMode = .inactive }
+            if let failure { store.errorMessage = failure.localizedDescription } else { store.infoMessage = "已删除任务" }
         }
         .sheet(item: $installing) { job in
             PackageInstallationView(job: job).environmentObject(store).environmentObject(manager)
@@ -240,9 +246,12 @@ struct DownloadsView: View {
         perform {
             var imported = 0
             var failures: [String] = []
+            let temporary = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().path
             for url in files {
                 do { try await manager.importFile(url); imported += 1 }
                 catch { failures.append(url.lastPathComponent + "：" + error.localizedDescription) }
+                // The picker hands over a private copy; don't leave a second copy of a large IPA behind.
+                if url.resolvingSymlinksInPath().path.hasPrefix(temporary) { try? FileManager.default.removeItem(at: url) }
             }
             if imported > 0 { filter = .all; term = ""; store.infoMessage = "已导入 \(imported) 个安装包" }
             if !failures.isEmpty { store.errorMessage = failures.joined(separator: "\n") }
@@ -305,7 +314,8 @@ struct DownloadTaskRow: View {
             .accessibilityIdentifier("download.platform." + job.platformLabel)
     }
     private var appHeading: some View {
-        HStack(alignment: .center, spacing: 14) {
+        let displayedApp = self.displayedApp
+        return HStack(alignment: .center, spacing: 14) {
             AppIcon(url: displayedApp.iconURL, size: 64)
             VStack(alignment: .leading, spacing: 4) {
                 Text(displayedApp.name).font(.body.weight(.medium)).lineLimit(2)

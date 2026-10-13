@@ -9,7 +9,7 @@ struct SearchView: View {
     @State private var confirmClear = false
     @State private var getting: StoreApp?
     @State private var headerAway = false
-    private let regions = [("CN", "中国大陆"), ("US", "美国"), ("HK", "香港"), ("TW", "台湾"), ("JP", "日本"), ("GB", "英国"), ("SG", "新加坡"), ("CA", "加拿大"), ("AU", "澳大利亚"), ("KR", "韩国"), ("DE", "德国"), ("FR", "法国")]
+    private static let regions = [("CN", "中国大陆"), ("US", "美国"), ("HK", "香港"), ("TW", "台湾"), ("JP", "日本"), ("GB", "英国"), ("SG", "新加坡"), ("CA", "加拿大"), ("AU", "澳大利亚"), ("KR", "韩国"), ("DE", "德国"), ("FR", "法国")]
     var body: some View {
         List {
             Section {
@@ -61,8 +61,6 @@ struct SearchView: View {
         .actionConfirmation(isPresented: $confirmClear, title: "清除最近搜索？", confirmTitle: "清除") { withAnimation { store.clearHistory() } }
         .task { await store.loadNameCatalog() }
         .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
-        .onChange(of: store.settings.store) { _, _ in if store.hasSearched { store.search() } }
-        .onChange(of: apple.activeID) { _, _ in if store.hasSearched { store.search() } }
     }
 
     private func resultRow(_ app: StoreApp, note: String?) -> some View {
@@ -133,9 +131,9 @@ struct SearchView: View {
     private var regionPicker: some View {
         Menu {
             Picker("商店地区", selection: $store.settings.store.country) {
-                ForEach(regions, id: \.0) { code, label in Text(label).tag(code) }
+                ForEach(Self.regions, id: \.0) { code, label in Text(label).tag(code) }
             }
-        } label: { chip(regions.first { $0.0 == store.settings.store.country }?.1 ?? store.settings.store.country, symbol: "globe") }
+        } label: { chip(Self.regions.first { $0.0 == store.settings.store.country }?.1 ?? store.settings.store.country, symbol: "globe") }
         .accessibilityLabel("商店地区")
     }
     private var platformPicker: some View {

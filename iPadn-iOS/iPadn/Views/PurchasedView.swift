@@ -76,7 +76,7 @@ struct PurchasedView: View {
         .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
         .toolPage()
         .rootTabBar("已购项目", headerScrolledAway: headerAway)
-        .task(id: "\(apple.activeID ?? "")|\(store.ownedRevision)|\(store.settings.store.country)|\(store.settings.store.platform.rawValue)") { await store.loadOwnedArtwork() }
+        .task(id: "\(apple.activeID ?? "")|\(store.ownedRevision)") { await store.loadOwnedArtwork() }
         .refreshable { if apple.active != nil { await store.refreshOwned() } }
     }
 }

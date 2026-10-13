@@ -286,22 +286,17 @@ enum LocalResources {
     static let versionsFilename = "versions.json"
     static let ownedFilename = "owned-apps.json"
 
-    static var support: URL {
-        let base = isPreview ? FileManager.default.temporaryDirectory.appendingPathComponent("iPadn-Preview/Support") :
-            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let url = base
-            .appendingPathComponent("iPadn", isDirectory: true)
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        var excluded = url
-        var values = URLResourceValues(); values.isExcludedFromBackup = true
-        try? excluded.setResourceValues(values)
-        return url
-    }
-    static var packages: URL {
-        let base = isPreview ? FileManager.default.temporaryDirectory.appendingPathComponent("iPadn-Preview/Documents") :
-            FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let url = base
-            .appendingPathComponent("Packages", isDirectory: true)
+    // Resolved and created once per launch: these are read from list rows
+    // many times a second, so they must not touch the file system each time.
+    static let support: URL = prepared(
+        (isPreview ? FileManager.default.temporaryDirectory.appendingPathComponent("iPadn-Preview/Support") :
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0])
+            .appendingPathComponent("iPadn", isDirectory: true))
+    static let packages: URL = prepared(
+        (isPreview ? FileManager.default.temporaryDirectory.appendingPathComponent("iPadn-Preview/Documents") :
+            FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0])
+            .appendingPathComponent("Packages", isDirectory: true))
+    private static func prepared(_ url: URL) -> URL {
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         var excluded = url
         var values = URLResourceValues(); values.isExcludedFromBackup = true
