@@ -92,7 +92,9 @@ final class AppIconService: ObservableObject {
         statusHint = nil
 
         var lastError: Error?
-        for attempt in 0..<2 {
+        // SpringBoard rejects a change with EAGAIN while it is still applying
+        // the previous one (for example switching back right away): back off.
+        for attempt in 0..<4 {
             let result = await request(choice)
             // A nil error is the system's confirmation, even if
             // alternateIconName has not caught up yet.
@@ -100,17 +102,17 @@ final class AppIconService: ObservableObject {
                 confirm(choice); return
             }
             lastError = result
-            guard attempt == 0, let error = result, Self.isTransientIconError(error) else { break }
-            try await Task.sleep(for: .seconds(1))
+            guard let error = result, Self.isTransientIconError(error), attempt < 3 else { break }
+            try await Task.sleep(for: .milliseconds(800 * (attempt + 1)))
             if Self.systemChoice(for: UIApplication.shared.alternateIconName) == choice {
                 confirm(choice); return
             }
         }
-        if lastError is IconRequestTimeout {
-            // No callback at all: let the user check the Home Screen while we
-            // keep watching alternateIconName instead of inventing a failure.
+        if lastError is IconRequestTimeout || lastError.map(Self.isTransientIconError) == true {
+            // No final answer yet: keep watching alternateIconName instead of
+            // inventing a failure; the selection updates when the system does.
             awaitingSystem = choice
-            statusHint = "系统暂未返回结果，请回到桌面查看图标。"
+            statusHint = "系统正在处理图标更换，完成后会自动更新。"
             beginReconciliation()
             return
         }
