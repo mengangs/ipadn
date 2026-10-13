@@ -94,7 +94,10 @@ final class AppIconService: ObservableObject {
         var lastError: Error?
         // SpringBoard rejects a change with EAGAIN while it is still applying
         // the previous one (for example switching back right away): back off.
-        for attempt in 0..<4 {
+        // iOS throttles a second change made within seconds of the previous
+        // one; keep retrying (about 30 s in total) rather than giving up.
+        let delays = [800, 1600, 2400, 3200, 4000, 4000, 4000, 5000, 5000]
+        for attempt in 0...delays.count {
             let result = await request(choice)
             // A nil error is the system's confirmation, even if
             // alternateIconName has not caught up yet.
@@ -102,8 +105,8 @@ final class AppIconService: ObservableObject {
                 confirm(choice); return
             }
             lastError = result
-            guard let error = result, Self.isTransientIconError(error), attempt < 3 else { break }
-            try await Task.sleep(for: .milliseconds(800 * (attempt + 1)))
+            guard let error = result, Self.isTransientIconError(error), attempt < delays.count else { break }
+            try await Task.sleep(for: .milliseconds(delays[attempt]))
             if Self.systemChoice(for: UIApplication.shared.alternateIconName) == choice {
                 confirm(choice); return
             }

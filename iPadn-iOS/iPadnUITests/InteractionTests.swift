@@ -104,7 +104,9 @@ final class InteractionTests: XCTestCase {
         attach("19-system-icon-switch", app: app)
         dimensional.tap(); acknowledgeSystemAlert()
         let restored = expectation(for: NSPredicate(format: "value == %@ AND isEnabled == true", "已选中"), evaluatedWith: dimensional)
-        wait(for: [restored], timeout: 12)
+        // iOS throttles an immediate second icon change (EAGAIN); the app
+        // retries with back-off, so allow for that before judging.
+        wait(for: [restored], timeout: 40)
         if dimensional.value as? String != "已选中" {
             // Record what the app and the system reported when the restore stalls.
             let status = app.staticTexts["settings.icon.status"]
