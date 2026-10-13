@@ -29,3 +29,10 @@ jobs:
           cmake --version
       - name: Build and link Mac Store runtime probe for iPhoneOS arm64
         run: bash iPadn-iOS/scripts/probe_mac_pkg_ios_bridge.sh
+      - name: Upload standalone unsigned iPhone compatibility test IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: MacPKGProbe-unsigned-iphoneos
+          path: ${{ runner.temp }}/ipadn-macpkg-static-probe/out/MacPKGProbe-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
