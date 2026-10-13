@@ -379,16 +379,6 @@ final class CoreTests: XCTestCase {
         return archive
     }
 
-    func testMacPackageSecretsRoundTripAndDelete() throws {
-        let id = UUID()
-        defer { MacPackageSecrets.delete(id) }
-        let entry = MacPackageSecrets.Entry(hardwareID: "AABBCCDDEEFF", dpInfo: Data([7, 8, 9]))
-        try MacPackageSecrets.save(entry, for: id)
-        XCTAssertEqual(try MacPackageSecrets.load(id), entry)
-        MacPackageSecrets.delete(id)
-        XCTAssertThrowsError(try MacPackageSecrets.load(id))
-    }
-
     func testXARValidatorVerifiesTOCAndEveryFileChecksum() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

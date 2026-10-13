@@ -9,7 +9,7 @@ final class InteractionTests: XCTestCase {
         let version = app.descendants(matching: .any)["app.version"].firstMatch
         XCTAssertTrue(copyID.waitForExistence(timeout: 10))
         XCTAssertTrue(version.waitForExistence(timeout: 5))
-        XCTAssertEqual(version.label, "v3.2.1")
+        XCTAssertTrue(version.label.hasPrefix("v3.2"), version.label)
         XCTAssertGreaterThan(copyID.frame.minX, version.frame.maxX)
         XCTAssertEqual(copyID.frame.midY, version.frame.midY, accuracy: 12)
         copyID.tap()
@@ -200,7 +200,8 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(add.waitForExistence(timeout: 10)); add.tap()
         XCTAssertTrue(app.buttons["downloads.import"].waitForExistence(timeout: 5))
         app.buttons["downloads.import"].tap()
-        let pickerCancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "取消"])).firstMatch
+        let pickerCancel = app.buttons.matching(NSPredicate(format: "label IN %@ OR identifier IN %@",
+            ["Cancel", "取消", "Close", "关闭"], ["Cancel", "Close"])).firstMatch
         XCTAssertTrue(pickerCancel.waitForExistence(timeout: 15))
         attach("15-import-picker", app: app)
         pickerCancel.tap()

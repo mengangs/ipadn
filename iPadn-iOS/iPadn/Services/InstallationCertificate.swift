@@ -45,7 +45,15 @@ enum InstallationCertificate {
         let chain = item[kSecImportItemCertChain as String] as? [SecCertificate] ?? [certificate]
         return Identity(identity: identity, certificates: chain, name: SecCertificateCopySubjectSummary(certificate) as String? ?? "本地安装证书")
     }
+    #if DEBUG
+    // Visual preview / UI tests run unsigned, where the simulator keychain
+    // is unavailable (errSecMissingEntitlement). Keep their data in memory.
+    private static var previewStorage: Data?
+    #endif
     private static func stored() throws -> Stored? {
+        #if DEBUG
+        if LocalResources.isPreview { return try previewStorage.map { try JSONDecoder().decode(Stored.self, from: $0) } }
+        #endif
         var request = query; request[kSecReturnData as String] = true; request[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
         let status = SecItemCopyMatching(request as CFDictionary, &result)
@@ -64,6 +72,9 @@ enum InstallationCertificate {
     static func save(data: Data, password: String, localRoot: Data? = nil, localIdentifier: UUID? = nil) throws {
         _ = try importPKCS12(data, password: password)
         let encoded = try JSONEncoder().encode(Stored(data: data, password: password, localRoot: localRoot, localIdentifier: localIdentifier))
+        #if DEBUG
+        if LocalResources.isPreview { previewStorage = encoded; return }
+        #endif
         let attributes: [String: Any] = [kSecValueData as String: encoded,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
