@@ -130,13 +130,34 @@ final class ToolStore: ObservableObject {
     private func knownApp(_ id: String) -> StoreApp? {
         let known = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app)
             + appCatalog.values.flatMap { $0 } + nameCatalog.map(\.app)
-        return known.first { $0.id == id }
+        guard var app = known.first(where: { $0.id == id }) else { return nil }
+        if app.iconURL == nil { app.iconURL = localArtwork(id) ?? known.first { $0.id == id && $0.iconURL != nil }?.iconURL }
+        return app
+    }
+
+    /// Artwork we already hold for an App ID from a download: the icon in
+    /// the package, or the artwork Apple sent with the download. Delisted
+    /// apps have no public listing, so this is often the only source.
+    func localArtwork(_ id: String) -> URL? {
+        for job in downloads.jobs where job.app.id == id {
+            if let icon = job.displayApp(packageIcon: downloads.packageIconURL(job)).iconURL { return icon }
+        }
+        return nil
     }
 
     /// Results from local records or other regions can lack artwork; look it
     /// up across storefronts (artwork is public even when the app is not
     /// available to the signed-in account's region).
     private func fillMissingArtwork(searchID id: UUID, store context: StoreContext, accountCountry: String?) async {
+        func local(_ apps: [StoreApp]) -> [StoreApp] {
+            apps.map { app in
+                var app = app
+                if app.iconURL == nil { app.iconURL = localArtwork(app.id) }
+                return app
+            }
+        }
+        results = local(results)
+        localResults = local(localResults)
         let missing = Array(Set((results + localResults)
             .filter { $0.iconURL == nil && !$0.id.isEmpty && $0.id.allSatisfy({ $0.isASCII && $0.isNumber }) }
             .map(\.id))).prefix(50)
@@ -244,6 +265,14 @@ final class ToolStore: ObservableObject {
         // listing showed it. Do not lose that listing before enqueuing.
         if asset.app.iconURL == nil { asset.app.iconURL = app.iconURL }
         try downloads.enqueue(asset)
+        // A delisted app's only artwork may arrive with the download itself.
+        if let icon = asset.app.iconURL {
+            func patched(_ apps: [StoreApp]) -> [StoreApp] {
+                apps.map { var item = $0; if item.id == app.id && item.iconURL == nil { item.iconURL = icon }; return item }
+            }
+            results = patched(results)
+            localResults = patched(localResults)
+        }
         tab = 1
     }
 

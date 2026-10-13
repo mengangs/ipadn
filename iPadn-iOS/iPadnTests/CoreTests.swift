@@ -317,6 +317,17 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try MacPackageOffer.validate(
             response(sinfs: [["dpInfo": Data([1])], ["dpInfo": Data([2])]]),
             appID: "6503940939", bundleID: "test.native.mac", versionID: "112233"))
+        // Delisted apps have no product page to read the version from: any
+        // numeric version is accepted, but it must still be macOS.
+        let delisted = try MacPackageOffer.validate(response(), appID: "6503940939",
+            bundleID: "test.native.mac", versionID: nil)
+        XCTAssertEqual(delisted.versionID, "112233")
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(["software-platform": "iphoneos"]), appID: "6503940939",
+            bundleID: "test.native.mac", versionID: nil))
+        XCTAssertThrowsError(try MacPackageOffer.validate(
+            response(["softwareVersionExternalIdentifier": ""]), appID: "6503940939",
+            bundleID: "test.native.mac", versionID: nil))
     }
 
     @MainActor

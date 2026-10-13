@@ -5,6 +5,12 @@ enum ToolError: LocalizedError {
     var errorDescription: String? { if case .message(let text) = self { return text }; return nil }
 }
 
+/// A non-2xx response, kept typed so callers can tell "not found" apart.
+struct HTTPStatusError: LocalizedError {
+    let code: Int
+    var errorDescription: String? { "网络请求失败：HTTP \(code)" }
+}
+
 enum AppErrorMessage {
     static func forSearch(_ error: Error) -> String {
         if error is CancellationError { return "" }

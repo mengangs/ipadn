@@ -33,6 +33,9 @@ struct AppDetailView: View {
     @State private var enteringMacDownloadURL = false
     @State private var macDownloadURL = ""
     @State private var headerAway = false
+    /// Listing artwork, else what a download of this app brought along
+    /// (delisted apps have no public listing to show).
+    private var iconURL: URL? { app.iconURL ?? store.localArtwork(app.id) }
     private var storeURL: URL { URL(string: "https://apps.apple.com/\(store.settings.store.country.lowercased())/app/id\(app.id)")! }
     private var filtered: [AppVersion] {
         versionSearch.isEmpty ? versions : versions.filter { $0.version.localizedCaseInsensitiveContains(versionSearch) || $0.id.contains(versionSearch) }
@@ -76,7 +79,7 @@ struct AppDetailView: View {
         .toolbar {
             // App Store shows the small icon in the bar once the header is gone.
             ToolbarItem(placement: .principal) {
-                AppIcon(url: app.iconURL, size: 30)
+                AppIcon(url: iconURL, size: 30)
                     .opacity(headerAway ? 1 : 0)
                     .animation(.easeInOut(duration: 0.18), value: headerAway)
                     .accessibilityHidden(true)
@@ -160,7 +163,7 @@ struct AppDetailView: View {
     /// App Store product header: big icon, name, subtitle and the primary capsule.
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
-            AppIcon(url: app.iconURL, size: 118)
+            AppIcon(url: iconURL, size: 118)
             VStack(alignment: .leading, spacing: 4) {
                 Text(app.name.isEmpty ? app.bundleID : app.name).font(.title3.weight(.bold))
                     .lineLimit(2).minimumScaleFactor(0.85).fixedSize(horizontal: false, vertical: true)

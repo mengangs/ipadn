@@ -263,10 +263,10 @@ final class AppleService: ObservableObject {
         guard let country = StoreService.country(forStorefront: account.storeFront) else {
             throw ToolError.message("当前账号所属商店地区尚未识别，无法可靠选择 Mac 安装包版本。")
         }
-        guard let versionID = try await MacStoreOfferService.latestVersionID(
-            appID: app.id, bundleID: app.bundleID, country: country) else {
-            throw ToolError.message("Apple 没有提供该应用的 Mac 专用版本，请确认商店地区和应用类型。")
-        }
+        // nil when the app is delisted (no product page): the request then
+        // omits externalVersionId and the response must still be macOS.
+        let versionID = try await MacStoreOfferService.latestVersionID(
+            appID: app.id, bundleID: app.bundleID, country: country)
         try Task.checkCancellation()
         guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
         let deviceID = guid
@@ -277,11 +277,11 @@ final class AppleService: ObservableObject {
         // Same ent/download request as ipatool's Mac path: the serial number is
         // derived from the GUID that also seeds kbsync and later the StoreAgent
         // dpInfo session, so all three refer to one hardware identity.
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "guid": deviceID, "salableAdamId": String(appNumber),
-            "serialNumber": serial, "creditDisplay": "",
-            "externalVersionId": versionID, "kbsync": sync
+            "serialNumber": serial, "creditDisplay": "", "kbsync": sync
         ]
+        if let versionID { payload["externalVersionId"] = versionID }
         var headers = authHeaders(account)
         headers["Content-Type"] = "application/x-www-form-urlencoded; charset=utf-8"
         headers["X-Apple-Store-Front"] = account.fullStoreFront.isEmpty ? account.storeFront : account.fullStoreFront
@@ -294,8 +294,13 @@ final class AppleService: ObservableObject {
         guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
         if let error = HTTPClient.appleFailure(raw) { throw error }
-        var offer = try MacPackageOffer.validate(raw, appID: app.id,
+        var offer: MacPackageOffer
+        do {
+            offer = try MacPackageOffer.validate(raw, appID: app.id,
                                                  bundleID: app.bundleID, versionID: versionID)
+        } catch where versionID == nil {
+            throw ToolError.message("该应用已从商店下架，Apple 没有为此账号提供 Mac 版安装包（可能只购买过 iOS 版本，或该应用没有 Mac 版）。")
+        }
         offer.hardwareID = deviceID
         return offer
     }
@@ -378,8 +383,10 @@ struct MacPackageOffer {
         return Data(bytes).base64EncodedString()
     }
 
+    /// `versionID` nil accepts whichever version Apple returns (delisted
+    /// apps), still requiring macOS metadata and a numeric version ID.
     static func validate(_ raw: [String: Any], appID: String, bundleID: String,
-                         versionID: String) throws -> MacPackageOffer {
+                         versionID: String?) throws -> MacPackageOffer {
         guard let songs = raw["songList"] as? [[String: Any]], songs.count == 1,
               let item = songs.first,
               let metadata = item["metadata"] as? [String: Any] else {
@@ -392,7 +399,8 @@ struct MacPackageOffer {
         let type = plistString(metadata["product-type"]).lowercased()
         // Universal app product-type can still be ios-app. Explicit macOS
         // software-platform is authoritative, never trust the filename.
-        guard itemID == appID, actualVersionID == versionID,
+        guard itemID == appID,
+              versionID.map({ actualVersionID == $0 }) ?? (UInt64(actualVersionID).map { $0 > 0 } ?? false),
               !actualBundleID.isEmpty,
               bundleID.isEmpty || actualBundleID == bundleID,
               platform == "macos", type == "mac-os-app" || type == "ios-app" || type.isEmpty else {
@@ -418,7 +426,7 @@ struct MacPackageOffer {
         guard !sinfs.contains(where: { bytes($0["sinf"]) != nil && bytes($0["dpInfo"]) == nil }) else {
             throw ToolError.message("Apple 返回的不是所选 Mac 应用或版本，已拒绝下载。")
         }
-        return MacPackageOffer(downloadURL: url, versionID: versionID,
+        return MacPackageOffer(downloadURL: url, versionID: actualVersionID,
                                displayVersion: plistString(metadata["bundleShortVersionString"]),
                                protectedByApple: !dpInfos.isEmpty, dpInfo: dpInfos.first)
     }

@@ -311,8 +311,11 @@ final class DownloadManager: NSObject, ObservableObject {
         for job in jobs where job.status == .completed && job.rawFormat == nil {
             guard let file = fileURL(job), !Task.isCancelled else { continue }
             if job.packageIconScanned != true {
+                // With store artwork available, only keep a package icon that is
+                // sharp at list size (64 pt at 3x).
+                let minimum = job.displayApp(packageIcon: nil).iconURL == nil ? 0 : 180
                 _ = await Task.detached(priority: .utility) {
-                    try? PackageIconService.save(from: file, id: job.id)
+                    try? PackageIconService.save(from: file, id: job.id, minimumPixels: minimum)
                 }.value
                 guard let index = jobs.firstIndex(where: { $0.id == job.id }) else {
                     try? FileManager.default.removeItem(at: PackageIconService.cacheURL(job.id))
@@ -324,6 +327,13 @@ final class DownloadManager: NSObject, ObservableObject {
                     jobs[index].app.iconURL = jobs[index].asset?.app.iconURL
                 }
                 persist()
+            }
+            // Icons cached before small package PNGs were rejected: fall back to
+            // the sharper store artwork.
+            if let cached = packageIconURL(job), job.displayApp(packageIcon: nil).iconURL != nil,
+               PackageIconService.pixelWidth(cached) < 180 {
+                try? FileManager.default.removeItem(at: cached)
+                objectWillChange.send()
             }
             // tvOS packages keep their icon in a layered asset catalog, and the
             // stored artwork can be the shared App ID's iPhone icon. Replace

@@ -48,7 +48,7 @@ final class HTTPClient: Sendable {
                 continue
             }
             guard (200..<300).contains(response.statusCode) else {
-                throw ToolError.message("网络请求失败：HTTP \(response.statusCode)")
+                throw HTTPStatusError(code: response.statusCode)
             }
             return (data, response)
         }

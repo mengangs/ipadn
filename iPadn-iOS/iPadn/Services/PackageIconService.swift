@@ -9,8 +9,10 @@ enum PackageIconService {
             .appendingPathComponent(id.uuidString + ".png")
     }
 
-    static func save(from ipa: URL, id: UUID) throws -> Bool {
-        guard let data = try png(from: ipa) else { return false }
+    /// `minimumPixels` rejects icons too small to look sharp (older packages
+    /// often ship only a 120 px PNG) when better store artwork exists.
+    static func save(from ipa: URL, id: UUID, minimumPixels: Int = 0) throws -> Bool {
+        guard let data = try png(from: ipa, minimumPixels: minimumPixels) else { return false }
         let url = cacheURL(id)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: url, options: .atomic)
@@ -20,6 +22,12 @@ enum PackageIconService {
     // tvOS frequently ships its icons only inside Apple TV asset catalogs.
     // iOS cannot reliably decode those renditions, so cache the public Apple
     // Store artwork as a stable local fallback instead of showing a placeholder.
+    static func pixelWidth(_ file: URL) -> Int {
+        guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else { return 0 }
+        return props[kCGImagePropertyPixelWidth] as? Int ?? 0
+    }
+
     static func normalizedArtwork(_ data: Data) -> Data? {
         guard !data.isEmpty, data.count <= 6_000_000,
               let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -47,7 +55,7 @@ enum PackageIconService {
         return true
     }
 
-    static func png(from ipa: URL) throws -> Data? {
+    static func png(from ipa: URL, minimumPixels: Int = 0) throws -> Data? {
         let archive = try Archive(url: ipa, accessMode: .read)
         guard let info = archive.first(where: {
             let parts = $0.path.split(separator: "/")
@@ -75,6 +83,7 @@ enum PackageIconService {
             return name.hasPrefix("appicon") || name.hasPrefix("icon.") || name.hasPrefix("icon@");
         }
         // A declared primary icon wins over alternate icons, extensions and store artwork.
+        var smallFallback: Data?
         for candidates in [primary, conventional] {
             var best: (pixels: Int, image: CGImage)?
             for entry in candidates {
@@ -91,7 +100,11 @@ enum PackageIconService {
                       ] as CFDictionary) else { continue }
                 if width * height > (best?.pixels ?? 0) { best = (width * height, image) }
             }
-            if let best { return UIImage(cgImage: best.image).pngData() }
+            if let best {
+                let data = UIImage(cgImage: best.image).pngData()
+                if best.image.width >= minimumPixels { return data }
+                smallFallback = smallFallback ?? data
+            }
         }
         // Some packages contain only a compiled asset catalog. Read it as resources;
         // no executable from the IPA is extracted or loaded.
@@ -105,11 +118,12 @@ enum PackageIconService {
             let resourceInfo = ["CFBundleIdentifier": "app.local.iPadn.icon." + UUID().uuidString, "CFBundlePackageType": "BNDL"]
             try PropertyListSerialization.data(fromPropertyList: resourceInfo, format: .binary, options: 0)
                 .write(to: folder.appendingPathComponent("Info.plist"))
-            if let bundle = Bundle(url: folder), let image = UIImage(named: assetName, in: bundle, compatibleWith: nil) {
+            if let bundle = Bundle(url: folder), let image = UIImage(named: assetName, in: bundle, compatibleWith: nil),
+               Int(image.size.width * image.scale) >= minimumPixels {
                 return image.pngData()
             }
         }
-        return nil
+        return minimumPixels > 0 ? nil : smallFallback
     }
 
     private static func read(_ entry: Entry, archive: Archive, limit: Int) throws -> Data? {

@@ -310,7 +310,18 @@ enum StoreService {
         guard let url = URL(string: value.replacingOccurrences(of: "{w}", with: "512")
             .replacingOccurrences(of: "{h}", with: "512").replacingOccurrences(of: "{f}", with: "png")
             .replacingOccurrences(of: "{c}", with: "bb")), url.scheme == "https", url.host != nil else { return nil }
-        return url
+        return sharpArtwork(url)
+    }
+
+    /// Apple's CDN serves any size from the same path; some responses (the
+    /// download dispatch, older lookups) link a 100 px rendition. Ask for 512 px.
+    static func sharpArtwork(_ url: URL) -> URL {
+        guard let host = url.host?.lowercased(), host.hasSuffix(".mzstatic.com"),
+              url.path.contains("/image/thumb/") else { return url }
+        let last = url.lastPathComponent
+        guard last.range(of: #"^\d+x\d+[a-z]*(-\d+)?\.(jpg|jpeg|png|webp)$"#, options: [.regularExpression, .caseInsensitive]) != nil,
+              let size = Int(last.prefix { $0.isNumber }), size < 512 else { return url }
+        return url.deletingLastPathComponent().appendingPathComponent("512x512bb.png")
     }
 }
 
@@ -420,7 +431,11 @@ enum MacStoreOfferService {
         guard let appNumber = UInt64(appID), appNumber > 0,
               country.count == 2, country.allSatisfy({ $0.isASCII && $0.isLetter }) else { return nil }
         let url = URL(string: "https://apps.apple.com/\(country.lowercased())/app/id\(appNumber)?platform=mac")!
-        let (data, response) = try await HTTPClient.shared.request(url)
+        let data: Data, response: HTTPURLResponse
+        do { (data, response) = try await HTTPClient.shared.request(url) }
+        // A delisted app has no product page; the caller then lets Apple
+        // pick the latest Mac version the account is entitled to.
+        catch let error as HTTPStatusError where error.code == 404 { return nil }
         guard data.count <= 3 * 1024 * 1024,
               response.mimeType?.lowercased().contains("html") == true,
               let html = String(data: data, encoding: .utf8) else { return nil }

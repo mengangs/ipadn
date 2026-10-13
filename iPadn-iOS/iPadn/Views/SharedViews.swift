@@ -12,7 +12,7 @@ struct AppIcon: View {
                 if let localImage { Image(uiImage: localImage).resizable().interpolation(.high).scaledToFit() }
                 else { placeholder }
             } else {
-                AsyncImage(url: url) { phase in
+                AsyncImage(url: url.map(StoreService.sharpArtwork)) { phase in
                     if let image = phase.image { image.resizable().interpolation(.high).scaledToFit() }
                     else { placeholder }
                 }
