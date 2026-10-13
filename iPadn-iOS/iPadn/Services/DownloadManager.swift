@@ -136,6 +136,31 @@ final class DownloadManager: NSObject, ObservableObject {
         requestNotifications(); schedule()
     }
 
+    // The authorized Mac App Store URL is provided by Apple's account-bound
+    // dispatch. Accept it only for offers that need no StoreAgent decoding.
+    // Finished files are checked as XAR PKG before the task becomes completed.
+    func enqueueOfficialMacPackage(_ offer: MacPackageOffer, for app: StoreApp) throws {
+        guard !offer.protectedByApple else {
+            throw ToolError.message("Apple 返回的是受保护的 Mac 安装包。当前 iPhone 版还不能完成 StoreAgent 处理，因此不会保存无效 PKG。")
+        }
+        guard storageError == nil else { throw ToolError.message(storageError!) }
+        guard jobs.filter({ $0.status != .completed && $0.status != .failed }).count < maxQueued else {
+            throw ToolError.message("已达到等待任务上限")
+        }
+        guard !jobs.contains(where: { $0.sourceURL == offer.downloadURL &&
+                                      ![.completed, .failed].contains($0.status) }) else {
+            throw ToolError.message("此安装包已有下载任务")
+        }
+        var macApp = app
+        if !offer.displayVersion.isEmpty { macApp.version = offer.displayVersion }
+        var next = jobs
+        next.insert(DownloadJob(app: macApp, sourceURL: offer.downloadURL,
+                                packageIconScanned: true, rawFormat: "pkg"), at: 0)
+        try saveNewJobs(next)
+        requestNotifications()
+        schedule()
+    }
+
     func enqueueURL(_ url: URL) throws {
         guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ToolError.message("下载链接必须是有效的 HTTPS 地址，不能包含账号密码") }
         guard storageError == nil else { throw ToolError.message(storageError!) }
