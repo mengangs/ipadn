@@ -10,6 +10,7 @@ on:
       - 'iPadn-iOS/scripts/probe_mac_pkg_tci_go_bridge.sh'
       - 'iPadn-iOS/scripts/mac_pkg_tci_probe.m'
       - 'iPadn-iOS/scripts/mac_pkg_tci_host_smoke.c'
+      - 'iPadn-iOS/scripts/mac_pkg_tci_go_probe.m'
       - '.github/workflows/mac-pkg-ios-bridge-probe.yml'
   workflow_dispatch:
 
@@ -74,6 +75,13 @@ jobs:
           "$ROOT/out/MacPKGTCIHostSmoke"
       - name: Static-link ipatool Go StoreAgent against no-JIT TCI for iPhoneOS
         run: bash iPadn-iOS/scripts/probe_mac_pkg_tci_go_bridge.sh
+      - name: Upload standalone Go and no-JIT TCI integration IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: MacPKGGoTCIProbe-unsigned-iphoneos
+          path: ${{ runner.temp }}/ipadn-macpkg-tci-probe/out/MacPKGGoTCIProbe-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload standalone no-JIT iPhone IPA
         uses: actions/upload-artifact@v4
         with:
