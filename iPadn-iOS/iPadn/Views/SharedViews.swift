@@ -108,10 +108,19 @@ struct RootView: View {
 
                     }.navigationTitle("iPadn").navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
                 } detail: {
-                    NavigationStack {
-                        page(store.tab).frame(maxWidth: 900).frame(maxWidth: .infinity)
-                            .background(Color(.systemGroupedBackground))
-                    }.id(store.tab)
+                    // Keep every section alive, like the iPhone tab bar does, so
+                    // switching sections keeps navigation, filters and scroll position.
+                    ZStack {
+                        ForEach(0..<destinations.count, id: \.self) { index in
+                            NavigationStack {
+                                page(index).frame(maxWidth: 900).frame(maxWidth: .infinity)
+                                    .background(Color(.systemGroupedBackground))
+                            }
+                            .opacity(store.tab == index ? 1 : 0)
+                            .allowsHitTesting(store.tab == index)
+                            .accessibilityHidden(store.tab != index)
+                        }
+                    }
                 }
             } else {
                 TabView(selection: $store.tab) {

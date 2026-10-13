@@ -73,7 +73,12 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
     }
 
     func execute(title: String, script: String, arguments: [String: Any], timeoutSeconds: UInt64 = 180, reuseRuntime: Bool = true) async throws -> String {
-        guard operationID == nil else { throw ToolError.message("另一项验证正在进行，请完成或取消后重试") }
+        // One operation at a time: wait for the current one (for example a
+        // background purchase sync) instead of failing the user's action.
+        while operationID != nil {
+            try Task.checkCancellation()
+            try await Task.sleep(for: .milliseconds(150))
+        }
         let id = UUID(); operationID = id; terminalError = nil
         let revision = cacheRevision
         var succeeded = false

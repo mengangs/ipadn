@@ -25,6 +25,11 @@ struct AppDetailView: View {
     @State private var verifiedForRetry = false
     @State private var showDescription = false
     @State private var reloadID = 0
+    @State private var loadedVersionsKey: String?
+    @State private var loadedReloadID = 0
+    private var versionsKey: String {
+        "\(official)-\(reloadID)-\(store.settings.store.country)-\(store.settings.store.platform.rawValue)-\(apple.activeID ?? "")"
+    }
     @State private var macWebsite: URL?
     @State private var macInstallers: [MacInstallerService.Installer] = []
     @State private var macLoading = false
@@ -155,7 +160,15 @@ struct AppDetailView: View {
             else if store.settings.store.platform.supportsIPA { download(versionID: app.externalVersionID) }
             else { downloadAppleMacPKG() }
         }
-        .task(id: "\(official)-\(reloadID)-\(store.settings.store.country)-\(store.settings.store.platform.rawValue)-\(apple.activeID ?? "")") { await fetchVersions(force: reloadID > 0) }
+        .task(id: versionsKey) {
+            // Coming back to the page (e.g. from the Downloads tab) keeps the
+            // loaded list; only a new key or 刷新 fetches again.
+            guard versionsKey != loadedVersionsKey else { return }
+            let forced = reloadID != loadedReloadID
+            // A different region, platform or account lists different versions.
+            if !forced { versions = [] }
+            if await fetchVersions(force: forced) { loadedVersionsKey = versionsKey; loadedReloadID = reloadID }
+        }
         .task(id: "\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
             await loadMacInstallers()
         }
@@ -340,12 +353,16 @@ struct AppDetailView: View {
     }
 
     private func copy(_ text: String) { UIPasteboard.general.string = text; store.infoMessage = "已复制到剪贴板"; UX.feedback() }
-    private func fetchVersions(force: Bool) async {
-        versionsLoading = true; versionError = nil; versions = []
-        defer { if !Task.isCancelled { versionsLoading = false } }
+    /// Returns whether the list was loaded. The previous list stays visible
+    /// until the new one arrives.
+    @discardableResult
+    private func fetchVersions(force: Bool) async -> Bool {
+        versionsLoading = true; versionError = nil
+        defer { versionsLoading = false }
         do {
             let result = try await store.loadVersions(for: app, force: force, official: official)
             try Task.checkCancellation(); versions = result
+            return true
         } catch is CancellationError { }
         catch AppleAuthError.reauthenticationRequired {
             if !Task.isCancelled {
@@ -366,6 +383,7 @@ struct AppDetailView: View {
                 versionError = message.contains("暂时无法获取历史版本") ? message : AppErrorMessage.forSearch(error)
             }
         }
+        return false
     }
     private func downloadAppleMacPKG() {
         guard !macOfficialLoading else { return }

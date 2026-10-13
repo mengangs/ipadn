@@ -90,6 +90,7 @@ enum StoreService {
         if case .appID = query {
             var tried = Set<String>()
             var firstError: Error?
+            var answered = false
             for country in searchCountries(selected: store.country, accountCountry: accountCountry) + fallbackCountries
             where tried.insert(country).inserted {
                 try Task.checkCancellation()
@@ -97,11 +98,18 @@ enum StoreService {
                 regional.country = country
                 do {
                     let apps = try await searchInCountry(query, store: regional, limit: limit)
+                    answered = true
                     if !apps.isEmpty { return apps }
                 } catch is CancellationError { throw CancellationError() }
-                catch { if firstError == nil { firstError = error } }
+                catch {
+                    if firstError == nil { firstError = error }
+                    // Offline: every other region would fail the same way, slowly.
+                    if (error as NSError).domain == NSURLErrorDomain { break }
+                }
             }
-            if let firstError, tried.count == 1 { throw firstError }
+            // "Not found anywhere" only when the stores actually answered;
+            // otherwise report the error instead of calling the app delisted.
+            if !answered, let firstError { throw firstError }
             return []
         }
         let primary = try await searchInCountry(query, store: store, limit: limit)
@@ -156,7 +164,7 @@ enum StoreService {
             let url = try endpoint("https://itunes.apple.com/lookup", items: [
                 URLQueryItem(name: "id", value: id), URLQueryItem(name: "country", value: store.country)
             ])
-            let rows = ((try? await HTTPClient.shared.json(url)) as? [String: Any])?["results"] as? [[String: Any]] ?? []
+            let rows = (try await HTTPClient.shared.json(url) as? [String: Any])?["results"] as? [[String: Any]] ?? []
             let apps = Self.idLookupMatches(rows, id: id, platform: store.platform).map(mapLookup)
             if !apps.isEmpty { return apps }
             return try await platformApp(id, store: store).map { [$0] } ?? []

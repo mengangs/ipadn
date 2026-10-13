@@ -9,6 +9,8 @@ final class DownloadManager: NSObject, ObservableObject {
     @Published private(set) var jobs: [DownloadJob] = []
     @Published var storageError: String?
     @Published private(set) var discoveryWarning: String?
+    /// The last save failed (for example, the disk is full); cleared by the next successful save.
+    @Published private(set) var saveWarning: String?
     /// Stage text for Mac App Store packages being processed on device.
     @Published private(set) var processingDetail: [UUID: String] = [:]
     var backgroundCompletion: (() -> Void)?
@@ -19,6 +21,7 @@ final class DownloadManager: NSObject, ObservableObject {
     private var processingIDs = Set<UUID>()
     private var iconsLoading = false
     private var catalogArtworkAttempted = Set<UUID>()
+    private var iconSizeChecked = Set<UUID>()
     private var artworkCountry = "CN"
     private var notifications = true
     private var lastSave = Date.distantPast
@@ -101,6 +104,7 @@ final class DownloadManager: NSObject, ObservableObject {
         }
         restoring = false
         for job in jobs where job.status == .processing {
+            if adoptFinishedPackage(job.id) { continue }
             if FileManager.default.fileExists(atPath: LocalResources.stagingURL(job.id).path) { process(job.id) }
             else { fail(job.id, error: ToolError.message("下载文件丢失，请重试")) }
         }
@@ -330,7 +334,8 @@ final class DownloadManager: NSObject, ObservableObject {
             }
             // Icons cached before small package PNGs were rejected: fall back to
             // the sharper store artwork.
-            if let cached = packageIconURL(job), job.displayApp(packageIcon: nil).iconURL != nil,
+            if iconSizeChecked.insert(job.id).inserted, let cached = packageIconURL(job),
+               job.displayApp(packageIcon: nil).iconURL != nil,
                PackageIconService.pixelWidth(cached) < 180 {
                 try? FileManager.default.removeItem(at: cached)
                 objectWillChange.send()
@@ -394,7 +399,8 @@ final class DownloadManager: NSObject, ObservableObject {
         guard let job = jobs.first(where: { $0.id == id }), processingIDs.insert(id).inserted else { return }
         var backgroundTask: UIBackgroundTaskIdentifier = .invalid
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Prepare IPA") { [weak self] in
-            Task { @MainActor in
+            // Called on the main thread; the task must be ended before returning.
+            MainActor.assumeIsolated {
                 self?.persist()
                 let completion = self?.backgroundCompletion; self?.backgroundCompletion = nil; completion?()
                 if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
@@ -441,7 +447,18 @@ final class DownloadManager: NSObject, ObservableObject {
                 if job.protectedMacPackage == true { MacPackageSecrets.delete(id) }
                 self.persist(); self.notify(title: "安装包已准备好", body: result.1.name + " " + result.1.version)
                 Task { await self.loadPackageIcons() }
-            } catch { self.fail(id, error: error) }
+            } catch {
+                // Retrying must download again rather than reprocess the same bad
+                // file (imported files have nothing to download and keep theirs).
+                // A protected Mac package keeps its download: its processing
+                // can fail for transient reasons (component download, network).
+                if job.protectedMacPackage != true, job.sourceURL != nil {
+                    try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
+                    try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
+                    if let index = self.jobs.firstIndex(where: { $0.id == id }) { self.jobs[index].downloaded = 0 }
+                }
+                self.fail(id, error: error)
+            }
         }
     }
 
@@ -459,6 +476,25 @@ final class DownloadManager: NSObject, ObservableObject {
             }
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
+    }
+
+    /// Processing moves the result into Packages before the job is saved as
+    /// completed; if the app was killed in between, finish the job from that file.
+    private func adoptFinishedPackage(_ id: UUID) -> Bool {
+        let prefix = id.uuidString + "-"
+        guard let index = jobs.firstIndex(where: { $0.id == id }),
+              let names = try? FileManager.default.contentsOfDirectory(atPath: LocalResources.packages.path),
+              let name = names.first(where: { $0.hasPrefix(prefix) }) else { return false }
+        jobs[index].localFilename = name
+        jobs[index].status = .completed
+        jobs[index].error = nil
+        if let size = (try? FileManager.default.attributesOfItem(atPath: LocalResources.packages.appendingPathComponent(name).path)[.size] as? NSNumber)?.int64Value {
+            jobs[index].downloaded = size; jobs[index].expected = size
+        }
+        try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
+        try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
+        if jobs[index].protectedMacPackage == true { MacPackageSecrets.delete(id) }
+        return true
     }
 
     private func discoverLocalFiles() {
@@ -487,9 +523,10 @@ final class DownloadManager: NSObject, ObservableObject {
         notify(title: "下载任务失败", body: jobs[index].app.name + "：" + error.localizedDescription)
     }
     private func persist() {
+        // storageError means the saved list could not be read; never overwrite it.
         guard storageError == nil else { return }
-        do { try saveJobs(jobs); lastSave = Date() }
-        catch { storageError = "无法保存下载任务：" + error.localizedDescription }
+        do { try saveJobs(jobs); lastSave = Date(); if saveWarning != nil { saveWarning = nil } }
+        catch { saveWarning = "下载任务暂时无法保存，请检查设备存储空间。" }
     }
     private func saveNewJobs(_ next: [DownloadJob]) throws {
         // Commit the file before publishing a newly enqueued/imported/retried task.
@@ -596,7 +633,8 @@ extension DownloadManager: URLSessionDownloadDelegate {
             job.downloaded = totalBytesWritten
             job.expected = max(0, totalBytesExpectedToWrite)
             self.jobs[index] = job
-            if Date().timeIntervalSince(self.lastSave) > 1 { self.persist() }
+            // Resume data, not this count, is what a restart relies on.
+            if Date().timeIntervalSince(self.lastSave) > 5 { self.persist() }
         }
     }
 
@@ -612,9 +650,12 @@ extension DownloadManager: URLSessionDownloadDelegate {
             try FileManager.default.moveItem(at: location, to: received)
             Task { @MainActor in
                 defer { try? FileManager.default.removeItem(at: received) }
+                // A transfer can finish while the app is not running; after a
+                // relaunch the job may already read paused or queued with no task.
                 guard let index = self.jobs.firstIndex(where: { $0.id == id }),
-                      [.running, .pausing].contains(self.jobs[index].status),
-                      self.tasks[id]?.taskIdentifier == downloadTask.taskIdentifier || self.restoring else { return }
+                      [.running, .pausing, .paused, .queued].contains(self.jobs[index].status),
+                      self.tasks[id] == nil || self.tasks[id]?.taskIdentifier == downloadTask.taskIdentifier
+                        || self.restoring else { return }
                 do {
                     let destination = LocalResources.stagingURL(id)
                     if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
@@ -638,10 +679,21 @@ extension DownloadManager: URLSessionDownloadDelegate {
         let resume = error.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
         Task { @MainActor in
             guard let job = self.jobs.first(where: { $0.id == id }), job.status != .completed && job.status != .processing else { return }
-            guard self.tasks[id]?.taskIdentifier == task.taskIdentifier || self.restoring else { return }
-            if job.status == .pausing || job.status == .paused { return }
+            guard self.tasks[id] == nil || self.tasks[id]?.taskIdentifier == task.taskIdentifier
+                    || self.restoring else { return }
+            // Save resume data first: it is what lets a cancelled transfer continue.
             if let resume = resume { try? resume.write(to: LocalResources.resumeURL(id), options: .atomic) }
-            else { try? FileManager.default.removeItem(at: LocalResources.resumeURL(id)) }
+            if job.status == .pausing || job.status == .paused { return }
+            if error.domain == NSURLErrorDomain, error.code == NSURLErrorCancelled, resume != nil,
+               let index = self.jobs.firstIndex(where: { $0.id == id }) {
+                // Cancelled by the system (app quit, low storage): pause, keep progress.
+                self.tasks.removeValue(forKey: id)
+                self.progressPublishedAt.removeValue(forKey: id)
+                self.jobs[index].status = .paused
+                self.persist(); self.schedule()
+                return
+            }
+            if resume == nil { try? FileManager.default.removeItem(at: LocalResources.resumeURL(id)) }
             self.fail(id, error: error)
         }
     }

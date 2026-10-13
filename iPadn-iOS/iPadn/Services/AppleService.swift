@@ -173,8 +173,17 @@ final class AppleService: ObservableObject {
             body: HTTPClient.encodePlist(payload), headers: authHeaders(account))
         let failure = plistString(raw["failureType"])
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
+        // Still expired right after a refresh: only signing in again can help.
+        if ["2034", "2042"].contains(failure), refreshed { throw AppleAuthError.reauthenticationRequired }
         if ["2034", "2042"].contains(failure), !refreshed {
-            let refreshedAccount = try await refresh(account, useCache: useCache)
+            let refreshedAccount: AppleAccount
+            do { refreshedAccount = try await refresh(account, useCache: useCache) }
+            catch {
+                if error is AppleLoginError || error is AppleAuthError || error is CancellationError
+                    || (error as NSError).domain == NSURLErrorDomain { throw error }
+                // The saved password no longer works (changed or wrong): ask for it.
+                throw AppleAuthError.reauthenticationRequired
+            }
             return try await fetchAsset(appID: appID, versionID: versionID, account: refreshedAccount,
                 useCache: useCache, fallback: fallback, refreshed: true, purchased: purchased,
                 allowLicenseAcquisition: allowLicenseAcquisition)

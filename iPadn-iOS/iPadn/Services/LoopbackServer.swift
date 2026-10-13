@@ -78,6 +78,8 @@ final class LoopbackServer: @unchecked Sendable {
                         parameters = NWParameters(tls: tls, tcp: NWProtocolTCP.Options())
                     } else { parameters = .tcp }
                     parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: self.port.flatMap(NWEndpoint.Port.init(rawValue:)) ?? .any)
+                    // A fixed port may still be in TIME_WAIT from the last session.
+                    if self.port != nil { parameters.allowLocalEndpointReuse = true }
                     let listener = try NWListener(using: parameters, on: .any)
                     self.listener = listener
                     listener.stateUpdateHandler = { [weak self, weak listener] state in
@@ -102,6 +104,13 @@ final class LoopbackServer: @unchecked Sendable {
                             self.lock.lock(); self.readyURL = nil; self.lock.unlock()
                             self.listener = nil
                             self.finishStart(.failure(ToolError.message("安装已中断，请重试")))
+                        case .waiting(let error):
+                            // The port can't be bound right now: fail instead of
+                            // leaving every caller of start() waiting forever.
+                            self.lock.lock(); self.readyURL = nil; self.lock.unlock()
+                            self.listener = nil
+                            self.finishStart(.failure(error))
+                            listener.cancel()
                         default: break
                         }
                     }

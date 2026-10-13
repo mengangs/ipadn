@@ -120,7 +120,6 @@ final class AppIconService: ObservableObject {
             beginReconciliation()
             return
         }
-        let code = (lastError as NSError?)?.code ?? 0
         throw ToolError.message("图标更换失败，请稍后重试")
     }
 
@@ -156,6 +155,8 @@ final class AppIconService: ObservableObject {
             }
             guard let self, self.awaitingSystem != nil else { return }
             self.awaitingSystem = nil
+            // Show what the system reports from now on, not an earlier choice.
+            Self.confirmedThisLaunch = nil
             self.statusHint = "系统未确认更换，请回到主屏幕查看"
             self.refresh()
         }
