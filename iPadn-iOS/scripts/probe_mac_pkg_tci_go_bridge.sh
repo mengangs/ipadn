@@ -37,6 +37,42 @@ test -s "$ROOT/synthetic_storeagent.dylib"
 xcrun file "$ROOT/synthetic_storeagent.dylib"
 mkdir -p ipatool/tools/ios-tci-link
 cp "$ROOT/synthetic_storeagent.dylib" ipatool/tools/ios-tci-link/fixture.dylib
+
+# Before compiling for iPhone, exercise ipatool's real Go Mach-O parser on
+# this fixture on the CI host. This catches malformed symbol tables, missing
+# x86_64 slices, and relocation mistakes without installing any app.
+mkdir -p ipatool/tools/ios-tci-fixture-check
+cat > ipatool/tools/ios-tci-fixture-check/main.go <<'FIXTURE_GO'
+package main
+
+import (
+    "errors"
+    "fmt"
+    "os"
+
+    "github.com/majd/ipatool/v2/internal/sap/machimage"
+)
+
+func main() {
+    data, err := os.ReadFile("tools/ios-tci-link/fixture.dylib")
+    if err != nil { panic(err) }
+    img, err := machimage.Open("ipadn-ci-fixture", data)
+    if err != nil { panic(fmt.Errorf("open synthetic Mach-O: %w", err)) }
+    const base uint64 = 0x00001000c0000000
+    address, err := img.Export("_ipadn_synthetic_answer", base)
+    if err != nil { panic(fmt.Errorf("resolve synthetic answer: %w", err)) }
+    if address < base || address > base+(8<<20) {
+        panic(fmt.Errorf("unexpected Mach-O symbol 0x%x", address))
+    }
+    if err := img.Relocate(base, func(symbol string) (uint64, error) {
+        return 0, errors.New("unexpected synthetic dependency: " + symbol)
+    }); err != nil {
+        panic(fmt.Errorf("relocate synthetic fixture: %w", err))
+    }
+    fmt.Printf("PASS: authentic Go Mach-O parser, synthetic export and relocation (guest address 0x%x)\\n", address)
+}
+FIXTURE_GO
+(cd ipatool && go run ./tools/ios-tci-fixture-check)
 cat > ipatool/tools/ios-tci-link/main.go <<'GOEOF'
 package main
 
