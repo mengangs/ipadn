@@ -245,6 +245,41 @@ final class AppleService: ObservableObject {
         guard raw["jingleDocType"] != nil else { throw ToolError.message("未能获取免费应用许可，请先在 App Store 获取后重试") }
     }
 
+    // Official Apple Mac App Store authorization preflight.
+    // This deliberately does NOT create a download task: Mac Store packages
+    // can require StoreAgent/dpInfo processing before they become valid XAR.
+    // Exposing the encrypted response as a .pkg would corrupt the export.
+    func macPackageOffer(_ app: StoreApp, useCache: Bool) async throws -> MacPackageOffer {
+        guard let account = active else { throw ToolError.message("请先在账号页登录 Apple 账号") }
+        guard UInt64(app.id) != nil, UInt64(app.id) != 0 else {
+            throw ToolError.message("请输入有效的 Mac 应用 ID")
+        }
+        let initialID = account.id
+        let country = StoreService.country(forStorefront: account.storeFront) ?? "US"
+        guard let versionID = try await MacStoreOfferService.latestVersionID(
+            appID: app.id, bundleID: app.bundleID, country: country) else {
+            throw ToolError.message("Apple 没有提供该应用的 Mac 专用版本，请确认商店地区和应用类型。")
+        }
+        try Task.checkCancellation()
+        guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
+        let sync = try await signer.kbsync(guid: guid, dsid: account.dsid, useCache: useCache)
+        let payload: [String: Any] = [
+            "guid": guid, "salableAdamId": NSNumber(value: UInt64(app.id)!),
+            "serialNumber": "0", "creditDisplay": "",
+            "externalVersionId": versionID, "kbsync": sync
+        ]
+        let endpoint = URL(string:
+            "https://downloaddispatch.itunes.apple.com/WebObjects/DownloadDispatch.woa/wa/ent/download?guid=" + guid)!
+        let (raw, _) = try await HTTPClient.shared.plist(endpoint,
+            body: HTTPClient.encodePlist(payload), headers: authHeaders(account))
+        try Task.checkCancellation()
+        guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
+        if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
+        if let error = HTTPClient.appleFailure(raw) { throw error }
+        return try MacPackageOffer.validate(raw, appID: app.id,
+                                            bundleID: app.bundleID, versionID: versionID)
+    }
+
     func ownedApps(useCache: Bool) async throws -> [OwnedApp] {
         guard let account = active else { throw ToolError.message("请先登录 Apple 账号") }
         let base = "https://pd.itunes.apple.com/WebObjects/MZPurchaseDaap.woa/purchase"
@@ -294,6 +329,54 @@ final class AppleService: ObservableObject {
     }
 }
 
+
+// Trusted metadata only. The URL is obtained from an authenticated Apple
+// response; passwords/tokens/dpInfo are never exposed to the UI or logged.
+struct MacPackageOffer {
+    let downloadURL: URL
+    let versionID: String
+    let displayVersion: String
+    let protectedByApple: Bool
+
+    static func validate(_ raw: [String: Any], appID: String, bundleID: String,
+                         versionID: String) throws -> MacPackageOffer {
+        guard let songs = raw["songList"] as? [[String: Any]], songs.count == 1,
+              let item = songs.first,
+              let metadata = item["metadata"] as? [String: Any] else {
+            throw ToolError.message("Apple 未返回符合账号授权的 Mac 下载信息。")
+        }
+        let itemID = plistString(metadata["itemId"] ?? item["songId"])
+        let actualVersionID = plistString(metadata["softwareVersionExternalIdentifier"])
+        let actualBundleID = plistString(metadata["softwareVersionBundleId"])
+        let platform = plistString(metadata["software-platform"]).lowercased()
+        let type = plistString(metadata["product-type"]).lowercased()
+        // Universal app product-type can still be ios-app. Explicit macOS
+        // software-platform is authoritative, never trust the filename.
+        guard itemID == appID, actualVersionID == versionID,
+              !actualBundleID.isEmpty,
+              bundleID.isEmpty || actualBundleID == bundleID,
+              platform == "macos", type == "mac-os-app" || type == "ios-app" || type.isEmpty else {
+            throw ToolError.message("Apple 返回的不是所选 Mac 应用或版本，已拒绝下载。")
+        }
+        guard let text = item["URL"] as? String,
+              let url = URL(string: text), url.scheme?.lowercased() == "https",
+              url.host != nil, url.user == nil, url.password == nil else {
+            throw ToolError.message("Apple 没有返回安全的 Mac 安装包下载地址。")
+        }
+        let sinfs = item["sinfs"] as? [[String: Any]] ?? []
+        let dpInfos: [Data] = sinfs.compactMap { sinf in
+            if let value = sinf["dpInfo"] as? Data { return value }
+            if let encoded = sinf["dpInfo"] as? String { return Data(base64Encoded: encoded) }
+            return nil
+        }.filter { !$0.isEmpty }
+        if let first = dpInfos.first, dpInfos.contains(where: { $0 != first }) {
+            throw ToolError.message("Apple 返回的 Mac 下载授权信息不一致，已停止处理。")
+        }
+        return MacPackageOffer(downloadURL: url, versionID: versionID,
+                               displayVersion: plistString(metadata["bundleShortVersionString"]),
+                               protectedByApple: !dpInfos.isEmpty)
+    }
+}
 
 enum AppleAuthError: LocalizedError {
     case reauthenticationRequired
