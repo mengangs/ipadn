@@ -130,11 +130,14 @@ enum MacPackageDecryptor {
         let queued = running ? nil : waiting.removeValue(forKey: job)
         if !running { cancelled.insert(job) }
         lock.unlock()
-        if running {
-            cancelFunction?()
-            finish?(CancellationError())
-        }
+        // Release the caller first. Calling into the bridge can block until its
+        // current step (Apple's component starting up) returns, so it must
+        // never run on the caller's thread, which is usually the main thread.
+        finish?(CancellationError())
         queued?.finish(CancellationError())
+        if running, let cancelFunction {
+            DispatchQueue.global(qos: .userInitiated).async { cancelFunction() }
+        }
     }
 }
 
