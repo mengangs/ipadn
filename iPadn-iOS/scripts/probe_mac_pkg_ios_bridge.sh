@@ -7,6 +7,7 @@ UPSTREAM_COMMIT="4484b55d366e177ae6c89758c61588712c572fad" # ipatool v2.7.0
 UNICORN_URL="https://github.com/unicorn-engine/unicorn/archive/refs/tags/2.1.4.tar.gz"
 UNICORN_SHA256="ea8863f095a0136388694e5a6063afd9bb7650e30243dd6251af59c5ce5601f4"
 
+PROJECT_ROOT="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
 CC="$(xcrun --sdk iphoneos --find clang)"
 WORKDIR="${RUNNER_TEMP:-/tmp}/ipadn-macpkg-static-probe"
@@ -97,12 +98,13 @@ cat > "$APP/Info.plist" <<'PLIST'
 <key>CFBundleVersion</key><string>1</string>
 <key>LSRequiresIPhoneOS</key><true/>
 <key>MinimumOSVersion</key><string>15.0</string>
+<key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
 <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
 <key>UILaunchScreen</key><dict/>
 </dict></plist>
 PLIST
 "$CC" -target arm64-apple-ios15.0 -isysroot "$SDKROOT" \
-  "${GITHUB_WORKSPACE:-$PWD}/iPadn-iOS/scripts/mac_pkg_runtime_probe.m" \
+  -fobjc-arc "$PROJECT_ROOT/iPadn-iOS/scripts/mac_pkg_runtime_probe.m" \
   "$WORKDIR/out/libipadnMacBridge.a" \
   -framework UIKit -framework Foundation -framework Security -framework CoreFoundation \
   -lresolv -liconv -lz -lc++ -Wl,-export_dynamic \
