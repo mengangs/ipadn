@@ -29,8 +29,8 @@ _ipadn_synthetic_answer:
     addq $7, %rax
     retq
 
-// A synthetic host-service entry. The guest instruction is only RET;
-// a Go callback supplies its result after validating its arguments.
+# A synthetic host-service entry. The guest instruction is only RET;
+# a Go callback supplies its result after validating its arguments.
 .globl _ipadn_synthetic_service
 .p2align 4
 _ipadn_synthetic_service:
@@ -392,6 +392,114 @@ func iPadnMacTCICrossImageProbe(output *C.char, capacity C.int32_t) C.int32_t {
         return -56
     }
     report(fmt.Sprintf("两份原创 Mach-O 动态库之间绑定、函数调用和返回成功；绑定次数=%d，RAX=0x%x；未加载 Apple StoreAgent", imports, rax))
+    return 0
+}
+
+//export iPadnMacTCIServiceShimProbe
+func iPadnMacTCIServiceShimProbe(output *C.char, capacity C.int32_t) C.int32_t {
+    report := func(msg string) {
+        if output == nil || capacity < 2 || capacity > 4096 { return }
+        dst := unsafe.Slice((*byte)(unsafe.Pointer(output)), int(capacity))
+        n := copy(dst[:len(dst)-1], msg)
+        dst[n] = 0
+    }
+    fail := func(stage string, err error, code C.int32_t) C.int32_t {
+        report(fmt.Sprintf("%s: %v", stage, err))
+        return code
+    }
+    // Fully original Mach-O fixtures. The guest calls an imported x86 RET
+    // stub; a Go hook implements a bounded, synthetic host service.
+    provider, err := machimage.Open("synthetic-shim-provider", syntheticMachO)
+    if err != nil { return fail("读取模拟服务库", err, -60) }
+    consumer, err := machimage.Open("synthetic-shim-consumer", syntheticMachOServiceConsumer)
+    if err != nil { return fail("读取模拟调用库", err, -61) }
+    const providerBase uint64 = 0x00001000c0000000
+    const consumerBase uint64 = 0x00001000f0000000
+    service, err := provider.Export("_ipadn_synthetic_service", providerBase)
+    if err != nil { return fail("解析模拟服务入口", err, -62) }
+    entry, err := consumer.Export("_ipadn_synthetic_service_caller", consumerBase)
+    if err != nil { return fail("解析模拟调用者入口", err, -63) }
+    stop, err := consumer.Export("_ipadn_synthetic_service_caller_stop", consumerBase)
+    if err != nil { return fail("解析调用者结束地址", err, -64) }
+    if entry >= stop || stop-entry > 128 {
+        report(fmt.Sprintf("模拟服务调用范围无效 0x%x..0x%x", entry, stop))
+        return -65
+    }
+    if err = provider.Relocate(providerBase, func(name string) (uint64, error) {
+        return 0, fmt.Errorf("模拟服务提供库包含意外导入 %s", name)
+    }); err != nil { return fail("重定位模拟服务提供库", err, -66) }
+    imports := 0
+    if err = consumer.Relocate(consumerBase, func(name string) (uint64, error) {
+        if name != "_ipadn_synthetic_service" {
+            return 0, fmt.Errorf("意外服务导入 %s", name)
+        }
+        imports++
+        return service, nil
+    }); err != nil { return fail("绑定模拟服务符号", err, -67) }
+    if imports != 1 {
+        report(fmt.Sprintf("模拟服务导入次数 %d，预期 1", imports))
+        return -68
+    }
+    engine, err := unicorn.New(context.Background())
+    if err != nil { return fail("创建 TCI 引擎", err, -69) }
+    defer engine.Close()
+    if err = provider.Load(engine); err != nil { return fail("装载服务库", err, -70) }
+    if err = consumer.Load(engine); err != nil { return fail("装载调用库", err, -71) }
+    if err = engine.MemMap(0x3ff000, 0x1000); err != nil {
+        return fail("映射 x86 栈", err, -72)
+    }
+    if err = engine.MemMap(0x600000, 0x1000); err != nil {
+        return fail("映射服务数据", err, -73)
+    }
+    if err = engine.MemWrite(0x600000, []byte("synthetic")); err != nil {
+        return fail("写入服务参数", err, -74)
+    }
+    if err = engine.RegWrite(unicorn.RegRSP, 0x3fff00); err != nil {
+        return fail("设置 x86 栈", err, -75)
+    }
+    callbacks := 0
+    var callbackErr error
+    hook, err := engine.AddCodeHook(service, service, func(address uint64, size uint32) {
+        callbacks++
+        if address != service || size != 1 {
+            callbackErr = fmt.Errorf("错误模拟服务位置 0x%x，指令长度 %d", address, size)
+            return
+        }
+        argument, readErr := engine.RegRead(unicorn.RegRDI)
+        if readErr != nil { callbackErr = readErr; return }
+        if argument != 0xa5 {
+            callbackErr = fmt.Errorf("参数不符 RDI=0x%x", argument)
+            return
+        }
+        request, readErr := engine.MemRead(0x600000, 9)
+        if readErr != nil { callbackErr = readErr; return }
+        if string(request) != "synthetic" {
+            callbackErr = fmt.Errorf("模拟服务数据不符 %q", request)
+            return
+        }
+        if writeErr := engine.MemWrite(0x600010, []byte("ok")); writeErr != nil {
+            callbackErr = writeErr
+            return
+        }
+        if writeErr := engine.RegWrite(unicorn.RegRAX, 0x6060); writeErr != nil {
+            callbackErr = writeErr
+        }
+    })
+    if err != nil { return fail("注册 Go 模拟服务 Hook", err, -76) }
+    defer hook.Close()
+    if err = engine.StartBounded(entry, stop, 500*time.Millisecond, 128); err != nil {
+        return fail("执行跨镜像 Go 模拟服务调用", err, -77)
+    }
+    if callbackErr != nil { return fail("模拟服务回调", callbackErr, -78) }
+    rax, err := engine.RegRead(unicorn.RegRAX)
+    if err != nil { return fail("读取模拟服务结果", err, -79) }
+    response, err := engine.MemRead(0x600010, 2)
+    if err != nil { return fail("读取模拟服务写回数据", err, -80) }
+    if rax != 0x6069 || string(response) != "ok" || callbacks != 1 {
+        report(fmt.Sprintf("模拟服务结果不符：RAX=0x%x，结果=%q，Hook 次数=%d", rax, response, callbacks))
+        return -81
+    }
+    report(fmt.Sprintf("跨 Mach-O 模拟系统服务调用成功：绑定=%d，Go Hook=%d，RAX=0x%x，数据写回=%q（没有 Apple StoreAgent）", imports, callbacks, rax, response))
     return 0
 }
 
