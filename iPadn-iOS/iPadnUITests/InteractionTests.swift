@@ -1,6 +1,20 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
+    func testAppIDIsAlignedWithVersionInDetailHeader() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--visual-preview", "--detail"]
+        app.launch()
+        let copyID = app.buttons["app.copy-id"]
+        let version = app.staticTexts["v3.2.1"]
+        XCTAssertTrue(copyID.waitForExistence(timeout: 10))
+        XCTAssertTrue(version.exists)
+        XCTAssertGreaterThan(copyID.frame.minX, version.frame.maxX)
+        XCTAssertEqual(copyID.frame.midY, version.frame.midY, accuracy: 12)
+        copyID.tap()
+        attach("21-app-id-inline", app: app)
+    }
+
     func testDownloadPlatformBadgeAlignsWithFileSize() {
         let app = XCUIApplication()
         app.launchArguments = ["--visual-preview", "--downloads"]
@@ -148,7 +162,9 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.swipeLeft(); delete.tap()
         XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
-        XCTAssertTrue(app.buttons["已删除任务"].waitForExistence(timeout: 5))
+        let notice = app.buttons["已删除任务"]
+        XCTAssertTrue(notice.waitForExistence(timeout: 5))
+        XCTAssertLessThan(notice.frame.midY, app.frame.midY, "操作提示应该位于上方，不遮挡底部操作")
         attach("14-task-toast", app: app)
         XCTAssertFalse(row.exists)
     }

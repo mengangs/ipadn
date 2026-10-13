@@ -43,21 +43,6 @@ struct AppDetailView: View {
                     HStack(alignment: .top, spacing: 18) { AppIcon(url: app.iconURL, size: 64); appHeading }
                     VStack(alignment: .leading, spacing: 16) { AppIcon(url: app.iconURL, size: 64); appHeading }
                 }.padding(.vertical, 6)
-                Button { copy(app.id) } label: {
-                    HStack(spacing: 8) {
-                        Text("App ID")
-                        Text(app.id).monospacedDigit()
-                        Image(systemName: "doc.on.doc").font(.caption)
-                        Spacer(minLength: 0)
-                    }
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .contentShape(Rectangle())
-                    .frame(minHeight: 38)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("App ID \(app.id)，点按复制")
-                .accessibilityIdentifier("app.copy-id")
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 14) { appMetadata }
                     VStack(alignment: .leading, spacing: 6) { appMetadata }
@@ -236,7 +221,27 @@ struct AppDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(app.name.isEmpty ? app.bundleID : app.name).font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
             if !app.category.isEmpty { Text(app.category).font(.subheadline).foregroundStyle(.secondary) }
-            Text(app.version.isEmpty ? "版本待查询" : "v\(app.version)").font(.subheadline.monospacedDigit()).foregroundStyle(.tint)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(app.version.isEmpty ? "版本待查询" : "v\(app.version)")
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(.tint)
+                    .layoutPriority(1)
+                Spacer(minLength: 4)
+                Button { copy(app.id) } label: {
+                    HStack(spacing: 5) {
+                        Text("App ID")
+                        Text(app.id).monospacedDigit()
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("App ID \(app.id)，点按复制")
+                .accessibilityIdentifier("app.copy-id")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
     private func copy(_ text: String) { UIPasteboard.general.string = text; store.infoMessage = "已复制到剪贴板"; UX.feedback() }
@@ -260,7 +265,12 @@ struct AppDetailView: View {
                 showVerification = true
             }
         }
-        catch { if !Task.isCancelled { versionError = AppErrorMessage.forSearch(error) } }
+        catch {
+            if !Task.isCancelled {
+                let message = error.localizedDescription
+                versionError = message.contains("历史版本来源暂不可用") ? message : AppErrorMessage.forSearch(error)
+            }
+        }
     }
     private func enqueueMacInstaller(_ installer: MacInstallerService.Installer) {
         do {

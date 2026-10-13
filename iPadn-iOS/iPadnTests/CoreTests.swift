@@ -154,6 +154,34 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(AppPlatform.tvOS.supportsIPA)
     }
 
+    func testVersionSourcesMergeWithoutDependingOnResponseOrder() {
+        let first = [
+            AppVersion(id: "100", version: "未知版本", source: "Timbrd"),
+            AppVersion(id: "99", version: "1.0", source: "Timbrd")
+        ]
+        let second = [
+            AppVersion(id: "100", version: "2.0", source: "Bilin"),
+            AppVersion(id: "98", version: "0.9", source: "Bilin")
+        ]
+        let result = VersionService.mergeSourceResults([first, second])
+        XCTAssertEqual(result.map(\.id), ["100", "99", "98"])
+        XCTAssertEqual(result.first?.version, "2.0")
+        XCTAssertEqual(result.first?.source, "Timbrd、Bilin")
+        XCTAssertEqual(VersionService.mergeSourceResults([[], second]).count, 2)
+        XCTAssertTrue(VersionService.mergeSourceResults([[], []]).isEmpty)
+    }
+
+    func testViewingAppleHistoryNeverRequestsFreeAppLicense() {
+        XCTAssertFalse(AppleService.shouldAcquireLicense(
+            failure: "9610", purchased: false, allowLicenseAcquisition: false))
+        XCTAssertTrue(AppleService.shouldAcquireLicense(
+            failure: "9610", purchased: false, allowLicenseAcquisition: true))
+        XCTAssertFalse(AppleService.shouldAcquireLicense(
+            failure: "9610", purchased: true, allowLicenseAcquisition: true))
+        XCTAssertFalse(AppleService.shouldAcquireLicense(
+            failure: "2002", purchased: false, allowLicenseAcquisition: true))
+    }
+
     func testTVStoreOfferVersionAndSearchMetadata() {
         XCTAssertEqual(StoreService.platformExternalVersionID(
             version: ["externalId": 892773268],

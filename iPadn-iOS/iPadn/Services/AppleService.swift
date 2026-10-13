@@ -92,7 +92,8 @@ final class AppleService: ObservableObject {
         return refreshed
     }
 
-    func asset(appID: String, versionID: String?, store: StoreContext, useCache: Bool) async throws -> DownloadAsset {
+    func asset(appID: String, versionID: String?, store: StoreContext, useCache: Bool,
+               allowLicenseAcquisition: Bool = true) async throws -> DownloadAsset {
         guard let identifier = UInt64(appID), identifier > 0,
               appID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message("App ID 必须是有效的正整数") }
         if let versionID {
@@ -116,7 +117,8 @@ final class AppleService: ObservableObject {
             // Such requests still undergo strict package validation below.
         }
         var asset = try await fetchAsset(appID: appID, versionID: targetVersion, account: account,
-                                         useCache: useCache, fallback: false, refreshed: false, purchased: false)
+                                         useCache: useCache, fallback: false, refreshed: false, purchased: false,
+                                         allowLicenseAcquisition: allowLicenseAcquisition)
         let reported = asset.platform.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if store.platform == .tvOS {
             let tvPlatforms = ["tvos", "appletvos", "appletv", "atv9"]
@@ -126,7 +128,8 @@ final class AppleService: ObservableObject {
                 // before reporting that no verified tvOS file is available.
                 if let alternate = try? await fetchAsset(appID: appID, versionID: targetVersion,
                     account: account, useCache: useCache, fallback: true,
-                    refreshed: false, purchased: false),
+                    refreshed: false, purchased: false,
+                    allowLicenseAcquisition: allowLicenseAcquisition),
                    alternate.platform.isEmpty || tvPlatforms.contains(alternate.platform.lowercased()) {
                     asset = alternate
                 } else {
@@ -146,7 +149,8 @@ final class AppleService: ObservableObject {
     }
 
     private func fetchAsset(appID: String, versionID: String?, account: AppleAccount,
-                            useCache: Bool, fallback: Bool, refreshed: Bool, purchased: Bool) async throws -> DownloadAsset {
+                            useCache: Bool, fallback: Bool, refreshed: Bool, purchased: Bool,
+                             allowLicenseAcquisition: Bool) async throws -> DownloadAsset {
         guard activeID == account.id else { throw ToolError.message("账号已切换，请重新执行下载") }
         let root = fallback ? "https://downloaddispatch.itunes.apple.com/up/backgroundUpdateProduct" :
             "https://downloaddispatch.itunes.apple.com/WebObjects/DownloadDispatch.woa/wa/ent/download"
@@ -167,22 +171,26 @@ final class AppleService: ObservableObject {
         if ["2034", "2042"].contains(failure), !refreshed {
             let refreshedAccount = try await refresh(account, useCache: useCache)
             return try await fetchAsset(appID: appID, versionID: versionID, account: refreshedAccount,
-                useCache: useCache, fallback: fallback, refreshed: true, purchased: purchased)
+                useCache: useCache, fallback: fallback, refreshed: true, purchased: purchased,
+                allowLicenseAcquisition: allowLicenseAcquisition)
         }
-        if failure == "9610", !purchased {
+        if Self.shouldAcquireLicense(failure: failure, purchased: purchased,
+                                     allowLicenseAcquisition: allowLicenseAcquisition) {
             // A missing license does not mean the login session is expired. Refreshing
             // here always calls authenticate and can trigger an invisible 2FA prompt.
             // Acquire the free license using the current valid account first.
             guard activeID == account.id else { throw ToolError.message("账号已切换，请重新执行下载") }
             try await acquireFreeApp(appID, account: account)
             return try await fetchAsset(appID: appID, versionID: versionID, account: account,
-                useCache: useCache, fallback: fallback, refreshed: refreshed, purchased: true)
+                useCache: useCache, fallback: fallback, refreshed: refreshed, purchased: true,
+                allowLicenseAcquisition: allowLicenseAcquisition)
         }
         if let error = HTTPClient.appleFailure(raw) { throw error }
         guard let song = (raw["songList"] as? [[String: Any]])?.first else {
             if !fallback {
                 return try await fetchAsset(appID: appID, versionID: versionID, account: account,
-                    useCache: useCache, fallback: true, refreshed: refreshed, purchased: purchased)
+                    useCache: useCache, fallback: true, refreshed: refreshed, purchased: purchased,
+                    allowLicenseAcquisition: allowLicenseAcquisition)
             }
             throw ToolError.message("Apple 没有返回该版本的下载信息")
         }
@@ -211,6 +219,11 @@ final class AppleService: ObservableObject {
         return DownloadAsset(app: app, url: url, sinf: sinf, metadata: try HTTPClient.encodePlist(metadata),
             externalVersionIDs: (metadata["softwareVersionExternalIdentifiers"] as? [Any] ?? []).map { plistString($0) },
             platform: plistString(metadata["software-platform"]), account: account.id)
+    }
+
+    static func shouldAcquireLicense(failure: String, purchased: Bool,
+                                     allowLicenseAcquisition: Bool) -> Bool {
+        failure == "9610" && !purchased && allowLicenseAcquisition
     }
 
     private func acquireFreeApp(_ id: String, account: AppleAccount) async throws {

@@ -189,7 +189,8 @@ final class ToolStore: ObservableObject {
             return [AppVersion(id: id, version: listing.version.isEmpty ? "未知版本" : listing.version, source: "Apple TV")]
         }
         if official {
-            let asset = try await apple.asset(appID: app.id, versionID: nil, store: context, useCache: settings.useSignerCache)
+            let asset = try await apple.asset(appID: app.id, versionID: nil, store: context,
+                                              useCache: settings.useSignerCache, allowLicenseAcquisition: false)
             let third = context.platform == .iOS ? (try? await versions.thirdParty(app.id, sources: settings.versionSources, force: force)) ?? [] : []
             let names = Dictionary(third.map { ($0.id, $0.version) }, uniquingKeysWith: { first, _ in first })
             let ids = asset.externalVersionIDs.isEmpty ? [asset.app.externalVersionID ?? ""] : Array(asset.externalVersionIDs.reversed())
