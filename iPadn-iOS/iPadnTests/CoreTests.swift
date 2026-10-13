@@ -171,6 +171,7 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(VersionService.mergeSourceResults([[], []]).isEmpty)
     }
 
+    @MainActor
     func testViewingAppleHistoryNeverRequestsFreeAppLicense() {
         XCTAssertFalse(AppleService.shouldAcquireLicense(
             failure: "9610", purchased: false, allowLicenseAcquisition: false))
