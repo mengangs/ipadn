@@ -13,17 +13,35 @@ struct InstallationSettingsView: View {
     @State private var issue: String?
     @State private var notice: String?
     @State private var busy = false
+    private enum Method: Hashable { case automatic, localCertificate, proxy }
+    private var method: Binding<Method> {
+        Binding(get: {
+            store.settings.automaticInstallation ? .automatic
+                : store.settings.localInstallation ? .localCertificate : .proxy
+        }, set: { value in
+            store.settings.automaticInstallation = value == .automatic
+            if value != .automatic { store.settings.localInstallation = value == .localCertificate }
+        })
+    }
     var body: some View {
         Form {
             Section {
-                Picker("安装方式", selection: $store.settings.localInstallation) {
-                    Text("本地 HTTPS").tag(true)
-                    Text("代理清单服务").tag(false)
-                }.accessibilityIdentifier("installation.method")
+                Picker("安装方式", selection: method) {
+                    Text("一键安装").tag(Method.automatic)
+                    Text("本机证书").tag(Method.localCertificate)
+                    Text("代理服务").tag(Method.proxy)
+                }.pickerStyle(.segmented).accessibilityIdentifier("installation.method")
             } footer: {
                 Text("通过 itms-services 请求系统安装已有授权的 IPA。系统会验证安装包签名和账号授权；有授权信息并不保证当前系统接受安装。")
             }
-            if store.settings.localInstallation {
+            if store.settings.automaticInstallation {
+                Section {
+                    Label("无需安装描述文件、证书或配置服务器", systemImage: "checkmark.seal")
+                    Label("清单和 IPA 都由本机 iPadn 提供", systemImage: "iphone")
+                } header: { Text("一键安装（推荐）") } footer: {
+                    Text("iPadn 在本机启动 HTTPS 服务，使用 backloop.dev 公开的开发证书（该域名始终指向本机 127.0.0.1），系统可直接信任。首次使用需联网获取证书，过期后自动更新。若所在网络的 DNS 拦截指向本机的域名，请切换网络或改用本机证书。请求安装后请保持 iPadn 运行。")
+                }
+            } else if store.settings.localInstallation {
                 Section {
                     TextField("证书包含的 IP 或域名", text: $store.settings.localInstallHost)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)

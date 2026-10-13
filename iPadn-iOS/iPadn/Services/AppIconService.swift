@@ -16,10 +16,11 @@ final class AppIconService: ObservableObject {
     @Published private(set) var awaitingSystem: Choice?
     @Published private(set) var statusHint: String?
 
-    private var pending: CheckedContinuation<Void, Error>?
-    private var requestID: UUID?
-    private var callbackError: Error?
     private var reconciliation: Task<Void, Never>?
+    // alternateIconName can lag behind (or stay stale after) a change the
+    // system already confirmed. Remember the confirmed choice for this
+    // process; every Settings screen creates a new service instance.
+    private static var confirmedThisLaunch: Choice?
 
     private var simulatesChanges: Bool {
         #if DEBUG
@@ -46,17 +47,29 @@ final class AppIconService: ObservableObject {
             bundle.url(forResource: "AppIconFlat60x60@3x", withExtension: "png") != nil
     }
 
+    /// EAGAIN: SpringBoard is still busy with the previous icon change.
+    static func isTransientIconError(_ error: Error) -> Bool {
+        let ns = error as NSError
+        return ns.domain == NSPOSIXErrorDomain && ns.code == 35
+    }
+
     init() { refresh() }
     func refresh() {
         guard !simulatesChanges else { return }
         let observed = Self.systemChoice(for: UIApplication.shared.alternateIconName)
-        selected = observed
+        selected = Self.confirmedThisLaunch ?? observed
         if awaitingSystem == observed {
-            awaitingSystem = nil
-            statusHint = nil
-            reconciliation?.cancel()
-            reconciliation = nil
+            confirm(observed)
         }
+    }
+
+    private func confirm(_ choice: Choice) {
+        Self.confirmedThisLaunch = choice
+        selected = choice
+        awaitingSystem = nil
+        statusHint = nil
+        reconciliation?.cancel()
+        reconciliation = nil
     }
 
     func select(_ choice: Choice) async throws {
@@ -73,76 +86,56 @@ final class AppIconService: ObservableObject {
         guard Self.bundledAlternateIsAvailable() else {
             throw ToolError.message("当前安装包缺少备用图标资源，请重新签名并安装保留完整图标文件的 IPA。")
         }
-
         reconciliation?.cancel()
         reconciliation = nil
         awaitingSystem = nil
         statusHint = nil
-        callbackError = nil
-        let id = UUID()
-        let monitor = Task { [weak self] in
-            for attempt in 0..<120 {
-                try? await Task.sleep(for: .milliseconds(100))
-                guard !Task.isCancelled else { return }
-                guard let self, self.requestID == id else { return }
-                if Self.systemChoice(for: UIApplication.shared.alternateIconName) == choice {
-                    self.finish(id, choice: choice, error: nil, systemAccepted: true)
-                    return
-                }
-                if let error = self.callbackError, attempt >= 15 {
-                    self.finish(id, choice: choice, error: error, systemAccepted: false)
-                    return
-                }
+
+        var lastError: Error?
+        for attempt in 0..<2 {
+            let result = await request(choice)
+            // A nil error is the system's confirmation, even if
+            // alternateIconName has not caught up yet.
+            if result == nil || Self.systemChoice(for: UIApplication.shared.alternateIconName) == choice {
+                confirm(choice); return
             }
-            // Some iOS releases delay both the callback and alternateIconName
-            // while SpringBoard applies the icon. Do not invent a failure.
-            self?.finish(id, choice: choice, error: nil, systemAccepted: false)
+            lastError = result
+            guard attempt == 0, let error = result, Self.isTransientIconError(error) else { break }
+            try await Task.sleep(for: .seconds(1))
+            if Self.systemChoice(for: UIApplication.shared.alternateIconName) == choice {
+                confirm(choice); return
+            }
         }
-        defer { monitor.cancel() }
-        try await withTaskCancellationHandler(operation: {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                if Task.isCancelled { continuation.resume(throwing: CancellationError()); return }
-                requestID = id
-                pending = continuation
-                UIApplication.shared.setAlternateIconName(choice.alternateName) { [weak self] error in
-                    Task { @MainActor in
-                        guard let self, self.requestID == id else { return }
-                        if let error {
-                            self.callbackError = error
-                        } else {
-                            self.finish(id, choice: choice, error: nil, systemAccepted: true)
-                        }
-                    }
-                }
-            }
-        }, onCancel: { [weak self] in
-            Task { @MainActor in
-                self?.finish(id, choice: choice, error: CancellationError(), systemAccepted: false)
-            }
-        })
+        if lastError is IconRequestTimeout {
+            // No callback at all: let the user check the Home Screen while we
+            // keep watching alternateIconName instead of inventing a failure.
+            awaitingSystem = choice
+            statusHint = "系统暂未返回结果，请回到桌面查看图标。"
+            beginReconciliation()
+            return
+        }
+        let code = (lastError as NSError?)?.code ?? 0
+        throw ToolError.message("iOS 未能应用所选图标（错误 \(code)）。请稍后重试；若仍失败，请检查安装包中的备用图标资源。")
     }
 
-    private func finish(_ id: UUID, choice: Choice, error: Error?, systemAccepted: Bool) {
-        guard requestID == id, let continuation = pending else { return }
-        pending = nil
-        requestID = nil
-        callbackError = nil
-        refresh()
-        if let error, error is CancellationError {
-            continuation.resume(throwing: error)
-        } else if selected == choice {
-            continuation.resume()
-        } else if let error {
-            let ns = error as NSError
-            continuation.resume(throwing: ToolError.message(
-                "iOS 未能应用所选图标（错误 \(ns.code)）。请检查安装包中的备用图标资源或重新安装。"))
-        } else {
-            awaitingSystem = choice
-            statusHint = systemAccepted
-                ? "系统已接受更换请求，正在等待桌面图标同步。"
-                : "系统暂未返回最终结果，请回到桌面查看图标。"
-            beginReconciliation()
-            continuation.resume()
+    private struct IconRequestTimeout: Error {}
+
+    private final class ResumeOnce: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Error?, Never>?
+        init(_ continuation: CheckedContinuation<Error?, Never>) { self.continuation = continuation }
+        func resume(_ error: Error?) {
+            lock.lock(); let pending = continuation; continuation = nil; lock.unlock()
+            pending?.resume(returning: error)
+        }
+    }
+
+    /// One setAlternateIconName call; returns its error, or a timeout after 15 s.
+    private func request(_ choice: Choice) async -> Error? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Error?, Never>) in
+            let once = ResumeOnce(continuation)
+            UIApplication.shared.setAlternateIconName(choice.alternateName) { error in once.resume(error) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) { once.resume(IconRequestTimeout()) }
         }
     }
 

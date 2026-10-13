@@ -33,6 +33,7 @@ final class LoopbackServer: @unchecked Sendable {
     private var registeredData: [String: (Data, String)] = [:]
     private var compatibilityFiles: [String: URL] = [:]
     private let identity: SecIdentity?
+    private let chain: [SecCertificate]
     private let publicHost: String
     private let port: UInt16?
     private let compatibilityMode: Bool
@@ -50,9 +51,10 @@ final class LoopbackServer: @unchecked Sendable {
         "https://fpinit.itunes.apple.com/v1/signSapSetup/legacy"
     ]
 
-    init(port: UInt16? = nil, compatibilityMode: Bool = false, identity: SecIdentity? = nil, publicHost: String = "127.0.0.1") {
+    init(port: UInt16? = nil, compatibilityMode: Bool = false, identity: SecIdentity? = nil,
+         certificates: [SecCertificate] = [], publicHost: String = "127.0.0.1") {
         self.port = port; self.compatibilityMode = compatibilityMode
-        self.identity = identity; self.publicHost = publicHost
+        self.identity = identity; self.chain = certificates; self.publicHost = publicHost
     }
 
     func start() async throws {
@@ -64,7 +66,12 @@ final class LoopbackServer: @unchecked Sendable {
                 do {
                     let parameters: NWParameters
                     if let identity = self.identity {
-                        guard let localIdentity = sec_identity_create(identity) else { throw ToolError.message("无法加载安装服务证书") }
+                        // Send intermediates too: iOS does not fetch a missing
+                        // issuer for the installer's TLS connection.
+                        let created = self.chain.count > 1
+                            ? sec_identity_create_with_certificates(identity, self.chain as CFArray)
+                            : sec_identity_create(identity)
+                        guard let localIdentity = created else { throw ToolError.message("无法加载安装服务证书") }
                         let tls = NWProtocolTLS.Options()
                         sec_protocol_options_set_local_identity(tls.securityProtocolOptions, localIdentity)
                         sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)

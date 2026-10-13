@@ -179,6 +179,8 @@ struct ToolSettings: Codable, Equatable {
     var useSignerCache = true
     var appearance = "system"
     var plistServer = ""
+    /// One-tap installation through the public loopback certificate (default).
+    var automaticInstallation = true
     var localInstallation = true
     var localInstallHost = "127.0.0.1"
     var versionSources: [VersionSource] = [
@@ -190,6 +192,7 @@ struct ToolSettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
         case useSignerCache, appearance, plistServer, versionSources, localInstallation, localInstallHost
+        case automaticInstallation
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -205,6 +208,7 @@ struct ToolSettings: Codable, Equatable {
         plistServer = try values.decodeIfPresent(String.self, forKey: .plistServer) ?? plistServer
         localInstallation = try values.decodeIfPresent(Bool.self, forKey: .localInstallation) ?? plistServer.isEmpty
         localInstallHost = try values.decodeIfPresent(String.self, forKey: .localInstallHost) ?? localInstallHost
+        automaticInstallation = try values.decodeIfPresent(Bool.self, forKey: .automaticInstallation) ?? automaticInstallation
         versionSources = try values.decodeIfPresent([VersionSource].self, forKey: .versionSources) ?? versionSources
     }
 }

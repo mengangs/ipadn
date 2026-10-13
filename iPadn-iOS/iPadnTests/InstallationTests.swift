@@ -49,6 +49,26 @@ final class InstallationTests: XCTestCase {
         XCTAssertEqual(payloads.first?["PayloadContent"] as? Data, first.rootCertificate)
         XCTAssertNil(profile.range(of: first.pkcs12))
     }
+    // Self-signed, test-only EC certificate for *.example.test in the
+    // backloop.dev pack.json layout (key split into key1/key2).
+    private static let testPack = #"""
+{"cert": "-----BEGIN CERTIFICATE-----\nMIIBojCCAUigAwIBAgIUa9M+t9AOT3QwbN8oElRFfSRO90gwCgYIKoZIzj0EAwIw\nGTEXMBUGA1UEAwwOKi5leGFtcGxlLnRlc3QwHhcNMjYxMDEzMTIwMjU0WhcNMzYx\nMDEwMTIwMjU0WjAZMRcwFQYDVQQDDA4qLmV4YW1wbGUudGVzdDBZMBMGByqGSM49\nAgEGCCqGSM49AwEHA0IABJEHss/wGyfXENK8yO9p0sEx1S4ZwNgwwMkxhZaHCOri\nwdS6Xj2ZdTYhL7BCdGJxPJ8/E8CL7/8O8tbOEo2DidqjbjBsMB0GA1UdDgQWBBQE\n70TQogRjDiNZKf3BkjV76DfcFDAfBgNVHSMEGDAWgBQE70TQogRjDiNZKf3BkjV7\n6DfcFDAPBgNVHRMBAf8EBTADAQH/MBkGA1UdEQQSMBCCDiouZXhhbXBsZS50ZXN0\nMAoGCCqGSM49BAMCA0gAMEUCIFJ2ulCI5/xJynHPiALB0zPBdss3HyuagMG96KX5\nW5NiAiEAsXBsYubNKb2XA2yvNmEJ9SV9+azPmAAh7ibVpuMU5C4=\n-----END CERTIFICATE-----\n", "ca": "", "key1": "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIKSMdi2Uuw2VJcX2lBDwz/VOkwrEku8akYF64Dru/UZkoAoGCCqGSM49\nAwEHoUQDQgAEkQeyz", "key2": "/AbJ9cQ0rzI72nSwTHVLhnA2DDAyTGFlocI6uLB1LpePZl1\nNiEvsEJ0YnE8nz8TwIvv/w7y1s4SjYOJ2g==\n-----END EC PRIVATE KEY-----\n", "info": {"issuer": {"commonName": "test"}, "domains": {"commonName": "*.example.test"}}}
+"""#
+
+    func testLoopbackCertificatePackBuildsAnImportableIdentity() throws {
+        let pack = try LoopbackCertificate.parse(Data(Self.testPack.utf8))
+        XCTAssertEqual(pack.host, "ipadn.example.test")
+        let certificates = LocalInstallationIdentityFactory.certificates(pem: pack.certificatePEM)
+        XCTAssertEqual(certificates.count, 1)
+        let keyInfo = try LocalInstallationIdentityFactory.privateKeyInfo(pem: pack.keyPEM)
+        let pfx = try LocalInstallationIdentityFactory.pkcs12(privateKeyInfo: keyInfo, certificates: certificates, password: "pw")
+        let identity = try InstallationCertificate.importPKCS12(pfx, password: "pw")
+        XCTAssertEqual(identity.certificates.count, 1)
+        // Self-signed: must not pass system trust, so it would be re-fetched.
+        XCTAssertThrowsError(try identity.validate(host: pack.host))
+        XCTAssertThrowsError(try LoopbackCertificate.parse(Data("{}".utf8)))
+    }
+
     func testPKCS12KeyDerivationMatchesPublishedVectors() {
         func hex(_ data: Data) -> String { data.map { String(format: "%02X", $0) }.joined() }
         let smeg = Data([0x0A, 0x58, 0xCF, 0x64, 0x53, 0x0D, 0x82, 0x3F])

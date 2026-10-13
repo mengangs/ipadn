@@ -43,13 +43,19 @@ enum LocalInstallationIdentityFactory {
             from: now.addingTimeInterval(-300), until: now.addingTimeInterval(365 * 86400), ca: false,
             authorityKey: caPublic)
         let password = UUID().uuidString
-        let privateKey = try externalBytes(server)
-        let keyInfo = DER.sequence([DER.integer(Data([0])), rsaAlgorithm, DER.value(0x04, privateKey)])
-        let keyID = Data(Insecure.SHA1.hash(data: serverPublic))
+        let keyInfo = DER.sequence([DER.integer(Data([0])), rsaAlgorithm, DER.value(0x04, try externalBytes(server))])
+        let pfx = try pkcs12(privateKeyInfo: keyInfo, certificates: [serverCertificate, caCertificate], password: password)
+        // Check the exact format through Apple's importer before saving anything.
+        _ = try InstallationCertificate.importPKCS12(pfx, password: password)
+        return Material(pkcs12: pfx, password: password, rootCertificate: caCertificate, identifier: identifier)
+    }
+    /// PKCS#12 with the PKCS#8 key in a pkcs8ShroudedKeyBag
+    /// (pbeWithSHAAnd3-KeyTripleDES-CBC; iOS 26 ignores unencrypted keyBags)
+    /// and the certificates in plain cert bags, leaf first.
+    static func pkcs12(privateKeyInfo keyInfo: Data, certificates: [Data], password: String) throws -> Data {
+        guard let leaf = certificates.first else { throw ToolError.message("证书链为空") }
+        let keyID = Data(Insecure.SHA1.hash(data: leaf))
         let attributes = DER.value(0x31, DER.sequence([DER.oid("1.2.840.113549.1.9.21"), DER.value(0x31, DER.value(0x04, keyID))]))
-        // pkcs8ShroudedKeyBag with pbeWithSHAAnd3-KeyTripleDES-CBC, the layout
-        // Keychain exports use. iOS 26 does not turn an unencrypted keyBag into
-        // an identity (SecPKCS12Import succeeds but returns no identity).
         let keySalt = try random(8), keyIterations = 2048
         let encryptedKey = try tripleDES(keyInfo,
             key: pkcs12KDF(sha256: false, id: 1, password: password, salt: keySalt, iterations: keyIterations, length: 24),
@@ -63,21 +69,40 @@ enum LocalInstallationIdentityFactory {
             let body = DER.sequence([DER.oid("1.2.840.113549.1.9.22.1"), DER.value(0xa0, DER.value(0x04, certificate))])
             return DER.sequence([DER.oid("1.2.840.113549.1.12.10.1.3"), DER.value(0xa0, body), attributes])
         }
-        let contents = DER.sequence([keyBag, certBag(serverCertificate, attributes: attributes), certBag(caCertificate)])
+        let bags = [keyBag, certBag(leaf, attributes: attributes)] + certificates.dropFirst().map { certBag($0) }
         func contentInfo(_ data: Data) -> Data {
             DER.sequence([DER.oid("1.2.840.113549.1.7.1"), DER.value(0xa0, DER.value(0x04, data))])
         }
-        let safe = DER.sequence([contentInfo(contents)])
+        let safe = DER.sequence([contentInfo(DER.sequence(bags))])
         let salt = try random(32), iterations = 10_000
         let macKey = pkcs12KDF(sha256: true, id: 3, password: password, salt: salt, iterations: iterations, length: 32)
         let mac = Data(HMAC<SHA256>.authenticationCode(for: safe, using: SymmetricKey(data: macKey)))
         let digestInfo = DER.sequence([DER.sequence([DER.oid("2.16.840.1.101.3.4.2.1"), DER.value(0x05, Data())]), DER.value(0x04, mac)])
         let macData = DER.sequence([digestInfo, DER.value(0x04, salt), DER.integer(Data([0x27, 0x10]))])
-        let pfx = DER.sequence([DER.integer(Data([3])), contentInfo(safe), macData])
-        // Check the exact format through Apple's importer before saving anything.
-        _ = try InstallationCertificate.importPKCS12(pfx, password: password)
-        return Material(pkcs12: pfx, password: password, rootCertificate: caCertificate, identifier: identifier)
+        return DER.sequence([DER.integer(Data([3])), contentInfo(safe), macData])
     }
+
+    /// PKCS#8 PrivateKeyInfo from a PEM private key: PKCS#8, PKCS#1 RSA or SEC1 EC.
+    static func privateKeyInfo(pem: String) throws -> Data {
+        guard let block = PEM.blocks(pem).first(where: { $0.label.hasSuffix("PRIVATE KEY") }) else {
+            throw ToolError.message("证书包缺少私钥")
+        }
+        switch block.label {
+        case "PRIVATE KEY": return block.der
+        case "RSA PRIVATE KEY": return DER.sequence([DER.integer(Data([0])), rsaAlgorithm, DER.value(0x04, block.der)])
+        case "EC PRIVATE KEY":
+            // ECPrivateKey ::= SEQUENCE { version, privateKey, [0] parameters (curve OID), [1] publicKey }
+            guard let curve = DER.contextChild(block.der, tag: 0xa0) else { throw ToolError.message("EC 私钥缺少曲线参数") }
+            let algorithm = DER.sequence([DER.oid("1.2.840.10045.2.1"), curve])
+            return DER.sequence([DER.integer(Data([0])), algorithm, DER.value(0x04, block.der)])
+        default: throw ToolError.message("不支持的私钥格式：\(block.label)")
+        }
+    }
+
+    static func certificates(pem: String) -> [Data] {
+        PEM.blocks(pem).filter { $0.label == "CERTIFICATE" }.map(\.der)
+    }
+
     private static func key() throws -> SecKey {
         var error: Unmanaged<CFError>?
         guard let key = SecKeyCreateRandomKey([kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
@@ -194,7 +219,54 @@ enum LocalInstallationIdentityFactory {
     }
 }
 
+enum PEM {
+    struct Block { let label: String; let der: Data }
+    static func blocks(_ text: String) -> [Block] {
+        var result: [Block] = []
+        var label: String?
+        var body = ""
+        for raw in text.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("-----BEGIN "), line.hasSuffix("-----") {
+                label = String(line.dropFirst(11).dropLast(5)); body = ""
+            } else if line.hasPrefix("-----END "), let current = label {
+                if let der = Data(base64Encoded: body) { result.append(Block(label: current, der: der)) }
+                label = nil
+            } else if label != nil {
+                body += line
+            }
+        }
+        return result
+    }
+}
+
 private enum DER {
+    /// Full TLV of the first element inside a context-specific constructed
+    /// child (e.g. [0]) of a top-level SEQUENCE.
+    static func contextChild(_ data: Data, tag: UInt8) -> Data? {
+        let bytes = [UInt8](data)
+        func header(_ at: Int) -> (contentStart: Int, length: Int)? {
+            guard at + 1 < bytes.count else { return nil }
+            let first = Int(bytes[at + 1])
+            if first < 0x80 { return (at + 2, first) }
+            let count = first & 0x7f
+            guard count > 0, count <= 4, at + 2 + count <= bytes.count else { return nil }
+            let length = bytes[(at + 2)..<(at + 2 + count)].reduce(0) { ($0 << 8) | Int($1) }
+            return (at + 2 + count, length)
+        }
+        guard bytes.first == 0x30, let outer = header(0) else { return nil }
+        var index = outer.contentStart
+        while index < min(bytes.count, outer.contentStart + outer.length), let item = header(index) {
+            if bytes[index] == tag, let inner = header(item.contentStart) {
+                let end = inner.contentStart + inner.length
+                guard end <= bytes.count else { return nil }
+                return Data(bytes[item.contentStart..<end])
+            }
+            index = item.contentStart + item.length
+        }
+        return nil
+    }
+
     static func value(_ tag: UInt8, _ content: Data) -> Data {
         var length = Data()
         if content.count < 128 { length.append(UInt8(content.count)) }

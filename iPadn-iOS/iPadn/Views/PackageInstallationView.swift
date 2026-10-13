@@ -16,7 +16,8 @@ struct PackageInstallationView: View {
                 Section { AppRow(app: job.app) }
                 Section {
                     NavigationLink { InstallationSettingsView() } label: {
-                        LabeledContent("安装方式", value: store.settings.localInstallation ? "本地 HTTPS" : "代理清单服务")
+                        LabeledContent("安装方式", value: store.settings.automaticInstallation ? "一键安装"
+                                       : store.settings.localInstallation ? "本机证书 HTTPS" : "代理清单服务")
                     }.accessibilityIdentifier("installation.settings")
                     Button {
                         requestInstallation()
@@ -28,7 +29,9 @@ struct PackageInstallationView: View {
                         else { issue = "安装包文件不可用，请检查任务详情" }
                     }
                 } footer: {
-                    Text("本地 HTTPS 可在安装设置中创建本机证书，首次需在系统中安装并信任；代理方式需要清单服务与规则。系统会验证 IPA 的签名和账号授权。")
+                    Text(store.settings.automaticInstallation
+                         ? "一键安装由 iPadn 在本机提供安装文件，无需安装描述文件或配置服务器；首次使用需联网获取公共安装证书。系统会验证 IPA 的签名和账号授权。"
+                         : "本机证书方式首次需在系统中安装并信任描述文件；代理方式需要清单服务与规则。系统会验证 IPA 的签名和账号授权。")
                 }
                 if let message { Section { Text(message).font(.subheadline) } }
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)
@@ -47,7 +50,9 @@ struct PackageInstallationView: View {
             do {
                 guard let file = manager.fileURL(job) else { throw ToolError.message("安装包文件不可用，请检查任务详情") }
                 let url: URL
-                if store.settings.localInstallation {
+                if store.settings.automaticInstallation {
+                    url = try await store.installation.automaticInstallURL(job: job, file: file)
+                } else if store.settings.localInstallation {
                     url = try await store.installation.localInstallURL(job: job, file: file, host: store.settings.localInstallHost)
                 } else {
                     url = try await store.installation.installURL(job: job, file: file, plistServer: store.settings.plistServer)

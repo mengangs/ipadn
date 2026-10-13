@@ -25,13 +25,31 @@ final class InstallationService: ObservableObject {
         }
         return url
     }
+    /// One-tap installation: no profile, certificate or server to configure.
+    func automaticInstallURL(job: DownloadJob, file: URL) async throws -> URL {
+        let (certificate, host) = try await LoopbackCertificate.current()
+        guard await LoopbackCertificate.resolvesToLoopback(host) else {
+            throw ToolError.message("当前网络的 DNS 拦截了本机安装地址（\(host)）。请切换 Wi-Fi 或蜂窝网络后重试，或在安装设置中改用本机证书。")
+        }
+        let server = LoopbackServer(identity: certificate.identity, certificates: certificate.certificates, publicHost: host)
+        try await server.start()
+        let packageURL = try server.register(file)
+        let data = try ManifestBuilder.manifest(app: job.app, packageURL: packageURL)
+        let manifestURL = try server.register(data: data, contentType: "application/xml")
+        stopHosting(); localFiles = server; isHosting = true
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "iPadn installation") { [weak self] in
+            Task { @MainActor in self?.stopHosting() }
+        }
+        return try ManifestBuilder.systemURL(manifestURL: manifestURL)
+    }
+
     func localInstallURL(job: DownloadJob, file: URL, host: String) async throws -> URL {
         let host = try ManifestBuilder.localHost(host)
         guard let certificate = try InstallationCertificate.load() else {
             throw ToolError.message("请先在安装设置中导入自己的 SSL 服务器证书")
         }
         try await certificate.validateAsync(host: host)
-        let server = LoopbackServer(identity: certificate.identity, publicHost: host)
+        let server = LoopbackServer(identity: certificate.identity, certificates: certificate.certificates, publicHost: host)
         try await server.start()
         let packageURL = try server.register(file)
         let data = try ManifestBuilder.manifest(app: job.app, packageURL: packageURL)

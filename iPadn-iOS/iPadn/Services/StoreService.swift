@@ -130,12 +130,13 @@ enum StoreService {
             return rows.filter(Self.supportsAppleTV).map(mapLookup)
         case .appID(let id, _):
             if store.platform == .tvOS { return try await platformApp(id, store: store).map { [$0] } ?? [] }
+            // No "entity" here: on an ID lookup it requests *related* items
+            // (and is rejected for some catalogs), which broke App ID search.
             let url = try endpoint("https://itunes.apple.com/lookup", items: [
-                URLQueryItem(name: "id", value: id), URLQueryItem(name: "country", value: store.country),
-                URLQueryItem(name: "entity", value: store.platform.searchEntity)
+                URLQueryItem(name: "id", value: id), URLQueryItem(name: "country", value: store.country)
             ])
-            let data = try await HTTPClient.shared.json(url) as? [String: Any]
-            let apps = (data?["results"] as? [[String: Any]] ?? []).map(mapLookup)
+            let rows = ((try? await HTTPClient.shared.json(url)) as? [String: Any])?["results"] as? [[String: Any]] ?? []
+            let apps = Self.idLookupMatches(rows, id: id, platform: store.platform).map(mapLookup)
             if !apps.isEmpty { return apps }
             return try await platformApp(id, store: store).map { [$0] } ?? []
         }
@@ -174,6 +175,11 @@ enum StoreService {
         return value
     }
 
+    static func idLookupMatches(_ rows: [[String: Any]], id: String, platform: AppPlatform) -> [[String: Any]] {
+        rows.filter { plistString($0["trackId"]) == id }
+            .filter { platform != .macOS || supportsNativeMac($0) }
+    }
+
     static func supportsNativeMac(_ raw: [String: Any]) -> Bool {
         if plistString(raw["kind"]).lowercased() == "mac-software" { return true }
         let platforms = raw["platforms"] as? [String] ?? []
@@ -206,13 +212,12 @@ enum StoreService {
             do {
                 let url = try endpoint("https://itunes.apple.com/lookup", items: [
                     URLQueryItem(name: "id", value: missing.joined(separator: ",")),
-                    URLQueryItem(name: "country", value: country),
-                    URLQueryItem(name: "entity", value: store.platform.searchEntity)
+                    URLQueryItem(name: "country", value: country)
                 ])
                 let response = try await HTTPClient.shared.json(url) as? [String: Any]
                 for raw in response?["results"] as? [[String: Any]] ?? [] {
                     let app = mapLookup(raw)
-                    if let icon = app.iconURL { icons[app.id] = icon }
+                    if missing.contains(app.id), let icon = app.iconURL { icons[app.id] = icon }
                 }
                 missing.removeAll { icons[$0] != nil }
             } catch {

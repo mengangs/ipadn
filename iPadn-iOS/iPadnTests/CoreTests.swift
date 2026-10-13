@@ -63,6 +63,8 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(AppIconService.systemChoice(for: nil), .dimensional)
         XCTAssertEqual(AppIconService.systemChoice(for: "AppIconFlat"), .flat)
         XCTAssertEqual(AppIconService.systemChoice(for: "some-other-icon"), .dimensional)
+        XCTAssertTrue(AppIconService.isTransientIconError(NSError(domain: NSPOSIXErrorDomain, code: 35)))
+        XCTAssertFalse(AppIconService.isTransientIconError(NSError(domain: NSCocoaErrorDomain, code: 3072)))
         // Xcode thins simulator builds to the selected device. Both idioms are
         // checked separately in the unthinned device IPA by verify_ipa.py.
         let key = UIDevice.current.userInterfaceIdiom == .pad ? "CFBundleIcons~ipad" : "CFBundleIcons"
@@ -414,6 +416,19 @@ final class CoreTests: XCTestCase {
         // Archive without any file entries.
         XCTAssertThrowsError(try check(Self.syntheticXAR(files: [])))
         XCTAssertEqual(XARValidator.adler32(Data("Wikipedia".utf8)), 0x11E60398)
+    }
+
+    func testAppIDLookupKeepsOnlyTheRequestedApp() {
+        let rows: [[String: Any]] = [
+            ["trackId": 414478124, "kind": "software", "trackName": "WeChat"],
+            ["trackId": 1, "kind": "software", "trackName": "Related"],
+            ["artistId": 2, "wrapperType": "artist"]
+        ]
+        XCTAssertEqual(StoreService.idLookupMatches(rows, id: "414478124", platform: .iOS).count, 1)
+        XCTAssertEqual(StoreService.idLookupMatches(rows, id: "414478124", platform: .iPadOS).count, 1)
+        XCTAssertTrue(StoreService.idLookupMatches(rows, id: "414478124", platform: .macOS).isEmpty)
+        XCTAssertEqual(StoreService.idLookupMatches(
+            [["trackId": 6503940939, "kind": "mac-software"]], id: "6503940939", platform: .macOS).count, 1)
     }
 
     func testNativeMacSearchAndAppStoreOfferExtraction() {
