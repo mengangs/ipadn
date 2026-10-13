@@ -6,6 +6,7 @@ struct PurchasedView: View {
     @State private var term = ""
     @State private var months = 0
     @State private var showLogin = false
+    @State private var getting: StoreApp?
     private var filtered: [OwnedApp] {
         let cutoff = Calendar.current.date(byAdding: .month, value: -months, to: Date()) ?? .distantPast
         return store.owned.filter {
@@ -17,33 +18,29 @@ struct PurchasedView: View {
         List {
             if let account = apple.active {
                 Section {
-                    Menu {
-                        ForEach(apple.accounts) { item in
-                            Button { apple.select(item.id) } label: {
-                                Label(item.id, systemImage: item.id == apple.activeID ? "checkmark" : "person")
-                            }
-                        }
-                    } label: {
-                        HStack { Text(account.id).lineLimit(1); Spacer(); Image(systemName: "chevron.up.chevron.down") }
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    SearchInput(text: $term, placeholder: "搜索已购名称或 App ID")
+                    SearchInput(text: $term, placeholder: "搜索已购项目或 App ID")
                     Picker("购买时间", selection: $months) {
-                        Text("全部时间").tag(0); Text("最近 1 个月").tag(1); Text("最近 6 个月").tag(6); Text("最近 1 年").tag(12)
-                    }
-                }.listRowSeparator(.hidden)
+                        Text("全部").tag(0); Text("1 个月").tag(1); Text("6 个月").tag(6); Text("1 年").tag(12)
+                    }.pickerStyle(.segmented)
+                } footer: {
+                    Text("账号：\(account.id)")
+                }
+                .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 if let error = store.ownedError { Section { InlineIssue(message: error) { Task { await store.refreshOwned() } } } }
                 if store.ownedLoading {
                     Section { HStack { ProgressView(); Text("正在同步购买记录…").font(.subheadline).foregroundStyle(.secondary) } }
                 }
                 if !filtered.isEmpty {
-                    Section("\(filtered.count) 个应用") {
+                    Section("\(filtered.count) 个项目") {
                         ForEach(filtered) { app in
                             NavigationLink { AppDetailView(app: app.storeApp) } label: {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    AppRow(app: app.storeApp)
-                                    if let date = app.purchaseDate { Text("购于 \(date.formatted(date: .abbreviated, time: .omitted))").font(.caption).foregroundStyle(.secondary) }
-                                }.padding(.vertical, 3)
+                                AppRow(app: app.storeApp, subtitle: app.purchaseDate.map {
+                                    "购于 \($0.formatted(date: .abbreviated, time: .omitted))"
+                                }) {
+                                    RowCapsule(title: "下载") { getting = app.storeApp; UX.feedback() }
+                                        .accessibilityLabel("下载 \(app.name)")
+                                }
                             }
                         }
                     }
@@ -61,8 +58,9 @@ struct PurchasedView: View {
             }
         }
         .navigationDestination(isPresented: $showLogin) { LoginView() }
+        .navigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
         .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
-        .toolPage().navigationTitle("已购").navigationBarTitleDisplayMode(.inline)
+        .toolPage().navigationTitle("已购项目").navigationBarTitleDisplayMode(.large)
         .toolbar {
             Button { Task { await store.refreshOwned() } } label: { Image(systemName: "arrow.clockwise").frame(minWidth: 44, minHeight: 44) }
                 .disabled(store.ownedLoading || apple.active == nil).accessibilityLabel("同步购买记录")

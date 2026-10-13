@@ -5,6 +5,9 @@ struct AppDetailView: View {
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var apple: AppleService
     let app: StoreApp
+    /// Start the primary download as soon as the page opens (search "获取").
+    var autoStart = false
+    @State private var autoStarted = false
     @State private var versions: [AppVersion] = []
     @State private var versionsLoading = false
     @State private var downloadLoading = false
@@ -33,146 +36,44 @@ struct AppDetailView: View {
     private var filtered: [AppVersion] {
         versionSearch.isEmpty ? versions : versions.filter { $0.version.localizedCaseInsensitiveContains(versionSearch) || $0.id.contains(versionSearch) }
     }
-    @ViewBuilder private var appMetadata: some View {
-        if app.size > 0 { Text(app.size.byteLabel) }
-        if app.rating > 0 { Label(String(format: "%.1f", app.rating), systemImage: "star") }
-        if !app.minimumOS.isEmpty { Text("\(store.settings.store.platform.title) \(app.minimumOS)+") }
-    }
     var body: some View {
         List {
             Section {
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 18) { AppIcon(url: app.iconURL, size: 64); appHeading }
-                    VStack(alignment: .leading, spacing: 16) { AppIcon(url: app.iconURL, size: 64); appHeading }
-                }.padding(.vertical, 6)
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 14) { appMetadata }
-                    VStack(alignment: .leading, spacing: 6) { appMetadata }
-                }.font(.footnote).foregroundStyle(.secondary)
-            }.listRowSeparator(.hidden)
-            if store.settings.store.platform.supportsIPA {
-            Section {
-                Toggle("从 Apple 获取版本", isOn: $official).font(.subheadline)
-                    .disabled(apple.active == nil || store.settings.store.platform == .tvOS)
-                if apple.active == nil {
-                    Button("登录后查询 Apple 版本", systemImage: "person.crop.circle") { showLogin = true }
-                }
-                if versionsLoading { HStack { ProgressView(); Text("正在查找历史版本…").foregroundStyle(.secondary) } }
-                if let versionError { InlineIssue(message: versionError) { reloadID += 1 } }
-                if !versions.isEmpty {
-                    SearchInput(text: $versionSearch, placeholder: "筛选版本号或版本 ID")
-                    ForEach(filtered.prefix(100)) { version in
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(version.version).font(.headline)
-                                Text(version.source).font(.caption).foregroundStyle(.secondary)
-                                Text(version.id).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
-                            }
-                            Spacer(minLength: 0)
-                            Button { download(versionID: version.id) } label: { Image(systemName: "arrow.down.circle.fill").font(.title2).frame(width: 48, height: 48) }
-                                .buttonStyle(.borderless).disabled(downloadLoading).accessibilityLabel("下载版本 \(version.version)")
-                        }.padding(.vertical, 6)
-                            .contextMenu { Button("复制版本 ID") { copy(version.id) } }
-                    }
-                    if filtered.isEmpty { Text("没有匹配版本，请修改筛选条件。").font(.subheadline).foregroundStyle(.secondary) }
-                    if filtered.count > 100 { Text("已显示前 100 项，输入版本号可继续查找。").font(.caption).foregroundStyle(.secondary) }
-                } else if !versionsLoading && versionError == nil {
-                    Text("暂无历史版本，可刷新或手动输入版本 ID。").font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 8)
-                }
-                DisclosureGroup("手动指定版本") {
-                    TextField("内部版本 ID（数字）", text: $manualID).keyboardType(.numberPad)
-                    Button("下载此版本", systemImage: "arrow.down.circle") { download(versionID: manualID) }
-                        .disabled(manualID.isEmpty || downloadLoading)
-                }
-            } header: {
-                HStack { Text("历史版本 · \(versions.count)"); Spacer(); Button("刷新") { reloadID += 1 }.disabled(versionsLoading).textCase(nil) }
-            } footer: { Text("版本可用性取决于商店地区及账号许可。") }
-            } else {
-                Section("Mac 安装包") {
-                    Button { downloadAppleMacPKG() } label: {
-                        HStack(spacing: 9) {
-                            if macOfficialLoading { ProgressView() }
-                            Label("下载 Mac App Store 安装包（PKG）", systemImage: "shippingbox")
-                        }
-                        .frame(minHeight: 44, alignment: .leading)
-                    }
-                    .disabled(macOfficialLoading)
-                    .accessibilityIdentifier("mac.official-pkg")
-                    Text(MacPackageDecryptor.isAvailable
-                         ? "使用当前 Apple 账号的购买授权下载，在本机完成 Apple 安装包处理并校验后可导出到 Mac。首次处理需从 Apple 下载约 47 MB 组件，处理大型安装包耗时较长。"
-                         : "此版本未包含 Mac 安装包处理组件，只能保存 Apple 直接提供的未加密 PKG。")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if macLoading { ProgressView("查找开发者安装包…") }
-                    ForEach(macInstallers) { installer in
-                        Button {
-                            enqueueMacInstaller(installer)
-                        } label: {
-                            HStack {
-                                Label(installer.format.uppercased() + " · " + installer.title, systemImage: "arrow.down.to.line")
-                                    .lineLimit(2)
-                                Spacer()
-                            }.frame(minHeight: 44)
-                        }
-                        .accessibilityIdentifier("mac.download." + installer.format)
-                    }
-                    Button("通过链接下载 DMG / PKG / ZIP", systemImage: "link") {
-                        enteringMacDownloadURL = true
-                    }
-                    .accessibilityIdentifier("mac.manual-download")
-                    if let website = macWebsite {
-                        Link("开发者网站", destination: website)
-                    }
-                }
+                header.listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
+                infoStrip.listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
             }
-            Section("应用信息") {
-                if !app.bundleID.isEmpty { Text(app.bundleID).font(.footnote.monospaced()).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
-                if store.settings.store.platform != .macOS {
-                    Link(destination: storeURL) { Label("在 App Store 查看", systemImage: "arrow.up.right.square") }
-                }
-            }
+            if store.settings.store.platform.supportsIPA { versionSection } else { macSection }
             if !app.description.isEmpty {
-                Section("应用介绍") {
-                    Text(app.description).font(.subheadline).foregroundStyle(.secondary).lineLimit(showDescription ? nil : 5).textSelection(.enabled)
-                    Button(showDescription ? "收起介绍" : "展开介绍") { showDescription.toggle() }
-                }
+                Section {
+                    Text(app.description).font(.subheadline).lineLimit(showDescription ? nil : 4).textSelection(.enabled)
+                    if !showDescription {
+                        Button("更多") { withAnimation { showDescription = true } }.font(.subheadline)
+                    }
+                } header: { sectionTitle("简介") }
             }
-        }
-        .toolPage().navigationTitle("应用详情").navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 8) {
-                if store.settings.store.platform.supportsIPA {
-                Button { download(versionID: app.externalVersionID) } label: {
-                    HStack(spacing: 10) {
-                        if downloadLoading { ProgressView().tint(UX.onAccent) }
-                        Label(downloadLoading ? "正在准备下载…" : apple.active == nil ? "登录后下载" : "下载当前版本", systemImage: apple.active == nil ? "person.crop.circle" : "arrow.down.circle.fill")
-                    }.font(.headline).frame(maxWidth: .infinity).frame(minHeight: 44)
-                }.buttonStyle(MonochromeButtonStyle()).controlSize(.large).disabled(downloadLoading)
-                if downloadLoading { Button("取消准备下载") { downloadTask?.cancel() }.frame(minHeight: 44) }
-                Text(apple.active.map { "使用账号 \($0.id)" } ?? "登录后获取你拥有许可的应用")
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                } else {
-                    if let installer = macInstallers.first {
-                        Button {
-                            enqueueMacInstaller(installer)
-                        } label: {
-                            Label("下载 Mac " + installer.format.uppercased(), systemImage: "arrow.down.circle.fill")
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                        }
-                        .buttonStyle(MonochromeButtonStyle())
-                    } else {
-                        Button { enteringMacDownloadURL = true } label: {
-                            Label("通过链接下载 Mac 安装包", systemImage: "link")
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                        }
-                        .buttonStyle(MonochromeButtonStyle())
+            Section {
+                if !app.category.isEmpty { LabeledContent("类别", value: app.category) }
+                if app.size > 0 { LabeledContent("大小", value: app.size.byteLabel) }
+                if !app.minimumOS.isEmpty {
+                    LabeledContent("兼容性", value: "\(store.settings.store.platform.title) \(app.minimumOS) 或更高版本")
+                }
+                if !app.price.isEmpty { LabeledContent("价格", value: app.price) }
+                if !app.bundleID.isEmpty {
+                    LabeledContent("Bundle ID") {
+                        Text(app.bundleID).font(.footnote.monospaced()).textSelection(.enabled).multilineTextAlignment(.trailing)
                     }
                 }
-            }.padding(.horizontal, 20).padding(.vertical, 12).frame(maxWidth: 680).frame(maxWidth: .infinity).background(.regularMaterial)
+                if store.settings.store.platform != .macOS {
+                    Link(destination: storeURL) { Label("在 App Store 中查看", systemImage: "arrow.up.right.square") }
+                }
+            } header: { sectionTitle("信息") }
         }
+        .toolPage()
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             Button { store.toggleFavorite(app); UX.feedback() } label: { Image(systemName: store.isFavorite(app) ? "star.fill" : "star").frame(minWidth: 44, minHeight: 44) }
                 .accessibilityLabel(store.isFavorite(app) ? "取消收藏" : "收藏应用")
-            ShareLink(item: storeURL) { Image(systemName: "square.and.arrow.up") }.accessibilityLabel("分享商店链接")
         }
         .alert("下载 Mac 安装包", isPresented: $enteringMacDownloadURL) {
             TextField("https://example.com/App.dmg", text: $macDownloadURL)
@@ -227,39 +128,188 @@ struct AppDetailView: View {
             }
         }
         .onDisappear { downloadTask?.cancel(); macOfficialTask?.cancel() }
+        .task {
+            guard autoStart, !autoStarted else { return }
+            autoStarted = true
+            if apple.active == nil { showLogin = true }
+            else if store.settings.store.platform.supportsIPA { download(versionID: app.externalVersionID) }
+            else { downloadAppleMacPKG() }
+        }
         .task(id: "\(official)-\(reloadID)-\(store.settings.store.country)-\(store.settings.store.platform.rawValue)-\(apple.activeID ?? "")") { await fetchVersions(force: reloadID > 0) }
         .task(id: "\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
             await loadMacInstallers()
         }
     }
-    private var appHeading: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(app.name.isEmpty ? app.bundleID : app.name).font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
-            if !app.category.isEmpty { Text(app.category).font(.subheadline).foregroundStyle(.secondary) }
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(app.version.isEmpty ? "版本待查询" : "v\(app.version)")
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.tint)
-                    .layoutPriority(1)
-                    .accessibilityIdentifier("app.version")
-                Spacer(minLength: 4)
-                Button { copy(app.id) } label: {
-                    HStack(spacing: 5) {
-                        Text("App ID")
-                        Text(app.id).monospacedDigit()
-                        Image(systemName: "doc.on.doc")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("App ID \(app.id)，点按复制")
-                .accessibilityIdentifier("app.copy-id")
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }.frame(maxWidth: .infinity, alignment: .leading)
+    private func sectionTitle(_ text: String) -> some View {
+        Text(text).font(.title3.weight(.bold)).foregroundStyle(.primary).textCase(nil)
     }
+
+    /// App Store product header: big icon, name, subtitle and the primary capsule.
+    private var header: some View {
+        HStack(alignment: .top, spacing: 16) {
+            AppIcon(url: app.iconURL, size: 118)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(app.name.isEmpty ? app.bundleID : app.name).font(.title2.weight(.bold))
+                    .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                if !app.category.isEmpty { Text(app.category).font(.subheadline).foregroundStyle(.secondary) }
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(app.version.isEmpty ? "版本待查询" : "v\(app.version)")
+                        .font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+                        .layoutPriority(1)
+                        .accessibilityIdentifier("app.version")
+                    Spacer(minLength: 4)
+                    Button { copy(app.id) } label: {
+                        HStack(spacing: 4) {
+                            Text("ID \(app.id)").monospacedDigit().lineLimit(1)
+                            Image(systemName: "doc.on.doc")
+                        }.font(.caption).foregroundStyle(.secondary).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("App ID \(app.id)，点按复制")
+                    .accessibilityIdentifier("app.copy-id")
+                }
+                Spacer(minLength: 10)
+                HStack(spacing: 12) {
+                    primaryButton
+                    Spacer(minLength: 0)
+                    ShareLink(item: storeURL) { Image(systemName: "square.and.arrow.up").font(.title3) }
+                        .buttonStyle(.borderless).accessibilityLabel("分享商店链接")
+                }
+                if let account = apple.active, store.settings.store.platform.supportsIPA || store.settings.store.platform == .macOS {
+                    Text("使用 \(account.id)").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 118, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder private var primaryButton: some View {
+        let busy = downloadLoading || macOfficialLoading
+        if busy {
+            HStack(spacing: 10) {
+                Button {
+                    downloadTask?.cancel(); macOfficialTask?.cancel()
+                } label: { ProgressRing(progress: nil) }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("取消准备下载")
+                Text("正在准备…").font(.caption).foregroundStyle(.secondary)
+            }
+        } else if apple.active == nil {
+            RowCapsule(title: "登录", filled: true) { showLogin = true }
+        } else if store.settings.store.platform.supportsIPA {
+            RowCapsule(title: app.price.isEmpty || app.price == "免费" ? "获取" : "下载", filled: true) {
+                download(versionID: app.externalVersionID)
+            }
+            .accessibilityIdentifier("detail.get")
+        } else {
+            RowCapsule(title: "获取 PKG", filled: true) { downloadAppleMacPKG() }
+                .accessibilityIdentifier("mac.official-pkg")
+        }
+    }
+
+    /// Horizontal info strip under the header, as on App Store product pages.
+    private var infoStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                let items = stripItems
+                ForEach(items.indices, id: \.self) { index in
+                    items[index]
+                    if index < items.count - 1 { Divider().frame(height: 36) }
+                }
+            }.padding(.horizontal, 12)
+        }
+    }
+
+    private var stripItems: [InfoStripItem] {
+        var items: [InfoStripItem] = []
+        if app.rating > 0 { items.append(InfoStripItem(caption: "评分", value: String(format: "%.1f", app.rating), detail: String(repeating: "★", count: max(0, min(5, Int(app.rating.rounded())))))) }
+        if app.size > 0 { items.append(InfoStripItem(caption: "大小", value: app.size.byteLabel.components(separatedBy: " ").first ?? app.size.byteLabel, detail: app.size.byteLabel.components(separatedBy: " ").last)) }
+        items.append(InfoStripItem(caption: "平台", value: store.settings.store.platform.title, symbol: platformSymbol))
+        if !app.minimumOS.isEmpty { items.append(InfoStripItem(caption: "系统要求", value: app.minimumOS + "+", detail: store.settings.store.platform.title)) }
+        if !app.category.isEmpty { items.append(InfoStripItem(caption: "类别", value: app.category, symbol: "square.grid.2x2")) }
+        items.append(InfoStripItem(caption: "地区", value: store.settings.store.country, detail: "商店"))
+        return items
+    }
+
+    private var platformSymbol: String {
+        switch store.settings.store.platform {
+        case .iOS: return "iphone"
+        case .iPadOS: return "ipad"
+        case .tvOS: return "appletv"
+        case .macOS: return "macbook"
+        }
+    }
+
+    @ViewBuilder private var versionSection: some View {
+        Section {
+            Toggle("从 Apple 获取版本列表", isOn: $official).font(.subheadline)
+                .disabled(apple.active == nil || store.settings.store.platform == .tvOS)
+            if versionsLoading { HStack { ProgressView(); Text("正在查找历史版本…").font(.subheadline).foregroundStyle(.secondary) } }
+            if let versionError { InlineIssue(message: versionError) { reloadID += 1 } }
+            if versions.count > 6 {
+                SearchInput(text: $versionSearch, placeholder: "筛选版本号或版本 ID")
+            }
+            ForEach(filtered.prefix(100)) { version in
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("版本 \(version.version)").font(.body.weight(.medium))
+                        Text("\(version.id) · \(version.source)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    Spacer(minLength: 8)
+                    RowCapsule(title: "下载", enabled: !downloadLoading) { download(versionID: version.id) }
+                        .accessibilityLabel("下载版本 \(version.version)")
+                }
+                .padding(.vertical, 2)
+                .contextMenu { Button("复制版本 ID", systemImage: "doc.on.doc") { copy(version.id) } }
+            }
+            if !versions.isEmpty && filtered.isEmpty { Text("没有匹配的版本。").font(.subheadline).foregroundStyle(.secondary) }
+            if filtered.count > 100 { Text("已显示前 100 个版本，输入版本号可继续查找。").font(.caption).foregroundStyle(.secondary) }
+            if versions.isEmpty && !versionsLoading && versionError == nil {
+                Text("暂无历史版本，可刷新或手动输入版本 ID。").font(.subheadline).foregroundStyle(.secondary)
+            }
+            DisclosureGroup("手动指定版本 ID") {
+                HStack {
+                    TextField("内部版本 ID", text: $manualID).keyboardType(.numberPad)
+                    RowCapsule(title: "下载", enabled: !manualID.isEmpty && !downloadLoading) { download(versionID: manualID) }
+                }
+            }
+        } header: {
+            HStack(alignment: .firstTextBaseline) {
+                sectionTitle("版本历史")
+                Spacer()
+                Button("刷新") { reloadID += 1 }.disabled(versionsLoading).font(.body).textCase(nil)
+            }
+        } footer: { Text("版本可用性取决于商店地区与账号许可。") }
+    }
+
+    @ViewBuilder private var macSection: some View {
+        Section {
+            Text(MacPackageDecryptor.isAvailable
+                 ? "使用当前 Apple 账号的购买授权下载，在本机完成 Apple 安装包处理并校验后可导出到 Mac。首次处理需从 Apple 下载约 47 MB 组件，处理大型安装包耗时较长。"
+                 : "此版本未包含 Mac 安装包处理组件，只能保存 Apple 直接提供的未加密 PKG。")
+                .font(.footnote).foregroundStyle(.secondary)
+            if macLoading { HStack { ProgressView(); Text("正在查找开发者安装包…").font(.subheadline).foregroundStyle(.secondary) } }
+            ForEach(macInstallers) { installer in
+                HStack(spacing: 12) {
+                    Image(systemName: "shippingbox").foregroundStyle(.secondary).frame(width: 28)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(installer.title).font(.subheadline.weight(.medium)).lineLimit(2)
+                        Text("开发者官网 · " + installer.format.uppercased()).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    RowCapsule(title: "下载") { enqueueMacInstaller(installer) }
+                        .accessibilityIdentifier("mac.download." + installer.format)
+                }
+            }
+            Button("通过链接下载 DMG / PKG / ZIP", systemImage: "link") { enteringMacDownloadURL = true }
+                .accessibilityIdentifier("mac.manual-download")
+            if let website = macWebsite {
+                Link(destination: website) { Label("开发者网站", systemImage: "safari") }
+            }
+        } header: { sectionTitle("Mac 安装包") }
+    }
+
     private func copy(_ text: String) { UIPasteboard.general.string = text; store.infoMessage = "已复制到剪贴板"; UX.feedback() }
     private func fetchVersions(force: Bool) async {
         versionsLoading = true; versionError = nil; versions = []

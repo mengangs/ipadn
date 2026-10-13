@@ -106,7 +106,7 @@ struct SettingsView: View {
                 Link("项目与更新", destination: URL(string: "https://github.com/mengangs/ipadn")!)
             }
         }
-        .toolPage().navigationTitle("设置与扩展").navigationBarTitleDisplayMode(.inline)
+        .toolPage().navigationTitle("设置").navigationBarTitleDisplayMode(.inline)
         .onChange(of: scenePhase) { _, phase in if phase == .active { icons.refresh() } }
         .alert("图标未更改", isPresented: Binding(get: { iconIssue != nil }, set: { if !$0 { iconIssue = nil } })) {
             Button("知道了", role: .cancel) { iconIssue = nil }

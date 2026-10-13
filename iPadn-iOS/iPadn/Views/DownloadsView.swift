@@ -90,14 +90,16 @@ struct DownloadsView: View {
                             }
                         }
                     } header: {
-                        if job.id == visible.first?.id { Text("\(visible.count) 项任务") }
+                        if job.id == visible.first?.id {
+                            Text(filter == .all ? "\(visible.count) 个项目" : "\(filter.rawValue) · \(visible.count)")
+                        }
                     }
                 }
                 .onMove(perform: editMode.isEditing && filter == .all && term.isEmpty ? { manager.move(from: $0, to: $1) } : nil)
             }
         }
         .task(id: manager.jobs.filter { $0.status == .completed }.map { $0.id.uuidString }.joined()) { await manager.loadPackageIcons() }
-        .toolPage().navigationTitle("下载").navigationBarTitleDisplayMode(.inline)
+        .toolPage().navigationTitle("下载").navigationBarTitleDisplayMode(.large)
         .environment(\.editMode, $editMode)
         .toolbar {
             ToolbarItemGroup(placement: .topBarLeading) {
@@ -277,6 +279,9 @@ struct DownloadTaskRow: View {
     @EnvironmentObject private var manager: DownloadManager
     let job: DownloadJob
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    var inspecting: () -> Void
+    var primary: () -> Void
+    var exporting: () -> Void
     private var displayedApp: StoreApp {
         job.displayApp(packageIcon: manager.packageIconURL(job))
     }
@@ -284,115 +289,114 @@ struct DownloadTaskRow: View {
         Text(job.platformLabel)
             .font(.caption2.weight(.semibold))
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
+            .padding(.horizontal, 7).padding(.vertical, 2)
+            .overlay(Capsule().stroke(Color(.separator), lineWidth: 0.5))
             .accessibilityIdentifier("download.platform." + job.platformLabel)
     }
     private var appHeading: some View {
-        HStack(alignment: .top, spacing: 14) {
-            AppIcon(url: displayedApp.iconURL)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(displayedApp.name).font(.headline).lineLimit(2)
-                Text([displayedApp.category,
-                      displayedApp.version.isEmpty ? "" : "v\(displayedApp.version)"]
-                    .filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                HStack(spacing: 8) {
+        HStack(alignment: .center, spacing: 14) {
+            AppIcon(url: displayedApp.iconURL, size: 64)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(displayedApp.name).font(.body.weight(.medium)).lineLimit(2)
+                HStack(spacing: 6) {
+                    if !displayedApp.version.isEmpty {
+                        Text("v\(displayedApp.version)").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                    }
                     if displayedApp.size > 0 {
                         Text(displayedApp.size.byteLabel)
-                            .font(.caption2).foregroundStyle(.secondary)
+                            .font(.subheadline).foregroundStyle(.secondary)
                             .accessibilityIdentifier("download.size." + job.app.id)
                     }
-                    Spacer(minLength: 8)
+                    Spacer(minLength: 6)
                     platformBadge
                 }
+                statusLine
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 5)
         .contentShape(Rectangle())
     }
-    var inspecting: () -> Void
-    var primary: () -> Void
-    var exporting: () -> Void
-    private var byteProgress: some View {
-        Text("\(job.downloaded.byteLabel) / \(job.expected > 0 ? job.expected.byteLabel : "大小未知")")
+    @ViewBuilder private var statusLine: some View {
+        switch job.status {
+        case .running:
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                let metric = manager.metrics(for: job.id)
+                let now = ProcessInfo.processInfo.systemUptime
+                let speed = metric?.rate(at: now) ?? 0
+                Text([progressText, speed > 0 ? "\(Int64(min(speed, Double(Int64.max / 2))).byteLabel)/s" : "",
+                      etaText(metric?.remaining(expected: job.expected, at: now))]
+                    .filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+            }
+        case .paused, .pausing:
+            Text([job.status.title, progressText].filter { !$0.isEmpty }.joined(separator: " · "))
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+        case .processing:
+            Text(manager.processingDetail[job.id] ?? job.status.title)
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(2)
+        default:
+            TaskStatusPill(status: job.status)
+        }
     }
-    @ViewBuilder private var percentage: some View {
-        if job.expected > 0 { Text("\(Int(job.progress * 100))%").foregroundStyle(.primary) }
+    private var progressText: String {
+        job.expected > 0 ? "\(job.downloaded.byteLabel) / \(job.expected.byteLabel)" : job.downloaded > 0 ? job.downloaded.byteLabel : ""
     }
-    private func speedLabel(_ speed: Double) -> some View {
-        Label(speed > 0 ? "\(Int64(min(speed, Double(Int64.max / 2))).byteLabel)/s" : "正在测速…", systemImage: "speedometer")
+    private func etaText(_ seconds: TimeInterval?) -> String {
+        guard let seconds, seconds.isFinite else { return "" }
+        return seconds < 60 ? "剩余 \(max(1, Int(seconds))) 秒" : seconds < 3600 ? "剩余 \(Int(ceil(seconds / 60))) 分钟"
+            : "剩余 \(Int(ceil(min(seconds / 3600, 999)))) 小时"
+    }
+    @ViewBuilder private var trailingControl: some View {
+        switch job.status {
+        case .running:
+            Button(action: primary) { ProgressRing(progress: job.expected > 0 ? job.progress : nil, symbol: "pause.fill") }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("暂停").accessibilityValue("\(Int(job.progress * 100))%")
+        case .queued:
+            Button(action: primary) { ProgressRing(progress: nil) }
+                .buttonStyle(.borderless).accessibilityLabel("等待下载，点按暂停")
+        case .pausing, .processing:
+            ProgressView().frame(width: 44, height: 44)
+        case .paused:
+            RowCapsule(title: "继续", action: primary)
+        case .failed:
+            RowCapsule(title: "重试", action: primary)
+        case .completed:
+            EmptyView()
+        }
     }
     private var installButton: some View {
-        Button("安装", systemImage: "square.and.arrow.down", action: primary)
+        Button("安装", systemImage: "arrow.down.app", action: primary)
             .buttonStyle(DownloadActionStyle()).accessibilityIdentifier("download.install." + job.app.id)
     }
     private var exportButton: some View {
         Button("导出", systemImage: "square.and.arrow.up", action: exporting)
             .buttonStyle(DownloadActionStyle(secondary: true)).accessibilityIdentifier("download.export." + job.app.id)
     }
-    @ViewBuilder private var taskAction: some View {
-        switch job.status {
-        case .running, .queued:
-            Button("暂停", systemImage: "pause.fill", action: primary).buttonStyle(.bordered).controlSize(.large)
-        case .paused, .failed:
-            Button(job.status == .failed ? "重试" : "继续", systemImage: job.status == .failed ? "arrow.clockwise" : "play.fill", action: primary).buttonStyle(.bordered).controlSize(.large)
-        case .completed:
-            if job.rawFormat != nil {
-                exportButton
-            } else if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: 10) { installButton; exportButton }
-            } else {
-                HStack(spacing: 12) { installButton; exportButton }
-            }
-        case .processing, .pausing: ProgressView()
-        }
-    }
-    @ViewBuilder private func etaLabel(_ seconds: TimeInterval?) -> some View {
-        if let seconds, seconds.isFinite {
-            Text(seconds < 60 ? "预计剩余 \(max(1, Int(seconds))) 秒" : seconds < 3600 ? "预计剩余 \(Int(ceil(seconds / 60))) 分钟" : "预计剩余 \(Int(ceil(min(seconds / 3600, 999)))) 小时")
-        } else { Text(job.expected > 0 ? "正在估算剩余时间" : "总大小未知") }
-    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Button(action: inspecting) { appHeading }.buttonStyle(.plain)
-            if [.running, .paused, .pausing].contains(job.status) {
-                if job.expected > 0 {
-                    ProgressView(value: job.progress).tint(job.status == .paused ? .secondary : UX.tint)
-                        .accessibilityLabel("下载进度").accessibilityValue("\(Int(job.progress * 100))%")
-                } else if job.status == .running { ProgressView().accessibilityLabel("正在下载，文件大小未知") }
-                ViewThatFits(in: .horizontal) {
-                    HStack { byteProgress; Spacer(); percentage }
-                    VStack(alignment: .leading, spacing: 4) { byteProgress; percentage }
-                }.font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                if job.status == .running {
-                    TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        let metric = manager.metrics(for: job.id)
-                        let now = ProcessInfo.processInfo.systemUptime
-                        let speed = metric?.rate(at: now) ?? 0
-                        ViewThatFits(in: .horizontal) {
-                            HStack { speedLabel(speed); Spacer(); etaLabel(metric?.remaining(expected: job.expected, at: now)) }
-                            VStack(alignment: .leading, spacing: 4) { speedLabel(speed); etaLabel(metric?.remaining(expected: job.expected, at: now)) }
-                        }.font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    }
-                }
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Button(action: inspecting) { appHeading }.buttonStyle(.plain)
+                trailingControl
+            }
+            if job.status == .running || job.status == .paused, job.expected > 0 {
+                ProgressView(value: job.progress).tint(job.status == .paused ? .secondary : UX.tint)
+                    .accessibilityLabel("下载进度").accessibilityValue("\(Int(job.progress * 100))%")
             }
             if job.status == .completed {
-                TaskStatusPill(status: job.status)
-                taskAction.font(.subheadline.weight(.semibold))
-            } else {
-                ViewThatFits(in: .horizontal) {
-                    HStack { TaskStatusPill(status: job.status); Spacer(minLength: 8); taskAction }
-                    VStack(alignment: .leading, spacing: 10) { TaskStatusPill(status: job.status); taskAction }
-                }.font(.subheadline)
+                if job.rawFormat != nil {
+                    exportButton
+                } else if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: 10) { installButton; exportButton }
+                } else {
+                    HStack(spacing: 12) { installButton; exportButton }
+                }
             }
-            if job.status == .processing, let detail = manager.processingDetail[job.id] {
-                Text(detail).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            if let error = job.error {
+                Label(error, systemImage: "exclamationmark.circle.fill").font(.caption).foregroundStyle(.red).lineLimit(3)
             }
-            if let error = job.error { Text(error).font(.caption).foregroundStyle(.primary).lineLimit(2) }
-        }.padding(.vertical, 10)
+        }.padding(.vertical, 8)
     }
 }
 
@@ -400,9 +404,10 @@ private struct DownloadActionStyle: ButtonStyle {
     var secondary = false
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .frame(maxWidth: .infinity, minHeight: 48)
-            .foregroundStyle(secondary ? Color.primary : UX.onAccent)
-            .background(secondary ? Color(uiColor: .tertiarySystemFill) : UX.buttonTint, in: RoundedRectangle(cornerRadius: 16))
+            .font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .foregroundStyle(secondary ? UX.tint : UX.onAccent)
+            .background(secondary ? AnyShapeStyle(Color(.tertiarySystemFill)) : AnyShapeStyle(UX.tint), in: Capsule())
             .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
