@@ -94,9 +94,10 @@ final class AppIconService: ObservableObject {
         var lastError: Error?
         // SpringBoard rejects a change with EAGAIN while it is still applying
         // the previous one (for example switching back right away): back off.
-        // iOS throttles a second change made within seconds of the previous
-        // one; keep retrying (about 30 s in total) rather than giving up.
-        let delays = [800, 1600, 2400, 3200, 4000, 4000, 4000, 5000, 5000]
+        // iOS throttles a second change made soon after the previous one,
+        // sometimes for most of a minute; keep retrying (about 60 s in total)
+        // rather than giving up.
+        let delays = [800, 1600, 2400, 3200, 4000, 5000, 6000, 8000, 10000, 10000, 10000]
         for attempt in 0...delays.count {
             let result = await request(choice)
             // A nil error is the system's confirmation, even if

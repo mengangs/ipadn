@@ -23,6 +23,8 @@ struct PrimaryButtonStyle: ButtonStyle {
             .background(UX.buttonTint.opacity(configuration.isPressed ? 0.8 : 1),
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .opacity(enabled ? 1 : 0.35)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.snappy(duration: 0.15), value: configuration.isPressed)
     }
 }
 typealias MonochromeButtonStyle = PrimaryButtonStyle
@@ -231,9 +233,32 @@ struct TaskStatusPill: View {
         }
     }
     var body: some View {
-        Label(status.title, systemImage: status.symbol).font(.caption.weight(.semibold))
-            .foregroundStyle(color)
-            .labelStyle(.titleAndIcon)
+        // Not a Label: inside List rows a Label gets the list's icon column,
+        // which leaves a wide gap between the glyph and the text.
+        HStack(spacing: 4) {
+            Image(systemName: status.symbol).imageScale(.small)
+            Text(status.title)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(color)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Small outlined capsule for platform and state tags (iOS, 已下架…).
+struct TagBadge: View {
+    let text: String
+    var tint: Color = .secondary
+    var body: some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .textCase(nil)
+            .foregroundStyle(tint)
+            .lineLimit(1)
+            .padding(.horizontal, 7).padding(.vertical, 2)
+            .background(tint.opacity(0.1), in: Capsule())
+            .overlay(Capsule().stroke(tint.opacity(0.35), lineWidth: 0.5))
+            .fixedSize()
     }
 }
 
@@ -258,17 +283,22 @@ struct InfoStripItem: View {
     var detail: String? = nil
     var symbol: String? = nil
     var body: some View {
-        VStack(spacing: 5) {
-            Text(caption).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase).lineLimit(1)
-            if let symbol {
-                Image(systemName: symbol).font(.title3.weight(.semibold)).foregroundStyle(.secondary)
-            } else {
-                Text(value).font(.title3.weight(.bold)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
+        VStack(spacing: 4) {
+            Text(caption).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1)
+            Group {
+                if let symbol {
+                    Image(systemName: symbol).font(.title3.weight(.semibold))
+                } else {
+                    Text(value).font(.title3.weight(.bold)).lineLimit(1).minimumScaleFactor(0.6)
+                }
             }
-            Text(detail ?? (symbol == nil ? " " : value)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            .foregroundStyle(.secondary)
+            .frame(height: 26)
+            Text(detail ?? (symbol == nil ? " " : value)).font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1).minimumScaleFactor(0.8)
         }
-        .frame(minWidth: 88)
-        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 4)
         .accessibilityElement(children: .combine)
     }
 }

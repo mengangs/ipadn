@@ -101,7 +101,7 @@ struct SettingsView: View {
             Section {
                 BrandMark(size: 64)
                 Text("iPadn " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")).font(.headline)
-                Text("搜索、下载、管理你的应用安装包。支持 iPhone、iPad 和快捷指令。")
+                Text("搜索、下载和管理你拥有许可的应用安装包，支持 iPhone、iPad、Apple TV 与 Mac。")
                     .font(.footnote).foregroundStyle(.secondary)
                 Link("项目与更新", destination: URL(string: "https://github.com/mengangs/ipadn")!)
             }

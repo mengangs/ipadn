@@ -71,7 +71,7 @@ struct AccountsView: View {
                 Section { Button("退出登录", role: .destructive) { signingOut = true }.frame(maxWidth: .infinity) }
             }
         }
-        .toolPage().navigationTitle("账户").navigationBarTitleDisplayMode(.large)
+        .toolPage().navigationTitle("账号").navigationBarTitleDisplayMode(.large)
         .actionConfirmation(isPresented: $signingOut, title: "退出当前账号？", message: "账号仍保存在本机，可以随时切换回来。", confirmTitle: "退出登录") { apple.select(nil) }
         .actionConfirmation(isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), title: "移除账号？", message: "清除此账号的本机登录信息与已购记录，保留已下载的文件。", confirmTitle: "移除账号") {
             guard let id = deleting?.id else { return }

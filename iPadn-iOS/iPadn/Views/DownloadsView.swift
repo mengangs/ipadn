@@ -290,11 +290,7 @@ struct DownloadTaskRow: View {
         job.displayApp(packageIcon: manager.packageIconURL(job))
     }
     private var platformBadge: some View {
-        Text(job.platformLabel)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 7).padding(.vertical, 2)
-            .overlay(Capsule().stroke(Color(.separator), lineWidth: 0.5))
+        TagBadge(text: job.platformLabel)
             .accessibilityIdentifier("download.platform." + job.platformLabel)
     }
     private var appHeading: some View {
@@ -369,13 +365,20 @@ struct DownloadTaskRow: View {
             EmptyView()
         }
     }
+    // Plain HStack labels: a Label inside a List row is laid out with the
+    // list's icon column and drifts away from its title.
+    private func actionLabel(_ title: String, _ symbol: String) -> some View {
+        HStack(spacing: 6) { Image(systemName: symbol); Text(title) }
+    }
     private var installButton: some View {
-        Button("安装", systemImage: "arrow.down.app", action: primary)
-            .buttonStyle(DownloadActionStyle()).accessibilityIdentifier("download.install." + job.app.id)
+        Button(action: primary) { actionLabel("安装", "arrow.down.app") }
+            .buttonStyle(DownloadActionStyle())
+            .accessibilityLabel("安装").accessibilityIdentifier("download.install." + job.app.id)
     }
     private var exportButton: some View {
-        Button("导出", systemImage: "square.and.arrow.up", action: exporting)
-            .buttonStyle(DownloadActionStyle(secondary: true)).accessibilityIdentifier("download.export." + job.app.id)
+        Button(action: exporting) { actionLabel("导出", "square.and.arrow.up") }
+            .buttonStyle(DownloadActionStyle(secondary: true))
+            .accessibilityLabel("导出").accessibilityIdentifier("download.export." + job.app.id)
     }
 
     var body: some View {
@@ -386,6 +389,7 @@ struct DownloadTaskRow: View {
             }
             if job.status == .running || job.status == .paused, job.expected > 0 {
                 ProgressView(value: job.progress).tint(job.status == .paused ? .secondary : UX.tint)
+                    .animation(.linear(duration: 0.25), value: job.progress)
                     .accessibilityLabel("下载进度").accessibilityValue("\(Int(job.progress * 100))%")
             }
             if job.status == .completed {
@@ -398,9 +402,15 @@ struct DownloadTaskRow: View {
                 }
             }
             if let error = job.error {
-                Label(error, systemImage: "exclamationmark.circle.fill").font(.caption).foregroundStyle(.red).lineLimit(3)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                    Text(error).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.caption).foregroundStyle(.red)
             }
-        }.padding(.vertical, 8)
+        }
+        .padding(.vertical, 8)
+        .animation(.snappy, value: job.status)
     }
 }
 
@@ -412,7 +422,9 @@ private struct DownloadActionStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: 44)
             .foregroundStyle(secondary ? UX.tint : UX.onAccent)
             .background(secondary ? AnyShapeStyle(Color(.tertiarySystemFill)) : AnyShapeStyle(UX.tint), in: Capsule())
-            .opacity(configuration.isPressed ? 0.7 : 1)
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.snappy(duration: 0.15), value: configuration.isPressed)
     }
 }
 

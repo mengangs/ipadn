@@ -99,7 +99,7 @@ final class ToolStore: ObservableObject {
                     // Delisted or region-limited apps have no public listing;
                     // the account may still own them, so keep the ID usable.
                     var fallback = knownApp(appID) ?? StoreApp(id: appID, name: "App \(appID)", price: "")
-                    if fallback.category.isEmpty { fallback.category = "未在公开商店找到" }
+                    fallback.delisted = true
                     apps = [fallback]
                 }
                 if case .appID(_, let versionID) = query, let versionID {

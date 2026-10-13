@@ -57,12 +57,14 @@ struct AppDetailView: View {
                 } header: { sectionTitle("简介") }
             }
             Section {
-                if !app.category.isEmpty { LabeledContent("类别", value: app.category) }
+                if app.isDelisted { LabeledContent("商店状态", value: "已下架") }
+                if !app.displayCategory.isEmpty { LabeledContent("类别", value: app.displayCategory) }
                 if app.size > 0 { LabeledContent("大小", value: app.size.byteLabel) }
                 if !app.minimumOS.isEmpty {
                     LabeledContent("兼容性", value: "\(store.settings.store.platform.title) \(app.minimumOS) 或更高版本")
                 }
                 if !app.price.isEmpty { LabeledContent("价格", value: app.price) }
+                LabeledContent("商店地区", value: store.settings.store.country)
                 if !app.bundleID.isEmpty {
                     LabeledContent("Bundle ID") {
                         Text(app.bundleID).font(.footnote.monospaced()).textSelection(.enabled).multilineTextAlignment(.trailing)
@@ -86,7 +88,9 @@ struct AppDetailView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { store.toggleFavorite(app); UX.feedback() } label: {
-                    Image(systemName: store.isFavorite(app) ? "star.fill" : "star").frame(minWidth: 44, minHeight: 44)
+                    Image(systemName: store.isFavorite(app) ? "star.fill" : "star")
+                        .contentTransition(.symbolEffect(.replace))
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .accessibilityLabel(store.isFavorite(app) ? "取消收藏" : "收藏应用")
             }
@@ -163,11 +167,15 @@ struct AppDetailView: View {
     /// App Store product header: big icon, name, subtitle and the primary capsule.
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
-            AppIcon(url: iconURL, size: 118)
+            AppIcon(url: iconURL, size: 112)
             VStack(alignment: .leading, spacing: 4) {
                 Text(app.name.isEmpty ? app.bundleID : app.name).font(.title3.weight(.bold))
                     .lineLimit(2).minimumScaleFactor(0.85).fixedSize(horizontal: false, vertical: true)
-                if !app.category.isEmpty { Text(app.category).font(.subheadline).foregroundStyle(.secondary) }
+                if app.isDelisted {
+                    TagBadge(text: "已下架", tint: .orange)
+                } else if !app.displayCategory.isEmpty {
+                    Text(app.displayCategory).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                }
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(app.version.isEmpty ? "版本待查询" : "v\(app.version)")
                         .font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
@@ -195,7 +203,7 @@ struct AppDetailView: View {
                     Text("使用 \(account.id)").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 118, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 112, alignment: .leading)
         }
     }
 
@@ -223,34 +231,40 @@ struct AppDetailView: View {
         }
     }
 
-    /// Horizontal info strip under the header, as on App Store product pages.
+    /// Info strip under the header. At most four equal cells so it always
+    /// fits on one line; everything else is in the 信息 section below.
     private var infoStrip: some View {
-        let items = stripItems
-        // Spread the cells across the row when they fit; scroll otherwise.
-        return ViewThatFits(in: .horizontal) {
-            stripRow(items, stretch: true).padding(.horizontal, 12)
-            ScrollView(.horizontal, showsIndicators: false) {
-                stripRow(items, stretch: false).padding(.horizontal, 12)
-            }
-        }
-    }
-
-    private func stripRow(_ items: [InfoStripItem], stretch: Bool) -> some View {
-        HStack(spacing: 0) {
+        let items = Array(stripItems.prefix(4))
+        return HStack(spacing: 0) {
             ForEach(items.indices, id: \.self) { index in
-                items[index].frame(maxWidth: stretch ? .infinity : nil)
-                if index < items.count - 1 { Divider().frame(height: 36) }
+                items[index]
+                if index < items.count - 1 { Divider().frame(height: 40) }
             }
         }
+        .padding(.horizontal, 8)
     }
 
     private var stripItems: [InfoStripItem] {
+        let platform = store.settings.store.platform
         var items: [InfoStripItem] = []
-        if app.rating > 0 { items.append(InfoStripItem(caption: "评分", value: String(format: "%.1f", app.rating), detail: String(repeating: "★", count: max(0, min(5, Int(app.rating.rounded())))))) }
-        if app.size > 0 { items.append(InfoStripItem(caption: "大小", value: app.size.byteLabel.components(separatedBy: " ").first ?? app.size.byteLabel, detail: app.size.byteLabel.components(separatedBy: " ").last)) }
-        items.append(InfoStripItem(caption: "平台", value: store.settings.store.platform.title, symbol: store.settings.store.platform.symbol))
-        if !app.minimumOS.isEmpty { items.append(InfoStripItem(caption: "系统要求", value: app.minimumOS + "+", detail: store.settings.store.platform.title)) }
-        if !app.category.isEmpty { items.append(InfoStripItem(caption: "类别", value: app.category, symbol: "square.grid.2x2")) }
+        if app.rating > 0 {
+            items.append(InfoStripItem(caption: "评分", value: String(format: "%.1f", app.rating),
+                                       detail: String(repeating: "★", count: max(0, min(5, Int(app.rating.rounded()))))))
+        }
+        if app.size > 0 {
+            let parts = app.size.byteLabel.components(separatedBy: " ")
+            items.append(InfoStripItem(caption: "大小", value: parts.first ?? app.size.byteLabel, detail: parts.count > 1 ? parts.last : nil))
+        }
+        if !app.minimumOS.isEmpty {
+            items.append(InfoStripItem(caption: "兼容性", value: app.minimumOS + "+", detail: platform.title))
+        } else {
+            items.append(InfoStripItem(caption: "平台", value: platform.title, symbol: platform.symbol))
+        }
+        if app.isDelisted {
+            items.append(InfoStripItem(caption: "状态", value: "已下架", symbol: "archivebox"))
+        } else if !app.displayCategory.isEmpty {
+            items.append(InfoStripItem(caption: "类别", value: app.displayCategory, symbol: "square.grid.2x2"))
+        }
         items.append(InfoStripItem(caption: "地区", value: store.settings.store.country, detail: "商店"))
         return items
     }

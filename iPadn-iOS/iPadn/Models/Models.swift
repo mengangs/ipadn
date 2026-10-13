@@ -86,6 +86,13 @@ struct StoreApp: Codable, Identifiable, Hashable {
     // tvSoftware search is unavailable for some storefronts; candidate
     // listings are not proof of compatibility with Apple TV.
     var tvOSCandidate: Bool?
+    // No public listing in any storefront (removed from sale); the App ID
+    // still works for accounts that own it.
+    var delisted: Bool?
+    static let delistedPlaceholder = "未在公开商店找到"
+    var isDelisted: Bool { delisted == true || category == Self.delistedPlaceholder }
+    /// Category for display; never the legacy delisted placeholder.
+    var displayCategory: String { category == Self.delistedPlaceholder ? "" : category }
 }
 
 struct AppVersion: Codable, Identifiable, Hashable {

@@ -15,7 +15,7 @@ struct PackageInstallationView: View {
             Form {
                 Section {
                     VStack(spacing: 14) {
-                        AppIcon(url: job.app.iconURL, size: 96)
+                        AppIcon(url: job.displayApp(packageIcon: manager.packageIconURL(job)).iconURL, size: 96)
                         VStack(spacing: 4) {
                             Text(job.app.name).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
                             Text([job.app.version.isEmpty ? "" : "版本 \(job.app.version)", job.app.size > 0 ? job.app.size.byteLabel : ""]

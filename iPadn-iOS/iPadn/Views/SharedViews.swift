@@ -50,10 +50,15 @@ struct AppRow<Accessory: View>: View {
             AppIcon(url: app.iconURL, size: 64)
             VStack(alignment: .leading, spacing: 3) {
                 Text(app.name.isEmpty ? app.bundleID : app.name).font(.body.weight(.medium)).lineLimit(2)
-                Text(subtitle ?? [app.category, app.version.isEmpty ? "" : "v\(app.version)"]
-                    .filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                if app.size > 0 { Text(app.size.byteLabel).font(.caption).foregroundStyle(.tertiary) }
+                let detail = subtitle ?? [app.displayCategory, app.version.isEmpty ? "" : "v\(app.version)"]
+                    .filter { !$0.isEmpty }.joined(separator: " · ")
+                if !detail.isEmpty {
+                    Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                }
+                HStack(spacing: 6) {
+                    if app.isDelisted { TagBadge(text: "已下架", tint: .orange) }
+                    if app.size > 0 { Text(app.size.byteLabel).font(.caption).foregroundStyle(.tertiary) }
+                }
             }
             Spacer(minLength: 8)
             accessory()

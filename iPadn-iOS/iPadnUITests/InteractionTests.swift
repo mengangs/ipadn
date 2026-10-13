@@ -110,7 +110,8 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(waitUntilSelected(flat, timeout: 40))
         attach("19-system-icon-switch", app: app)
         dimensional.tap()
-        let restored = waitUntilSelected(dimensional, timeout: 40)
+        // The app retries a throttled change for about a minute.
+        let restored = waitUntilSelected(dimensional, timeout: 90)
         if !restored {
             let status = app.staticTexts["settings.icon.status"]
             print("ICON-DIAG status=\(status.exists ? status.label : "none") enabled=\(dimensional.isEnabled)")
