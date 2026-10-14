@@ -1,1 +1,0 @@
-`localhost-test-only.p12` is a self-signed test identity, with password `test-only` and SANs 127.0.0.1 / localhost. It has no privileges or production trust. It is bundled only in the XCTest target, never in iPadn or the IPA. Tests deliberately reject it under system trust; the TLS transport test uses it as an explicit test-only trust anchor.

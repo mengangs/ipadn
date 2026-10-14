@@ -139,16 +139,6 @@
 			isa = PBXBuildFile;
 			fileRef = BCDB149703DDF289FBA19140;
 		};
-		3228CD82BBADE4C6F497128C = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "Services/InstallationCertificate.swift";
-			sourceTree = "<group>";
-		};
-		BA280790D649F882F8B296E5 = {
-			isa = PBXBuildFile;
-			fileRef = 3228CD82BBADE4C6F497128C;
-		};
 		294558996050B2FE227179BC = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -168,16 +158,6 @@
 		4F5447AC56A605806430F5AF = {
 			isa = PBXBuildFile;
 			fileRef = 43307BBF4EB32558D5FCFF38;
-		};
-		CBFA0D7D5F1BFB873CBCDA92 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "Services/LocalInstallationIdentityFactory.swift";
-			sourceTree = "<group>";
-		};
-		2C7449DA5EF8F6D67C792A4E = {
-			isa = PBXBuildFile;
-			fileRef = CBFA0D7D5F1BFB873CBCDA92;
 		};
 		525FB927D6E0158442EEE80C = {
 			isa = PBXFileReference;
@@ -556,10 +536,8 @@
 				03223D703FED7749D0182600,
 				F8027934C71C79D0C4556300,
 				BCDB149703DDF289FBA19140,
-				3228CD82BBADE4C6F497128C,
 				294558996050B2FE227179BC,
 				43307BBF4EB32558D5FCFF38,
-				CBFA0D7D5F1BFB873CBCDA92,
 				525FB927D6E0158442EEE80C,
 				2726A9922C1E2B19E7C8BE3B,
 				8EF4977EC0C2C9F1B0803640,
@@ -601,7 +579,6 @@
 				DF17B7F31CB119020ABB3383,
 				C893DFB88667291E462080FF,
 				43B20E5B39E4494D4F6661D0,
-				B0563010449BDC3A2DFEF8A0,
 			);
 			path = iPadnTests;
 			sourceTree = "<group>";
@@ -642,10 +619,8 @@
 				D9FE40E25730AE6E6B295708,
 				7C04EA5E4EC7AB7D31EE0AE7,
 				BF33CC061A259701E2392CC4,
-				BA280790D649F882F8B296E5,
 				C0E20030ACC5F23732E47CAE,
 				4F5447AC56A605806430F5AF,
-				2C7449DA5EF8F6D67C792A4E,
 				D3D7F9AE0A76859E6F98809B,
 				7AEFD1B8A51F47BDE8F047AD,
 				4D79E74E9CA15CF0827993E9,
@@ -734,21 +709,10 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B0563010449BDC3A2DFEF8A0 = {
-			isa = PBXFileReference;
-			lastKnownFileType = file;
-			path = "Fixtures/localhost-test-only.p12";
-			sourceTree = "<group>";
-		};
-		FF10D9D830157358AAD43161 = {
-			isa = PBXBuildFile;
-			fileRef = B0563010449BDC3A2DFEF8A0;
-		};
 		F3450B63233CC3F0A1670847 = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				FF10D9D830157358AAD43161,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
