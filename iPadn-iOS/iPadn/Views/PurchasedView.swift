@@ -50,7 +50,7 @@ struct PurchasedView: View {
                         ForEach(filtered) { app in
                             NavigationLink { AppDetailView(app: app.storeApp) } label: {
                                 AppRow(app: app.storeApp, subtitle: app.purchaseDate.map {
-                                    "购于 \($0.formatted(date: .abbreviated, time: .omitted))"
+                                    "购于 \($0.formatted(.dateTime.year().month(.defaultDigits).day()))"
                                 }) {
                                     RowCapsule(title: "下载") { getting = app.storeApp; UX.feedback() }
                                         .accessibilityLabel("下载 \(app.name)")

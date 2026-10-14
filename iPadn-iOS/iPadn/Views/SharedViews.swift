@@ -53,7 +53,8 @@ struct AppRow<Accessory: View>: View {
                 let detail = subtitle ?? [app.displayCategory, app.version.isEmpty ? "" : "v\(app.version)"]
                     .filter { !$0.isEmpty }.joined(separator: " · ")
                 if !detail.isEmpty {
-                    Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                    // Scrolls once in place when the row is too narrow, like download cards.
+                    MarqueeText(text: detail).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 6) {
                     if app.isDelisted { TagBadge(text: "已下架", tint: .orange) }
