@@ -223,6 +223,40 @@ enum StoreService {
                         developerURL: MacInstallerService.safeWebsite(plistString(raw["sellerUrl"] ?? raw["websiteUrl"])))
     }
 
+    /// The current iPhone or iPad version ID (ipatool): the MDM catalogs
+    /// first, then the App Store catalog API, which also lists Apple Arcade
+    /// games that no MDM catalog carries.
+    static func latestIOSVersionID(_ id: String, bundleID: String, country: String, platform: AppPlatform) async -> String? {
+        guard UInt64(id).map({ $0 > 0 }) == true else { return nil }
+        for catalog in ["enterprisestore", "iphone", "ipad"] {
+            guard let url = try? endpoint("https://uclient-api.itunes.apple.com/WebObjects/MZStorePlatform.woa/wa/lookup", items: [
+                URLQueryItem(name: "version", value: "2"), URLQueryItem(name: "id", value: id),
+                URLQueryItem(name: "p", value: "mdm-lockup"), URLQueryItem(name: "caller", value: "MDM"),
+                URLQueryItem(name: "platform", value: catalog), URLQueryItem(name: "cc", value: country.lowercased()),
+                URLQueryItem(name: "l", value: "en")
+            ]), let data = try? await HTTPClient.shared.json(url) as? [String: Any],
+            let raw = (data["results"] as? [String: Any])?[id] as? [String: Any],
+            let offer = (raw["offers"] as? [[String: Any]])?.first else { continue }
+            if let version = platformExternalVersionID(version: offer["version"] as? [String: Any] ?? [:],
+                                                       buyParams: plistString(offer["buyParams"])) { return version }
+        }
+        let family = platform == .iPadOS ? "ipad" : "iphone"
+        guard let url = URL(string: "https://apps.apple.com/api/apps/v1/catalog/\(country.lowercased())/apps/\(id)?platform=\(family)"),
+              let data = try? await HTTPClient.shared.json(url) as? [String: Any] else { return nil }
+        return catalogVersionID(data, id: id, bundleID: bundleID, family: family)
+    }
+
+    static func catalogVersionID(_ data: [String: Any], id: String, bundleID: String, family: String) -> String? {
+        guard let items = data["data"] as? [[String: Any]], items.count == 1, let item = items.first,
+              plistString(item["id"]) == id, plistString(item["type"]) == "apps",
+              let attributes = item["attributes"] as? [String: Any],
+              (attributes["deviceFamilies"] as? [String] ?? []).contains(family),
+              let ios = (attributes["platformAttributes"] as? [String: Any])?["ios"] as? [String: Any],
+              bundleID.isEmpty || plistString(ios["bundleId"]) == bundleID else { return nil }
+        let version = plistString(ios["externalVersionId"])
+        return UInt64(version).map { $0 > 0 } == true ? version : nil
+    }
+
     static func platformExternalVersionID(version: [String: Any], buyParams: String) -> String? {
         let provided = plistString(version["externalId"]).trimmingCharacters(in: .whitespacesAndNewlines)
         if let number = UInt64(provided), number > 0 { return provided }
@@ -285,6 +319,24 @@ enum StoreService {
         }
         if icons.isEmpty, let firstError { throw firstError }
         return icons
+    }
+
+    /// Current listings for many App IDs at once: the lookup API takes a list.
+    static func lookup(ids: [String], country: String) async throws -> [String: StoreApp] {
+        let ids = ids.filter { UInt64($0).map { $0 > 0 } == true }
+        var found: [String: StoreApp] = [:]
+        for start in stride(from: 0, to: ids.count, by: 100) {
+            let chunk = ids[start..<min(start + 100, ids.count)]
+            let url = try endpoint("https://itunes.apple.com/lookup", items: [
+                URLQueryItem(name: "id", value: chunk.joined(separator: ",")), URLQueryItem(name: "country", value: country)
+            ])
+            let rows = (try await HTTPClient.shared.json(url) as? [String: Any])?["results"] as? [[String: Any]] ?? []
+            for row in rows {
+                let app = mapLookup(row)
+                if chunk.contains(app.id) { found[app.id] = app }
+            }
+        }
+        return found
     }
 
     static func mapLookup(_ raw: [String: Any]) -> StoreApp {

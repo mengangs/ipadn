@@ -120,9 +120,21 @@ final class AppleService: ObservableObject {
             // Delisted Apple TV purchases may have no public catalog offer.
             // Such requests still undergo strict package validation below.
         }
-        var asset = try await fetchAsset(appID: appID, versionID: targetVersion, account: account,
+        var asset: DownloadAsset
+        do {
+            asset = try await fetchAsset(appID: appID, versionID: targetVersion, account: account,
                                          useCache: useCache, fallback: false, refreshed: false, purchased: false,
                                          allowLicenseAcquisition: allowLicenseAcquisition)
+        } catch let error as ToolError where targetVersion == nil && store.platform.usesIOSStore
+                    && error.localizedDescription == Self.noOfferMessage {
+            // Apple Arcade games may need the current version named (ipatool).
+            guard let country = StoreService.country(forStorefront: account.storeFront),
+                  let latest = await StoreService.latestIOSVersionID(appID, bundleID: "", country: country, platform: store.platform)
+            else { throw error }
+            asset = try await fetchAsset(appID: appID, versionID: latest, account: account,
+                                         useCache: useCache, fallback: false, refreshed: false, purchased: false,
+                                         allowLicenseAcquisition: allowLicenseAcquisition)
+        }
         let reported = asset.platform.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if store.platform == .tvOS {
             let tvPlatforms = ["tvos", "appletvos", "appletv", "atv9"]
@@ -210,7 +222,7 @@ final class AppleService: ObservableObject {
                     useCache: useCache, fallback: true, refreshed: refreshed, purchased: purchased,
                     allowLicenseAcquisition: allowLicenseAcquisition)
             }
-            throw ToolError.message("Apple 没有返回该版本的下载信息")
+            throw ToolError.message(Self.noOfferMessage)
         }
         guard let url = URL(string: plistString(song["URL"])), url.scheme == "https",
               var metadata = song["metadata"] as? [String: Any] else { throw ToolError.message("暂时无法下载，请稍后重试") }
@@ -267,15 +279,19 @@ final class AppleService: ObservableObject {
         return url
     }
 
+    static let noOfferMessage = "Apple 没有返回该版本的下载信息"
+
     static func shouldAcquireLicense(failure: String, purchased: Bool,
                                      allowLicenseAcquisition: Bool) -> Bool {
         failure == "9610" && !purchased && allowLicenseAcquisition
     }
 
-    private func acquireFreeApp(_ id: String, account: AppleAccount) async throws {
+    /// `arcade` false first; an iOS app that Apple reports unavailable (2059)
+    /// is retried as an Apple Arcade game, as ipatool does.
+    private func acquireFreeApp(_ id: String, account: AppleAccount, mac: Bool = false, arcade: Bool = false) async throws {
         let payload: [String: Any] = ["appExtVrsId": "0", "buyWithoutAuthorization": "true", "guid": guid,
             "hasAskedToFulfillPreorder": "true", "hasDoneAgeCheck": "true", "price": "0",
-            "pricingParameters": "STDQ", "productType": "C", "salableAdamId": id]
+            "pricingParameters": arcade ? "GAME" : "STDQ", "productType": "C", "salableAdamId": id]
         var headers = authHeaders(account); headers["X-Token"] = account.passwordToken
         let (raw, _) = try await HTTPClient.shared.plist(
             URL(string: "https://buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/buyProduct")!,
@@ -285,6 +301,12 @@ final class AppleService: ObservableObject {
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
         // The account already holds the license (ipatool): nothing to claim.
         if plistString(raw["failureType"]) == "5002" { return }
+        if plistString(raw["customerMessage"]) == "Subscription Required" {
+            throw ToolError.message("此应用属于 Apple Arcade，需要此账号订阅 Apple Arcade 后才能下载。")
+        }
+        if plistString(raw["failureType"]) == "2059" && !mac && !arcade {
+            return try await acquireFreeApp(id, account: account, mac: mac, arcade: true)
+        }
         if ["2034", "2042"].contains(plistString(raw["failureType"])) ||
            plistString(raw["customerMessage"]) == "MZFinance.BadLogin.Configurator_message" {
             throw AppleLoginError.verificationRequired
@@ -346,7 +368,7 @@ final class AppleService: ObservableObject {
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
         if plistString(raw["failureType"]) == "9610" && !licenseAcquired {
             guard allowLicenseAcquisition else { throw AppleLicenseError.notOwned }
-            try await acquireFreeApp(app.id, account: account)
+            try await acquireFreeApp(app.id, account: account, mac: true)
             try Task.checkCancellation()
             guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
             return try await macPackageOffer(app, versionID: versionID, useCache: useCache,

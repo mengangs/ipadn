@@ -182,6 +182,20 @@ struct DownloadJob: Codable, Identifiable {
         displayed.iconURL = packageIcon ?? app.iconURL ?? asset?.app.iconURL
         return displayed
     }
+    /// Where a newer version of this download would come from; nil for
+    /// developer-site installers and files without an App ID.
+    var updatePlatform: AppPlatform? {
+        guard UInt64(app.id).map({ $0 > 0 }) == true else { return nil }
+        if rawFormat != nil {
+            return rawFormat == "pkg" && sourceURL?.host?.hasSuffix(".apple.com") == true ? .macOS : nil
+        }
+        switch platformLabel {
+        case "tvOS": return .tvOS
+        case "iPad": return .iPadOS
+        default: return .iOS
+        }
+    }
+    var updateKey: String? { updatePlatform.map { "\($0.rawValue)|\(app.id)" } }
     var platformLabel: String {
         if rawFormat != nil { return "Mac" }
         switch asset?.platform.lowercased() {
@@ -340,6 +354,32 @@ func plistString(_ value: Any?) -> String {
     return ""
 }
 
+
+enum VersionOrder {
+    /// Dotted versions compared part by part ("1.10" is newer than "1.9",
+    /// "2.0" equals "2.0.0").
+    static func isNewer(_ candidate: String, than current: String) -> Bool {
+        let a = parts(candidate), b = parts(current)
+        guard !a.isEmpty, !b.isEmpty else { return false }
+        for index in 0..<max(a.count, b.count) {
+            let x = index < a.count ? a[index] : 0, y = index < b.count ? b[index] : 0
+            if x != y { return x > y }
+        }
+        return false
+    }
+    private static func parts(_ version: String) -> [Int] {
+        let trimmed = version.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return [] }
+        var result: [Int] = []
+        for part in trimmed.split(separator: ".", omittingEmptySubsequences: false) {
+            // "3b2" counts as 3; anything without leading digits ends the comparison.
+            let digits = part.prefix { $0.isASCII && $0.isNumber }
+            guard let value = Int(digits) else { return result }
+            result.append(value)
+        }
+        return result
+    }
+}
 
 enum DownloadFilter: String, CaseIterable, Identifiable {
     case all = "全部", active = "进行中", paused = "已暂停", completed = "已完成", failed = "失败"
