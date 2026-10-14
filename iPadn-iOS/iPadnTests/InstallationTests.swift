@@ -120,6 +120,32 @@ final class InstallationTests: XCTestCase {
         let (_, unauthorized) = try await session.data(from: URL(string: "/data/anything", relativeTo: manifestURL)!.absoluteURL)
         XCTAssertEqual((unauthorized as? HTTPURLResponse)?.statusCode, 404)
     }
+    /// The exact server a 本机证书 installation starts: identity plus its
+    /// chain and the public host, fetched as installd does.
+    func testLocalHTTPSWithChainServesManifestLikeAnInstallation() async throws {
+        let material = try LocalInstallationIdentityFactory.create()
+        let identity = try InstallationCertificate.importPKCS12(material.pkcs12, password: material.password)
+        XCTAssertGreaterThan(identity.certificates.count, 1, "the chain carries the local CA")
+        let server = LoopbackServer(identity: identity.identity, certificates: identity.certificates, publicHost: "127.0.0.1")
+        try await server.start()
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".ipa")
+        try Data((0..<64).map(UInt8.init)).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let packageURL = try server.register(file)
+        let manifest = try ManifestBuilder.manifest(app: StoreApp(id: "1", name: "Local", bundleID: "test.local", version: "1.0"), packageURL: packageURL)
+        let manifestURL = try server.register(data: manifest, contentType: "application/xml")
+        XCTAssertEqual(manifestURL.host, "127.0.0.1")
+        let root = try XCTUnwrap(SecCertificateCreateWithData(nil, material.rootCertificate as CFData))
+        let delegate = TestCertificateDelegate(certificates: [root])
+        let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        let (received, response) = try await session.data(from: manifestURL)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertEqual(received, manifest)
+        let (package, packageResponse) = try await session.data(from: packageURL)
+        XCTAssertEqual((packageResponse as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertEqual(package.count, 64)
+    }
     private func fixture() throws -> InstallationCertificate.Identity {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "localhost-test-only", withExtension: "p12"))
         return try InstallationCertificate.importPKCS12(Data(contentsOf: url), password: "test-only")

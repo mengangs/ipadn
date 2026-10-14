@@ -1188,11 +1188,11 @@ final class CoreTests: XCTestCase {
             "ipadScreenshotUrls": ["https://is1-ssl.mzstatic.com/image/thumb/b/552x414bb.png"],
             "appletvScreenshotUrls": []]
         let phone = StoreService.listingExtras(row, platform: .iOS)
-        XCTAssertEqual(phone.screenshots.first?.url.lastPathComponent, "784x1392bb.jpg")
+        XCTAssertEqual(phone.screenshots.first?.url.lastPathComponent, "1392x1392bb.jpg")
         XCTAssertEqual(phone.screenshots.first?.aspect ?? 0, 392.0 / 696.0, accuracy: 0.001)
         XCTAssertEqual(phone.developerID, "42")
         XCTAssertEqual(phone.developer, "Example Studio")
-        XCTAssertEqual(StoreService.listingExtras(row, platform: .iPadOS).screenshots.first?.url.lastPathComponent, "1104x828bb.png")
+        XCTAssertEqual(StoreService.listingExtras(row, platform: .iPadOS).screenshots.first?.url.lastPathComponent, "1104x1104bb.png")
         XCTAssertTrue(StoreService.listingExtras(row, platform: .tvOS).screenshots.isEmpty)
         // A shared iPhone App ID has no Mac screenshots; iPhone ones are not shown instead.
         XCTAssertTrue(StoreService.listingExtras(row, platform: .macOS).screenshots.isEmpty)

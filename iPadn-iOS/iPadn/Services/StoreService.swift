@@ -410,8 +410,10 @@ enum StoreService {
             .prefix(20).map { $0 }
     }
 
-    /// Lookup screenshots link a small rendition such as `392x696bb.jpg`;
-    /// the CDN renders any size from the same path, so ask for twice that.
+    /// Lookup screenshots link a small rendition such as `392x696bb.jpg`:
+    /// a box the image is fitted into, whatever its orientation. Ask for a
+    /// square box twice as large so portrait and landscape shots both come
+    /// back sharp; the real orientation is read from the loaded image.
     static func screenshot(_ value: String) -> Screenshot? {
         guard let url = URL(string: value), url.scheme == "https", url.host != nil else { return nil }
         let name = url.lastPathComponent
@@ -422,8 +424,8 @@ enum StoreService {
             return Screenshot(url: url, aspect: 9.0 / 19.5)
         }
         let suffix = size[1].drop { $0.isNumber }
-        let scale = max(1, min(2, 1600 / max(width, height)))
-        let larger = "\(width * scale)x\(height * scale)\(suffix)" + (parts.count > 1 ? "." + parts[1] : "")
+        let side = min(2000, max(width, height) * 2)
+        let larger = "\(side)x\(side)\(suffix)" + (parts.count > 1 ? "." + parts[1] : "")
         return Screenshot(url: url.deletingLastPathComponent().appendingPathComponent(larger),
                           aspect: Double(width) / Double(height))
     }

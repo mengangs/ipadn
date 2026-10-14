@@ -24,6 +24,25 @@ struct HTTPByteRange: Equatable {
 
 /// Only binds loopback. A random path capability protects runtime, proxy, and registered files.
 // Listener/startup state is confined to queue; the URL and file registries use lock.
+/// What the installation servers saw, for diagnostics: connections that
+/// failed (with the TLS error) and which resources were served. No tokens,
+/// file names or account data.
+final class InstallLog: @unchecked Sendable {
+    static let shared = InstallLog()
+    private let lock = NSLock()
+    private var lines: [String] = []
+    private(set) var manifestServed = 0
+    func add(_ line: String) {
+        let stamp = ISO8601DateFormatter.string(from: Date(), timeZone: .current, formatOptions: [.withTime, .withColonSeparatorInTime])
+        lock.lock(); lines.append(stamp + " " + line)
+        if lines.count > 80 { lines.removeFirst(lines.count - 80) }
+        lock.unlock()
+    }
+    func servedManifest() { lock.lock(); manifestServed += 1; lock.unlock() }
+    var manifestCount: Int { lock.lock(); defer { lock.unlock() }; return manifestServed }
+    var text: String { lock.lock(); defer { lock.unlock() }; return lines.joined(separator: "\n") }
+}
+
 final class LoopbackServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "iPadn.loopback")
     private let lock = NSLock()
@@ -117,9 +136,13 @@ final class LoopbackServer: @unchecked Sendable {
                     listener.newConnectionHandler = { [weak self] connection in
                         guard let self else { connection.cancel(); return }
                         let id = ObjectIdentifier(connection)
+                        let secure = self.identity != nil
                         connection.stateUpdateHandler = { [weak self] state in
                             switch state {
-                            case .cancelled, .failed: self?.lastActivity.removeValue(forKey: id)
+                            case .failed(let error):
+                                InstallLog.shared.add((secure ? "https" : "http") + " connection failed: \(error)")
+                                self?.lastActivity.removeValue(forKey: id)
+                            case .cancelled: self?.lastActivity.removeValue(forKey: id)
                             default: break
                             }
                         }
@@ -207,7 +230,7 @@ final class LoopbackServer: @unchecked Sendable {
                 sendFile(connection, url: file, range: headers["range"], head: method == "HEAD"); return
             }
         }
-        guard components.path.hasPrefix("/\(token)/") else { reply(connection, status: 404); return }
+        guard components.path.hasPrefix("/\(token)/") else { InstallLog.shared.add("\(method) unknown path: 404"); reply(connection, status: 404); return }
         let path = String(components.path.dropFirst(token.count + 2))
         if method == "OPTIONS" { reply(connection, status: 204); return }
         if path == "proxy" {
@@ -230,7 +253,9 @@ final class LoopbackServer: @unchecked Sendable {
         let parts = path.split(separator: "/").map(String.init)
         if parts.count == 2, parts[0] == "data" {
             lock.lock(); let resource = registeredData[parts[1]]; lock.unlock()
-            guard let resource else { reply(connection, status: 404); return }
+            guard let resource else { InstallLog.shared.add("\(method) data: 404"); reply(connection, status: 404); return }
+            InstallLog.shared.add("\(method) data (\(resource.1)): 200")
+            if resource.1 == "application/xml" { InstallLog.shared.servedManifest() }
             let header = responseHeader(status: 200, length: UInt64(resource.0.count), contentType: resource.1, extra: [:])
             var response = header
             if method != "HEAD" { response.append(resource.0) }
@@ -241,7 +266,8 @@ final class LoopbackServer: @unchecked Sendable {
             sendFile(connection, url: root.appendingPathComponent(parts[1]), range: headers["range"], head: method == "HEAD")
         } else if parts.count == 3, parts[0] == "files" {
             lock.lock(); let file = registeredFiles[parts[1]]; lock.unlock()
-            guard let file = file, file.lastPathComponent == parts[2] else { reply(connection, status: 404); return }
+            guard let file = file, file.lastPathComponent == parts[2] else { InstallLog.shared.add("\(method) package: 404"); reply(connection, status: 404); return }
+            InstallLog.shared.add("\(method) package" + (headers["range"] == nil ? "" : " (range)"))
             sendFile(connection, url: file, range: headers["range"], head: method == "HEAD")
         } else { reply(connection, status: 404) }
     }

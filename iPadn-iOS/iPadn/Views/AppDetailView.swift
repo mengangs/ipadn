@@ -581,17 +581,29 @@ private struct ScreenshotStrip: View {
     let screenshots: [StoreService.Screenshot]
     let platform: AppPlatform
     var open: (StoreService.Screenshot) -> Void
-    private var portrait: Bool { (screenshots.first?.aspect ?? 0.5) < 1 }
+    /// Loaded images. The size in a screenshot link is only the box Apple
+    /// fits the image into, so a landscape game shot can arrive under a
+    /// portrait-looking link: lay each one out by the real image.
+    @State private var images: [URL: UIImage] = [:]
+    private func aspect(_ shot: StoreService.Screenshot) -> Double {
+        guard let image = images[shot.url], image.size.height > 0 else { return shot.aspect }
+        return image.size.width / image.size.height
+    }
+    private var ready: Bool { screenshots.allSatisfy { images[$0.url] != nil } || !failed.isEmpty }
+    @State private var failed = Set<URL>()
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(screenshots) { shot in
+                        let ratio = aspect(shot)
+                        let portrait = ratio < 1
                         Button { open(shot) } label: {
-                            ScreenshotImage(shot: shot, cornerRadius: portrait ? 22 : 12)
-                                .aspectRatio(shot.aspect, contentMode: .fit)
+                            ScreenshotTile(image: images[shot.url], failed: failed.contains(shot.url),
+                                           cornerRadius: portrait ? 22 : 14)
+                                .aspectRatio(ratio, contentMode: .fit)
                                 // Portrait: a bit over half the width; landscape: nearly all of it.
-                                .containerRelativeFrame(.horizontal) { length, _ in portrait ? length * 0.62 : length * 0.92 }
+                                .containerRelativeFrame(.horizontal) { length, _ in portrait ? length * 0.62 : length * 0.9 }
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("截图")
@@ -601,24 +613,43 @@ private struct ScreenshotStrip: View {
             }
             .contentMargins(.horizontal, 20, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
+            .opacity(ready ? 1 : 0.001)
+            .overlay { if !ready { ProgressView() } }
             Label(platform.title == "iOS" ? "iPhone" : platform.title == "tvOS" ? "Apple TV" : platform.title, systemImage: platform.symbol)
                 .font(.footnote).foregroundStyle(.secondary)
                 .padding(.horizontal, 20)
         }
+        .animation(.easeOut(duration: 0.2), value: ready)
+        .task(id: screenshots.map(\.url)) { await load() }
         .accessibilityIdentifier("detail.screenshots")
+    }
+
+    private func load() async {
+        await withTaskGroup(of: (URL, UIImage?).self) { group in
+            for shot in screenshots where images[shot.url] == nil {
+                group.addTask {
+                    guard let (data, _) = try? await URLSession.shared.data(from: shot.url) else { return (shot.url, nil) }
+                    return (shot.url, UIImage(data: data))
+                }
+            }
+            for await (url, image) in group {
+                if let image { images[url] = image } else { failed.insert(url) }
+            }
+        }
     }
 }
 
-private struct ScreenshotImage: View {
-    let shot: StoreService.Screenshot
-    var cornerRadius: CGFloat = 16
+private struct ScreenshotTile: View {
+    let image: UIImage?
+    let failed: Bool
+    var cornerRadius: CGFloat
     var body: some View {
-        AsyncImage(url: shot.url, transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
-            if let image = phase.image {
-                image.resizable().scaledToFill()
+        ZStack {
+            if let image {
+                Image(uiImage: image).resizable().scaledToFill()
             } else {
                 Rectangle().fill(Color(.tertiarySystemFill))
-                    .overlay { if phase.error != nil { Image(systemName: "photo").foregroundStyle(.tertiary) } }
+                    .overlay { if failed { Image(systemName: "photo").foregroundStyle(.tertiary) } }
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
