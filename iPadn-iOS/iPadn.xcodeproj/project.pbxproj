@@ -379,6 +379,16 @@
 			isa = PBXBuildFile;
 			fileRef = B8B5827DB7B30C5EF9E4CE8E;
 		};
+		2A6123AA668AF32CCFD14F3B = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/StorageView.swift";
+			sourceTree = "<group>";
+		};
+		8EC9B11F6D5AB55D221E9B4F = {
+			isa = PBXBuildFile;
+			fileRef = 2A6123AA668AF32CCFD14F3B;
+		};
 		D05E572A50390E96676EFEC2 = {
 			isa = PBXFileReference;
 			lastKnownFileType = folder;
@@ -560,6 +570,7 @@
 				875F86E325615E997D89246A,
 				AC7ABAF3BAFCCF834C35D127,
 				B8B5827DB7B30C5EF9E4CE8E,
+				2A6123AA668AF32CCFD14F3B,
 				D05E572A50390E96676EFEC2,
 				8FEB83A29956DE0B59952846,
 				8D670B021DC9E9A81AD94FB4,
@@ -644,6 +655,7 @@
 				9B02A284355960077990E605,
 				2838CB8E3BB731C0C58ADEBF,
 				E68DE723119F75E73EA2FB8A,
+				8EC9B11F6D5AB55D221E9B4F,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

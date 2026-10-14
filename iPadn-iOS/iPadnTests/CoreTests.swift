@@ -1175,4 +1175,21 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(StoreService.catalogVersionID(data, id: "123", bundleID: "other.app", family: "iphone"))
         XCTAssertNil(StoreService.catalogVersionID(data, id: "123", bundleID: "", family: "appletv"))
     }
+
+    func testScreenshotsFollowPlatformAndAskForSharperRenditions() {
+        let row: [String: Any] = [
+            "trackId": 1, "artistId": 42, "artistName": "Example Studio",
+            "screenshotUrls": ["https://is1-ssl.mzstatic.com/image/thumb/a/392x696bb.jpg"],
+            "ipadScreenshotUrls": ["https://is1-ssl.mzstatic.com/image/thumb/b/552x414bb.png"],
+            "appletvScreenshotUrls": []]
+        let phone = StoreService.listingExtras(row, platform: .iOS)
+        XCTAssertEqual(phone.screenshots.first?.url.lastPathComponent, "784x1392bb.jpg")
+        XCTAssertEqual(phone.screenshots.first?.aspect ?? 0, 392.0 / 696.0, accuracy: 0.001)
+        XCTAssertEqual(phone.developerID, "42")
+        XCTAssertEqual(phone.developer, "Example Studio")
+        XCTAssertEqual(StoreService.listingExtras(row, platform: .iPadOS).screenshots.first?.url.lastPathComponent, "1104x828bb.png")
+        XCTAssertTrue(StoreService.listingExtras(row, platform: .tvOS).screenshots.isEmpty)
+        XCTAssertEqual(StoreService.screenshot("https://example.com/shot.jpg")?.url.lastPathComponent, "shot.jpg")
+        XCTAssertNil(StoreService.screenshot("http://example.com/392x696bb.jpg"))
+    }
 }

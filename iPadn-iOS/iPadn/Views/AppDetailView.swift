@@ -43,6 +43,8 @@ struct AppDetailView: View {
     @State private var enteringMacDownloadURL = false
     @State private var macDownloadURL = ""
     @State private var headerAway = false
+    @State private var extras: StoreService.ListingExtras?
+    @State private var viewing: StoreService.Screenshot?
     /// Listing artwork, else what a download of this app brought along
     /// (delisted apps have no public listing to show).
     private var iconURL: URL? { app.iconURL ?? store.localArtwork(app.id) }
@@ -62,6 +64,12 @@ struct AppDetailView: View {
                 header.listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
                     .onScrolledUnderBar { headerAway = $0 }
                 infoStrip.listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
+            }
+            if let shots = extras?.screenshots, !shots.isEmpty {
+                Section {
+                    ScreenshotStrip(screenshots: shots) { viewing = $0 }
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                } header: { sectionTitle("预览") }
             }
             versionSection
             if store.settings.store.platform == .macOS { macSection }
@@ -183,6 +191,17 @@ struct AppDetailView: View {
         }
         .task(id: "\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
             await loadMacInstallers()
+        }
+        .task(id: "extras-\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
+            // Demo data stays offline.
+            guard !LocalResources.isPreview else { return }
+            let found = try? await StoreService.listingExtras(id: app.id, country: store.settings.store.country,
+                                                            platform: store.settings.store.platform)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) { extras = found }
+        }
+        .fullScreenCover(item: $viewing) { shot in
+            ScreenshotViewer(screenshots: extras?.screenshots ?? [shot], selection: shot)
         }
     }
     private func sectionTitle(_ text: String) -> some View {
@@ -520,5 +539,80 @@ struct AppDetailView: View {
             catch is CancellationError { }
             catch { store.errorMessage = error.localizedDescription }
         }
+    }
+}
+
+/// App Store style preview strip: screenshots side by side, snapping.
+private struct ScreenshotStrip: View {
+    let screenshots: [StoreService.Screenshot]
+    var open: (StoreService.Screenshot) -> Void
+    private var height: CGFloat {
+        // Portrait phone shots are tall; landscape (iPad, Apple TV, Mac) shorter.
+        (screenshots.first?.aspect ?? 0.5) < 1 ? 380 : 200
+    }
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: 10) {
+                ForEach(screenshots) { shot in
+                    Button { open(shot) } label: {
+                        ScreenshotImage(shot: shot)
+                            .frame(width: height * shot.aspect, height: height)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("截图")
+                }
+            }
+            .scrollTargetLayout()
+            .padding(.horizontal, 20)
+        }
+        .scrollTargetBehavior(.viewAligned)
+        .frame(height: height)
+        .accessibilityIdentifier("detail.screenshots")
+    }
+}
+
+private struct ScreenshotImage: View {
+    let shot: StoreService.Screenshot
+    var body: some View {
+        AsyncImage(url: shot.url, transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
+            if let image = phase.image {
+                image.resizable().scaledToFill()
+            } else {
+                Rectangle().fill(Color(.tertiarySystemFill))
+                    .overlay { if phase.error != nil { Image(systemName: "photo").foregroundStyle(.tertiary) } }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+    }
+}
+
+/// Full-screen screenshots, swiped through like Photos.
+private struct ScreenshotViewer: View {
+    let screenshots: [StoreService.Screenshot]
+    @State var selection: StoreService.Screenshot
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+            TabView(selection: $selection) {
+                ForEach(screenshots) { shot in
+                    AsyncImage(url: shot.url) { phase in
+                        if let image = phase.image { image.resizable().scaledToFit() }
+                        else { ProgressView().tint(.white) }
+                    }
+                    .padding(.horizontal, 12)
+                    .tag(shot)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: screenshots.count > 1 ? .always : .never))
+            Button { dismiss() } label: {
+                Image(systemName: "xmark").font(.body.weight(.semibold)).foregroundStyle(.white)
+                    .frame(width: 36, height: 36).background(.ultraThinMaterial, in: Circle())
+            }
+            .padding(16)
+            .accessibilityLabel("关闭")
+        }
+        .statusBarHidden()
     }
 }

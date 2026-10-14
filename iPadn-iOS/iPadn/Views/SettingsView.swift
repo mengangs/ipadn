@@ -91,6 +91,8 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings.installation")
             }
             Section("维护") {
+                NavigationLink { StorageView() } label: { Label("存储空间", systemImage: "internaldrive") }
+                    .accessibilityIdentifier("settings.storage")
                 Button("清除历史版本缓存") { clearCache = true }
                 Button("导出诊断信息") {
                     do { share = SharedFile(url: try store.exportDiagnostics()) } catch { store.errorMessage = error.localizedDescription }

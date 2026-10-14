@@ -339,6 +339,64 @@ enum StoreService {
         return found
     }
 
+    struct Screenshot: Hashable, Identifiable {
+        var url: URL
+        /// Width over height, from the size in the file name.
+        var aspect: Double
+        var id: URL { url }
+    }
+
+    /// Store page extras the detail page shows: screenshots for the chosen
+    /// platform and the developer behind the app.
+    struct ListingExtras {
+        var screenshots: [Screenshot] = []
+        var developerID: String?
+        var developer = ""
+    }
+
+    static func listingExtras(id: String, country: String, platform: AppPlatform) async throws -> ListingExtras? {
+        guard UInt64(id).map({ $0 > 0 }) == true else { return nil }
+        let url = try endpoint("https://itunes.apple.com/lookup", items: [
+            URLQueryItem(name: "id", value: id), URLQueryItem(name: "country", value: country)
+        ])
+        let rows = (try await HTTPClient.shared.json(url) as? [String: Any])?["results"] as? [[String: Any]] ?? []
+        guard let row = rows.first(where: { plistString($0["trackId"]) == id }) else { return nil }
+        return listingExtras(row, platform: platform)
+    }
+
+    static func listingExtras(_ row: [String: Any], platform: AppPlatform) -> ListingExtras {
+        func shots(_ key: String) -> [String] { row[key] as? [String] ?? [] }
+        let preferred: [String]
+        switch platform {
+        case .iOS: preferred = shots("screenshotUrls").isEmpty ? shots("ipadScreenshotUrls") : shots("screenshotUrls")
+        case .iPadOS: preferred = shots("ipadScreenshotUrls").isEmpty ? shots("screenshotUrls") : shots("ipadScreenshotUrls")
+        case .tvOS: preferred = shots("appletvScreenshotUrls")
+        case .macOS: preferred = shots("screenshotUrls")
+        }
+        let developerID = plistString(row["artistId"])
+        return ListingExtras(screenshots: preferred.prefix(10).compactMap(screenshot),
+                             developerID: developerID.isEmpty ? nil : developerID,
+                             developer: plistString(row["artistName"] ?? row["sellerName"]))
+    }
+
+    /// Lookup screenshots link a small rendition such as `392x696bb.jpg`;
+    /// the CDN renders any size from the same path, so ask for twice that.
+    static func screenshot(_ value: String) -> Screenshot? {
+        guard let url = URL(string: value), url.scheme == "https", url.host != nil else { return nil }
+        let name = url.lastPathComponent
+        let parts = name.split(separator: ".", maxSplits: 1)
+        let size = parts.first.map { $0.split(separator: "x") } ?? []
+        guard size.count == 2, let width = Int(size[0]),
+              let height = Int(size[1].prefix { $0.isNumber }), width > 0, height > 0 else {
+            return Screenshot(url: url, aspect: 9.0 / 19.5)
+        }
+        let suffix = size[1].drop { $0.isNumber }
+        let scale = max(1, min(2, 1600 / max(width, height)))
+        let larger = "\(width * scale)x\(height * scale)\(suffix)" + (parts.count > 1 ? "." + parts[1] : "")
+        return Screenshot(url: url.deletingLastPathComponent().appendingPathComponent(larger),
+                          aspect: Double(width) / Double(height))
+    }
+
     static func mapLookup(_ raw: [String: Any]) -> StoreApp {
         StoreApp(id: plistString(raw["trackId"]), name: plistString(raw["trackName"] ?? raw["trackCensoredName"]),
                  bundleID: plistString(raw["bundleId"]), version: plistString(raw["version"]),

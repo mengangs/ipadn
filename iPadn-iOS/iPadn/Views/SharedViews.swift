@@ -44,6 +44,8 @@ struct AppIcon: View {
 struct AppRow<Accessory: View>: View {
     let app: StoreApp
     var subtitle: String? = nil
+    /// A short state shown next to the size, e.g. 已下载.
+    var badge: (text: String, tint: Color)? = nil
     @ViewBuilder var accessory: () -> Accessory
     var body: some View {
         HStack(spacing: 14) {
@@ -58,6 +60,7 @@ struct AppRow<Accessory: View>: View {
                 }
                 HStack(spacing: 6) {
                     if app.isDelisted { TagBadge(text: "已下架", tint: .orange) }
+                    if let badge { TagBadge(text: badge.text, tint: badge.tint) }
                     if app.size > 0 { Text(app.size.byteLabel).font(.caption).foregroundStyle(.tertiary) }
                 }
             }

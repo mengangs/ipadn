@@ -3,17 +3,34 @@ import SwiftUI
 struct PurchasedView: View {
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var apple: AppleService
+    @EnvironmentObject private var manager: DownloadManager
     @State private var term = ""
+    /// `term` after typing pauses: large purchase lists filter once, not per key.
+    @State private var query = ""
     @State private var months = 0
     @State private var showLogin = false
     @State private var getting: StoreApp?
     @State private var headerAway = false
     private var filtered: [OwnedApp] {
         let cutoff = Calendar.current.date(byAdding: .month, value: -months, to: Date()) ?? .distantPast
+        let term = query.trimmingCharacters(in: .whitespaces)
+        if term.isEmpty && months == 0 { return store.owned }
         return store.owned.filter {
-            (term.isEmpty || $0.name.localizedCaseInsensitiveContains(term) || $0.bundleID.localizedCaseInsensitiveContains(term) || $0.id.contains(term)) &&
-            (months == 0 || ($0.purchaseDate ?? .distantPast) >= cutoff)
+            (months == 0 || ($0.purchaseDate ?? .distantPast) >= cutoff) &&
+            (term.isEmpty || $0.id.contains(term) || $0.name.localizedCaseInsensitiveContains(term) || $0.bundleID.localizedCaseInsensitiveContains(term))
         }
+    }
+    /// Download state per App ID: a newer store version first, then downloaded.
+    private var downloadBadges: [String: (text: String, tint: Color)] {
+        var badges: [String: (text: String, tint: Color)] = [:]
+        for job in manager.jobs where job.status == .completed {
+            if let key = job.updateKey, let latest = store.availableUpdates[key] {
+                badges[job.app.id] = ("有新版本 \(latest.version)", UX.tint)
+            } else if badges[job.app.id] == nil {
+                badges[job.app.id] = (job.app.version.isEmpty ? "已下载" : "已下载 \(job.app.version)", .green)
+            }
+        }
+        return badges
     }
     var body: some View {
         List {
@@ -45,13 +62,15 @@ struct PurchasedView: View {
                 if store.ownedLoading {
                     Section { HStack { ProgressView(); Text("正在同步购买记录…").font(.subheadline).foregroundStyle(.secondary) } }
                 }
-                if !filtered.isEmpty {
-                    Section("\(filtered.count) 个项目") {
-                        ForEach(filtered) { app in
+                let visible = filtered
+                let badges = downloadBadges
+                if !visible.isEmpty {
+                    Section("\(visible.count) 个项目") {
+                        ForEach(visible) { app in
                             NavigationLink { AppDetailView(app: app.storeApp) } label: {
                                 AppRow(app: app.storeApp, subtitle: app.purchaseDate.map {
                                     "购于 \($0.formatted(.dateTime.year().month(.defaultDigits).day()))"
-                                }) {
+                                }, badge: badges[app.id]) {
                                     RowCapsule(title: "下载") { getting = app.storeApp; UX.feedback() }
                                         .accessibilityLabel("下载 \(app.name)")
                                 }
@@ -63,7 +82,7 @@ struct PurchasedView: View {
                         if term.isEmpty && months == 0 {
                             EmptyState(title: "暂无已购记录", message: "同步后可在这里查找并下载你获取过的应用。", symbol: "clock.arrow.circlepath", actionTitle: "立即同步", action: { Task { await store.refreshOwned() } })
                         } else {
-                            EmptyState(title: "没有匹配的应用", message: "换个关键词，或调整时间范围。", symbol: "line.3.horizontal.decrease.circle", actionTitle: "清除筛选", action: { term = ""; months = 0 })
+                            EmptyState(title: "没有匹配的应用", message: "换个关键词，或调整时间范围。", symbol: "line.3.horizontal.decrease.circle", actionTitle: "清除筛选", action: { term = ""; query = ""; months = 0 })
                         }
                     }
                 }
@@ -78,5 +97,12 @@ struct PurchasedView: View {
         .rootTabBar("已购项目", headerScrolledAway: headerAway)
         .task(id: "\(apple.activeID ?? "")|\(store.ownedRevision)") { await store.loadOwnedArtwork() }
         .refreshable { if apple.active != nil { await store.refreshOwned() } }
+        .task(id: term) {
+            // Clearing is instant; typing waits for a short pause.
+            if !term.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
+            guard !Task.isCancelled else { return }
+            query = term
+        }
+        .task { await store.checkForUpdates() }
     }
 }
