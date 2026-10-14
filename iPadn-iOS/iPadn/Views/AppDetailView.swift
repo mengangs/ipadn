@@ -16,6 +16,11 @@ struct AppDetailView: View {
     @State private var versionSearch = ""
     @State private var versionError: String?
     @State private var official = false
+    /// Version number and date per version ID, read from Apple as rows appear.
+    @State private var metadata: [String: VersionMetadata] = [:]
+    @State private var metadataLoading = Set<String>()
+    @State private var metadataFailures = 0
+    @State private var metadataStopped = false
     @State private var showLogin = false
     @State private var reauthenticationID: String?
     @State private var retryAfterLoginVersion: String?
@@ -43,8 +48,14 @@ struct AppDetailView: View {
     private var iconURL: URL? { app.iconURL ?? store.localArtwork(app.id) }
     private var storeURL: URL { URL(string: "https://apps.apple.com/\(store.settings.store.country.lowercased())/app/id\(app.id)")! }
     private var filtered: [AppVersion] {
-        versionSearch.isEmpty ? versions : versions.filter { $0.version.localizedCaseInsensitiveContains(versionSearch) || $0.id.contains(versionSearch) }
+        versionSearch.isEmpty ? versions : versions.filter {
+            displayVersion($0).localizedCaseInsensitiveContains(versionSearch) || $0.id.contains(versionSearch)
+        }
     }
+    private func displayVersion(_ version: AppVersion) -> String { metadata[version.id]?.version ?? version.version }
+    /// Lists from Apple carry only version IDs; each row then reads its own
+    /// number and date. Other lists use what is already known.
+    private var readsMetadata: Bool { official && apple.active != nil && !metadataStopped }
     var body: some View {
         List {
             Section {
@@ -52,7 +63,8 @@ struct AppDetailView: View {
                     .onScrolledUnderBar { headerAway = $0 }
                 infoStrip.listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
             }
-            if store.settings.store.platform.supportsIPA { versionSection } else { macSection }
+            versionSection
+            if store.settings.store.platform == .macOS { macSection }
             if !app.description.isEmpty {
                 Section {
                     Text(app.description).font(.subheadline).lineLimit(showDescription ? nil : 4).textSelection(.enabled)
@@ -285,25 +297,15 @@ struct AppDetailView: View {
     @ViewBuilder private var versionSection: some View {
         Section {
             Toggle("从 Apple 获取完整版本列表", isOn: $official).font(.subheadline)
-                .disabled(apple.active == nil || store.settings.store.platform == .tvOS)
+                .disabled(apple.active == nil)
             if versionsLoading { HStack { ProgressView(); Text("正在查找历史版本…").font(.subheadline).foregroundStyle(.secondary) } }
             if let versionError { InlineIssue(message: versionError) { reloadID += 1 } }
             if versions.count > 6 {
                 SearchInput(text: $versionSearch, placeholder: "筛选版本号或版本 ID")
             }
             ForEach(filtered.prefix(100)) { version in
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("版本 \(version.version)").font(.body.weight(.medium))
-                        Text("版本 ID \(version.id)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
-                    Spacer(minLength: 8)
-                    RowCapsule(title: "下载", enabled: !downloadLoading) { download(versionID: version.id) }
-                        .accessibilityLabel("下载版本 \(version.version)")
-                }
-                .padding(.vertical, 2)
-                .contextMenu { Button("复制版本 ID", systemImage: "doc.on.doc") { copy(version.id) } }
+                versionRow(version)
+                    .task(id: "\(version.id)-\(readsMetadata)") { await loadMetadata(version) }
             }
             if !versions.isEmpty && filtered.isEmpty { Text("没有匹配的版本。").font(.subheadline).foregroundStyle(.secondary) }
             if filtered.count > 100 { Text("仅显示前 100 个版本，可输入版本号筛选。").font(.caption).foregroundStyle(.secondary) }
@@ -322,6 +324,46 @@ struct AppDetailView: View {
                 Spacer()
                 Button("刷新") { reloadID += 1 }.disabled(versionsLoading).font(.body).textCase(nil)
             }
+        }
+    }
+
+    private func versionRow(_ version: AppVersion) -> some View {
+        let name = displayVersion(version)
+        let known = name != "未知版本"
+        let reading = !known && metadataLoading.contains(version.id)
+        let date = metadata[version.id]?.released?.formatted(.dateTime.year().month().day())
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(known ? "版本 \(name)" : reading ? "版本 0.0.0" : "未知版本")
+                    .font(.body.weight(.medium))
+                    .redacted(reason: reading ? .placeholder : [])
+                Text([date, "版本 ID \(version.id)"].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            .animation(.easeOut(duration: 0.2), value: name)
+            Spacer(minLength: 8)
+            RowCapsule(title: "下载", enabled: !downloadLoading && !macOfficialLoading) { download(versionID: version.id) }
+                .accessibilityLabel(known ? "下载版本 \(name)" : "下载版本 ID \(version.id)")
+        }
+        .padding(.vertical, 2)
+        .contextMenu { Button("复制版本 ID", systemImage: "doc.on.doc") { copy(version.id) } }
+    }
+
+    private func loadMetadata(_ version: AppVersion) async {
+        guard readsMetadata, metadata[version.id] == nil, !metadataLoading.contains(version.id) else { return }
+        metadataLoading.insert(version.id)
+        defer { metadataLoading.remove(version.id) }
+        do {
+            metadata[version.id] = try await store.versionMetadata(app: app, versionID: version.id)
+            metadataFailures = 0
+        } catch {
+            // Scrolled away: not a failure.
+            if Task.isCancelled || error is CancellationError { return }
+            // Never prompt from a list row; the next download asks to sign in.
+            if error is AppleAuthError || error is AppleLoginError { metadataStopped = true; return }
+            metadataFailures += 1
+            if metadataFailures >= 3 { metadataStopped = true }
         }
     }
 
@@ -362,6 +404,9 @@ struct AppDetailView: View {
         do {
             let result = try await store.loadVersions(for: app, force: force, official: official)
             try Task.checkCancellation(); versions = result
+            if force { metadataStopped = false; metadataFailures = 0 }
+            let cached = await store.cachedVersionMetadata(app: app, versionIDs: result.map(\.id))
+            metadata.merge(cached) { current, _ in current }
             return true
         } catch is CancellationError { }
         catch AppleAuthError.reauthenticationRequired {
@@ -385,7 +430,7 @@ struct AppDetailView: View {
         }
         return false
     }
-    private func downloadAppleMacPKG() {
+    private func downloadAppleMacPKG(versionID: String? = nil) {
         guard !macOfficialLoading else { return }
         guard apple.active != nil else {
             showLogin = true
@@ -395,7 +440,7 @@ struct AppDetailView: View {
         macOfficialTask = Task {
             defer { macOfficialLoading = false; macOfficialTask = nil }
             do {
-                let offer = try await apple.macPackageOffer(app, useCache: store.settings.useSignerCache)
+                let offer = try await apple.macPackageOffer(app, versionID: versionID, useCache: store.settings.useSignerCache)
                 try Task.checkCancellation()
                 try store.downloads.enqueueOfficialMacPackage(offer, for: app)
                 store.infoMessage = "已开始下载"
@@ -441,12 +486,12 @@ struct AppDetailView: View {
 
     private func download(versionID: String?) {
         guard !downloadLoading else { return }
+        if let versionID, !versionID.isEmpty, !versionID.allSatisfy({ $0.isASCII && $0.isNumber }) { store.errorMessage = "版本 ID 只能包含数字"; return }
         guard store.settings.store.platform.supportsIPA else {
-            store.errorMessage = "Mac 应用请使用「获取 PKG」下载。"
+            downloadAppleMacPKG(versionID: versionID?.isEmpty == true ? nil : versionID)
             return
         }
         guard apple.active != nil else { showLogin = true; return }
-        if let versionID, !versionID.isEmpty, !versionID.allSatisfy({ $0.isASCII && $0.isNumber }) { store.errorMessage = "版本 ID 只能包含数字"; return }
         downloadLoading = true
         downloadTask = Task {
             defer { downloadLoading = false; downloadTask = nil }

@@ -55,6 +55,47 @@ final class HTTPClient: Sendable {
         throw ToolError.message("服务器响应异常，请稍后重试")
     }
 
+    /// One byte range (`"0-99"` or `"-100"`) and its Content-Range. The body
+    /// is streamed so a server that ignores Range is dropped before the whole
+    /// package is read.
+    func range(_ url: URL, _ value: String, limit: Int) async throws -> (Data, String) {
+        guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ToolError.message("链接无效") }
+        var current = url
+        for _ in 0..<5 {
+            try Task.checkCancellation()
+            var request = URLRequest(url: current)
+            request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+            request.setValue("bytes=" + value, forHTTPHeaderField: "Range")
+            let (bytes, response) = try await session.bytes(for: request)
+            guard let response = response as? HTTPURLResponse else {
+                bytes.task.cancel(); throw ToolError.message("服务器响应异常，请稍后重试")
+            }
+            if [301, 302, 303, 307, 308].contains(response.statusCode) {
+                bytes.task.cancel()
+                // Package downloads may hop between Apple's own CDN hosts.
+                guard let location = response.value(forHTTPHeaderField: "Location"),
+                      let next = URL(string: location, relativeTo: current)?.absoluteURL,
+                      next.scheme == "https", let host = next.host?.lowercased(), next.user == nil, next.password == nil,
+                      host == "apple.com" || host.hasSuffix(".apple.com") || host.hasSuffix(".cdn-apple.com") else {
+                    throw ToolError.message("服务器响应异常，请稍后重试")
+                }
+                current = next
+                continue
+            }
+            guard response.statusCode == 206, let contentRange = response.value(forHTTPHeaderField: "Content-Range") else {
+                bytes.task.cancel(); throw HTTPStatusError(code: response.statusCode)
+            }
+            var data = Data()
+            data.reserveCapacity(min(limit, max(0, Int(response.expectedContentLength))))
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count > limit { bytes.task.cancel(); throw ToolError.message("服务器响应异常，请稍后重试") }
+            }
+            return (data, contentRange)
+        }
+        throw ToolError.message("服务器响应异常，请稍后重试")
+    }
+
     func json(_ url: URL) async throws -> Any {
         let (data, _) = try await request(url)
         return try JSONSerialization.jsonObject(with: data)
