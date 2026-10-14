@@ -58,23 +58,12 @@ struct PurchasedView: View {
         List {
             Section {
                 PageHeader(title: "已购项目") {
-                    HStack(spacing: 10) {
-                        if apple.active != nil && !store.owned.isEmpty {
-                            Button(selecting ? "完成" : "选择") {
-                                withAnimation(.snappy) { selecting.toggle(); selection.removeAll() }
-                            }
-                            .font(.body.weight(.semibold))
-                            .buttonStyle(.borderless)
-                            .disabled(batchProgress != nil)
-                            .accessibilityIdentifier("purchased.select")
-                        }
-                        Button { Task { await store.refreshOwned() } } label: {
-                            Image(systemName: "arrow.clockwise").font(.body.weight(.semibold))
-                                .frame(width: 36, height: 36).background(Color(.tertiarySystemFill), in: Circle())
-                        }
-                        .buttonStyle(.borderless)
-                        .disabled(store.ownedLoading || apple.active == nil || selecting).accessibilityLabel("同步购买记录")
+                    Button { Task { await store.refreshOwned() } } label: {
+                        Image(systemName: "arrow.clockwise").font(.body.weight(.semibold))
+                            .frame(width: 36, height: 36).background(Color(.tertiarySystemFill), in: Circle())
                     }
+                    .buttonStyle(.borderless)
+                    .disabled(store.ownedLoading || apple.active == nil || selecting).accessibilityLabel("同步购买记录")
                 }
                 .onScrolledUnderBar { headerAway = $0 }
                 .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 16))
@@ -98,7 +87,7 @@ struct PurchasedView: View {
                 let visible = filtered
                 let badges = downloadBadges
                 if !visible.isEmpty {
-                    Section("\(visible.count) 个项目") {
+                    Section {
                         ForEach(visible) { app in
                             let subtitle = app.purchaseDate.map {
                                 "购于 \($0.formatted(.dateTime.year().month(.defaultDigits).day()))"
@@ -124,6 +113,19 @@ struct PurchasedView: View {
                                     }
                                 }
                             }
+                        }
+                    } header: {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("\(visible.count) 个项目")
+                            Spacer()
+                            Button(selecting ? "完成" : "选择") {
+                                withAnimation(.snappy) { selecting.toggle(); selection.removeAll() }
+                            }
+                            .font(.body.weight(.semibold))
+                            .textCase(nil)
+                            .buttonStyle(.borderless)
+                            .disabled(batchProgress != nil)
+                            .accessibilityIdentifier("purchased.select")
                         }
                     }
                 } else if !store.ownedLoading && store.ownedError == nil {

@@ -21,6 +21,8 @@ struct AppDetailView: View {
     @State private var metadataLoading = Set<String>()
     @State private var metadataFailures = 0
     @State private var metadataStopped = false
+    /// Long histories start with the newest ten versions.
+    @State private var showAllVersions = false
     @State private var showLogin = false
     @State private var reauthenticationID: String?
     @State private var retryAfterLoginVersion: String?
@@ -68,8 +70,10 @@ struct AppDetailView: View {
             }
             if let shots = extras?.screenshots, !shots.isEmpty {
                 Section {
-                    ScreenshotStrip(screenshots: shots) { viewing = $0 }
+                    // On the page background, edge to edge, as in the App Store.
+                    ScreenshotStrip(screenshots: shots, platform: store.settings.store.platform) { viewing = $0 }
                         .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                        .listRowBackground(Color.clear)
                 } header: { sectionTitle("预览") }
             }
             versionSection
@@ -194,7 +198,7 @@ struct AppDetailView: View {
             guard versionsKey != loadedVersionsKey else { return }
             let forced = reloadID != loadedReloadID
             // A different region, platform or account lists different versions.
-            if !forced { versions = [] }
+            if !forced { versions = []; showAllVersions = false }
             if await fetchVersions(force: forced) { loadedVersionsKey = versionsKey; loadedReloadID = reloadID }
         }
         .task(id: "\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
@@ -335,12 +339,28 @@ struct AppDetailView: View {
             if versions.count > 6 {
                 SearchInput(text: $versionSearch, placeholder: "筛选版本号或版本 ID")
             }
-            ForEach(filtered.prefix(100)) { version in
+            let matches = filtered
+            // A search shows every match; otherwise ten until expanded.
+            let limit = showAllVersions || !versionSearch.isEmpty ? matches.count : 10
+            ForEach(matches.prefix(limit)) { version in
                 versionRow(version)
                     .task(id: "\(version.id)-\(readsMetadata)") { await loadMetadata(version) }
             }
-            if !versions.isEmpty && filtered.isEmpty { Text("没有匹配的版本。").font(.subheadline).foregroundStyle(.secondary) }
-            if filtered.count > 100 { Text("仅显示前 100 个版本，可输入版本号筛选。").font(.caption).foregroundStyle(.secondary) }
+            if !versions.isEmpty && matches.isEmpty { Text("没有匹配的版本。").font(.subheadline).foregroundStyle(.secondary) }
+            if versionSearch.isEmpty && matches.count > 10 {
+                Button {
+                    withAnimation(.snappy) { showAllVersions.toggle() }
+                } label: {
+                    HStack {
+                        Text(showAllVersions ? "收起" : "显示全部 \(matches.count) 个版本")
+                        Spacer()
+                        Image(systemName: "chevron.down").rotationEffect(.degrees(showAllVersions ? 180 : 0))
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("detail.versions.toggle")
+            }
             if versions.isEmpty && !versionsLoading && versionError == nil {
                 Text("暂无历史版本").font(.subheadline).foregroundStyle(.secondary)
             }
@@ -555,37 +575,43 @@ struct AppDetailView: View {
     }
 }
 
-/// App Store style preview strip: screenshots side by side, snapping.
+/// App Store style preview strip: screenshots side by side on the page
+/// background, snapping to the leading margin, with the next one peeking in.
 private struct ScreenshotStrip: View {
     let screenshots: [StoreService.Screenshot]
+    let platform: AppPlatform
     var open: (StoreService.Screenshot) -> Void
-    private var height: CGFloat {
-        // Portrait phone shots are tall; landscape (iPad, Apple TV, Mac) shorter.
-        (screenshots.first?.aspect ?? 0.5) < 1 ? 380 : 200
-    }
+    private var portrait: Bool { (screenshots.first?.aspect ?? 0.5) < 1 }
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 10) {
-                ForEach(screenshots) { shot in
-                    Button { open(shot) } label: {
-                        ScreenshotImage(shot: shot)
-                            .frame(width: height * shot.aspect, height: height)
+        VStack(alignment: .leading, spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(screenshots) { shot in
+                        Button { open(shot) } label: {
+                            ScreenshotImage(shot: shot, cornerRadius: portrait ? 22 : 12)
+                                .aspectRatio(shot.aspect, contentMode: .fit)
+                                // Portrait: a bit over half the width; landscape: nearly all of it.
+                                .containerRelativeFrame(.horizontal) { length, _ in portrait ? length * 0.62 : length * 0.92 }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("截图")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("截图")
                 }
+                .scrollTargetLayout()
             }
-            .scrollTargetLayout()
-            .padding(.horizontal, 20)
+            .contentMargins(.horizontal, 20, for: .scrollContent)
+            .scrollTargetBehavior(.viewAligned)
+            Label(platform.title == "iOS" ? "iPhone" : platform.title == "tvOS" ? "Apple TV" : platform.title, systemImage: platform.symbol)
+                .font(.footnote).foregroundStyle(.secondary)
+                .padding(.horizontal, 20)
         }
-        .scrollTargetBehavior(.viewAligned)
-        .frame(height: height)
         .accessibilityIdentifier("detail.screenshots")
     }
 }
 
 private struct ScreenshotImage: View {
     let shot: StoreService.Screenshot
+    var cornerRadius: CGFloat = 16
     var body: some View {
         AsyncImage(url: shot.url, transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
             if let image = phase.image {
@@ -595,8 +621,8 @@ private struct ScreenshotImage: View {
                     .overlay { if phase.error != nil { Image(systemName: "photo").foregroundStyle(.tertiary) } }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).stroke(Color.primary.opacity(0.1), lineWidth: 0.5))
     }
 }
 
