@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 struct SettingsView: View {
     @EnvironmentObject private var store: ToolStore
@@ -15,6 +16,10 @@ struct SettingsView: View {
                 Stepper("同时下载：\(store.settings.maxConcurrentDownloads)", value: $store.settings.maxConcurrentDownloads, in: 1...6)
                 Stepper("等待任务上限：\(store.settings.maxQueuedDownloads)", value: $store.settings.maxQueuedDownloads, in: 1...100)
                 Toggle("下载完成通知", isOn: $store.settings.notifications)
+                Toggle("新版本提醒", isOn: $store.settings.updateNotifications)
+                    .onChange(of: store.settings.updateNotifications) { _, on in
+                        if on { UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in } }
+                    }
             }
             Section("搜索与外观") {
                 Picker("搜索结果数量", selection: $store.settings.searchLimit) {

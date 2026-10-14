@@ -71,8 +71,8 @@ struct AppRow<Accessory: View>: View {
     }
 }
 extension AppRow where Accessory == EmptyView {
-    init(app: StoreApp, subtitle: String? = nil) {
-        self.init(app: app, subtitle: subtitle) { EmptyView() }
+    init(app: StoreApp, subtitle: String? = nil, badge: (text: String, tint: Color)? = nil) {
+        self.init(app: app, subtitle: subtitle, badge: badge) { EmptyView() }
     }
 }
 

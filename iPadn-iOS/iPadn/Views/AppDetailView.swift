@@ -45,6 +45,7 @@ struct AppDetailView: View {
     @State private var headerAway = false
     @State private var extras: StoreService.ListingExtras?
     @State private var viewing: StoreService.Screenshot?
+    @State private var developerApps: [StoreApp] = []
     /// Listing artwork, else what a download of this app brought along
     /// (delisted apps have no public listing to show).
     private var iconURL: URL? { app.iconURL ?? store.localArtwork(app.id) }
@@ -95,10 +96,17 @@ struct AppDetailView: View {
                         Text(app.bundleID).font(.footnote.monospaced()).textSelection(.enabled).multilineTextAlignment(.trailing)
                     }
                 }
+                if let developer = extras?.developer, !developer.isEmpty { LabeledContent("开发者", value: developer) }
                 if store.settings.store.platform != .macOS {
                     Link(destination: storeURL) { Label("在 App Store 中查看", systemImage: "arrow.up.right.square") }
                 }
             } header: { sectionTitle("信息") }
+            if !developerApps.isEmpty {
+                Section {
+                    DeveloperAppsStrip(apps: developerApps)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                } header: { sectionTitle(extras?.developer.isEmpty == false ? "更多来自 \(extras!.developer)" : "同一开发者的其他应用") }
+            }
         }
         .toolPage()
         .navigationTitle("")
@@ -199,6 +207,11 @@ struct AppDetailView: View {
                                                             platform: store.settings.store.platform)
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.2)) { extras = found }
+            guard let developerID = found?.developerID else { developerApps = []; return }
+            let apps = (try? await StoreService.developerApps(developerID, excluding: app.id, country: store.settings.store.country,
+                                                             platform: store.settings.store.platform)) ?? []
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) { developerApps = apps }
         }
         .fullScreenCover(item: $viewing) { shot in
             ScreenshotViewer(screenshots: extras?.screenshots ?? [shot], selection: shot)
@@ -614,5 +627,34 @@ private struct ScreenshotViewer: View {
             .accessibilityLabel("关闭")
         }
         .statusBarHidden()
+    }
+}
+
+/// Small cards for the developer's other apps, opening their own pages.
+private struct DeveloperAppsStrip: View {
+    let apps: [StoreApp]
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(alignment: .top, spacing: 14) {
+                ForEach(apps) { app in
+                    NavigationLink { AppDetailView(app: app) } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            AppIcon(url: app.iconURL, size: 76)
+                            Text(app.name).font(.caption.weight(.medium)).foregroundStyle(.primary)
+                                .lineLimit(2).multilineTextAlignment(.leading)
+                            if !app.displayCategory.isEmpty {
+                                Text(app.displayCategory).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                        .frame(width: 84, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .scrollTargetLayout()
+            .padding(.horizontal, 20)
+        }
+        .scrollTargetBehavior(.viewAligned)
+        .accessibilityIdentifier("detail.developer-apps")
     }
 }

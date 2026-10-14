@@ -379,6 +379,30 @@ enum StoreService {
                              developer: plistString(row["artistName"] ?? row["sellerName"]))
     }
 
+    /// Other apps from the same developer for the chosen platform.
+    static func developerApps(_ developerID: String, excluding id: String, country: String,
+                              platform: AppPlatform) async throws -> [StoreApp] {
+        guard UInt64(developerID).map({ $0 > 0 }) == true else { return [] }
+        let entity = platform == .macOS ? "macSoftware" : platform == .iPadOS ? "iPadSoftware" : "software"
+        let url = try endpoint("https://itunes.apple.com/lookup", items: [
+            URLQueryItem(name: "id", value: developerID), URLQueryItem(name: "entity", value: entity),
+            URLQueryItem(name: "country", value: country), URLQueryItem(name: "limit", value: "30")
+        ])
+        let rows = (try await HTTPClient.shared.json(url) as? [String: Any])?["results"] as? [[String: Any]] ?? []
+        return developerApps(rows, excluding: id, platform: platform)
+    }
+
+    static func developerApps(_ rows: [[String: Any]], excluding id: String, platform: AppPlatform) -> [StoreApp] {
+        // The first row describes the developer, not an app.
+        var seen = Set([id])
+        return rows.filter { plistString($0["wrapperType"]) == "software" }
+            .filter { platform != .tvOS || supportsAppleTV($0) }
+            .filter { platform != .macOS || supportsNativeMac($0) }
+            .map(mapLookup)
+            .filter { !$0.id.isEmpty && seen.insert($0.id).inserted }
+            .prefix(20).map { $0 }
+    }
+
     /// Lookup screenshots link a small rendition such as `392x696bb.jpg`;
     /// the CDN renders any size from the same path, so ask for twice that.
     static func screenshot(_ value: String) -> Screenshot? {

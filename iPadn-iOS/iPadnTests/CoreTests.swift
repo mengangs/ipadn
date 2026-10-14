@@ -1192,4 +1192,15 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(StoreService.screenshot("https://example.com/shot.jpg")?.url.lastPathComponent, "shot.jpg")
         XCTAssertNil(StoreService.screenshot("http://example.com/392x696bb.jpg"))
     }
+
+    func testDeveloperAppsSkipTheDeveloperRowAndTheCurrentApp() {
+        let rows: [[String: Any]] = [
+            ["wrapperType": "artist", "artistId": 42, "artistName": "Example Studio"],
+            ["wrapperType": "software", "trackId": 1, "trackName": "Current"],
+            ["wrapperType": "software", "trackId": 2, "trackName": "Second"],
+            ["wrapperType": "software", "trackId": 2, "trackName": "Second again"],
+            ["wrapperType": "software", "trackId": 3, "trackName": "TV", "supportedDevices": ["AppleTV4K"]]]
+        XCTAssertEqual(StoreService.developerApps(rows, excluding: "1", platform: .iOS).map(\.id), ["2", "3"])
+        XCTAssertEqual(StoreService.developerApps(rows, excluding: "1", platform: .tvOS).map(\.id), ["3"])
+    }
 }
