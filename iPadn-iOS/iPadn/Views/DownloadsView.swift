@@ -26,9 +26,20 @@ struct DownloadsView: View {
     private var filteredJobs: [DownloadJob] {
         manager.jobs.filter { filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
     }
+    /// The newest finished download of each app with a newer store version.
+    private var updateTargets: [UUID: StoreApp] {
+        var targets: [UUID: StoreApp] = [:]
+        var seen = Set<String>()
+        for job in manager.jobs where job.status == .completed {
+            guard let key = job.updateKey, seen.insert(key).inserted, let latest = store.availableUpdates[key] else { continue }
+            targets[job.id] = latest
+        }
+        return targets
+    }
     var body: some View {
         // Filter once per render; rows and headers read this copy.
         let visible = filteredJobs
+        let updates = updateTargets
         List {
             if !manager.jobs.isEmpty {
                 Section {
@@ -57,14 +68,14 @@ struct DownloadsView: View {
                                             .font(.title2)
                                             .foregroundStyle(selection.contains(job.id) ? Color.accentColor : Color.secondary)
                                             .frame(width: 32)
-                                        taskContent(job).allowsHitTesting(false)
+                                        taskContent(job, update: updates[job.id]).allowsHitTesting(false)
                                     }.contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel((selection.contains(job.id) ? "取消选择 " : "选择 ") + job.app.name)
                                 .accessibilityIdentifier("download.select." + job.id.uuidString)
                             } else {
-                                taskContent(job)
+                                taskContent(job, update: updates[job.id])
                                     .accessibilityElement(children: .contain)
                                     .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
                             }
@@ -76,6 +87,9 @@ struct DownloadsView: View {
                         }
                         .contextMenu {
                             if !editMode.isEditing {
+                                if let latest = updates[job.id] {
+                                    Button("下载新版本 \(latest.version)", systemImage: "arrow.down.circle") { downloadUpdate(job) }
+                                }
                                 Button("任务详情", systemImage: "info.circle") { inspecting = job }
                                 if let file = manager.fileURL(job) {
                                     Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: file) }
@@ -97,14 +111,19 @@ struct DownloadsView: View {
                         }
                     } header: {
                         if job.id == visible.first?.id {
-                            Text(filter == .all ? "\(visible.count) 个项目" : "\(filter.rawValue) · \(visible.count)")
+                            Text((filter == .all ? "\(visible.count) 个项目" : "\(filter.rawValue) · \(visible.count)")
+                                 + (updates.isEmpty ? "" : " · \(updates.count) 个可更新"))
                         }
                     }
                 }
                 .onMove(perform: editMode.isEditing && filter == .all && term.isEmpty ? { manager.move(from: $0, to: $1) } : nil)
             }
         }
-        .task(id: manager.jobs.filter { $0.status == .completed }.map { $0.id.uuidString }.joined()) { await manager.loadPackageIcons() }
+        .task(id: manager.jobs.filter { $0.status == .completed }.map { $0.id.uuidString }.joined()) {
+            await manager.loadPackageIcons()
+            await store.checkForUpdates()
+        }
+        .refreshable { await store.checkForUpdates(force: true) }
         .toolPage().navigationTitle("下载").navigationBarTitleDisplayMode(.large)
         .environment(\.editMode, $editMode)
         .toolbar {
@@ -232,10 +251,14 @@ struct DownloadsView: View {
         }
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
     }
-    private func taskContent(_ job: DownloadJob) -> some View {
-        DownloadTaskRow(job: job, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
+    private func taskContent(_ job: DownloadJob, update: StoreApp?) -> some View {
+        DownloadTaskRow(job: job, update: update, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
             if let file = manager.fileURL(job) { share = SharedFile(url: file) }
-        })
+        }, updating: { downloadUpdate(job) })
+    }
+    private func downloadUpdate(_ job: DownloadJob) {
+        UX.feedback()
+        perform { try await store.downloadUpdate(of: job); filter = .all; term = "" }
     }
     private func toggleSelection(_ id: UUID) {
         if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
@@ -290,9 +313,12 @@ struct DownloadsView: View {
 struct DownloadTaskRow: View {
     @EnvironmentObject private var manager: DownloadManager
     let job: DownloadJob
+    /// The store's newer version of this app, when there is one.
+    var update: StoreApp? = nil
     var inspecting: () -> Void
     var primary: () -> Void
     var exporting: () -> Void
+    var updating: () -> Void = {}
     private var displayedApp: StoreApp {
         job.displayApp(packageIcon: manager.packageIconURL(job))
     }
@@ -425,6 +451,18 @@ struct DownloadTaskRow: View {
                     .animation(.linear(duration: 0.25), value: job.progress)
                     .accessibilityLabel("下载进度").accessibilityValue("\(Int(job.progress * 100))%")
             }
+            if job.status == .completed, let update {
+                // Its own button: the heading above is already one.
+                Button(action: updating) {
+                    Label("有新版本 \(update.version)，点按下载", systemImage: "arrow.down.circle.fill")
+                        .font(.caption.weight(.semibold)).foregroundStyle(UX.tint).lineLimit(1)
+                        .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading).contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .transition(.opacity)
+                .accessibilityLabel("下载新版本 \(update.version)")
+                .accessibilityIdentifier("download.update." + job.app.id)
+            }
             if let error = job.error {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: "exclamationmark.circle.fill")
@@ -435,6 +473,7 @@ struct DownloadTaskRow: View {
         }
         .padding(.vertical, 8)
         .animation(.snappy, value: controlKey)
+        .animation(.easeOut(duration: 0.2), value: update?.version)
     }
 }
 

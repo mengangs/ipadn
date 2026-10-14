@@ -47,6 +47,9 @@ final class ToolStore: ObservableObject {
     @Published private(set) var owned: [OwnedApp] = []
     @Published private(set) var ownedLoading = false
     @Published var errorMessage: String?
+    /// Newer store versions of downloaded apps, by `DownloadJob.updateKey`.
+    @Published private(set) var availableUpdates: [String: StoreApp] = [:]
+    private var updatesChecked: (date: Date, keys: Set<String>)?
     @Published var infoMessage: String?
     #if DEBUG
     private var visualPreview = false
@@ -356,6 +359,71 @@ final class ToolStore: ObservableObject {
             localResults = patched(localResults)
         }
         tab = 1
+    }
+
+    /// Compares finished downloads with the store's current versions. Runs
+    /// at most every six hours unless forced or the set of apps changed.
+    func checkForUpdates(force: Bool = false) async {
+        #if DEBUG
+        if visualPreview { return }
+        #endif
+        let jobs = downloads.jobs.filter { $0.status != .failed && $0.updateKey != nil && !$0.app.version.isEmpty }
+        let keys = Set(jobs.filter { $0.status == .completed }.compactMap(\.updateKey))
+        if !force, let checked = updatesChecked, checked.keys == keys,
+           Date().timeIntervalSince(checked.date) < 6 * 3600 { return }
+        guard !keys.isEmpty else { availableUpdates = [:]; return }
+        let country = apple.active.flatMap { StoreService.country(forStorefront: $0.storeFront) } ?? settings.store.country
+        // The newest version already downloaded (or downloading) per app.
+        var newest: [String: String] = [:]
+        for job in jobs {
+            guard let key = job.updateKey else { continue }
+            if let known = newest[key], !VersionOrder.isNewer(job.app.version, than: known) { continue }
+            newest[key] = job.app.version
+        }
+        var listings: [String: StoreApp] = [:]
+        let byPlatform = Dictionary(grouping: keys, by: { $0.split(separator: "|").first.map(String.init) ?? "" })
+        func ids(_ platform: AppPlatform) -> [String] {
+            (byPlatform[platform.rawValue] ?? []).compactMap { $0.split(separator: "|").last.map(String.init) }
+        }
+        let lookupIDs = Set(ids(.iOS) + ids(.iPadOS) + ids(.macOS))
+        if let found = try? await StoreService.lookup(ids: Array(lookupIDs), country: country) {
+            for platform in [AppPlatform.iOS, .iPadOS, .macOS] {
+                for id in ids(platform) {
+                    guard let app = found[id] else { continue }
+                    listings["\(platform.rawValue)|\(id)"] = app
+                }
+            }
+        }
+        for id in ids(.tvOS).prefix(30) {
+            if let app = try? await StoreService.platformApp(id, store: StoreContext(country: country, platform: .tvOS)) {
+                listings["\(AppPlatform.tvOS.rawValue)|\(id)"] = app
+            }
+        }
+        guard !Task.isCancelled else { return }
+        var updates: [String: StoreApp] = [:]
+        for (key, app) in listings {
+            if let current = newest[key], VersionOrder.isNewer(app.version, than: current) { updates[key] = app }
+        }
+        availableUpdates = updates
+        updatesChecked = (Date(), keys)
+    }
+
+    /// Downloads the store's current version of a finished download.
+    func downloadUpdate(of job: DownloadJob) async throws {
+        guard let key = job.updateKey, let platform = job.updatePlatform, let latest = availableUpdates[key] else { return }
+        guard apple.active != nil else { throw ToolError.message("请先在「账号」中登录 Apple 账号") }
+        var app = latest
+        if app.iconURL == nil { app.iconURL = job.app.iconURL }
+        if platform == .macOS {
+            let offer = try await apple.macPackageOffer(app, useCache: settings.useSignerCache)
+            try downloads.enqueueOfficialMacPackage(offer, for: app)
+        } else {
+            var asset = try await apple.asset(appID: job.app.id, versionID: nil,
+                store: StoreContext(country: settings.store.country, platform: platform), useCache: settings.useSignerCache)
+            if asset.app.iconURL == nil { asset.app.iconURL = app.iconURL }
+            try downloads.enqueue(asset)
+        }
+        infoMessage = "已开始下载新版本"
     }
 
     func refreshDownload(_ job: DownloadJob) async throws {

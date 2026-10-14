@@ -1136,4 +1136,43 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(AppleLoginResponse.phoneNumberStorefront("user@example.com"))
         XCTAssertNil(AppleLoginResponse.phoneNumberStorefront("12345"))
     }
+
+    func testVersionOrderComparesDottedParts() {
+        XCTAssertTrue(VersionOrder.isNewer("1.10", than: "1.9"))
+        XCTAssertTrue(VersionOrder.isNewer("2.0.1", than: "2.0"))
+        XCTAssertFalse(VersionOrder.isNewer("2.0", than: "2.0.0"))
+        XCTAssertFalse(VersionOrder.isNewer("1.9", than: "1.10"))
+        XCTAssertTrue(VersionOrder.isNewer("3.0b2", than: "2.9"))
+        XCTAssertFalse(VersionOrder.isNewer("", than: "1.0"))
+        XCTAssertFalse(VersionOrder.isNewer("beta", than: "1.0"))
+    }
+
+    func testDownloadsKnowWhereTheirUpdatesComeFrom() {
+        func job(id: String, platform: String?, raw: String? = nil, source: String? = nil) -> DownloadJob {
+            var asset: DownloadAsset?
+            if let platform {
+                asset = DownloadAsset(app: StoreApp(id: id, name: "A", version: "1.0"), url: URL(string: "https://example.com/a.ipa")!,
+                                      sinf: Data([1]), metadata: Data(), externalVersionIDs: [], platform: platform, account: "a")
+            }
+            return DownloadJob(app: StoreApp(id: id, name: "A", version: "1.0"), asset: asset,
+                               sourceURL: source.flatMap(URL.init(string:)), rawFormat: raw)
+        }
+        XCTAssertEqual(job(id: "123", platform: "ios").updatePlatform, .iOS)
+        XCTAssertEqual(job(id: "123", platform: "appletvos").updatePlatform, .tvOS)
+        XCTAssertEqual(job(id: "123", platform: "ipad").updateKey, "ipad|123")
+        XCTAssertEqual(job(id: "123", platform: nil, raw: "pkg", source: "https://osxapps.itunes.apple.com/a.pkg").updatePlatform, .macOS)
+        XCTAssertNil(job(id: "123", platform: nil, raw: "dmg", source: "https://developer.example.com/a.dmg").updatePlatform)
+        XCTAssertNil(job(id: "com.example.app", platform: "ios").updatePlatform)
+    }
+
+    func testArcadeCatalogVersionRequiresTheRequestedApp() {
+        let data: [String: Any] = ["data": [["id": "123", "type": "apps", "attributes": [
+            "deviceFamilies": ["iphone", "ipad"],
+            "platformAttributes": ["ios": ["bundleId": "test.arcade", "externalVersionId": 456789]]]]]]
+        XCTAssertEqual(StoreService.catalogVersionID(data, id: "123", bundleID: "test.arcade", family: "iphone"), "456789")
+        XCTAssertEqual(StoreService.catalogVersionID(data, id: "123", bundleID: "", family: "ipad"), "456789")
+        XCTAssertNil(StoreService.catalogVersionID(data, id: "999", bundleID: "", family: "iphone"))
+        XCTAssertNil(StoreService.catalogVersionID(data, id: "123", bundleID: "other.app", family: "iphone"))
+        XCTAssertNil(StoreService.catalogVersionID(data, id: "123", bundleID: "", family: "appletv"))
+    }
 }
