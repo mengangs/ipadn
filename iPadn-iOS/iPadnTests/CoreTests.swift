@@ -1073,7 +1073,7 @@ final class CoreTests: XCTestCase {
     private struct MemoryRangeReader: RangeReader {
         let data: Data
         func tail(_ count: Int) async throws -> (data: Data, size: Int64) {
-            (data.suffix(count), Int64(data.count))
+            (Data(data.suffix(count)), Int64(data.count))
         }
         func read(offset: Int64, count: Int) async throws -> Data {
             let start = Int(offset)

@@ -54,9 +54,9 @@ enum RemoteZip {
     /// The main app's Info.plist: version number and, as ipatool does, the
     /// release date it records or else the file's timestamp in the archive.
     static func versionMetadata(_ reader: RangeReader) async throws -> VersionMetadata {
-        let entries = try await centralDirectory(reader)
+        let (entries, size) = try await centralDirectory(reader)
         guard let entry = entries.first(where: { isMainInfoPlist($0.name) }) else { throw Failure.notFound }
-        let data = try await contents(of: entry, reader: reader)
+        let data = try await contents(of: entry, fileSize: size, reader: reader)
         guard let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
             throw Failure.unreadable
         }
@@ -88,9 +88,10 @@ enum RemoteZip {
         return nil
     }
 
-    static func centralDirectory(_ reader: RangeReader) async throws -> [Entry] {
+    static func centralDirectory(_ reader: RangeReader) async throws -> (entries: [Entry], size: Int64) {
         // End record (22 bytes) plus the longest possible comment.
-        let (tail, size) = try await reader.tail(22 + 65_535)
+        let (fetched, size) = try await reader.tail(22 + 65_535)
+        let tail = Data(fetched)
         let tailStart = size - Int64(tail.count)
         guard let end = lastSignature(0x0605_4b50, in: tail), end + 22 <= tail.count else { throw Failure.unreadable }
         var count = Int64(tail.le16(end + 10))
@@ -122,7 +123,7 @@ enum RemoteZip {
         } else {
             directory = try await reader.read(offset: directoryOffset, count: Int(directorySize))
         }
-        return try entries(directory, count: count)
+        return (try entries(directory, count: count), size)
     }
 
     static func entries(_ data: Data, count: Int64) throws -> [Entry] {
@@ -168,16 +169,20 @@ enum RemoteZip {
         return result
     }
 
-    static func contents(of entry: Entry, reader: RangeReader) async throws -> Data {
+    static func contents(of entry: Entry, fileSize: Int64, reader: RangeReader) async throws -> Data {
         // Info.plist is a few kilobytes; refuse anything implausible.
         guard entry.compressedSize >= 0, entry.compressedSize <= 4 * 1024 * 1024,
-              entry.size >= 0, entry.size <= 16 * 1024 * 1024 else { throw Failure.unreadable }
-        let guess = 30 + entry.name.utf8.count + 256
-        var data = try await reader.read(offset: entry.localOffset, count: guess + Int(entry.compressedSize))
+              entry.size >= 0, entry.size <= 16 * 1024 * 1024,
+              entry.localOffset >= 0, entry.localOffset < fileSize else { throw Failure.unreadable }
+        // Header, name and some room for its extra field; never past the end
+        // of the file (the entry may be the last one).
+        let guess = Int64(30 + entry.name.utf8.count + 256) + entry.compressedSize
+        var data = try await reader.read(offset: entry.localOffset, count: Int(min(guess, fileSize - entry.localOffset)))
         guard data.count >= 30, data.le32(0) == 0x0403_4b50 else { throw Failure.unreadable }
         let start = 30 + Int(data.le16(26)) + Int(data.le16(28))
         let end = start + Int(entry.compressedSize)
         if end > data.count {
+            guard entry.localOffset + Int64(end) <= fileSize else { throw Failure.unreadable }
             data += try await reader.read(offset: entry.localOffset + Int64(data.count), count: end - data.count)
         }
         let body = data.subdata(in: start..<end)
