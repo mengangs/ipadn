@@ -38,9 +38,11 @@ final class AppleService: ObservableObject {
         guard code.isEmpty || (code.count == 6 && code.allSatisfy({ $0.isASCII && $0.isNumber })) else { throw ToolError.message("请输入 6 位数字验证码") }
         let body = try AppleLoginResponse.body(email: email, password: password, code: code, guid: guid)
         let signature = try await signer.sign(body, guid: guid, useCache: useCache)
+        var headers = ["Content-Type": "application/x-www-form-urlencoded", "X-Apple-ActionSignature": signature]
+        if let storefront = AppleLoginResponse.phoneNumberStorefront(email) { headers["X-Apple-Store-Front"] = storefront }
         let (raw, response) = try await HTTPClient.shared.plist(
             URL(string: "https://p25-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate/")!, body: body,
-            headers: ["Content-Type": "application/x-www-form-urlencoded", "X-Apple-ActionSignature": signature])
+            headers: headers)
         if let failure = AppleLoginResponse.failure(raw, submittedCode: !code.isEmpty) { throw failure }
         guard let info = raw["accountInfo"] as? [String: Any], !plistString(info["appleId"]).isEmpty else {
             throw ToolError.message("Apple 未返回完整登录信息，请重试")
@@ -199,6 +201,8 @@ final class AppleService: ObservableObject {
                 useCache: useCache, fallback: fallback, refreshed: refreshed, purchased: true,
                 allowLicenseAcquisition: allowLicenseAcquisition)
         }
+        // Viewing a version list never claims a license; say what is missing.
+        if failure == "9610" && !allowLicenseAcquisition { throw AppleLicenseError.notOwned }
         if let error = HTTPClient.appleFailure(raw) { throw error }
         guard let song = (raw["songList"] as? [[String: Any]])?.first else {
             if !fallback {
@@ -235,6 +239,34 @@ final class AppleService: ObservableObject {
             platform: plistString(metadata["software-platform"]), account: account.id)
     }
 
+    /// Download ticket for one version, used only to read that version's
+    /// Info.plist. Unlike a download it never acquires a license or signs in
+    /// again, so browsing a version list cannot trigger a verification prompt.
+    func versionTicket(appID: String, versionID: String, useCache: Bool) async throws -> URL {
+        guard let account = active, !account.dsid.isEmpty else { throw AppleAuthError.reauthenticationRequired }
+        guard let app = UInt64(appID), app > 0, UInt64(versionID).map({ $0 > 0 }) == true else {
+            throw ToolError.message("版本 ID 只能包含数字")
+        }
+        let kbsync = try await signer.kbsync(guid: guid, dsid: account.dsid, useCache: useCache)
+        let payload: [String: Any] = ["guid": guid, "salableAdamId": NSNumber(value: app), "serialNumber": "0",
+                                      "externalVersionId": versionID, "kbsync": kbsync]
+        let (raw, _) = try await HTTPClient.shared.plist(
+            URL(string: "https://downloaddispatch.itunes.apple.com/WebObjects/DownloadDispatch.woa/wa/ent/download?guid=" + guid)!,
+            body: HTTPClient.encodePlist(payload), headers: authHeaders(account))
+        if AppleAuthError.requiresReauthentication(raw) || ["2034", "2042"].contains(plistString(raw["failureType"])) {
+            throw AppleAuthError.reauthenticationRequired
+        }
+        if plistString(raw["failureType"]) == "9610" { throw AppleLicenseError.notOwned }
+        if let error = HTTPClient.appleFailure(raw) { throw error }
+        guard let song = (raw["songList"] as? [[String: Any]])?.first,
+              let url = URL(string: plistString(song["URL"])), url.scheme == "https",
+              let metadata = song["metadata"] as? [String: Any],
+              [versionID, ""].contains(plistString(metadata["softwareVersionExternalIdentifier"])) else {
+            throw ToolError.message("Apple 没有返回该版本的信息")
+        }
+        return url
+    }
+
     static func shouldAcquireLicense(failure: String, purchased: Bool,
                                      allowLicenseAcquisition: Bool) -> Bool {
         failure == "9610" && !purchased && allowLicenseAcquisition
@@ -251,6 +283,8 @@ final class AppleService: ObservableObject {
         // A license acquisition can independently require a new trusted-device
         // approval, even when the previous download token was accepted.
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
+        // The account already holds the license (ipatool): nothing to claim.
+        if plistString(raw["failureType"]) == "5002" { return }
         if ["2034", "2042"].contains(plistString(raw["failureType"])) ||
            plistString(raw["customerMessage"]) == "MZFinance.BadLogin.Configurator_message" {
             throw AppleLoginError.verificationRequired
@@ -263,7 +297,11 @@ final class AppleService: ObservableObject {
     // This deliberately does NOT create a download task: Mac Store packages
     // can require StoreAgent/dpInfo processing before they become valid XAR.
     // Exposing the encrypted response as a .pkg would corrupt the export.
-    func macPackageOffer(_ app: StoreApp, useCache: Bool) async throws -> MacPackageOffer {
+    /// `versionID` nil asks for the latest version on the Mac product page.
+    /// A free app the account has never got is claimed first, as for iOS,
+    /// unless `allowLicenseAcquisition` is false (version lists).
+    func macPackageOffer(_ app: StoreApp, versionID requested: String? = nil, useCache: Bool,
+                         allowLicenseAcquisition: Bool = true, licenseAcquired: Bool = false) async throws -> MacPackageOffer {
         guard let account = active else { throw ToolError.message("请先登录 Apple 账号") }
         guard let appNumber = UInt64(app.id), appNumber > 0 else {
             throw ToolError.message("请输入有效的 Mac 应用 ID")
@@ -272,10 +310,14 @@ final class AppleService: ObservableObject {
         guard let country = StoreService.country(forStorefront: account.storeFront) else {
             throw ToolError.message("无法识别此账号的商店地区，请重新登录后重试")
         }
+        if let requested, UInt64(requested).map({ $0 > 0 }) != true {
+            throw ToolError.message("版本 ID 只能包含数字")
+        }
         // nil when the app is delisted (no product page): the request then
         // omits externalVersionId and the response must still be macOS.
-        let versionID = try await MacStoreOfferService.latestVersionID(
-            appID: app.id, bundleID: app.bundleID, country: country)
+        let versionID: String?
+        if let requested { versionID = requested }
+        else { versionID = try await MacStoreOfferService.latestVersionID(appID: app.id, bundleID: app.bundleID, country: country) }
         try Task.checkCancellation()
         guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
         let deviceID = guid
@@ -302,6 +344,14 @@ final class AppleService: ObservableObject {
         try Task.checkCancellation()
         guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
+        if plistString(raw["failureType"]) == "9610" && !licenseAcquired {
+            guard allowLicenseAcquisition else { throw AppleLicenseError.notOwned }
+            try await acquireFreeApp(app.id, account: account)
+            try Task.checkCancellation()
+            guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
+            return try await macPackageOffer(app, versionID: versionID, useCache: useCache,
+                                             allowLicenseAcquisition: false, licenseAcquired: true)
+        }
         if let error = HTTPClient.appleFailure(raw) { throw error }
         var offer: MacPackageOffer
         do {
@@ -374,6 +424,8 @@ struct MacPackageOffer {
     let versionID: String
     let displayVersion: String
     let protectedByApple: Bool
+    /// Every version Apple lists for this app, oldest first.
+    var externalVersionIDs: [String] = []
     /// Account- and device-bound key material for StoreAgent. Kept in memory
     /// only; never persisted with download jobs, logged or shown in the UI.
     var dpInfo: Data? = nil
@@ -440,7 +492,16 @@ struct MacPackageOffer {
         }
         return MacPackageOffer(downloadURL: url, versionID: actualVersionID,
                                displayVersion: plistString(metadata["bundleShortVersionString"]),
-                               protectedByApple: !dpInfos.isEmpty, dpInfo: dpInfos.first)
+                               protectedByApple: !dpInfos.isEmpty,
+                               externalVersionIDs: (metadata["softwareVersionExternalIdentifiers"] as? [Any] ?? []).map { plistString($0) },
+                               dpInfo: dpInfos.first)
+    }
+}
+
+enum AppleLicenseError: LocalizedError {
+    case notOwned
+    var errorDescription: String? {
+        "此账号还没有获取这个应用。先获取一次，之后就能查看完整版本列表。"
     }
 }
 
@@ -468,6 +529,29 @@ enum AppleLoginResponse {
     static func body(email: String, password: String, code: String, guid: String) throws -> Data {
         try HTTPClient.encodePlist(["appleId": email, "attempt": code.isEmpty ? "1" : "2",
             "guid": guid, "password": password + code, "rmp": "0", "why": "signIn"])
+    }
+
+    /// Phone-number Apple Accounts in mainland China and India sign in only
+    /// when the request names their store (ipatool). The Apple ID itself is
+    /// sent unchanged.
+    static func phoneNumberStorefront(_ appleID: String) -> String? {
+        var number = appleID.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "-", with: "")
+        var international = false
+        if number.hasPrefix("+") { international = true; number.removeFirst() }
+        else if number.hasPrefix("00") { international = true; number.removeFirst(2) }
+        guard !number.isEmpty, number.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        let china = "143465", india = "143467"
+        // Check the full length before removing a country code: a local
+        // Indian number can itself start with 91.
+        if number.count == 13 && number.hasPrefix("861") { return china }
+        if number.count == 12 && number.hasPrefix("91") { number.removeFirst(2) }
+        else if international { return nil }
+        if number.count == 11 && number.hasPrefix("1") { return china }
+        // India also allows a trunk 0 in national numbers.
+        if !international && number.count == 11 && number.hasPrefix("0") { number.removeFirst() }
+        if number.count == 10, let first = number.first, ("6"..."9").contains(first) { return india }
+        return nil
     }
 
     static func failure(_ response: [String: Any], submittedCode: Bool) -> Error? {

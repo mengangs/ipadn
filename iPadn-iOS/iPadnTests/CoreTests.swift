@@ -1069,4 +1069,71 @@ final class CoreTests: XCTestCase {
         _ = try archive.extract(archive["Payload/Test.app/SC_Info/Test.sinf"]!, consumer: { payload.append($0) })
         XCTAssertEqual(payload, Data([1, 2, 3]))
     }
+
+    private struct MemoryRangeReader: RangeReader {
+        let data: Data
+        func tail(_ count: Int) async throws -> (data: Data, size: Int64) {
+            (Data(data.suffix(count)), Int64(data.count))
+        }
+        func read(offset: Int64, count: Int) async throws -> Data {
+            let start = Int(offset)
+            guard start >= 0, start + count <= data.count else { throw RemoteZip.Failure.unreadable }
+            return data.subdata(in: start..<start + count)
+        }
+    }
+
+    func testRemoteZipReadsMainInfoPlistFromRanges() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("Test.ipa")
+        let archive = try Archive(url: url, accessMode: .create)
+        let files: [(String, Data)] = [
+            ("Payload/Test.app/PlugIns/Widget.appex/Info.plist", try HTTPClient.encodePlist(["CFBundleShortVersionString": "9.9"])),
+            ("Payload/Test.app/Assets.car", Data((0..<200_000).map { UInt8($0 % 251) })),
+            ("Payload/Test.app/Info.plist", try HTTPClient.encodePlist([
+                "CFBundleShortVersionString": "4.5.6", "CFBundleIdentifier": "test.remote",
+                "releaseDate": "2024-05-03T00:00:00Z"]))
+        ]
+        for (path, bytes) in files {
+            let file = root.appendingPathComponent("src").appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try bytes.write(to: file)
+            try archive.addEntry(with: path, relativeTo: root.appendingPathComponent("src"), compressionMethod: .deflate)
+        }
+        let reader = MemoryRangeReader(data: try Data(contentsOf: url))
+        let metadata = try await RemoteZip.versionMetadata(reader)
+        XCTAssertEqual(metadata.version, "4.5.6")
+        XCTAssertEqual(metadata.released, ISO8601DateFormatter().date(from: "2024-05-03T00:00:00Z"))
+
+        // Without a recorded date, the archive timestamp is used.
+        let plain = root.appendingPathComponent("Plain.ipa")
+        let second = try Archive(url: plain, accessMode: .create)
+        try second.addEntry(with: "Payload/Plain.app/Info.plist", type: .file, uncompressedSize: Int64(files[2].1.count),
+                            compressionMethod: .none, provider: { position, size in
+            files[2].1.subdata(in: Int(position)..<Int(position) + size)
+        })
+        let undated = try await RemoteZip.versionMetadata(MemoryRangeReader(data: try Data(contentsOf: plain)))
+        XCTAssertEqual(undated.version, "4.5.6")
+        XCTAssertNotNil(undated.released)
+
+        XCTAssertTrue(RemoteZip.isMainInfoPlist("Payload/A.app/Info.plist"))
+        XCTAssertFalse(RemoteZip.isMainInfoPlist("Payload/A.app/PlugIns/B.appex/Info.plist"))
+        do {
+            _ = try await RemoteZip.versionMetadata(MemoryRangeReader(data: Data(repeating: 0, count: 64)))
+            XCTFail("A file without a ZIP directory must not produce a version")
+        } catch {}
+    }
+
+    func testPhoneNumberLoginsNameTheirStore() {
+        XCTAssertEqual(AppleLoginResponse.phoneNumberStorefront("13800138000"), "143465")
+        XCTAssertEqual(AppleLoginResponse.phoneNumberStorefront("+86 138-0013-8000"), "143465")
+        XCTAssertEqual(AppleLoginResponse.phoneNumberStorefront("008613800138000"), "143465")
+        XCTAssertEqual(AppleLoginResponse.phoneNumberStorefront("9876543210"), "143467")
+        XCTAssertEqual(AppleLoginResponse.phoneNumberStorefront("+91 98765 43210"), "143467")
+        XCTAssertEqual(AppleLoginResponse.phoneNumberStorefront("09876543210"), "143467")
+        XCTAssertNil(AppleLoginResponse.phoneNumberStorefront("+1 415 555 0100"))
+        XCTAssertNil(AppleLoginResponse.phoneNumberStorefront("user@example.com"))
+        XCTAssertNil(AppleLoginResponse.phoneNumberStorefront("12345"))
+    }
 }

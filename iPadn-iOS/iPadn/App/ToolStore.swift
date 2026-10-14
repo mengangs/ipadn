@@ -12,6 +12,7 @@ struct SearchHistoryItem: Codable, Identifiable {
 final class ToolStore: ObservableObject {
     let signer = SAPSigner()
     let versions = VersionService()
+    let metadataStore = VersionMetadataStore()
     let downloads: DownloadManager
     let installation = InstallationService()
     lazy var apple = AppleService(signer: signer)
@@ -276,8 +277,21 @@ final class ToolStore: ObservableObject {
         if visualPreview { return [AppVersion(id: "123456789", version: "3.2.1", source: "版本资料"), AppVersion(id: "123456788", version: "3.1.0", source: "版本资料")] }
         #endif
         let context = settings.store
-        if context.platform == .macOS { return [] }
-        if context.platform == .tvOS {
+        if context.platform == .macOS {
+            guard official else {
+                // Only the latest version is public; the full list needs the account.
+                guard let id = try await MacStoreOfferService.latestVersionID(appID: app.id, bundleID: app.bundleID, country: context.country)
+                else { return [] }
+                return [AppVersion(id: id, version: app.version.isEmpty ? "未知版本" : app.version, source: "App Store")]
+            }
+            let offer = try await apple.macPackageOffer(app, useCache: settings.useSignerCache, allowLicenseAcquisition: false)
+            let ids = offer.externalVersionIDs.isEmpty ? [offer.versionID] : Array(offer.externalVersionIDs.reversed())
+            var seen = Set<String>()
+            return ids.filter { !$0.isEmpty && seen.insert($0).inserted }.map { id in
+                AppVersion(id: id, version: id == offer.versionID && !offer.displayVersion.isEmpty ? offer.displayVersion : "未知版本", source: "Apple")
+            }
+        }
+        if context.platform == .tvOS && !official {
             guard let listing = try await StoreService.platformApp(app.id, store: context),
                   let id = listing.externalVersionID, !id.isEmpty else { return [] }
             return [AppVersion(id: id, version: listing.version.isEmpty ? "未知版本" : listing.version, source: "Apple TV")]
@@ -294,6 +308,36 @@ final class ToolStore: ObservableObject {
             }
         }
         return try await versions.thirdParty(app.id, sources: settings.versionSources, force: force)
+    }
+
+    func cachedVersionMetadata(app: StoreApp, versionIDs: [String]) async -> [String: VersionMetadata] {
+        let platform = settings.store.platform
+        let keys = Dictionary(versionIDs.map { (VersionMetadataStore.key(platform: platform, appID: app.id, versionID: $0), $0) },
+                              uniquingKeysWith: { first, _ in first })
+        let found = await metadataStore.cached(Array(keys.keys))
+        return Dictionary(found.compactMap { key, value in keys[key].map { ($0, value) } }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// The version number and date of one version, read from Apple. Lookups
+    /// are cached and run one at a time.
+    func versionMetadata(app: StoreApp, versionID: String) async throws -> VersionMetadata {
+        #if DEBUG
+        if visualPreview { return VersionMetadata(version: "3.2.1", released: Date(timeIntervalSince1970: 1_714_694_400)) }
+        #endif
+        let platform = settings.store.platform
+        let useCache = settings.useSignerCache
+        let key = VersionMetadataStore.key(platform: platform, appID: app.id, versionID: versionID)
+        return try await metadataStore.load(key) { @MainActor [apple] in
+            if platform == .macOS {
+                // A Mac package cannot be read in part; Apple's ticket names the version.
+                let offer = try await apple.macPackageOffer(app, versionID: versionID, useCache: useCache,
+                                                            allowLicenseAcquisition: false)
+                guard !offer.displayVersion.isEmpty else { throw RemoteZip.Failure.notFound }
+                return VersionMetadata(version: offer.displayVersion, released: nil)
+            }
+            let url = try await apple.versionTicket(appID: app.id, versionID: versionID, useCache: useCache)
+            return try await RemoteZip.versionMetadata(HTTPRangeReader(url: url))
+        }
     }
 
     func startDownload(app: StoreApp, versionID: String?) async throws {
