@@ -1,6 +1,7 @@
 name: Clean up old workflow runs
 
-# Run by hand from the Actions tab to delete old build records.
+# Run by hand from the Actions tab to delete old build records and, if
+# chosen, branches whose pull requests are closed.
 on:
   workflow_dispatch:
     inputs:
@@ -8,9 +9,16 @@ on:
         description: Number of most recent runs to keep
         required: true
         default: '3'
+      delete_closed_branches:
+        description: Also delete branches with no open pull request (main is kept)
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   actions: write
+  contents: write
+  pull-requests: read
 
 jobs:
   cleanup:
@@ -29,4 +37,21 @@ jobs:
           echo "Completed runs: $total, keeping the newest $KEEP"
           tail -n +"$((KEEP + 1))" runs.txt | while read -r id; do
             gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/runs/$id" >/dev/null && echo "Deleted $id" || echo "Could not delete $id"
+          done
+
+      - name: Delete branches without an open pull request
+        if: inputs.delete_closed_branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          default=$(gh api "repos/$GITHUB_REPOSITORY" --jq .default_branch)
+          gh api --paginate "repos/$GITHUB_REPOSITORY/branches?per_page=100" --jq '.[].name' | while read -r branch; do
+            [ "$branch" = "$default" ] && continue
+            open=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state open --json number --jq length)
+            if [ "$open" = "0" ]; then
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$branch" && echo "Deleted $branch" || echo "Could not delete $branch"
+            else
+              echo "Kept $branch (open pull request)"
+            fi
           done
