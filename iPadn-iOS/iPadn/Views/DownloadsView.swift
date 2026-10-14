@@ -329,10 +329,17 @@ struct DownloadTaskRow: View {
                         .accessibilityIdentifier("download.size." + job.app.id)
                 }
                 statusLine
+                    .id(controlKey)
+                    .transition(.statusSwap)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .contentShape(Rectangle())
+    }
+    /// Identity of the status line and trailing control: a change swaps them
+    /// with the sequential transition below instead of a cross-fade.
+    private var controlKey: String {
+        "\(job.status.rawValue)-\(manager.cancelling.contains(job.id))"
     }
     @ViewBuilder private var statusLine: some View {
         switch job.status {
@@ -350,7 +357,7 @@ struct DownloadTaskRow: View {
             Text([job.status.title, progressText].filter { !$0.isEmpty }.joined(separator: " · "))
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
         case .processing:
-            Text(manager.processingDetail[job.id] ?? job.status.title)
+            Text(manager.cancelling.contains(job.id) ? "正在取消…" : manager.processingDetail[job.id] ?? job.status.title)
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(2)
         default:
             TaskStatusPill(status: job.status)
@@ -373,6 +380,13 @@ struct DownloadTaskRow: View {
         case .queued:
             Button(action: primary) { ProgressRing(progress: nil) }
                 .buttonStyle(.borderless).accessibilityLabel("等待下载，点按暂停")
+        case .processing where manager.cancelling.contains(job.id):
+            ProgressView().frame(width: 44, height: 44)
+                .accessibilityLabel("正在取消")
+        case .processing where job.protectedMacPackage == true:
+            // Mac packages can take minutes to process; let the user stop it.
+            RowCapsule(title: "取消") { manager.cancelProcessing(job.id) }
+                .accessibilityLabel("取消处理")
         case .pausing, .processing:
             ProgressView().frame(width: 44, height: 44)
         case .paused:
@@ -403,6 +417,8 @@ struct DownloadTaskRow: View {
             HStack(spacing: 10) {
                 Button(action: inspecting) { appHeading }.buttonStyle(.plain)
                 trailingControl
+                    .id(controlKey)
+                    .transition(.statusSwap)
             }
             if job.status == .running || job.status == .paused, job.expected > 0 {
                 ProgressView(value: job.progress).tint(job.status == .paused ? .secondary : UX.tint)
@@ -418,7 +434,7 @@ struct DownloadTaskRow: View {
             }
         }
         .padding(.vertical, 8)
-        .animation(.snappy, value: job.status)
+        .animation(.snappy, value: controlKey)
     }
 }
 

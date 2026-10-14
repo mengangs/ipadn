@@ -22,35 +22,38 @@ enum DMAP {
         guard [1, 4, 8].contains(data.count) else { throw ToolError.message("DMAP 整数长度错误") }
         return data.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
     }
+    /// Walks tags without copying: payloads are slices of the original buffer
+    /// (purchase lists can be several megabytes with deep nesting).
     static func walk(_ data: Data, depth: Int = 0, visitor: (Tag) throws -> Void) throws {
         guard depth <= 16 else { throw ToolError.message("DMAP 嵌套过深") }
-        let bytes = [UInt8](data)
-        var offset = 0
-        while offset < bytes.count {
-            guard bytes.count - offset >= 8 else { throw ToolError.message("DMAP 标签被截断") }
-            let nameBytes = bytes[offset..<(offset + 4)]
+        var offset = data.startIndex
+        let end = data.endIndex
+        while offset < end {
+            guard end - offset >= 8 else { throw ToolError.message("DMAP 标签被截断") }
+            let nameBytes = data[offset..<(offset + 4)]
             guard nameBytes.allSatisfy({ (32...126).contains($0) }),
                   let name = String(bytes: nameBytes, encoding: .ascii) else { throw ToolError.message("DMAP 标签名称无效") }
-            let length = bytes[(offset + 4)..<(offset + 8)].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+            let length = data[(offset + 4)..<(offset + 8)].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
             let start = offset + 8
-            guard UInt64(length) <= UInt64(bytes.count - start) else { throw ToolError.message("DMAP 负载被截断") }
-            let end = start + Int(length)
-            let payload = Data(bytes[start..<end])
+            guard UInt64(length) <= UInt64(end - start) else { throw ToolError.message("DMAP 负载被截断") }
+            let stop = start + Int(length)
+            let payload = data[start..<stop]
             try visitor(Tag(name: name, payload: payload))
             if containers.contains(name) { try walk(payload, depth: depth + 1, visitor: visitor) }
-            offset = end
+            offset = stop
         }
     }
+    private struct Found: Error { let value: UInt32 }
     static func firstInteger(_ data: Data, name: String) throws -> UInt32? {
-        var value: UInt32?
-        try walk(data) { tag in
-            if tag.name == name, value == nil {
+        do {
+            try walk(data) { tag in
+                guard tag.name == name else { return }
                 let number = try integer(tag.payload)
                 guard number <= UInt32.max else { throw ToolError.message("DMAP 数值超出 uint32") }
-                value = UInt32(number)
+                throw Found(value: UInt32(number)) // stop at the first match
             }
-        }
-        return value
+        } catch let found as Found { return found.value }
+        return nil
     }
     static func validate(_ data: Data) throws {
         guard let status = try firstInteger(data, name: "mstt") else {

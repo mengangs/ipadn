@@ -903,6 +903,31 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(result[0].purchaseDate, Date(timeIntervalSince1970: 1_700_000_000))
     }
 
+    func testMacPackageQueueCancelsWaitingJobAndReportsNoCurrentJob() async {
+        let job = UUID()
+        let source = URL(fileURLWithPath: "/nonexistent.pkg"), output = URL(fileURLWithPath: "/nonexistent.out")
+        // Cancelled before its turn: never processed, reported as a cancellation.
+        MacPackageDecryptor.cancel(job: job)
+        do {
+            try await MacPackageDecryptor.process(job: job, hardwareID: "AABBCCDDEEFF", dpInfo: Data([1]), from: source, to: output)
+            XCTFail("A cancelled job must not be processed")
+        } catch { XCTAssertTrue(error is CancellationError, "\(error)") }
+        XCTAssertNil(MacPackageDecryptor.currentJob)
+        // The cancellation is consumed: the next run of the same job proceeds
+        // (and fails here only because the simulator has no bridge).
+        do {
+            try await MacPackageDecryptor.process(job: job, hardwareID: "AABBCCDDEEFF", dpInfo: Data([1]), from: source, to: output)
+        } catch { XCTAssertFalse(error is CancellationError) }
+        XCTAssertNil(MacPackageDecryptor.currentJob)
+    }
+
+    func testDMAPFirstIntegerStopsAtFirstMatchOnSlices() throws {
+        let data = DMAP.tag("mlog", DMAP.uint32("mstt", 200) + DMAP.uint32("mstt", 500))
+        XCTAssertEqual(try DMAP.firstInteger(data, name: "mstt"), 200)
+        XCTAssertNoThrow(try DMAP.validate(data))
+        XCTAssertNil(try DMAP.firstInteger(data, name: "mlid"))
+    }
+
     func testDMAPDepthLimit() {
         var payload = DMAP.uint32("mlid", 1)
         for _ in 0..<18 { payload = DMAP.tag("mlcl", payload) }

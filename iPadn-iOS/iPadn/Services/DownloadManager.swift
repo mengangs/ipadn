@@ -13,6 +13,8 @@ final class DownloadManager: NSObject, ObservableObject {
     @Published private(set) var saveWarning: String?
     /// Stage text for Mac App Store packages being processed on device.
     @Published private(set) var processingDetail: [UUID: String] = [:]
+    /// Mac tasks the user asked to cancel and that have not stopped yet.
+    @Published private(set) var cancelling: Set<UUID> = []
     var backgroundCompletion: (() -> Void)?
     private var tasks: [UUID: URLSessionDownloadTask] = [:]
     private var restoring = true
@@ -22,6 +24,8 @@ final class DownloadManager: NSObject, ObservableObject {
     private var iconsLoading = false
     private var catalogArtworkAttempted = Set<UUID>()
     private var iconSizeChecked = Set<UUID>()
+    private var removalAfterCancel = Set<UUID>()
+    private let persistQueue = DispatchQueue(label: "iPadn.download-jobs", qos: .utility)
     private var artworkCountry = "CN"
     private var notifications = true
     private var lastSave = Date.distantPast
@@ -54,6 +58,11 @@ final class DownloadManager: NSObject, ObservableObject {
         if FileManager.default.fileExists(atPath: file.path) {
             do { jobs = try JSONDecoder().decode([DownloadJob].self, from: Data(contentsOf: file)) }
             catch { storageError = "任务文件读取失败；已保留原文件，请先导出诊断再处理。\n" + error.localizedDescription }
+        }
+        // Write the latest progress to disk before the app can be suspended.
+        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.persist(wait: true) }
         }
         Task { await restore() }
     }
@@ -269,9 +278,22 @@ final class DownloadManager: NSObject, ObservableObject {
         jobs.insert(contentsOf: selected, at: max(0, min(adjusted, jobs.count)))
         persist()
     }
+    /// Stops processing a Mac package (queued or running). The download is
+    /// kept and the task becomes paused, so it can be continued later.
+    func cancelProcessing(_ id: UUID) {
+        guard let job = jobs.first(where: { $0.id == id }), job.status == .processing,
+              job.protectedMacPackage == true else { return }
+        guard cancelling.insert(id).inserted else { return } // repeated taps do nothing
+        MacPackageDecryptor.cancel(job: id)
+    }
+
     func remove(_ id: UUID) throws {
         guard storageError == nil else { throw ToolError.message(storageError!) }
         guard let job = jobs.first(where: { $0.id == id }) else { return }
+        if job.status == .processing, job.protectedMacPackage == true {
+            // Deleted once processing has stopped (see process()).
+            removalAfterCancel.insert(id); cancelProcessing(id); return
+        }
         guard job.status != .processing, job.status != .pausing else { throw ToolError.message("请等待当前文件处理或暂停完成后再删除") }
         let file = fileURL(job)
         let removal = LocalResources.support.appendingPathComponent("\(id.uuidString).removing.ipa")
@@ -401,7 +423,7 @@ final class DownloadManager: NSObject, ObservableObject {
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Prepare IPA") { [weak self] in
             // Called on the main thread; the task must be ended before returning.
             MainActor.assumeIsolated {
-                self?.persist()
+                self?.persist(wait: true)
                 let completion = self?.backgroundCompletion; self?.backgroundCompletion = nil; completion?()
                 if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
             }
@@ -424,8 +446,8 @@ final class DownloadManager: NSObject, ObservableObject {
                         let secret = try MacPackageSecrets.load(id)
                         let decrypted = Self.decryptedURL(id)
                         defer { try? FileManager.default.removeItem(at: decrypted) }
-                        try MacPackageDecryptor.decrypt(hardwareID: secret.hardwareID, dpInfo: secret.dpInfo,
-                                                        from: LocalResources.stagingURL(id), to: decrypted)
+                        try await MacPackageDecryptor.process(job: id, hardwareID: secret.hardwareID, dpInfo: secret.dpInfo,
+                                                              from: LocalResources.stagingURL(id), to: decrypted)
                         return try MacPackageStorage.finish(staging: decrypted, job: job)
                     }
                     if job.rawFormat != nil {
@@ -447,7 +469,16 @@ final class DownloadManager: NSObject, ObservableObject {
                 if job.protectedMacPackage == true { MacPackageSecrets.delete(id) }
                 self.persist(); self.notify(title: "安装包已准备好", body: result.1.name + " " + result.1.version)
                 Task { await self.loadPackageIcons() }
+            } catch is CancellationError {
+                self.cancelling.remove(id)
+                // Cancelled by the user: keep the download, continue later.
+                guard let index = self.jobs.firstIndex(where: { $0.id == id }) else { return }
+                self.jobs[index].status = .paused
+                self.jobs[index].error = nil
+                self.persist(); self.schedule()
+                if self.removalAfterCancel.remove(id) != nil { try? self.remove(id) }
             } catch {
+                self.cancelling.remove(id)
                 // Retrying must download again rather than reprocess the same bad
                 // file (imported files have nothing to download and keep theirs).
                 // A protected Mac package keeps its download: its processing
@@ -465,7 +496,9 @@ final class DownloadManager: NSObject, ObservableObject {
     private func monitorMacProcessing(_ id: UUID) async {
         let total = (try? FileManager.default.attributesOfItem(atPath: LocalResources.stagingURL(id).path)[.size] as? NSNumber)?.int64Value ?? 0
         while !Task.isCancelled {
-            if let status = MacPackageDecryptor.status() {
+            if MacPackageDecryptor.currentJob != id {
+                processingDetail[id] = "排队等待处理"
+            } else if let status = MacPackageDecryptor.status() {
                 var text = status.stage.title
                 if status.stage == .decrypting, total > 0 {
                     text += String(format: " %.0f%%", min(100, Double(status.bytes) * 100 / Double(total)))
@@ -522,15 +555,30 @@ final class DownloadManager: NSObject, ObservableObject {
         persist(); schedule()
         notify(title: "下载任务失败", body: jobs[index].app.name + "：" + error.localizedDescription)
     }
-    private func persist() {
+    /// Saves a snapshot of the task list. Encoding and writing happen on a
+    /// serial background queue, so writes stay in order and the main thread
+    /// never waits for the disk; `wait` blocks until it is written (used when
+    /// the app is about to be suspended).
+    private func persist(wait: Bool = false) {
         // storageError means the saved list could not be read; never overwrite it.
         guard storageError == nil else { return }
-        do { try saveJobs(jobs); lastSave = Date(); if saveWarning != nil { saveWarning = nil } }
-        catch { saveWarning = "下载任务暂时无法保存，请检查设备存储空间。" }
+        let snapshot = jobs, save = saveJobs
+        lastSave = Date()
+        let write = {
+            let failed: Bool
+            do { try save(snapshot); failed = false } catch { failed = true }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if failed { self.saveWarning = "下载任务暂时无法保存，请检查设备存储空间。" }
+                else if self.saveWarning != nil { self.saveWarning = nil }
+            }
+        }
+        if wait { persistQueue.sync(execute: write) } else { persistQueue.async(execute: write) }
     }
     private func saveNewJobs(_ next: [DownloadJob]) throws {
-        // Commit the file before publishing a newly enqueued/imported/retried task.
-        try saveJobs(next)
+        // Commit the file before publishing a newly enqueued/imported/retried
+        // task; on the same queue, after any earlier pending save.
+        try persistQueue.sync { try saveJobs(next) }
         jobs = next; lastSave = Date()
     }
     private func requestNotifications() {
@@ -544,7 +592,11 @@ final class DownloadManager: NSObject, ObservableObject {
     }
     private func finishBackgroundIfReady() {
         guard processingIDs.isEmpty else { return }
-        let completion = backgroundCompletion; backgroundCompletion = nil; completion?()
+        guard let completion = backgroundCompletion else { return }
+        backgroundCompletion = nil
+        // The app may be suspended right after this: finish pending saves first.
+        persistQueue.sync {}
+        completion()
     }
 }
 

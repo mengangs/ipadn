@@ -402,3 +402,15 @@ struct MarqueeText: View {
             }
     }
 }
+
+extension AnyTransition {
+    /// Replaces a status label or button without the old and new content
+    /// being visible at the same time: the old one fades out quickly, then
+    /// the new one fades and scales in.
+    static var statusSwap: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.combined(with: .scale(scale: 0.92))
+                .animation(.easeOut(duration: 0.18).delay(0.1)),
+            removal: .opacity.animation(.easeIn(duration: 0.1)))
+    }
+}
