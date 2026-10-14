@@ -24,6 +24,11 @@ enum AppContainer {
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        if !LocalResources.isPreview { UpdateCheckScheduler.register() }
+        return true
+    }
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
                      completionHandler: @escaping () -> Void) {
         Task { @MainActor in
@@ -38,6 +43,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 struct iPadnApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var store = AppContainer.shared
+    @Environment(\.scenePhase) private var scenePhase
     @ViewBuilder private var appContent: some View {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--visual-preview") {
@@ -56,6 +62,15 @@ struct iPadnApp: App {
                 .environmentObject(store.signer)
                 .tint(UX.tint)
                 .onOpenURL { store.handleURL($0) }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .background, !LocalResources.isPreview else { return }
+            // Only worth waking up for when there is something to check.
+            if store.settings.updateNotifications && store.downloads.jobs.contains(where: { $0.status == .completed && $0.updateKey != nil }) {
+                UpdateCheckScheduler.schedule()
+            } else {
+                UpdateCheckScheduler.cancel()
+            }
         }
     }
 }

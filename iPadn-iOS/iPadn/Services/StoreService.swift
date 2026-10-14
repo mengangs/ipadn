@@ -322,9 +322,11 @@ enum StoreService {
     }
 
     /// Current listings for many App IDs at once: the lookup API takes a list.
-    static func lookup(ids: [String], country: String) async throws -> [String: StoreApp] {
+    /// `nativeMac` names the IDs whose listing is a Mac app.
+    static func lookup(ids: [String], country: String) async throws -> (apps: [String: StoreApp], nativeMac: Set<String>) {
         let ids = ids.filter { UInt64($0).map { $0 > 0 } == true }
         var found: [String: StoreApp] = [:]
+        var nativeMac = Set<String>()
         for start in stride(from: 0, to: ids.count, by: 100) {
             let chunk = ids[start..<min(start + 100, ids.count)]
             let url = try endpoint("https://itunes.apple.com/lookup", items: [
@@ -333,10 +335,99 @@ enum StoreService {
             let rows = (try await HTTPClient.shared.json(url) as? [String: Any])?["results"] as? [[String: Any]] ?? []
             for row in rows {
                 let app = mapLookup(row)
-                if chunk.contains(app.id) { found[app.id] = app }
+                guard chunk.contains(app.id) else { continue }
+                found[app.id] = app
+                if plistString(row["kind"]).lowercased() == "mac-software" { nativeMac.insert(app.id) }
             }
         }
-        return found
+        return (found, nativeMac)
+    }
+
+    struct Screenshot: Hashable, Identifiable {
+        var url: URL
+        /// Width over height, from the size in the file name.
+        var aspect: Double
+        var id: URL { url }
+    }
+
+    /// Store page extras the detail page shows: screenshots for the chosen
+    /// platform and the developer behind the app.
+    struct ListingExtras {
+        var screenshots: [Screenshot] = []
+        var developerID: String?
+        var developer = ""
+    }
+
+    static func listingExtras(id: String, country: String, platform: AppPlatform) async throws -> ListingExtras? {
+        guard UInt64(id).map({ $0 > 0 }) == true else { return nil }
+        let url = try endpoint("https://itunes.apple.com/lookup", items: [
+            URLQueryItem(name: "id", value: id), URLQueryItem(name: "country", value: country)
+        ])
+        let rows = (try await HTTPClient.shared.json(url) as? [String: Any])?["results"] as? [[String: Any]] ?? []
+        guard let row = rows.first(where: { plistString($0["trackId"]) == id }) else { return nil }
+        return listingExtras(row, platform: platform)
+    }
+
+    static func listingExtras(_ row: [String: Any], platform: AppPlatform) -> ListingExtras {
+        func shots(_ key: String) -> [String] { row[key] as? [String] ?? [] }
+        // Only the chosen device's own screenshots: never stand in another
+        // device's. A Mac listing's screenshots are Mac screenshots only when
+        // the row is the Mac app itself, not a shared iPhone App ID.
+        let preferred: [String]
+        switch platform {
+        case .iOS: preferred = shots("screenshotUrls")
+        case .iPadOS: preferred = shots("ipadScreenshotUrls")
+        case .tvOS: preferred = shots("appletvScreenshotUrls")
+        case .macOS: preferred = plistString(row["kind"]).lowercased() == "mac-software" ? shots("screenshotUrls") : []
+        }
+        let developerID = plistString(row["artistId"])
+        return ListingExtras(screenshots: preferred.prefix(10).compactMap(screenshot),
+                             developerID: developerID.isEmpty ? nil : developerID,
+                             developer: plistString(row["artistName"] ?? row["sellerName"]))
+    }
+
+    /// Other apps from the same developer for the chosen platform.
+    static func developerApps(_ developerID: String, excluding id: String, country: String,
+                              platform: AppPlatform) async throws -> [StoreApp] {
+        guard UInt64(developerID).map({ $0 > 0 }) == true else { return [] }
+        let entity = platform == .macOS ? "macSoftware" : platform == .iPadOS ? "iPadSoftware" : "software"
+        let url = try endpoint("https://itunes.apple.com/lookup", items: [
+            URLQueryItem(name: "id", value: developerID), URLQueryItem(name: "entity", value: entity),
+            URLQueryItem(name: "country", value: country), URLQueryItem(name: "limit", value: "30")
+        ])
+        let rows = (try await HTTPClient.shared.json(url) as? [String: Any])?["results"] as? [[String: Any]] ?? []
+        return developerApps(rows, excluding: id, platform: platform)
+    }
+
+    static func developerApps(_ rows: [[String: Any]], excluding id: String, platform: AppPlatform) -> [StoreApp] {
+        // The first row describes the developer, not an app.
+        var seen = Set([id])
+        return rows.filter { plistString($0["wrapperType"]) == "software" }
+            .filter { platform != .tvOS || supportsAppleTV($0) }
+            .filter { platform != .macOS || supportsNativeMac($0) }
+            .map(mapLookup)
+            .filter { !$0.id.isEmpty && seen.insert($0.id).inserted }
+            .prefix(20).map { $0 }
+    }
+
+    /// Lookup screenshots link a small rendition such as `392x696bb.jpg`:
+    /// a box the image is fitted into, whatever its orientation. Ask for a
+    /// square box twice as large so portrait and landscape shots both come
+    /// back sharp; the real orientation is read from the loaded image.
+    static func screenshot(_ value: String) -> Screenshot? {
+        guard let url = URL(string: value), url.scheme == "https", url.host != nil else { return nil }
+        let name = url.lastPathComponent
+        let parts = name.split(separator: ".", maxSplits: 1)
+        let size = parts.first.map { $0.split(separator: "x") } ?? []
+        guard size.count == 2, let width = Int(size[0]),
+              let height = Int(size[1].prefix { $0.isNumber }), width > 0, height > 0 else {
+            return Screenshot(url: url, aspect: 9.0 / 19.5)
+        }
+        let suffix = size[1].drop { $0.isNumber }
+        let side = min(2000, max(width, height) * 2)
+        let larger = "\(side)x\(side)\(suffix)" + (parts.count > 1 ? "." + parts[1] : "")
+        return Screenshot(url: url.deletingLastPathComponent().appendingPathComponent(larger),
+                          aspect: Double(width) / Double(height))
     }
 
     static func mapLookup(_ raw: [String: Any]) -> StoreApp {

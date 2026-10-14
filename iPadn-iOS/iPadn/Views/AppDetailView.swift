@@ -21,6 +21,8 @@ struct AppDetailView: View {
     @State private var metadataLoading = Set<String>()
     @State private var metadataFailures = 0
     @State private var metadataStopped = false
+    /// Long histories start with the newest ten versions.
+    @State private var showAllVersions = false
     @State private var showLogin = false
     @State private var reauthenticationID: String?
     @State private var retryAfterLoginVersion: String?
@@ -43,6 +45,9 @@ struct AppDetailView: View {
     @State private var enteringMacDownloadURL = false
     @State private var macDownloadURL = ""
     @State private var headerAway = false
+    @State private var extras: StoreService.ListingExtras?
+    @State private var viewing: StoreService.Screenshot?
+    @State private var developerApps: [StoreApp] = []
     /// Listing artwork, else what a download of this app brought along
     /// (delisted apps have no public listing to show).
     private var iconURL: URL? { app.iconURL ?? store.localArtwork(app.id) }
@@ -62,6 +67,14 @@ struct AppDetailView: View {
                 header.listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
                     .onScrolledUnderBar { headerAway = $0 }
                 infoStrip.listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
+            }
+            if let shots = extras?.screenshots, !shots.isEmpty {
+                Section {
+                    // On the page background, edge to edge, as in the App Store.
+                    ScreenshotStrip(screenshots: shots, platform: store.settings.store.platform) { viewing = $0 }
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                        .listRowBackground(Color.clear)
+                } header: { sectionTitle("预览") }
             }
             versionSection
             if store.settings.store.platform == .macOS { macSection }
@@ -87,10 +100,17 @@ struct AppDetailView: View {
                         Text(app.bundleID).font(.footnote.monospaced()).textSelection(.enabled).multilineTextAlignment(.trailing)
                     }
                 }
+                if let developer = extras?.developer, !developer.isEmpty { LabeledContent("开发者", value: developer) }
                 if store.settings.store.platform != .macOS {
                     Link(destination: storeURL) { Label("在 App Store 中查看", systemImage: "arrow.up.right.square") }
                 }
             } header: { sectionTitle("信息") }
+            if !developerApps.isEmpty {
+                Section {
+                    DeveloperAppsStrip(apps: developerApps)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                } header: { sectionTitle(extras?.developer.isEmpty == false ? "更多来自 \(extras!.developer)" : "同一开发者的其他应用") }
+            }
         }
         .toolPage()
         .navigationTitle("")
@@ -178,11 +198,27 @@ struct AppDetailView: View {
             guard versionsKey != loadedVersionsKey else { return }
             let forced = reloadID != loadedReloadID
             // A different region, platform or account lists different versions.
-            if !forced { versions = [] }
+            if !forced { versions = []; showAllVersions = false }
             if await fetchVersions(force: forced) { loadedVersionsKey = versionsKey; loadedReloadID = reloadID }
         }
         .task(id: "\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
             await loadMacInstallers()
+        }
+        .task(id: "extras-\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
+            // Demo data stays offline.
+            guard !LocalResources.isPreview else { return }
+            let found = try? await StoreService.listingExtras(id: app.id, country: store.settings.store.country,
+                                                            platform: store.settings.store.platform)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) { extras = found }
+            guard let developerID = found?.developerID else { developerApps = []; return }
+            let apps = (try? await StoreService.developerApps(developerID, excluding: app.id, country: store.settings.store.country,
+                                                             platform: store.settings.store.platform)) ?? []
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) { developerApps = apps }
+        }
+        .fullScreenCover(item: $viewing) { shot in
+            ScreenshotViewer(screenshots: extras?.screenshots ?? [shot], selection: shot)
         }
     }
     private func sectionTitle(_ text: String) -> some View {
@@ -303,12 +339,28 @@ struct AppDetailView: View {
             if versions.count > 6 {
                 SearchInput(text: $versionSearch, placeholder: "筛选版本号或版本 ID")
             }
-            ForEach(filtered.prefix(100)) { version in
+            let matches = filtered
+            // A search shows every match; otherwise ten until expanded.
+            let limit = showAllVersions || !versionSearch.isEmpty ? matches.count : 10
+            ForEach(matches.prefix(limit)) { version in
                 versionRow(version)
                     .task(id: "\(version.id)-\(readsMetadata)") { await loadMetadata(version) }
             }
-            if !versions.isEmpty && filtered.isEmpty { Text("没有匹配的版本。").font(.subheadline).foregroundStyle(.secondary) }
-            if filtered.count > 100 { Text("仅显示前 100 个版本，可输入版本号筛选。").font(.caption).foregroundStyle(.secondary) }
+            if !versions.isEmpty && matches.isEmpty { Text("没有匹配的版本。").font(.subheadline).foregroundStyle(.secondary) }
+            if versionSearch.isEmpty && matches.count > 10 {
+                Button {
+                    withAnimation(.snappy) { showAllVersions.toggle() }
+                } label: {
+                    HStack {
+                        Text(showAllVersions ? "收起" : "显示全部 \(matches.count) 个版本")
+                        Spacer()
+                        Image(systemName: "chevron.down").rotationEffect(.degrees(showAllVersions ? 180 : 0))
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("detail.versions.toggle")
+            }
             if versions.isEmpty && !versionsLoading && versionError == nil {
                 Text("暂无历史版本").font(.subheadline).foregroundStyle(.secondary)
             }
@@ -520,5 +572,146 @@ struct AppDetailView: View {
             catch is CancellationError { }
             catch { store.errorMessage = error.localizedDescription }
         }
+    }
+}
+
+/// App Store style preview strip: screenshots side by side on the page
+/// background, snapping to the leading margin, with the next one peeking in.
+private struct ScreenshotStrip: View {
+    let screenshots: [StoreService.Screenshot]
+    let platform: AppPlatform
+    var open: (StoreService.Screenshot) -> Void
+    /// Loaded images. The size in a screenshot link is only the box Apple
+    /// fits the image into, so a landscape game shot can arrive under a
+    /// portrait-looking link: lay each one out by the real image.
+    @State private var images: [URL: UIImage] = [:]
+    private func aspect(_ shot: StoreService.Screenshot) -> Double {
+        guard let image = images[shot.url], image.size.height > 0 else { return shot.aspect }
+        return image.size.width / image.size.height
+    }
+    private var ready: Bool { screenshots.allSatisfy { images[$0.url] != nil } || !failed.isEmpty }
+    @State private var failed = Set<URL>()
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(screenshots) { shot in
+                        let ratio = aspect(shot)
+                        let portrait = ratio < 1
+                        Button { open(shot) } label: {
+                            ScreenshotTile(image: images[shot.url], failed: failed.contains(shot.url),
+                                           cornerRadius: portrait ? 22 : 14)
+                                .aspectRatio(ratio, contentMode: .fit)
+                                // Portrait: a bit over half the width; landscape: nearly all of it.
+                                .containerRelativeFrame(.horizontal) { length, _ in portrait ? length * 0.62 : length * 0.9 }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("截图")
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .contentMargins(.horizontal, 20, for: .scrollContent)
+            .scrollTargetBehavior(.viewAligned)
+            .opacity(ready ? 1 : 0.001)
+            .overlay { if !ready { ProgressView() } }
+            Label(platform.title == "iOS" ? "iPhone" : platform.title == "tvOS" ? "Apple TV" : platform.title, systemImage: platform.symbol)
+                .font(.footnote).foregroundStyle(.secondary)
+                .padding(.horizontal, 20)
+        }
+        .animation(.easeOut(duration: 0.2), value: ready)
+        .task(id: screenshots.map(\.url)) { await load() }
+        .accessibilityIdentifier("detail.screenshots")
+    }
+
+    private func load() async {
+        await withTaskGroup(of: (URL, UIImage?).self) { group in
+            for shot in screenshots where images[shot.url] == nil {
+                group.addTask {
+                    guard let (data, _) = try? await URLSession.shared.data(from: shot.url) else { return (shot.url, nil) }
+                    return (shot.url, UIImage(data: data))
+                }
+            }
+            for await (url, image) in group {
+                if let image { images[url] = image } else { failed.insert(url) }
+            }
+        }
+    }
+}
+
+private struct ScreenshotTile: View {
+    let image: UIImage?
+    let failed: Bool
+    var cornerRadius: CGFloat
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                Rectangle().fill(Color(.tertiarySystemFill))
+                    .overlay { if failed { Image(systemName: "photo").foregroundStyle(.tertiary) } }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).stroke(Color.primary.opacity(0.1), lineWidth: 0.5))
+    }
+}
+
+/// Full-screen screenshots, swiped through like Photos.
+private struct ScreenshotViewer: View {
+    let screenshots: [StoreService.Screenshot]
+    @State var selection: StoreService.Screenshot
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+            TabView(selection: $selection) {
+                ForEach(screenshots) { shot in
+                    AsyncImage(url: shot.url) { phase in
+                        if let image = phase.image { image.resizable().scaledToFit() }
+                        else { ProgressView().tint(.white) }
+                    }
+                    .padding(.horizontal, 12)
+                    .tag(shot)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: screenshots.count > 1 ? .always : .never))
+            Button { dismiss() } label: {
+                Image(systemName: "xmark").font(.body.weight(.semibold)).foregroundStyle(.white)
+                    .frame(width: 36, height: 36).background(.ultraThinMaterial, in: Circle())
+            }
+            .padding(16)
+            .accessibilityLabel("关闭")
+        }
+        .statusBarHidden()
+    }
+}
+
+/// Small cards for the developer's other apps, opening their own pages.
+private struct DeveloperAppsStrip: View {
+    let apps: [StoreApp]
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(alignment: .top, spacing: 14) {
+                ForEach(apps) { app in
+                    NavigationLink { AppDetailView(app: app) } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            AppIcon(url: app.iconURL, size: 76)
+                            Text(app.name).font(.caption.weight(.medium)).foregroundStyle(.primary)
+                                .lineLimit(2).multilineTextAlignment(.leading)
+                            if !app.displayCategory.isEmpty {
+                                Text(app.displayCategory).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                        .frame(width: 84, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .scrollTargetLayout()
+            .padding(.horizontal, 20)
+        }
+        .scrollTargetBehavior(.viewAligned)
+        .accessibilityIdentifier("detail.developer-apps")
     }
 }

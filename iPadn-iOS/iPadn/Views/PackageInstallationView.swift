@@ -45,13 +45,10 @@ struct PackageInstallationView: View {
                 }
                 Section {
                     NavigationLink { InstallationSettingsView() } label: {
-                        LabeledContent("安装方式", value: store.settings.automaticInstallation ? "一键安装"
-                                       : store.settings.localInstallation ? "本机证书" : "代理服务")
+                        LabeledContent("安装方式", value: store.settings.automaticInstallation ? "一键安装" : "代理服务")
                     }.accessibilityIdentifier("installation.settings")
                 } footer: {
-                    Text(store.settings.automaticInstallation ? "安装完成前请勿退出 iPadn。"
-                         : store.settings.localInstallation ? "需先在安装方式中创建并信任证书。"
-                         : "需要已配置的代理规则。")
+                    Text(store.settings.automaticInstallation ? "安装完成前请勿退出 iPadn。" : "需要已配置的代理规则。")
                 }
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
@@ -71,8 +68,6 @@ struct PackageInstallationView: View {
                 let url: URL
                 if store.settings.automaticInstallation {
                     url = try await store.installation.automaticInstallURL(job: job, file: file)
-                } else if store.settings.localInstallation {
-                    url = try await store.installation.localInstallURL(job: job, file: file, host: store.settings.localInstallHost)
                 } else {
                     url = try await store.installation.installURL(job: job, file: file, plistServer: store.settings.plistServer)
                 }

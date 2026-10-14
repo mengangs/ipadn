@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import UserNotifications
 
 struct SearchHistoryItem: Codable, Identifiable {
     var id: String { term }
@@ -367,7 +368,7 @@ final class ToolStore: ObservableObject {
         #if DEBUG
         if visualPreview { return }
         #endif
-        let jobs = downloads.jobs.filter { $0.status != .failed && $0.updateKey != nil && !$0.app.version.isEmpty }
+        let jobs = downloads.jobs.filter { $0.status != .failed && $0.updateKey != nil && !$0.storeVersion.isEmpty }
         let keys = Set(jobs.filter { $0.status == .completed }.compactMap(\.updateKey))
         if !force, let checked = updatesChecked, checked.keys == keys,
            Date().timeIntervalSince(checked.date) < 6 * 3600 { return }
@@ -377,8 +378,8 @@ final class ToolStore: ObservableObject {
         var newest: [String: String] = [:]
         for job in jobs {
             guard let key = job.updateKey else { continue }
-            if let known = newest[key], !VersionOrder.isNewer(job.app.version, than: known) { continue }
-            newest[key] = job.app.version
+            if let known = newest[key], !VersionOrder.isNewer(job.storeVersion, than: known) { continue }
+            newest[key] = job.storeVersion
         }
         var listings: [String: StoreApp] = [:]
         let byPlatform = Dictionary(grouping: keys, by: { $0.split(separator: "|").first.map(String.init) ?? "" })
@@ -389,7 +390,10 @@ final class ToolStore: ObservableObject {
         if let found = try? await StoreService.lookup(ids: Array(lookupIDs), country: country) {
             for platform in [AppPlatform.iOS, .iPadOS, .macOS] {
                 for id in ids(platform) {
-                    guard let app = found[id] else { continue }
+                    guard let app = found.apps[id] else { continue }
+                    // A Mac download sharing an iPhone App ID: the listing is the
+                    // iPhone version, so it says nothing about the Mac one.
+                    if platform == .macOS && !found.nativeMac.contains(id) { continue }
                     listings["\(platform.rawValue)|\(id)"] = app
                 }
             }
@@ -408,6 +412,22 @@ final class ToolStore: ObservableObject {
         updatesChecked = (Date(), keys)
     }
 
+    /// Notifies about updates found in the background, once per version.
+    func notifyNewUpdates() {
+        let key = "storage_notifiedUpdates"
+        var notified = LocalResources.defaults.dictionary(forKey: key) as? [String: String] ?? [:]
+        let fresh = availableUpdates.filter { notified[$0.key] != $0.value.version }
+        guard !fresh.isEmpty else { return }
+        for (id, app) in fresh { notified[id] = app.version }
+        LocalResources.defaults.set(notified, forKey: key)
+        let names = fresh.values.sorted { $0.name < $1.name }.prefix(3).map { "\($0.name) \($0.version)" }
+        let content = UNMutableNotificationContent()
+        content.title = fresh.count == 1 ? "\(fresh.values.first!.name) 有新版本" : "\(fresh.count) 个应用有新版本"
+        content.body = names.joined(separator: "、") + (fresh.count > 3 ? " 等" : "") + "。打开 iPadn 下载新版本。"
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "update-" + UUID().uuidString, content: content, trigger: nil))
+    }
+
     /// Downloads the store's current version of a finished download.
     func downloadUpdate(of job: DownloadJob) async throws {
         guard let key = job.updateKey, let platform = job.updatePlatform, let latest = availableUpdates[key] else { return }
@@ -424,6 +444,38 @@ final class ToolStore: ObservableObject {
             try downloads.enqueue(asset)
         }
         infoMessage = "已开始下载新版本"
+    }
+
+    /// Adds the latest version of several apps, one at a time. A problem
+    /// that would repeat for every app (sign-in, the queue limit) stops the
+    /// batch; anything else is reported per app.
+    func startDownloads(_ apps: [StoreApp], progress: @escaping (Int) -> Void) async -> (added: Int, failures: [String]) {
+        var added = 0
+        var failures: [String] = []
+        for (index, app) in apps.enumerated() {
+            if Task.isCancelled { break }
+            do {
+                if settings.store.platform == .macOS {
+                    let offer = try await apple.macPackageOffer(app, useCache: settings.useSignerCache)
+                    try downloads.enqueueOfficialMacPackage(offer, for: app)
+                } else {
+                    var asset = try await apple.asset(appID: app.id, versionID: nil, store: settings.store,
+                                                      useCache: settings.useSignerCache)
+                    if asset.app.iconURL == nil { asset.app.iconURL = app.iconURL }
+                    try downloads.enqueue(asset)
+                }
+                added += 1
+            } catch let error where error is AppleAuthError || error is AppleLoginError {
+                failures.append("请到「账号」中重新验证 Apple 账号后再试。")
+                break
+            } catch {
+                let message = error.localizedDescription
+                failures.append((app.name.isEmpty ? app.id : app.name) + "：" + message)
+                if message.contains("上限") { break }
+            }
+            progress(index + 1)
+        }
+        return (added, failures)
     }
 
     func refreshDownload(_ job: DownloadJob) async throws {
@@ -538,6 +590,8 @@ final class ToolStore: ObservableObject {
             "Jobs: \(downloads.jobs.count)", "Concurrent limit: \(settings.maxConcurrentDownloads)",
             "Version sources: \(settings.versionSources.filter(\.enabled).count)",
             "Task states: " + downloads.jobs.map { "\($0.id.uuidString.prefix(8)): \($0.status.rawValue)" }.joined(separator: ", "),
+            "Installation: " + (settings.automaticInstallation ? "one-tap" : "proxy"),
+            "Installation server log:", InstallLog.shared.text.isEmpty ? "(empty)" : InstallLog.shared.text,
             "Contains no credentials, cookies, Apple account names or download URLs."
         ].joined(separator: "\n")
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("iPadn-Diagnostics.txt")

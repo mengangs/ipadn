@@ -1163,6 +1163,11 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(job(id: "123", platform: nil, raw: "pkg", source: "https://osxapps.itunes.apple.com/a.pkg").updatePlatform, .macOS)
         XCTAssertNil(job(id: "123", platform: nil, raw: "dmg", source: "https://developer.example.com/a.dmg").updatePlatform)
         XCTAssertNil(job(id: "com.example.app", platform: "ios").updatePlatform)
+        // The store's version wins over the package's own numbering.
+        var finished = job(id: "123", platform: "ios")
+        finished.app.version = "10.0.21"
+        XCTAssertEqual(finished.storeVersion, "1.0")
+        XCTAssertEqual(job(id: "123", platform: nil, raw: "pkg", source: "https://osxapps.itunes.apple.com/a.pkg").storeVersion, "1.0")
     }
 
     func testArcadeCatalogVersionRequiresTheRequestedApp() {
@@ -1174,5 +1179,39 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(StoreService.catalogVersionID(data, id: "999", bundleID: "", family: "iphone"))
         XCTAssertNil(StoreService.catalogVersionID(data, id: "123", bundleID: "other.app", family: "iphone"))
         XCTAssertNil(StoreService.catalogVersionID(data, id: "123", bundleID: "", family: "appletv"))
+    }
+
+    func testScreenshotsFollowPlatformAndAskForSharperRenditions() {
+        let row: [String: Any] = [
+            "trackId": 1, "artistId": 42, "artistName": "Example Studio",
+            "screenshotUrls": ["https://is1-ssl.mzstatic.com/image/thumb/a/392x696bb.jpg"],
+            "ipadScreenshotUrls": ["https://is1-ssl.mzstatic.com/image/thumb/b/552x414bb.png"],
+            "appletvScreenshotUrls": []]
+        let phone = StoreService.listingExtras(row, platform: .iOS)
+        XCTAssertEqual(phone.screenshots.first?.url.lastPathComponent, "1392x1392bb.jpg")
+        XCTAssertEqual(phone.screenshots.first?.aspect ?? 0, 392.0 / 696.0, accuracy: 0.001)
+        XCTAssertEqual(phone.developerID, "42")
+        XCTAssertEqual(phone.developer, "Example Studio")
+        XCTAssertEqual(StoreService.listingExtras(row, platform: .iPadOS).screenshots.first?.url.lastPathComponent, "1104x1104bb.png")
+        XCTAssertTrue(StoreService.listingExtras(row, platform: .tvOS).screenshots.isEmpty)
+        // A shared iPhone App ID has no Mac screenshots; iPhone ones are not shown instead.
+        XCTAssertTrue(StoreService.listingExtras(row, platform: .macOS).screenshots.isEmpty)
+        var mac = row; mac["kind"] = "mac-software"
+        XCTAssertEqual(StoreService.listingExtras(mac, platform: .macOS).screenshots.count, 1)
+        var phoneOnly = row; phoneOnly["ipadScreenshotUrls"] = []
+        XCTAssertTrue(StoreService.listingExtras(phoneOnly, platform: .iPadOS).screenshots.isEmpty)
+        XCTAssertEqual(StoreService.screenshot("https://example.com/shot.jpg")?.url.lastPathComponent, "shot.jpg")
+        XCTAssertNil(StoreService.screenshot("http://example.com/392x696bb.jpg"))
+    }
+
+    func testDeveloperAppsSkipTheDeveloperRowAndTheCurrentApp() {
+        let rows: [[String: Any]] = [
+            ["wrapperType": "artist", "artistId": 42, "artistName": "Example Studio"],
+            ["wrapperType": "software", "trackId": 1, "trackName": "Current"],
+            ["wrapperType": "software", "trackId": 2, "trackName": "Second"],
+            ["wrapperType": "software", "trackId": 2, "trackName": "Second again"],
+            ["wrapperType": "software", "trackId": 3, "trackName": "TV", "supportedDevices": ["AppleTV4K"]]]
+        XCTAssertEqual(StoreService.developerApps(rows, excluding: "1", platform: .iOS).map(\.id), ["2", "3"])
+        XCTAssertEqual(StoreService.developerApps(rows, excluding: "1", platform: .tvOS).map(\.id), ["3"])
     }
 }
