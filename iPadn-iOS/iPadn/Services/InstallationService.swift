@@ -87,6 +87,11 @@ final class InstallationService: ObservableObject {
 }
 
 enum ManifestBuilder {
+    /// The version the install link announces. iOS only replaces an
+    /// installed app when the link names a newer version, so installing an
+    /// older (or the same) package over it would silently do nothing. The
+    /// package itself is installed as is and the app's data is kept.
+    static let overwriteVersion = "99999"
     static func localHost(_ value: String) throws -> String {
         let host = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !host.isEmpty, host.utf8.count <= 253, !host.contains(".."),
@@ -103,7 +108,7 @@ enum ManifestBuilder {
         }
         return try PropertyListSerialization.data(fromPropertyList: ["items": [[
             "assets": [["kind": "software-package", "url": packageURL.absoluteString]],
-            "metadata": ["bundle-identifier": app.bundleID, "bundle-version": app.version,
+            "metadata": ["bundle-identifier": app.bundleID, "bundle-version": overwriteVersion,
                          "kind": "software", "title": app.name]
         ]]], format: .xml, options: 0)
     }
@@ -124,7 +129,7 @@ enum ManifestBuilder {
         }
         func encode(_ value: String) -> String { value.addingPercentEncoding(withAllowedCharacters: strictQuery) ?? "" }
         let query = [("bundleid", app.bundleID), ("name", app.name.isEmpty ? app.bundleID : app.name),
-                     ("version", app.version), ("fetchurl", packageURL.absoluteString)]
+                     ("version", overwriteVersion), ("fetchurl", packageURL.absoluteString)]
             .map { "\($0.0)=\(encode($0.1))" }.joined(separator: "&")
         guard let manifest = URL(string: manifestGenerator + "?" + query),
               let url = URL(string: "itms-services://?action=download-manifest&url=" + encode(manifest.absoluteString)) else {
@@ -155,7 +160,7 @@ enum ManifestBuilder {
         var metadata = URLComponents()
         metadata.queryItems = [
             URLQueryItem(name: "name", value: app.name), URLQueryItem(name: "bundleId", value: app.bundleID),
-            URLQueryItem(name: "displayVersion", value: app.version), URLQueryItem(name: "fileName", value: filename)
+            URLQueryItem(name: "displayVersion", value: overwriteVersion), URLQueryItem(name: "fileName", value: filename)
         ]
         // Preserve the original service contract: the entire metadata query is URL-encoded once.
         let query = metadata.percentEncodedQuery ?? ""
