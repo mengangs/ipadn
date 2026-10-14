@@ -284,7 +284,7 @@ final class ToolStore: ObservableObject {
                 else { return [] }
                 return [AppVersion(id: id, version: app.version.isEmpty ? "未知版本" : app.version, source: "App Store")]
             }
-            let offer = try await apple.macPackageOffer(app, useCache: settings.useSignerCache)
+            let offer = try await apple.macPackageOffer(app, useCache: settings.useSignerCache, allowLicenseAcquisition: false)
             let ids = offer.externalVersionIDs.isEmpty ? [offer.versionID] : Array(offer.externalVersionIDs.reversed())
             var seen = Set<String>()
             return ids.filter { !$0.isEmpty && seen.insert($0).inserted }.map { id in
@@ -330,7 +330,8 @@ final class ToolStore: ObservableObject {
         return try await metadataStore.load(key) { @MainActor [apple] in
             if platform == .macOS {
                 // A Mac package cannot be read in part; Apple's ticket names the version.
-                let offer = try await apple.macPackageOffer(app, versionID: versionID, useCache: useCache)
+                let offer = try await apple.macPackageOffer(app, versionID: versionID, useCache: useCache,
+                                                            allowLicenseAcquisition: false)
                 guard !offer.displayVersion.isEmpty else { throw RemoteZip.Failure.notFound }
                 return VersionMetadata(version: offer.displayVersion, released: nil)
             }

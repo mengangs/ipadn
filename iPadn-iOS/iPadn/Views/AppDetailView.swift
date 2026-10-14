@@ -425,7 +425,8 @@ struct AppDetailView: View {
         catch {
             if !Task.isCancelled {
                 let message = error.localizedDescription
-                versionError = message.contains("暂时无法获取历史版本") ? message : AppErrorMessage.forSearch(error)
+                versionError = message.contains("暂时无法获取历史版本") || error is AppleLicenseError
+                    ? message : AppErrorMessage.forSearch(error)
             }
         }
         return false
@@ -445,6 +446,7 @@ struct AppDetailView: View {
                 try store.downloads.enqueueOfficialMacPackage(offer, for: app)
                 store.infoMessage = "已开始下载"
                 store.tab = 1
+                reloadIfLicenseWasMissing()
             } catch AppleAuthError.reauthenticationRequired {
                 reauthenticationID = apple.activeID
                 showLogin = true
@@ -455,6 +457,12 @@ struct AppDetailView: View {
                 store.errorMessage = error.localizedDescription
             }
         }
+    }
+
+    /// A download claims a free app's license, so a list that failed for
+    /// lack of one can load now.
+    private func reloadIfLicenseWasMissing() {
+        if versionError == AppleLicenseError.notOwned.errorDescription { reloadID += 1 }
     }
 
     private func enqueueMacInstaller(_ installer: MacInstallerService.Installer) {
@@ -495,7 +503,10 @@ struct AppDetailView: View {
         downloadLoading = true
         downloadTask = Task {
             defer { downloadLoading = false; downloadTask = nil }
-            do { try await store.startDownload(app: app, versionID: versionID?.isEmpty == true ? nil : versionID) }
+            do {
+                try await store.startDownload(app: app, versionID: versionID?.isEmpty == true ? nil : versionID)
+                reloadIfLicenseWasMissing()
+            }
             catch AppleLoginError.verificationRequired {
                 pendingDownloadVersion = versionID ?? ""
                 retryVersionsAfterVerification = false

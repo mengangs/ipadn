@@ -201,6 +201,8 @@ final class AppleService: ObservableObject {
                 useCache: useCache, fallback: fallback, refreshed: refreshed, purchased: true,
                 allowLicenseAcquisition: allowLicenseAcquisition)
         }
+        // Viewing a version list never claims a license; say what is missing.
+        if failure == "9610" && !allowLicenseAcquisition { throw AppleLicenseError.notOwned }
         if let error = HTTPClient.appleFailure(raw) { throw error }
         guard let song = (raw["songList"] as? [[String: Any]])?.first else {
             if !fallback {
@@ -254,6 +256,7 @@ final class AppleService: ObservableObject {
         if AppleAuthError.requiresReauthentication(raw) || ["2034", "2042"].contains(plistString(raw["failureType"])) {
             throw AppleAuthError.reauthenticationRequired
         }
+        if plistString(raw["failureType"]) == "9610" { throw AppleLicenseError.notOwned }
         if let error = HTTPClient.appleFailure(raw) { throw error }
         guard let song = (raw["songList"] as? [[String: Any]])?.first,
               let url = URL(string: plistString(song["URL"])), url.scheme == "https",
@@ -280,6 +283,8 @@ final class AppleService: ObservableObject {
         // A license acquisition can independently require a new trusted-device
         // approval, even when the previous download token was accepted.
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
+        // The account already holds the license (ipatool): nothing to claim.
+        if plistString(raw["failureType"]) == "5002" { return }
         if ["2034", "2042"].contains(plistString(raw["failureType"])) ||
            plistString(raw["customerMessage"]) == "MZFinance.BadLogin.Configurator_message" {
             throw AppleLoginError.verificationRequired
@@ -293,8 +298,10 @@ final class AppleService: ObservableObject {
     // can require StoreAgent/dpInfo processing before they become valid XAR.
     // Exposing the encrypted response as a .pkg would corrupt the export.
     /// `versionID` nil asks for the latest version on the Mac product page.
-    func macPackageOffer(_ app: StoreApp, versionID requested: String? = nil,
-                         useCache: Bool) async throws -> MacPackageOffer {
+    /// A free app the account has never got is claimed first, as for iOS,
+    /// unless `allowLicenseAcquisition` is false (version lists).
+    func macPackageOffer(_ app: StoreApp, versionID requested: String? = nil, useCache: Bool,
+                         allowLicenseAcquisition: Bool = true, licenseAcquired: Bool = false) async throws -> MacPackageOffer {
         guard let account = active else { throw ToolError.message("请先登录 Apple 账号") }
         guard let appNumber = UInt64(app.id), appNumber > 0 else {
             throw ToolError.message("请输入有效的 Mac 应用 ID")
@@ -337,6 +344,14 @@ final class AppleService: ObservableObject {
         try Task.checkCancellation()
         guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
+        if plistString(raw["failureType"]) == "9610" && !licenseAcquired {
+            guard allowLicenseAcquisition else { throw AppleLicenseError.notOwned }
+            try await acquireFreeApp(app.id, account: account)
+            try Task.checkCancellation()
+            guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
+            return try await macPackageOffer(app, versionID: versionID, useCache: useCache,
+                                             allowLicenseAcquisition: false, licenseAcquired: true)
+        }
         if let error = HTTPClient.appleFailure(raw) { throw error }
         var offer: MacPackageOffer
         do {
@@ -480,6 +495,13 @@ struct MacPackageOffer {
                                protectedByApple: !dpInfos.isEmpty,
                                externalVersionIDs: (metadata["softwareVersionExternalIdentifiers"] as? [Any] ?? []).map { plistString($0) },
                                dpInfo: dpInfos.first)
+    }
+}
+
+enum AppleLicenseError: LocalizedError {
+    case notOwned
+    var errorDescription: String? {
+        "此账号还没有获取这个应用。先获取一次，之后就能查看完整版本列表。"
     }
 }
 
