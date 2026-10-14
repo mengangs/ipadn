@@ -322,9 +322,11 @@ enum StoreService {
     }
 
     /// Current listings for many App IDs at once: the lookup API takes a list.
-    static func lookup(ids: [String], country: String) async throws -> [String: StoreApp] {
+    /// `nativeMac` names the IDs whose listing is a Mac app.
+    static func lookup(ids: [String], country: String) async throws -> (apps: [String: StoreApp], nativeMac: Set<String>) {
         let ids = ids.filter { UInt64($0).map { $0 > 0 } == true }
         var found: [String: StoreApp] = [:]
+        var nativeMac = Set<String>()
         for start in stride(from: 0, to: ids.count, by: 100) {
             let chunk = ids[start..<min(start + 100, ids.count)]
             let url = try endpoint("https://itunes.apple.com/lookup", items: [
@@ -333,10 +335,12 @@ enum StoreService {
             let rows = (try await HTTPClient.shared.json(url) as? [String: Any])?["results"] as? [[String: Any]] ?? []
             for row in rows {
                 let app = mapLookup(row)
-                if chunk.contains(app.id) { found[app.id] = app }
+                guard chunk.contains(app.id) else { continue }
+                found[app.id] = app
+                if plistString(row["kind"]).lowercased() == "mac-software" { nativeMac.insert(app.id) }
             }
         }
-        return found
+        return (found, nativeMac)
     }
 
     struct Screenshot: Hashable, Identifiable {

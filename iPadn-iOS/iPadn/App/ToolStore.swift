@@ -368,7 +368,7 @@ final class ToolStore: ObservableObject {
         #if DEBUG
         if visualPreview { return }
         #endif
-        let jobs = downloads.jobs.filter { $0.status != .failed && $0.updateKey != nil && !$0.app.version.isEmpty }
+        let jobs = downloads.jobs.filter { $0.status != .failed && $0.updateKey != nil && !$0.storeVersion.isEmpty }
         let keys = Set(jobs.filter { $0.status == .completed }.compactMap(\.updateKey))
         if !force, let checked = updatesChecked, checked.keys == keys,
            Date().timeIntervalSince(checked.date) < 6 * 3600 { return }
@@ -378,8 +378,8 @@ final class ToolStore: ObservableObject {
         var newest: [String: String] = [:]
         for job in jobs {
             guard let key = job.updateKey else { continue }
-            if let known = newest[key], !VersionOrder.isNewer(job.app.version, than: known) { continue }
-            newest[key] = job.app.version
+            if let known = newest[key], !VersionOrder.isNewer(job.storeVersion, than: known) { continue }
+            newest[key] = job.storeVersion
         }
         var listings: [String: StoreApp] = [:]
         let byPlatform = Dictionary(grouping: keys, by: { $0.split(separator: "|").first.map(String.init) ?? "" })
@@ -390,7 +390,10 @@ final class ToolStore: ObservableObject {
         if let found = try? await StoreService.lookup(ids: Array(lookupIDs), country: country) {
             for platform in [AppPlatform.iOS, .iPadOS, .macOS] {
                 for id in ids(platform) {
-                    guard let app = found[id] else { continue }
+                    guard let app = found.apps[id] else { continue }
+                    // A Mac download sharing an iPhone App ID: the listing is the
+                    // iPhone version, so it says nothing about the Mac one.
+                    if platform == .macOS && !found.nativeMac.contains(id) { continue }
                     listings["\(platform.rawValue)|\(id)"] = app
                 }
             }

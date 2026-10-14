@@ -1163,6 +1163,11 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(job(id: "123", platform: nil, raw: "pkg", source: "https://osxapps.itunes.apple.com/a.pkg").updatePlatform, .macOS)
         XCTAssertNil(job(id: "123", platform: nil, raw: "dmg", source: "https://developer.example.com/a.dmg").updatePlatform)
         XCTAssertNil(job(id: "com.example.app", platform: "ios").updatePlatform)
+        // The store's version wins over the package's own numbering.
+        var finished = job(id: "123", platform: "ios")
+        finished.app.version = "10.0.21"
+        XCTAssertEqual(finished.storeVersion, "1.0")
+        XCTAssertEqual(job(id: "123", platform: nil, raw: "pkg", source: "https://osxapps.itunes.apple.com/a.pkg").storeVersion, "1.0")
     }
 
     func testArcadeCatalogVersionRequiresTheRequestedApp() {

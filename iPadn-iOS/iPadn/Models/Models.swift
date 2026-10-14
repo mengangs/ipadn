@@ -196,6 +196,12 @@ struct DownloadJob: Codable, Identifiable {
         }
     }
     var updateKey: String? { updatePlatform.map { "\($0.rawValue)|\(app.id)" } }
+    /// The version as the store names it. A finished IPA reports its own
+    /// Info.plist version, which some apps number differently from the store.
+    var storeVersion: String {
+        let ticket = asset?.app.version ?? ""
+        return ticket.isEmpty ? app.version : ticket
+    }
     var platformLabel: String {
         if rawFormat != nil { return "Mac" }
         switch asset?.platform.lowercased() {

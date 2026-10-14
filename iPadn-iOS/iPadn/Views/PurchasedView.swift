@@ -26,7 +26,9 @@ struct PurchasedView: View {
     /// Download state per App ID: a newer store version first, then downloaded.
     private var downloadBadges: [String: (text: String, tint: Color)] {
         var badges: [String: (text: String, tint: Color)] = [:]
-        for job in manager.jobs where job.status == .completed {
+        // Purchases are iPhone and iPad apps; a Mac or Apple TV download under
+        // a shared App ID is a different package.
+        for job in manager.jobs where job.status == .completed && [AppPlatform.iOS, .iPadOS].contains(job.updatePlatform) {
             if let key = job.updateKey, let latest = store.availableUpdates[key] {
                 badges[job.app.id] = ("有新版本 \(latest.version)", UX.tint)
             } else if badges[job.app.id] == nil {
