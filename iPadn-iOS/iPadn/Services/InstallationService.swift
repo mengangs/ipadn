@@ -63,6 +63,7 @@ final class InstallationService: ObservableObject {
         let packageURL = try server.register(file)
         let data = try ManifestBuilder.manifest(app: job.app, packageURL: packageURL)
         let manifestURL = try server.register(data: data, contentType: "application/xml")
+        InstallLog.shared.add("local install link created (host \(host), port \(manifestURL.port ?? 0), chain \(certificate.certificates.count))")
         keepHosting(server)
         return try ManifestBuilder.systemURL(manifestURL: manifestURL)
     }

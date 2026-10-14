@@ -115,11 +115,13 @@ final class LoopbackServer: @unchecked Sendable {
                             self.lock.unlock()
                             self.finishStart(.success(()))
                         case .failed(let error):
+                            InstallLog.shared.add((self.identity == nil ? "http" : "https") + " server stopped: \(error)")
                             self.lock.lock(); self.readyURL = nil; self.lock.unlock()
                             self.listener = nil
                             self.finishStart(.failure(error))
                             listener.cancel()
                         case .cancelled:
+                            InstallLog.shared.add((self.identity == nil ? "http" : "https") + " server closed")
                             self.lock.lock(); self.readyURL = nil; self.lock.unlock()
                             self.listener = nil
                             self.finishStart(.failure(ToolError.message("安装已中断，请重试")))
@@ -137,10 +139,14 @@ final class LoopbackServer: @unchecked Sendable {
                         guard let self else { connection.cancel(); return }
                         let id = ObjectIdentifier(connection)
                         let secure = self.identity != nil
+                        let kind = secure ? "https" : "http"
+                        if secure { InstallLog.shared.add("https connection accepted") }
                         connection.stateUpdateHandler = { [weak self] state in
                             switch state {
+                            case .ready: if secure { InstallLog.shared.add("https connection ready (TLS done)") }
+                            case .waiting(let error): InstallLog.shared.add(kind + " connection waiting: \(error)")
                             case .failed(let error):
-                                InstallLog.shared.add((secure ? "https" : "http") + " connection failed: \(error)")
+                                InstallLog.shared.add(kind + " connection failed: \(error)")
                                 self?.lastActivity.removeValue(forKey: id)
                             case .cancelled: self?.lastActivity.removeValue(forKey: id)
                             default: break
@@ -192,7 +198,10 @@ final class LoopbackServer: @unchecked Sendable {
 
     private func read(_ connection: NWConnection, accumulated: Data) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { data, _, ended, error in
-            if error != nil { connection.cancel(); return }
+            if let error {
+                InstallLog.shared.add((self.identity == nil ? "http" : "https") + " receive error: \(error)")
+                connection.cancel(); return
+            }
             self.touch(connection)
             var buffer = accumulated; if let data = data { buffer.append(data) }
             guard buffer.count <= 2 * 1024 * 1024 else { self.reply(connection, status: 413); return }
