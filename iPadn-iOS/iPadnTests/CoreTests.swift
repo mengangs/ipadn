@@ -1189,6 +1189,12 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(phone.developer, "Example Studio")
         XCTAssertEqual(StoreService.listingExtras(row, platform: .iPadOS).screenshots.first?.url.lastPathComponent, "1104x828bb.png")
         XCTAssertTrue(StoreService.listingExtras(row, platform: .tvOS).screenshots.isEmpty)
+        // A shared iPhone App ID has no Mac screenshots; iPhone ones are not shown instead.
+        XCTAssertTrue(StoreService.listingExtras(row, platform: .macOS).screenshots.isEmpty)
+        var mac = row; mac["kind"] = "mac-software"
+        XCTAssertEqual(StoreService.listingExtras(mac, platform: .macOS).screenshots.count, 1)
+        var phoneOnly = row; phoneOnly["ipadScreenshotUrls"] = []
+        XCTAssertTrue(StoreService.listingExtras(phoneOnly, platform: .iPadOS).screenshots.isEmpty)
         XCTAssertEqual(StoreService.screenshot("https://example.com/shot.jpg")?.url.lastPathComponent, "shot.jpg")
         XCTAssertNil(StoreService.screenshot("http://example.com/392x696bb.jpg"))
     }

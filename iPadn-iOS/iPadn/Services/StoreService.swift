@@ -366,12 +366,15 @@ enum StoreService {
 
     static func listingExtras(_ row: [String: Any], platform: AppPlatform) -> ListingExtras {
         func shots(_ key: String) -> [String] { row[key] as? [String] ?? [] }
+        // Only the chosen device's own screenshots: never stand in another
+        // device's. A Mac listing's screenshots are Mac screenshots only when
+        // the row is the Mac app itself, not a shared iPhone App ID.
         let preferred: [String]
         switch platform {
-        case .iOS: preferred = shots("screenshotUrls").isEmpty ? shots("ipadScreenshotUrls") : shots("screenshotUrls")
-        case .iPadOS: preferred = shots("ipadScreenshotUrls").isEmpty ? shots("screenshotUrls") : shots("ipadScreenshotUrls")
+        case .iOS: preferred = shots("screenshotUrls")
+        case .iPadOS: preferred = shots("ipadScreenshotUrls")
         case .tvOS: preferred = shots("appletvScreenshotUrls")
-        case .macOS: preferred = shots("screenshotUrls")
+        case .macOS: preferred = plistString(row["kind"]).lowercased() == "mac-software" ? shots("screenshotUrls") : []
         }
         let developerID = plistString(row["artistId"])
         return ListingExtras(screenshots: preferred.prefix(10).compactMap(screenshot),
