@@ -602,7 +602,7 @@ final class ToolStore: ObservableObject {
             "Jobs: \(downloads.jobs.count)", "Concurrent limit: \(settings.maxConcurrentDownloads)",
             "Version sources: \(settings.versionSources.filter(\.enabled).count)",
             "Task states: " + downloads.jobs.map { "\($0.id.uuidString.prefix(8)): \($0.status.rawValue)" }.joined(separator: ", "),
-            "Installation: " + (settings.automaticInstallation ? "one-tap" : "proxy"),
+            "Installation: " + (settings.automaticInstallation ? "one-tap" : settings.localInstallation ? "local certificate" : "proxy"),
             "Runs inside LiveContainer: " + (InstallLog.insideLiveContainer ? "yes" : "no"),
             "iOS " + UIDevice.current.systemVersion,
             "Installation server log:", InstallLog.shared.text.isEmpty ? "(empty)" : InstallLog.shared.text,
