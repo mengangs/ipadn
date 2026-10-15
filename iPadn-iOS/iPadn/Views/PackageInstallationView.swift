@@ -53,8 +53,7 @@ struct PackageInstallationView: View {
                           : store.settings.localInstallation ? "需先在安装方式中创建证书、安装描述文件并开启信任。"
                           : "需要已配置的代理规则。")
                          + (InstallLog.insideLiveContainer && store.settings.automaticInstallation
-                            ? "
-在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。" : ""))
+                            ? "\n在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。" : ""))
                 }
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
