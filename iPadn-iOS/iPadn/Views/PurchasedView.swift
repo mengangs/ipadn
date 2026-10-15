@@ -81,7 +81,7 @@ struct PurchasedView: View {
                     Text("账号：\(account.id)")
                 }
                 .listRowBackground(Color.clear).listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 if let error = store.ownedError { Section { InlineIssue(message: error) { Task { await store.refreshOwned() } } } }
                 if store.ownedLoading {
                     Section { HStack { ProgressView(); Text("正在同步购买记录…").font(.subheadline).foregroundStyle(.secondary) } }

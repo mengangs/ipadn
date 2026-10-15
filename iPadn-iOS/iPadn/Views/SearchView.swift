@@ -18,11 +18,11 @@ struct SearchView: View {
                     .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 2, trailing: 12))
                 SearchInput(text: $store.searchText, placeholder: "应用名称、App ID 或链接", capsule: true,
                             submit: { store.search() }, clear: { store.clearSearch() })
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) { regionPicker; platformPicker }
                 }
-                .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 8, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 8, trailing: 0))
             }
             .listRowBackground(Color.clear).listRowSeparator(.hidden)
 

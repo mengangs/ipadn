@@ -15,7 +15,10 @@ struct AppDetailView: View {
     @State private var manualID = ""
     @State private var versionSearch = ""
     @State private var versionError: String?
-    @State private var official = false
+    /// Apple's full list, on unless turned off; remembered across apps.
+    @AppStorage("storage_officialVersions") private var official = true
+    /// Shown above a public list when Apple's could not be used.
+    @State private var versionNote: String?
     /// Version number and date per version ID, read from Apple as rows appear.
     @State private var metadata: [String: VersionMetadata] = [:]
     @State private var metadataLoading = Set<String>()
@@ -35,7 +38,7 @@ struct AppDetailView: View {
     @State private var loadedVersionsKey: String?
     @State private var loadedReloadID = 0
     private var versionsKey: String {
-        "\(official)-\(reloadID)-\(store.settings.store.country)-\(store.settings.store.platform.rawValue)-\(apple.activeID ?? "")"
+        "\(usesApple)-\(reloadID)-\(store.settings.store.country)-\(store.settings.store.platform.rawValue)-\(apple.activeID ?? "")"
     }
     @State private var macWebsite: URL?
     @State private var macInstallers: [MacInstallerService.Installer] = []
@@ -60,7 +63,9 @@ struct AppDetailView: View {
     private func displayVersion(_ version: AppVersion) -> String { metadata[version.id]?.version ?? version.version }
     /// Lists from Apple carry only version IDs; each row then reads its own
     /// number and date. Other lists use what is already known.
-    private var readsMetadata: Bool { official && apple.active != nil && !metadataStopped }
+    /// Apple's list needs a signed-in account; otherwise the public list is shown.
+    private var usesApple: Bool { official && apple.active != nil }
+    private var readsMetadata: Bool { usesApple && versionNote == nil && !metadataStopped }
     var body: some View {
         List {
             Section {
@@ -336,6 +341,9 @@ struct AppDetailView: View {
                 .disabled(apple.active == nil)
             if versionsLoading { HStack { ProgressView(); Text("正在查找历史版本…").font(.subheadline).foregroundStyle(.secondary) } }
             if let versionError { InlineIssue(message: versionError) { reloadID += 1 } }
+            if let versionNote, !versionsLoading {
+                Label(versionNote, systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary)
+            }
             if versions.count > 6 {
                 SearchInput(text: $versionSearch, placeholder: "筛选版本号或版本 ID")
             }
@@ -454,7 +462,15 @@ struct AppDetailView: View {
         versionsLoading = true; versionError = nil
         defer { versionsLoading = false }
         do {
-            let result = try await store.loadVersions(for: app, force: force, official: official)
+            var result: [AppVersion]
+            do {
+                result = try await store.loadVersions(for: app, force: force, official: usesApple)
+                versionNote = nil
+            } catch is AppleLicenseError {
+                // Not got by this account yet: show what is public, and say why.
+                result = try await store.loadVersions(for: app, force: force, official: false)
+                versionNote = "此账号还没有获取这个应用，下面是公开的版本资料。获取后可查看完整列表。"
+            }
             try Task.checkCancellation(); versions = result
             if force { metadataStopped = false; metadataFailures = 0 }
             let cached = await store.cachedVersionMetadata(app: app, versionIDs: result.map(\.id))
@@ -514,7 +530,7 @@ struct AppDetailView: View {
     /// A download claims a free app's license, so a list that failed for
     /// lack of one can load now.
     private func reloadIfLicenseWasMissing() {
-        if versionError == AppleLicenseError.notOwned.errorDescription { reloadID += 1 }
+        if versionNote != nil || versionError == AppleLicenseError.notOwned.errorDescription { reloadID += 1 }
     }
 
     private func enqueueMacInstaller(_ installer: MacInstallerService.Installer) {

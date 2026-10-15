@@ -44,7 +44,7 @@ struct DownloadsView: View {
             if !manager.jobs.isEmpty {
                 Section {
                     SearchInput(text: $term, placeholder: "搜索名称、版本或 Bundle ID", capsule: true)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 }
                 .listRowBackground(Color.clear).listRowSeparator(.hidden)
             }

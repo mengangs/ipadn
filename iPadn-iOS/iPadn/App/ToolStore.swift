@@ -51,6 +51,7 @@ final class ToolStore: ObservableObject {
     /// Newer store versions of downloaded apps, by `DownloadJob.updateKey`.
     @Published private(set) var availableUpdates: [String: StoreApp] = [:]
     private var updatesChecked: (date: Date, keys: Set<String>)?
+    private var officialVersionCache: [String: (date: Date, versions: [AppVersion])] = [:]
     @Published var infoMessage: String?
     #if DEBUG
     private var visualPreview = false
@@ -281,37 +282,47 @@ final class ToolStore: ObservableObject {
         if visualPreview { return [AppVersion(id: "123456789", version: "3.2.1", source: "版本资料"), AppVersion(id: "123456788", version: "3.1.0", source: "版本资料")] }
         #endif
         let context = settings.store
-        if context.platform == .macOS {
-            guard official else {
-                // Only the latest version is public; the full list needs the account.
-                guard let id = try await MacStoreOfferService.latestVersionID(appID: app.id, bundleID: app.bundleID, country: context.country)
-                else { return [] }
-                return [AppVersion(id: id, version: app.version.isEmpty ? "未知版本" : app.version, source: "App Store")]
-            }
-            let offer = try await apple.macPackageOffer(app, useCache: settings.useSignerCache, allowLicenseAcquisition: false)
-            let ids = offer.externalVersionIDs.isEmpty ? [offer.versionID] : Array(offer.externalVersionIDs.reversed())
-            var seen = Set<String>()
-            return ids.filter { !$0.isEmpty && seen.insert($0).inserted }.map { id in
-                AppVersion(id: id, version: id == offer.versionID && !offer.displayVersion.isEmpty ? offer.displayVersion : "未知版本", source: "Apple")
-            }
+        if official, let account = apple.activeID {
+            // Apple's list costs a signed request: reuse it for a while, so
+            // opening the same app again does not ask Apple again.
+            let key = "\(account)|\(context.platform.rawValue)|\(context.country)|\(app.id)"
+            if !force, let hit = officialVersionCache[key], Date().timeIntervalSince(hit.date) < 30 * 60 { return hit.versions }
+            let list = try await appleVersions(for: app, context: context, force: force)
+            officialVersionCache[key] = (Date(), list)
+            return list
         }
-        if context.platform == .tvOS && !official {
+        if context.platform == .macOS {
+            // Only the latest version is public; the full list needs the account.
+            guard let id = try await MacStoreOfferService.latestVersionID(appID: app.id, bundleID: app.bundleID, country: context.country)
+            else { return [] }
+            return [AppVersion(id: id, version: app.version.isEmpty ? "未知版本" : app.version, source: "App Store")]
+        }
+        if context.platform == .tvOS {
             guard let listing = try await StoreService.platformApp(app.id, store: context),
                   let id = listing.externalVersionID, !id.isEmpty else { return [] }
             return [AppVersion(id: id, version: listing.version.isEmpty ? "未知版本" : listing.version, source: "Apple TV")]
         }
-        if official {
-            let asset = try await apple.asset(appID: app.id, versionID: nil, store: context,
-                                              useCache: settings.useSignerCache, allowLicenseAcquisition: false)
-            let third = context.platform == .iOS ? (try? await versions.thirdParty(app.id, sources: settings.versionSources, force: force)) ?? [] : []
-            let names = Dictionary(third.map { ($0.id, $0.version) }, uniquingKeysWith: { first, _ in first })
-            let ids = asset.externalVersionIDs.isEmpty ? [asset.app.externalVersionID ?? ""] : Array(asset.externalVersionIDs.reversed())
-            var seen = Set<String>()
+        return try await versions.thirdParty(app.id, sources: settings.versionSources, force: force)
+    }
+
+    /// Every version Apple lists for the active account. Never claims a license.
+    private func appleVersions(for app: StoreApp, context: StoreContext, force: Bool) async throws -> [AppVersion] {
+        var seen = Set<String>()
+        if context.platform == .macOS {
+            let offer = try await apple.macPackageOffer(app, useCache: settings.useSignerCache, allowLicenseAcquisition: false)
+            let ids = offer.externalVersionIDs.isEmpty ? [offer.versionID] : Array(offer.externalVersionIDs.reversed())
             return ids.filter { !$0.isEmpty && seen.insert($0).inserted }.map { id in
-                AppVersion(id: id, version: id == asset.app.externalVersionID ? asset.app.version : names[id] ?? "未知版本", source: "Apple")
+                AppVersion(id: id, version: id == offer.versionID && !offer.displayVersion.isEmpty ? offer.displayVersion : "未知版本", source: "Apple")
             }
         }
-        return try await versions.thirdParty(app.id, sources: settings.versionSources, force: force)
+        let asset = try await apple.asset(appID: app.id, versionID: nil, store: context,
+                                          useCache: settings.useSignerCache, allowLicenseAcquisition: false)
+        let third = context.platform == .iOS ? (try? await versions.thirdParty(app.id, sources: settings.versionSources, force: force)) ?? [] : []
+        let names = Dictionary(third.map { ($0.id, $0.version) }, uniquingKeysWith: { first, _ in first })
+        let ids = asset.externalVersionIDs.isEmpty ? [asset.app.externalVersionID ?? ""] : Array(asset.externalVersionIDs.reversed())
+        return ids.filter { !$0.isEmpty && seen.insert($0).inserted }.map { id in
+            AppVersion(id: id, version: id == asset.app.externalVersionID ? asset.app.version : names[id] ?? "未知版本", source: "Apple")
+        }
     }
 
     func cachedVersionMetadata(app: StoreApp, versionIDs: [String]) async -> [String: VersionMetadata] {
