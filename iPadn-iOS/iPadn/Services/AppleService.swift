@@ -11,9 +11,21 @@ final class AppleService: ObservableObject {
     var active: AppleAccount? { accounts.first { $0.id == activeID } }
     var guid: String {
         if let value = LocalResources.defaults.string(forKey: LocalResources.guid) { return value }
-        let value = (0..<6).map { _ in String(format: "%02X", UInt8.random(in: 0...255)) }.joined()
+        let value = Self.randomGUID()
         LocalResources.defaults.set(value, forKey: LocalResources.guid)
         return value
+    }
+    static func randomGUID() -> String {
+        (0..<6).map { _ in String(format: "%02X", UInt8.random(in: 0...255)) }.joined()
+    }
+    /// Replaces the identifier Apple sees for this device (专业模式).
+    func setGUID(_ value: String) throws {
+        let id = value.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard id.count == 12, id.allSatisfy(\.isHexDigit) else {
+            throw ToolError.message("设备标识需要是 12 位十六进制字符（0–9、A–F）")
+        }
+        objectWillChange.send()
+        LocalResources.defaults.set(id, forKey: LocalResources.guid)
     }
 
     init(signer: SAPSigner) {

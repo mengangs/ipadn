@@ -40,8 +40,23 @@ final class InstallLog: @unchecked Sendable {
         if lines.count > 80 { lines.removeFirst(lines.count - 80) }
         lock.unlock()
     }
-    func servedManifest() { lock.lock(); manifestServed += 1; lock.unlock() }
+    func servedManifest() { lock.lock(); manifestServed += 1; progress.readManifest = true; lock.unlock() }
     var manifestCount: Int { lock.lock(); defer { lock.unlock() }; return manifestServed }
+    /// How far the system has got with the current installation, as seen by
+    /// the servers that hand it the install details and the package.
+    struct Progress: Equatable {
+        var readManifest = false
+        var sent: UInt64 = 0
+        var total: UInt64 = 0
+        var started: Bool { total > 0 }
+        var finished: Bool { total > 0 && sent >= total }
+        var fraction: Double { total > 0 ? min(1, Double(sent) / Double(total)) : 0 }
+    }
+    private var progress = Progress()
+    var currentProgress: Progress { lock.lock(); defer { lock.unlock() }; return progress }
+    func beginInstallation() { lock.lock(); progress = Progress(); lock.unlock() }
+    func packageRequested(size: UInt64) { lock.lock(); progress.total = size; lock.unlock() }
+    func packageSent(_ count: Int) { lock.lock(); progress.sent += UInt64(count); lock.unlock() }
     var text: String { lock.lock(); defer { lock.unlock() }; return lines.joined(separator: "\n") }
 }
 
@@ -238,7 +253,7 @@ final class LoopbackServer: @unchecked Sendable {
             let name = String(components.path.dropFirst())
             lock.lock(); let file = compatibilityFiles[name]; lock.unlock()
             if let file = file {
-                sendFile(connection, url: file, range: headers["range"], head: method == "HEAD"); return
+                sendFile(connection, url: file, range: headers["range"], head: method == "HEAD", package: true); return
             }
         }
         guard components.path.hasPrefix("/\(token)/") else { InstallLog.shared.add("\(method) unknown path: 404"); reply(connection, status: 404); return }
@@ -279,11 +294,11 @@ final class LoopbackServer: @unchecked Sendable {
             lock.lock(); let file = registeredFiles[parts[1]]; lock.unlock()
             guard let file = file, file.lastPathComponent == parts[2] else { InstallLog.shared.add("\(method) package: 404"); reply(connection, status: 404); return }
             InstallLog.shared.add("\(method) package" + (headers["range"] == nil ? "" : " (range)"))
-            sendFile(connection, url: file, range: headers["range"], head: method == "HEAD")
+            sendFile(connection, url: file, range: headers["range"], head: method == "HEAD", package: true)
         } else { reply(connection, status: 404) }
     }
 
-    private func sendFile(_ connection: NWConnection, url: URL, range: String?, head: Bool) {
+    private func sendFile(_ connection: NWConnection, url: URL, range: String?, head: Bool, package: Bool = false) {
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
@@ -297,13 +312,14 @@ final class LoopbackServer: @unchecked Sendable {
             let header = responseHeader(status: selected == nil ? 200 : 206, length: length, contentType: mime, extra: extra)
             let file = try FileHandle(forReadingFrom: url)
             try file.seek(toOffset: selected?.start ?? 0)
+            if package && !head { InstallLog.shared.packageRequested(size: size) }
             connection.send(content: header, completion: .contentProcessed { error in
                 if error != nil || head { try? file.close(); connection.cancel(); return }
-                self.sendChunk(connection, file: file, remaining: length)
+                self.sendChunk(connection, file: file, remaining: length, package: package)
             })
         } catch { reply(connection, status: 404) }
     }
-    private func sendChunk(_ connection: NWConnection, file: FileHandle, remaining: UInt64) {
+    private func sendChunk(_ connection: NWConnection, file: FileHandle, remaining: UInt64, package: Bool) {
         guard remaining > 0 else { try? file.close(); connection.cancel(); return }
         do {
             let chunk = try file.read(upToCount: Int(min(remaining, 262_144))) ?? Data()
@@ -312,7 +328,8 @@ final class LoopbackServer: @unchecked Sendable {
                 if error != nil { try? file.close(); connection.cancel() }
                 else {
                     self.touch(connection)
-                    self.sendChunk(connection, file: file, remaining: remaining - UInt64(chunk.count))
+                    if package { InstallLog.shared.packageSent(chunk.count) }
+                    self.sendChunk(connection, file: file, remaining: remaining - UInt64(chunk.count), package: package)
                 }
             })
         } catch { try? file.close(); connection.cancel() }

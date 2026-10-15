@@ -146,9 +146,41 @@ final class InstallationTests: XCTestCase {
         let (received, response) = try await session.data(from: manifestURL)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         XCTAssertEqual(received, manifest)
+        InstallLog.shared.beginInstallation()
         let (package, packageResponse) = try await session.data(from: packageURL)
         XCTAssertEqual((packageResponse as? HTTPURLResponse)?.statusCode, 200)
         XCTAssertEqual(package.count, 64)
+        XCTAssertTrue(InstallLog.shared.currentProgress.finished)
+    }
+    func testManifestNamesIconsAndBrowserPageOpensTheInstallLink() throws {
+        let app = StoreApp(id: "1", name: "A \"<b>\" & B", bundleID: "test.icons", version: "1.0")
+        let package = URL(string: "https://127.0.0.1.sslip.io:4567/t/files/k/a.ipa")!
+        let small = URL(string: "https://127.0.0.1.sslip.io:4567/t/data/s")!, large = URL(string: "https://127.0.0.1.sslip.io:4567/t/data/l")!
+        let manifest = try ManifestBuilder.manifest(app: app, packageURL: package, images: (small, large))
+        let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: manifest, options: [], format: nil) as? [String: Any])
+        let assets = try XCTUnwrap((plist["items"] as? [[String: Any]])?.first?["assets"] as? [[String: String]])
+        XCTAssertEqual(assets.map { $0["kind"] }, ["software-package", "display-image", "full-size-image"])
+        XCTAssertEqual(assets.map { $0["url"] }, [package.absoluteString, small.absoluteString, large.absoluteString])
+        let link = URL(string: "itms-services://?action=download-manifest&url=https%3A%2F%2Fa.example%2Fm")!
+        let page = ManifestBuilder.browserPage(installURL: link, name: app.name)
+        XCTAssertTrue(page.contains("content=\"0;url=itms-services://?action=download-manifest&amp;url=https%3A%2F%2Fa.example%2Fm\""))
+        XCTAssertTrue(page.contains("A &quot;&lt;b&gt;&quot; &amp; B"))
+        XCTAssertFalse(page.contains("<b>"))
+    }
+    func testInstallProgressFollowsThePackageTransfer() {
+        let log = InstallLog()
+        log.beginInstallation()
+        XCTAssertFalse(log.currentProgress.started)
+        log.servedManifest()
+        XCTAssertTrue(log.currentProgress.readManifest)
+        log.packageRequested(size: 200)
+        log.packageSent(50)
+        XCTAssertEqual(log.currentProgress.fraction, 0.25)
+        XCTAssertFalse(log.currentProgress.finished)
+        log.packageSent(150)
+        XCTAssertTrue(log.currentProgress.finished)
+        log.beginInstallation()
+        XCTAssertEqual(log.currentProgress, InstallLog.Progress())
     }
     func testLocalHostDefaultsToADomainAndOldAddressesMigrate() throws {
         XCTAssertEqual(ToolSettings().localInstallHost, ManifestBuilder.defaultLocalHost)

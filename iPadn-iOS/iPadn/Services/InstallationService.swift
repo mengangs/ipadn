@@ -52,7 +52,7 @@ final class InstallationService: ObservableObject {
         return url
     }
 
-    func localInstallURL(job: DownloadJob, file: URL, host: String) async throws -> URL {
+    func localInstallURL(job: DownloadJob, file: URL, host: String, icon: URL? = nil) async throws -> URL {
         let host = try ManifestBuilder.localHost(host)
         guard let certificate = try InstallationCertificate.load() else {
             throw ToolError.message("请先在安装方式中创建证书")
@@ -71,11 +71,46 @@ final class InstallationService: ObservableObject {
         let server = LoopbackServer(identity: certificate.identity, certificates: certificate.certificates, publicHost: host)
         try await server.start()
         let packageURL = try server.register(file)
-        let data = try ManifestBuilder.manifest(app: job.app, packageURL: packageURL)
+        // The home screen shows these while the app installs.
+        var images: (small: URL, large: URL)?
+        if let icon = await Self.iconImages(icon) {
+            images = (try server.register(data: icon.small, contentType: "image/png"),
+                      try server.register(data: icon.large, contentType: "image/png"))
+        }
+        let data = try ManifestBuilder.manifest(app: job.app, packageURL: packageURL, images: images)
         let manifestURL = try server.register(data: data, contentType: "application/xml")
         InstallLog.shared.add("local install link created (host \(host), port \(manifestURL.port ?? 0), chain \(certificate.certificates.count))")
         keepHosting(server)
         return try ManifestBuilder.systemURL(manifestURL: manifestURL)
+    }
+
+    /// The app icon as the two PNG sizes an install manifest names, or nil
+    /// when there is no icon or it can't be loaded quickly.
+    private static func iconImages(_ url: URL?) async -> (small: Data, large: Data)? {
+        guard let url else { return nil }
+        var data: Data?
+        if url.isFileURL { data = try? Data(contentsOf: url) }
+        else if url.scheme == "https" { data = try? await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 5)).0 }
+        guard let data, let image = UIImage(data: data) else { return nil }
+        func png(_ side: CGFloat) -> Data {
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1
+            return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).pngData { _ in
+                image.draw(in: CGRect(x: 0, y: 0, width: side, height: side))
+            }
+        }
+        return (png(57), png(512))
+    }
+
+    /// A page on this device that opens `installURL`, for installing from
+    /// Safari when the install prompt doesn't appear from iPadn itself.
+    func browserPage(installURL: URL, app: StoreApp) throws -> URL {
+        guard let server = hosted.last ?? (files.baseURL == nil ? nil : files) else {
+            throw ToolError.message("安装服务未就绪，请重试")
+        }
+        let page = Data(ManifestBuilder.browserPage(installURL: installURL, name: app.name.isEmpty ? app.bundleID : app.name).utf8)
+        let url = try server.register(data: page, contentType: "text/html; charset=utf-8")
+        InstallLog.shared.add("browser install page created")
+        return url
     }
 
     // Original Surge/Loon rules expect http://127.0.0.1:8000/<filename>.
@@ -138,18 +173,45 @@ enum ManifestBuilder {
         }
         return host
     }
-    static func manifest(app: StoreApp, packageURL: URL) throws -> Data {
+    static func manifest(app: StoreApp, packageURL: URL, images: (small: URL, large: URL)? = nil) throws -> Data {
         guard !app.bundleID.isEmpty, !app.version.isEmpty, packageURL.scheme == "https",
               packageURL.host != nil, packageURL.user == nil, packageURL.password == nil else {
             throw ToolError.message("无法生成安装链接")
         }
+        var assets = [["kind": "software-package", "url": packageURL.absoluteString]]
+        if let images {
+            assets.append(["kind": "display-image", "url": images.small.absoluteString])
+            assets.append(["kind": "full-size-image", "url": images.large.absoluteString])
+        }
         return try PropertyListSerialization.data(fromPropertyList: ["items": [[
-            "assets": [["kind": "software-package", "url": packageURL.absoluteString]],
+            "assets": assets,
             "metadata": ["bundle-identifier": app.bundleID, "bundle-version": overwriteVersion,
                          "kind": "software", "title": app.name]
         ]]], format: .xml, options: 0)
     }
     static let manifestGenerator = "https://api.palera.in/genPlist"
+
+    /// Opens the install link as soon as Safari loads it, with a button in
+    /// case Safari asks first.
+    static func browserPage(installURL: URL, name: String) -> String {
+        func escape(_ value: String) -> String {
+            value.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
+                .replacingOccurrences(of: "'", with: "&#39;")
+        }
+        let link = escape(installURL.absoluteString), title = escape(name)
+        return """
+        <!doctype html><html lang="zh-Hans"><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <meta http-equiv="refresh" content="0;url=\(link)"><title>安装 \(title)</title>
+        <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:-apple-system,system-ui;background:#f2f2f7;color:#000}
+        main{text-align:center;padding:24px;max-width:420px}p{color:#6e6e73;line-height:1.5}
+        a{display:inline-block;margin-top:12px;padding:12px 40px;border-radius:999px;background:#007aff;color:#fff;font-weight:600;text-decoration:none}
+        @media(prefers-color-scheme:dark){body{background:#000;color:#fff}p{color:#98989d}}</style></head>
+        <body><main><h2>\(title)</h2><p>如果没有出现安装提示，请点按下方按钮。确认安装后请回到 iPadn，等待安装完成。</p>
+        <a href="\(link)">安装</a></main></body></html>
+        """
+    }
 
     /// RFC 3986 unreserved characters only (ASCII), so '&', '=' and non-ASCII
     /// text survive being nested inside another URL's query.

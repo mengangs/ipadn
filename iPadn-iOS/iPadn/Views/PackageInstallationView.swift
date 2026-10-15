@@ -10,6 +10,9 @@ struct PackageInstallationView: View {
     @State private var message: String?
     @State private var issue: String?
     @State private var sharedFile: SharedFile?
+    /// The system took the install link; show how far it has got.
+    @State private var started = false
+    @State private var attempted = false
     var body: some View {
         NavigationStack {
             Form {
@@ -32,6 +35,13 @@ struct PackageInstallationView: View {
                         }
                         .buttonStyle(PrimaryButtonStyle()).disabled(busy)
                         .accessibilityIdentifier("installation.request")
+                        if attempted || InstallLog.insideLiveContainer {
+                            Button { requestInstallation(viaBrowser: true) } label: {
+                                Label("在 Safari 中安装", systemImage: "safari").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderless).disabled(busy)
+                            .accessibilityIdentifier("installation.browser")
+                        }
                         Button {
                             if let file = manager.fileURL(job) { sharedFile = SharedFile(url: file) }
                             else { issue = "找不到安装包文件，请重新下载。" }
@@ -40,7 +50,13 @@ struct PackageInstallationView: View {
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 10)
                 }
-                if let message {
+                if started {
+                    Section {
+                        TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                            InstallProgressRow(progress: InstallLog.shared.currentProgress, note: message)
+                        }
+                    }
+                } else if let message {
                     Section { Label(message, systemImage: "checkmark.circle.fill").font(.subheadline).foregroundStyle(.primary) }
                 }
                 Section {
@@ -63,9 +79,9 @@ struct PackageInstallationView: View {
                 } message: { Text(issue ?? "") }
         }
     }
-    private func requestInstallation() {
+    private func requestInstallation(viaBrowser: Bool = false) {
         guard !busy else { return }
-        busy = true; message = nil
+        busy = true; message = nil; started = false; attempted = true
         Task { @MainActor in
             defer { busy = false }
             do {
@@ -74,28 +90,58 @@ struct PackageInstallationView: View {
                 if store.settings.automaticInstallation {
                     url = try await store.installation.automaticInstallURL(job: job, file: file)
                 } else if store.settings.localInstallation {
-                    url = try await store.installation.localInstallURL(job: job, file: file, host: store.settings.localInstallHost)
+                    url = try await store.installation.localInstallURL(job: job, file: file, host: store.settings.localInstallHost,
+                        icon: job.displayApp(packageIcon: manager.packageIconURL(job)).iconURL)
                 } else {
                     url = try await store.installation.installURL(job: job, file: file, plistServer: store.settings.plistServer)
                 }
                 let local = !store.settings.automaticInstallation && store.settings.localInstallation
                 let served = InstallLog.shared.manifestCount
-                openURL(url) { accepted in
-                    InstallLog.shared.add("install link handed to the system: " + (accepted ? "accepted" : "refused"))
-                    if accepted { message = "请在系统弹窗中确认安装，完成前请勿退出 iPadn。" }
+                InstallLog.shared.beginInstallation()
+                let target = try viaBrowser ? store.installation.browserPage(installURL: url, app: job.app) : url
+                openURL(target) { accepted in
+                    InstallLog.shared.add((viaBrowser ? "install page handed to Safari: " : "install link handed to the system: ")
+                                          + (accepted ? "accepted" : "refused"))
+                    if accepted {
+                        started = true
+                        message = viaBrowser ? "请在 Safari 中确认安装，然后回到 iPadn 等待完成。" : "请在系统弹窗中确认安装，完成前请勿退出 iPadn。"
+                    }
                     else { issue = "无法开始安装，请检查安装方式，或导出安装包。"; store.installation.stopHosting() }
                     guard accepted, local else { return }
                     // The system fetches the install details from iPadn right away;
                     // if it never did, it could not connect.
                     Task { @MainActor in
                         try? await Task.sleep(for: .seconds(6))
-                        if InstallLog.shared.manifestCount == served {
-                            message = nil
+                        if InstallLog.shared.manifestCount == served, !viaBrowser {
+                            message = nil; started = false
                             issue = "系统没能连接到 iPadn 的本机安装服务。请在「设置 › 通用 › 关于本机 › 证书信任设置」中确认已开启 iPadn 本机安装 CA；也可以改用一键安装。"
                         }
                     }
                 }
             } catch { issue = error.localizedDescription }
         }
+    }
+}
+
+/// What the system is doing with the installation right now.
+private struct InstallProgressRow: View {
+    let progress: InstallLog.Progress
+    let note: String?
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if progress.finished {
+                Label("安装包已传输完成，可以在主屏幕查看安装进度。", systemImage: "checkmark.circle.fill")
+            } else if progress.started {
+                Label("正在传输安装包 \(Int(progress.fraction * 100))%", systemImage: "arrow.down.app")
+                ProgressView(value: progress.fraction).tint(UX.tint)
+                    .animation(.linear(duration: 0.4), value: progress.fraction)
+            } else if progress.readManifest {
+                Label("系统已开始安装，正在准备…", systemImage: "hourglass")
+            } else {
+                Label(note ?? "请在系统弹窗中确认安装。", systemImage: "hand.tap")
+            }
+        }
+        .font(.subheadline)
+        .accessibilityIdentifier("installation.progress")
     }
 }

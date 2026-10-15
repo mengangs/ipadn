@@ -219,7 +219,17 @@ struct DownloadsView: View {
                         if let error = job.error { Section("未完成原因") { Text(error).font(.subheadline) } }
                         if job.status == .completed {
                             if let file = manager.fileURL(job) {
-                                if job.rawFormat == nil { Section { PackagePlatformRow(file: file) } }
+                                if job.rawFormat == nil {
+                                    Section {
+                                        PackagePlatformRow(file: file)
+                                        if store.settings.proMode {
+                                            NavigationLink { PackageContentsView(file: file) } label: {
+                                                Label("浏览安装包内容", systemImage: "folder")
+                                            }
+                                            .accessibilityIdentifier("download.package-contents")
+                                        }
+                                    }
+                                }
                                 Section { ShareLink(item: file) { Label("导出文件", systemImage: "square.and.arrow.up") } }
                             }
                         }

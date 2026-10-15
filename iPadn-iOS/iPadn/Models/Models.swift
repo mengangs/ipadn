@@ -221,6 +221,8 @@ struct ToolSettings: Codable, Equatable {
     var notifications = true
     /// Background checks for newer versions of downloaded apps, with a notification.
     var updateNotifications = true
+    /// Shows tools for advanced users: package contents, tokens, device ID.
+    var proMode = false
     var useSignerCache = true
     var appearance = "system"
     var plistServer = ""
@@ -237,7 +239,7 @@ struct ToolSettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
         case useSignerCache, appearance, plistServer, versionSources, localInstallation, localInstallHost
-        case automaticInstallation, updateNotifications
+        case automaticInstallation, updateNotifications, proMode
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -248,6 +250,7 @@ struct ToolSettings: Codable, Equatable {
         searchLimit = min(200, max(1, try values.decodeIfPresent(Int.self, forKey: .searchLimit) ?? searchLimit))
         notifications = try values.decodeIfPresent(Bool.self, forKey: .notifications) ?? notifications
         updateNotifications = try values.decodeIfPresent(Bool.self, forKey: .updateNotifications) ?? updateNotifications
+        proMode = try values.decodeIfPresent(Bool.self, forKey: .proMode) ?? proMode
         useSignerCache = try values.decodeIfPresent(Bool.self, forKey: .useSignerCache) ?? useSignerCache
         appearance = try values.decodeIfPresent(String.self, forKey: .appearance) ?? appearance
         if !["system", "light", "dark"].contains(appearance) { appearance = "system" }
