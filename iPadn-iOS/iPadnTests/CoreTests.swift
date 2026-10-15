@@ -222,6 +222,41 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(StoreService.supportsAppleTV([:]))
     }
 
+    func testPackageContentsListFoldersAndExtractOneFile() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("contents.ipa")
+        let archive = try Archive(url: url, accessMode: .create)
+        let contents = ["Payload/Target.app/Info.plist": Data("<plist/>".utf8),
+                        "Payload/Target.app/en.lproj/Main.strings": Data(repeating: 65, count: 4096),
+                        "iTunesMetadata.plist": Data("x".utf8)]
+        for (path, data) in contents {
+            let target = root.appendingPathComponent("src").appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: target)
+            try archive.addEntry(with: path, relativeTo: root.appendingPathComponent("src"), compressionMethod: .deflate)
+        }
+        let items = try PackageContents.items(url)
+        XCTAssertEqual(PackageContents.children(of: "", in: items).map(\.name), ["Payload", "iTunesMetadata.plist"])
+        XCTAssertEqual(PackageContents.children(of: "Payload/Target.app", in: items).map(\.name), ["en.lproj", "Info.plist"])
+        let strings = try XCTUnwrap(items.first { $0.name == "Main.strings" })
+        XCTAssertEqual(strings.size, 4096)
+        let extracted = try PackageContents.extract(strings.path, from: url)
+        defer { try? FileManager.default.removeItem(at: extracted.deletingLastPathComponent()) }
+        XCTAssertEqual(try Data(contentsOf: extracted), contents["Payload/Target.app/en.lproj/Main.strings"])
+        XCTAssertThrowsError(try PackageContents.extract("Payload/Target.app", from: url))
+        XCTAssertThrowsError(try PackageContents.extract("../etc/passwd", from: url))
+    }
+    func testProModeIsOffByDefaultAndRandomDeviceIDsAreValid() throws {
+        XCTAssertFalse(ToolSettings().proMode)
+        let data = try JSONSerialization.data(withJSONObject: ["proMode": true])
+        XCTAssertTrue(try JSONDecoder().decode(ToolSettings.self, from: data).proMode)
+        let id = AppleService.randomGUID()
+        XCTAssertEqual(id.count, 12)
+        XCTAssertTrue(id.allSatisfy(\.isHexDigit))
+        XCTAssertNotNil(MacPackageOffer.serialNumber(guid: id))
+    }
     func testActualIPAFamilyMustMatchRequestedPlatform() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

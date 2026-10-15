@@ -95,6 +95,17 @@ struct SettingsView: View {
                 NavigationLink { InstallationSettingsView() } label: { Label("安装设置", systemImage: "arrow.down.app") }
                     .accessibilityIdentifier("settings.installation")
             }
+            Section {
+                Toggle("专业模式", isOn: $store.settings.proMode.animation())
+                    .accessibilityIdentifier("settings.pro-mode")
+                if store.settings.proMode {
+                    NavigationLink { CredentialsView() } label: { Label("账号与设备标识", systemImage: "key") }
+                        .accessibilityIdentifier("settings.credentials")
+                }
+            } footer: {
+                Text(store.settings.proMode ? "可以在下载任务详情中浏览安装包内容，并查看账号令牌和设备标识。"
+                     : "打开后可以浏览安装包内容、查看账号令牌和修改设备标识。")
+            }
             Section("维护") {
                 NavigationLink { StorageView() } label: { Label("存储空间", systemImage: "internaldrive") }
                     .accessibilityIdentifier("settings.storage")

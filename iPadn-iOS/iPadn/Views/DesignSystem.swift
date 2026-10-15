@@ -171,6 +171,24 @@ struct SearchInput: View {
     }
 }
 
+/// A section header's 刷新 that turns into a small spinner while busy, in
+/// the same place, so nothing around it moves. Taps while busy are ignored.
+struct RefreshButton: View {
+    let busy: Bool
+    let action: () -> Void
+    @State private var showsSpinner = false
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button("刷新") { if !busy { action() } }
+                .font(.body).textCase(nil)
+                .opacity(showsSpinner ? 0 : 1)
+            if showsSpinner { ProgressView().controlSize(.small).transition(.opacity) }
+        }
+        .revealAfterDelay(busy, into: $showsSpinner)
+        .accessibilityValue(busy ? "正在刷新" : "")
+    }
+}
+
 /// Root-tab chrome that pairs with `PageHeader`. The navigation bar stays
 /// visible (hiding it made the page jump when popping back from a pushed
 /// page); it shows the small title only once the header has scrolled away.
@@ -193,6 +211,19 @@ struct RootTabBar: ViewModifier {
     }
 }
 extension View {
+    /// Sets `shown` once `active` has lasted a moment and clears it as soon
+    /// as it ends, so quick work (a cache hit) never flashes a spinner.
+    func revealAfterDelay(_ active: Bool, into shown: Binding<Bool>, delay: Duration = .milliseconds(300)) -> some View {
+        task(id: active) {
+            guard active else {
+                if shown.wrappedValue { withAnimation(.easeOut(duration: 0.15)) { shown.wrappedValue = false } }
+                return
+            }
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeIn(duration: 0.15)) { shown.wrappedValue = true }
+        }
+    }
     func rootTabBar(_ title: String, headerScrolledAway: Bool) -> some View {
         modifier(RootTabBar(title: title, headerScrolledAway: headerScrolledAway))
     }

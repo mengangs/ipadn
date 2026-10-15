@@ -69,13 +69,16 @@ final class InteractionTests: XCTestCase {
         install.tap()
         let settings = app.buttons["installation.settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5)); settings.tap()
-        // One-tap installation is the default; the proxy method asks for its manifest service.
-        let proxyMode = app.buttons["代理服务"]
-        XCTAssertTrue(proxyMode.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["本机证书"].exists)
-        proxyMode.tap()
-        XCTAssertTrue(app.textFields["installation.plist-server"].waitForExistence(timeout: 5))
+        // One-tap installation is the default; the device-certificate mode is advanced.
+        let localMode = app.buttons["本机证书"]
+        XCTAssertTrue(localMode.waitForExistence(timeout: 5)); localMode.tap()
+        XCTAssertTrue(app.buttons["installation.certificate"].waitForExistence(timeout: 5))
         attach("18-installation-settings", app: app)
+        let create = app.buttons["installation.create-certificate"]
+        if !create.isHittable { app.swipeUp() }
+        XCTAssertTrue(create.waitForExistence(timeout: 5)); create.tap()
+        XCTAssertTrue(app.buttons["installation.local-profile"].waitForExistence(timeout: 20))
+        attach("20-local-certificate-created", app: app)
     }
     func testSystemActuallyChangesAlternateIconAndRestoresDefault() {
         let app = XCUIApplication()

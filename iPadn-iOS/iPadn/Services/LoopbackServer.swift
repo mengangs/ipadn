@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Security
 
 struct HTTPByteRange: Equatable {
     let start: UInt64
@@ -23,18 +24,43 @@ struct HTTPByteRange: Equatable {
 
 /// Only binds loopback. A random path capability protects runtime, proxy, and registered files.
 // Listener/startup state is confined to queue; the URL and file registries use lock.
-/// What the installation server saw, for diagnostics: failed connections
-/// and which resources were served. No tokens, file names or account data.
+/// What the installation servers saw, for diagnostics: connections that
+/// failed (with the TLS error) and which resources were served. No tokens,
+/// file names or account data.
 final class InstallLog: @unchecked Sendable {
     static let shared = InstallLog()
+    /// LiveContainer runs apps inside its own process and sets this.
+    static let insideLiveContainer = ProcessInfo.processInfo.environment["LC_HOME_PATH"] != nil
     private let lock = NSLock()
     private var lines: [String] = []
+    private(set) var manifestServed = 0
     func add(_ line: String) {
         let stamp = ISO8601DateFormatter.string(from: Date(), timeZone: .current, formatOptions: [.withTime, .withColonSeparatorInTime])
         lock.lock(); lines.append(stamp + " " + line)
         if lines.count > 80 { lines.removeFirst(lines.count - 80) }
         lock.unlock()
     }
+    func servedManifest() { lock.lock(); manifestServed += 1; progress.readManifest = true; lock.unlock() }
+    var manifestCount: Int { lock.lock(); defer { lock.unlock() }; return manifestServed }
+    /// How far the system has got with the current installation, as seen by
+    /// the servers that hand it the install details and the package.
+    struct Progress: Equatable {
+        var readManifest = false
+        var sent: UInt64 = 0
+        var total: UInt64 = 0
+        var started: Bool { total > 0 }
+        var finished: Bool { total > 0 && sent >= total }
+        var fraction: Double { total > 0 ? min(1, Double(sent) / Double(total)) : 0 }
+    }
+    private var progress = Progress()
+    var currentProgress: Progress { lock.lock(); defer { lock.unlock() }; return progress }
+    func beginInstallation() { lock.lock(); progress = Progress(); lock.unlock() }
+    /// A request for the package starting at byte `start`; one from the
+    /// beginning is the system starting over.
+    func packageRequested(size: UInt64, from start: UInt64 = 0) {
+        lock.lock(); progress.total = size; progress.sent = start == 0 ? 0 : max(progress.sent, start); lock.unlock()
+    }
+    func packageSent(_ count: Int) { lock.lock(); progress.sent += UInt64(count); lock.unlock() }
     var text: String { lock.lock(); defer { lock.unlock() }; return lines.joined(separator: "\n") }
 }
 
@@ -46,6 +72,9 @@ final class LoopbackServer: @unchecked Sendable {
     private var registeredFiles: [String: URL] = [:]
     private var registeredData: [String: (Data, String)] = [:]
     private var compatibilityFiles: [String: URL] = [:]
+    private let identity: SecIdentity?
+    private let chain: [SecCertificate]
+    private let publicHost: String
     private let port: UInt16?
     private let compatibilityMode: Bool
     private let token = UUID().uuidString
@@ -62,8 +91,10 @@ final class LoopbackServer: @unchecked Sendable {
         "https://fpinit.itunes.apple.com/v1/signSapSetup/legacy"
     ]
 
-    init(port: UInt16? = nil, compatibilityMode: Bool = false) {
+    init(port: UInt16? = nil, compatibilityMode: Bool = false, identity: SecIdentity? = nil,
+         certificates: [SecCertificate] = [], publicHost: String = "127.0.0.1") {
         self.port = port; self.compatibilityMode = compatibilityMode
+        self.identity = identity; self.chain = certificates; self.publicHost = publicHost
     }
 
     func start() async throws {
@@ -73,7 +104,19 @@ final class LoopbackServer: @unchecked Sendable {
                 self.starters.append(continuation)
                 guard self.listener == nil else { return }
                 do {
-                    let parameters = NWParameters.tcp
+                    let parameters: NWParameters
+                    if let identity = self.identity {
+                        // Send intermediates too: iOS does not fetch a missing
+                        // issuer for the installer's TLS connection.
+                        let created = self.chain.count > 1
+                            ? sec_identity_create_with_certificates(identity, self.chain as CFArray)
+                            : sec_identity_create(identity)
+                        guard let localIdentity = created else { throw ToolError.message("无法加载安装服务证书") }
+                        let tls = NWProtocolTLS.Options()
+                        sec_protocol_options_set_local_identity(tls.securityProtocolOptions, localIdentity)
+                        sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)
+                        parameters = NWParameters(tls: tls, tcp: NWProtocolTCP.Options())
+                    } else { parameters = .tcp }
                     parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: self.port.flatMap(NWEndpoint.Port.init(rawValue:)) ?? .any)
                     // A fixed port may still be in TIME_WAIT from the last session.
                     if self.port != nil { parameters.allowLocalEndpointReuse = true }
@@ -86,20 +129,20 @@ final class LoopbackServer: @unchecked Sendable {
                             guard let port = listener.port else { return }
                             self.lock.lock()
                             var address = URLComponents()
-                            address.scheme = "http"
-                            address.host = "127.0.0.1"; address.port = Int(port.rawValue)
+                            address.scheme = self.identity == nil ? "http" : "https"
+                            address.host = self.publicHost; address.port = Int(port.rawValue)
                             address.path = "/\(self.token)/"
                             self.readyURL = address.url
                             self.lock.unlock()
                             self.finishStart(.success(()))
                         case .failed(let error):
-                            InstallLog.shared.add("server stopped: \(error)")
+                            InstallLog.shared.add((self.identity == nil ? "http" : "https") + " server stopped: \(error)")
                             self.lock.lock(); self.readyURL = nil; self.lock.unlock()
                             self.listener = nil
                             self.finishStart(.failure(error))
                             listener.cancel()
                         case .cancelled:
-                            InstallLog.shared.add("server closed")
+                            InstallLog.shared.add((self.identity == nil ? "http" : "https") + " server closed")
                             self.lock.lock(); self.readyURL = nil; self.lock.unlock()
                             self.listener = nil
                             self.finishStart(.failure(ToolError.message("安装已中断，请重试")))
@@ -116,11 +159,15 @@ final class LoopbackServer: @unchecked Sendable {
                     listener.newConnectionHandler = { [weak self] connection in
                         guard let self else { connection.cancel(); return }
                         let id = ObjectIdentifier(connection)
+                        let secure = self.identity != nil
+                        let kind = secure ? "https" : "http"
+                        if secure { InstallLog.shared.add("https connection accepted") }
                         connection.stateUpdateHandler = { [weak self] state in
                             switch state {
-                            case .waiting(let error): InstallLog.shared.add("connection waiting: \(error)")
+                            case .ready: if secure { InstallLog.shared.add("https connection ready (TLS done)") }
+                            case .waiting(let error): InstallLog.shared.add(kind + " connection waiting: \(error)")
                             case .failed(let error):
-                                InstallLog.shared.add("connection failed: \(error)")
+                                InstallLog.shared.add(kind + " connection failed: \(error)")
                                 self?.lastActivity.removeValue(forKey: id)
                             case .cancelled: self?.lastActivity.removeValue(forKey: id)
                             default: break
@@ -173,7 +220,7 @@ final class LoopbackServer: @unchecked Sendable {
     private func read(_ connection: NWConnection, accumulated: Data) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { data, _, ended, error in
             if let error {
-                InstallLog.shared.add("receive error: \(error)")
+                InstallLog.shared.add((self.identity == nil ? "http" : "https") + " receive error: \(error)")
                 connection.cancel(); return
             }
             self.touch(connection)
@@ -210,7 +257,7 @@ final class LoopbackServer: @unchecked Sendable {
             let name = String(components.path.dropFirst())
             lock.lock(); let file = compatibilityFiles[name]; lock.unlock()
             if let file = file {
-                sendFile(connection, url: file, range: headers["range"], head: method == "HEAD"); return
+                sendFile(connection, url: file, range: headers["range"], head: method == "HEAD", package: true); return
             }
         }
         guard components.path.hasPrefix("/\(token)/") else { InstallLog.shared.add("\(method) unknown path: 404"); reply(connection, status: 404); return }
@@ -238,6 +285,7 @@ final class LoopbackServer: @unchecked Sendable {
             lock.lock(); let resource = registeredData[parts[1]]; lock.unlock()
             guard let resource else { InstallLog.shared.add("\(method) data: 404"); reply(connection, status: 404); return }
             InstallLog.shared.add("\(method) data (\(resource.1)): 200")
+            if resource.1 == "application/xml" { InstallLog.shared.servedManifest() }
             let header = responseHeader(status: 200, length: UInt64(resource.0.count), contentType: resource.1, extra: [:])
             var response = header
             if method != "HEAD" { response.append(resource.0) }
@@ -250,11 +298,11 @@ final class LoopbackServer: @unchecked Sendable {
             lock.lock(); let file = registeredFiles[parts[1]]; lock.unlock()
             guard let file = file, file.lastPathComponent == parts[2] else { InstallLog.shared.add("\(method) package: 404"); reply(connection, status: 404); return }
             InstallLog.shared.add("\(method) package" + (headers["range"] == nil ? "" : " (range)"))
-            sendFile(connection, url: file, range: headers["range"], head: method == "HEAD")
+            sendFile(connection, url: file, range: headers["range"], head: method == "HEAD", package: true)
         } else { reply(connection, status: 404) }
     }
 
-    private func sendFile(_ connection: NWConnection, url: URL, range: String?, head: Bool) {
+    private func sendFile(_ connection: NWConnection, url: URL, range: String?, head: Bool, package: Bool = false) {
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
@@ -268,13 +316,14 @@ final class LoopbackServer: @unchecked Sendable {
             let header = responseHeader(status: selected == nil ? 200 : 206, length: length, contentType: mime, extra: extra)
             let file = try FileHandle(forReadingFrom: url)
             try file.seek(toOffset: selected?.start ?? 0)
+            if package && !head { InstallLog.shared.packageRequested(size: size, from: selected?.start ?? 0) }
             connection.send(content: header, completion: .contentProcessed { error in
                 if error != nil || head { try? file.close(); connection.cancel(); return }
-                self.sendChunk(connection, file: file, remaining: length)
+                self.sendChunk(connection, file: file, remaining: length, package: package)
             })
         } catch { reply(connection, status: 404) }
     }
-    private func sendChunk(_ connection: NWConnection, file: FileHandle, remaining: UInt64) {
+    private func sendChunk(_ connection: NWConnection, file: FileHandle, remaining: UInt64, package: Bool) {
         guard remaining > 0 else { try? file.close(); connection.cancel(); return }
         do {
             let chunk = try file.read(upToCount: Int(min(remaining, 262_144))) ?? Data()
@@ -283,7 +332,8 @@ final class LoopbackServer: @unchecked Sendable {
                 if error != nil { try? file.close(); connection.cancel() }
                 else {
                     self.touch(connection)
-                    self.sendChunk(connection, file: file, remaining: remaining - UInt64(chunk.count))
+                    if package { InstallLog.shared.packageSent(chunk.count) }
+                    self.sendChunk(connection, file: file, remaining: remaining - UInt64(chunk.count), package: package)
                 }
             })
         } catch { try? file.close(); connection.cancel() }

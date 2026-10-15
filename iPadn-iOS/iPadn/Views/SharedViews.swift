@@ -5,17 +5,17 @@ import UIKit
 struct AppIcon: View {
     var url: URL?
     var size: CGFloat = 56
-    @State private var localImage: UIImage?
+    /// The image last loaded, with the address it came from.
+    @State private var loaded: (url: URL, image: UIImage)?
+    private var source: URL? { url.map { $0.isFileURL ? $0 : StoreService.sharpArtwork($0) } }
     var body: some View {
-        Group {
-            if let url, url.isFileURL {
-                if let localImage { Image(uiImage: localImage).resizable().interpolation(.high).scaledToFit() }
-                else { placeholder }
-            } else {
-                AsyncImage(url: url.map(StoreService.sharpArtwork)) { phase in
-                    if let image = phase.image { image.resizable().interpolation(.high).scaledToFit() }
-                    else { placeholder }
-                }
+        let source = source
+        // An icon already in memory shows in the very first frame.
+        let image = loaded.flatMap { $0.url == source ? $0.image : nil } ?? source.flatMap { IconCache.cached($0, size: size) }
+        ZStack {
+            placeholder
+            if let image {
+                Image(uiImage: image).resizable().interpolation(.high).scaledToFit().transition(.opacity)
             }
         }
         .frame(width: size, height: size)
@@ -23,12 +23,15 @@ struct AppIcon: View {
         .overlay(RoundedRectangle(cornerRadius: size * UX.iconCorner, style: .continuous)
             .stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
         .accessibilityHidden(true)
-        .task(id: url) {
-            localImage = nil
-            guard let url, url.isFileURL else { return }
-            let data = await Task.detached(priority: .utility) { try? Data(contentsOf: url) }.value
-            guard !Task.isCancelled, let data else { return }
-            localImage = UIImage(data: data)
+        .task(id: source) {
+            guard let source else { return }
+            // Kept here too, in case memory pressure later empties the cache.
+            if let cached = IconCache.cached(source, size: size) {
+                if loaded?.url != source { loaded = (source, cached) }
+                return
+            }
+            guard let image = await IconCache.load(source, size: size), !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) { loaded = (source, image) }
         }
     }
     private var placeholder: some View {
@@ -37,7 +40,36 @@ struct AppIcon: View {
             Image(systemName: "app.fill").font(.system(size: size * 0.4)).foregroundStyle(.quaternary)
         }
     }
+}
 
+/// Decoded app icons shared by every `AppIcon`, so a row scrolled back into
+/// view, or the same app on the next page, shows its icon at once instead of
+/// a placeholder while it loads again.
+enum IconCache {
+    /// Bounded by memory, not count: hundreds of list icons fit.
+    private static let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>(); cache.totalCostLimit = 80 * 1024 * 1024; return cache
+    }()
+    /// List rows and the large detail icon keep separate, right-sized copies.
+    private static func pixels(for size: CGFloat) -> CGFloat { size <= 64 ? 192 : 384 }
+    private static func key(_ url: URL, _ size: CGFloat) -> NSString { "\(Int(pixels(for: size)))|\(url.absoluteString)" as NSString }
+    static func cost(of image: UIImage) -> Int {
+        Int(image.size.width * image.scale * image.size.height * image.scale * 4)
+    }
+    static func cached(_ url: URL, size: CGFloat) -> UIImage? { cache.object(forKey: key(url, size)) }
+    static func load(_ url: URL, size: CGFloat) async -> UIImage? {
+        if let image = cached(url, size: size) { return image }
+        let data: Data?
+        if url.isFileURL { data = await Task.detached(priority: .utility) { try? Data(contentsOf: url) }.value }
+        else { data = try? await URLSession.shared.data(from: url).0 }
+        guard let data, let image = UIImage(data: data) else { return nil }
+        // Scaled and decoded now, off the main thread, so drawing it doesn't
+        // stall scrolling and a 1024 px icon doesn't sit in memory for a row.
+        let side = pixels(for: size)
+        let ready = await image.byPreparingThumbnail(ofSize: CGSize(width: side, height: side)) ?? image
+        cache.setObject(ready, forKey: key(url, size), cost: cost(of: ready))
+        return ready
+    }
 }
 
 /// App Store list row: icon, name, subtitle and an optional trailing action.

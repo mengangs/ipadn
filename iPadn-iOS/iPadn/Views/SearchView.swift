@@ -18,18 +18,20 @@ struct SearchView: View {
                     .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 2, trailing: 12))
                 SearchInput(text: $store.searchText, placeholder: "应用名称、App ID 或链接", capsule: true,
                             submit: { store.search() }, clear: { store.clearSearch() })
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) { regionPicker; platformPicker }
                 }
-                .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 8, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 8, trailing: 0))
             }
             .listRowBackground(Color.clear).listRowSeparator(.hidden)
 
+            // Placeholders where the results will appear, so they replace the
+            // loading rows instead of pushing everything down.
             if store.searching {
                 Section {
                     HStack { ProgressView(); Text("正在搜索…").font(.subheadline).foregroundStyle(.secondary); Spacer(); Button("取消") { store.cancelSearch() } }
-                    if store.results.isEmpty && store.localResults.isEmpty { AppSkeleton(); AppSkeleton() }
+                    if store.results.isEmpty { AppSkeleton(); AppSkeleton() }
                 }
             }
             if let error = store.searchError {

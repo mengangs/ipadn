@@ -221,11 +221,15 @@ struct ToolSettings: Codable, Equatable {
     var notifications = true
     /// Background checks for newer versions of downloaded apps, with a notification.
     var updateNotifications = true
+    /// Shows tools for advanced users: package contents, tokens, device ID.
+    var proMode = false
     var useSignerCache = true
     var appearance = "system"
     var plistServer = ""
     /// One-tap installation through the public loopback certificate (default).
     var automaticInstallation = true
+    var localInstallation = true
+    var localInstallHost = ManifestBuilder.defaultLocalHost
     var versionSources: [VersionSource] = [
         VersionSource(name: "Timbrd", urlTemplate: "https://api.timbrd.com/apple/app-version/index.php?id={id}", containerKey: "", reverse: true),
         VersionSource(name: "Bilin", urlTemplate: "https://apis.bilin.eu.org/history/{id}", containerKey: "data", reverse: false)
@@ -234,10 +238,9 @@ struct ToolSettings: Codable, Equatable {
     init() { }
     private enum CodingKeys: String, CodingKey {
         case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
-        case useSignerCache, appearance, plistServer, versionSources
-        case automaticInstallation, updateNotifications
+        case useSignerCache, appearance, plistServer, versionSources, localInstallation, localInstallHost
+        case automaticInstallation, updateNotifications, proMode
     }
-    private enum LegacyKeys: String, CodingKey { case localInstallation }
     init(from decoder: Decoder) throws {
         self.init()
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -247,18 +250,14 @@ struct ToolSettings: Codable, Equatable {
         searchLimit = min(200, max(1, try values.decodeIfPresent(Int.self, forKey: .searchLimit) ?? searchLimit))
         notifications = try values.decodeIfPresent(Bool.self, forKey: .notifications) ?? notifications
         updateNotifications = try values.decodeIfPresent(Bool.self, forKey: .updateNotifications) ?? updateNotifications
+        proMode = try values.decodeIfPresent(Bool.self, forKey: .proMode) ?? proMode
         useSignerCache = try values.decodeIfPresent(Bool.self, forKey: .useSignerCache) ?? useSignerCache
         appearance = try values.decodeIfPresent(String.self, forKey: .appearance) ?? appearance
         if !["system", "light", "dark"].contains(appearance) { appearance = "system" }
         plistServer = try values.decodeIfPresent(String.self, forKey: .plistServer) ?? plistServer
+        localInstallation = try values.decodeIfPresent(Bool.self, forKey: .localInstallation) ?? plistServer.isEmpty
+        localInstallHost = ManifestBuilder.migratedLocalHost(try values.decodeIfPresent(String.self, forKey: .localInstallHost) ?? localInstallHost)
         automaticInstallation = try values.decodeIfPresent(Bool.self, forKey: .automaticInstallation) ?? automaticInstallation
-        // The device-certificate method was removed: those settings, and a
-        // proxy method without a manifest service, fall back to one-tap.
-        let legacy = try decoder.container(keyedBy: LegacyKeys.self)
-        let usedLocalCertificate = try legacy.decodeIfPresent(Bool.self, forKey: .localInstallation) ?? false
-        if !automaticInstallation && (usedLocalCertificate || plistServer.trimmingCharacters(in: .whitespaces).isEmpty) {
-            automaticInstallation = true
-        }
         versionSources = try values.decodeIfPresent([VersionSource].self, forKey: .versionSources) ?? versionSources
     }
 }
