@@ -60,26 +60,29 @@ struct DownloadsView: View {
             } else {
                 ForEach(visible) { job in
                     Section {
-                        Group {
+                        // One row in both modes, so entering edit mode slides the
+                        // selection mark in and the share button out.
+                        HStack(spacing: 12) {
                             if editMode.isEditing {
-                                Button { toggleSelection(job.id) } label: {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: selection.contains(job.id) ? "checkmark.circle.fill" : "circle")
-                                            .font(.title2)
-                                            .foregroundStyle(selection.contains(job.id) ? Color.accentColor : Color.secondary)
-                                            .frame(width: 32)
-                                        taskContent(job, update: updates[job.id]).allowsHitTesting(false)
-                                    }.contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel((selection.contains(job.id) ? "取消选择 " : "选择 ") + job.app.name)
-                                .accessibilityIdentifier("download.select." + job.id.uuidString)
-                            } else {
-                                taskContent(job, update: updates[job.id])
-                                    .accessibilityElement(children: .contain)
-                                    .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
+                                Image(systemName: selection.contains(job.id) ? "checkmark.circle.fill" : "circle")
+                                    .font(.title2)
+                                    .foregroundStyle(selection.contains(job.id) ? Color.accentColor : Color.secondary)
+                                    .frame(width: 32)
+                                    .transition(.move(edge: .leading).combined(with: .opacity))
+                            }
+                            taskContent(job, update: updates[job.id], editing: editMode.isEditing)
+                                .allowsHitTesting(!editMode.isEditing)
+                        }
+                        .overlay {
+                            if editMode.isEditing {
+                                Button { toggleSelection(job.id) } label: { Color.clear.contentShape(Rectangle()) }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel((selection.contains(job.id) ? "取消选择 " : "选择 ") + job.app.name)
+                                    .accessibilityIdentifier("download.select." + job.id.uuidString)
                             }
                         }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             if !editMode.isEditing && job.status != .processing && job.status != .pausing {
                                 Button { askDelete([job.id]) } label: { Label("删除", systemImage: "trash") }.tint(.red)
@@ -129,7 +132,7 @@ struct DownloadsView: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarLeading) {
                 Button(editMode.isEditing ? "完成" : "编辑") {
-                    editMode = editMode.isEditing ? .inactive : .active
+                    withAnimation(.snappy(duration: 0.3)) { editMode = editMode.isEditing ? .inactive : .active }
                 }
                 .disabled(manager.jobs.isEmpty)
                 .accessibilityIdentifier("downloads.edit")
@@ -251,8 +254,8 @@ struct DownloadsView: View {
         }
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
     }
-    private func taskContent(_ job: DownloadJob, update: StoreApp?) -> some View {
-        DownloadTaskRow(job: job, update: update, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
+    private func taskContent(_ job: DownloadJob, update: StoreApp?, editing: Bool = false) -> some View {
+        DownloadTaskRow(job: job, update: update, editing: editing, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
             if let file = manager.fileURL(job) { share = SharedFile(url: file) }
         }, updating: { downloadUpdate(job) })
     }
@@ -315,6 +318,8 @@ struct DownloadTaskRow: View {
     let job: DownloadJob
     /// The store's newer version of this app, when there is one.
     var update: StoreApp? = nil
+    /// In edit mode the share button steps aside to leave the row room.
+    var editing = false
     var inspecting: () -> Void
     var primary: () -> Void
     var exporting: () -> Void
@@ -426,15 +431,18 @@ struct DownloadTaskRow: View {
                         .buttonStyle(CapsuleButtonStyle(filled: true))
                         .accessibilityIdentifier("download.install." + job.app.id)
                 }
-                Button(action: exporting) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.body.weight(.semibold))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+                if !editing {
+                    Button(action: exporting) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.body.weight(.semibold))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("分享")
+                    .accessibilityIdentifier("download.export." + job.app.id)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("分享")
-                .accessibilityIdentifier("download.export." + job.app.id)
             }
         }
     }

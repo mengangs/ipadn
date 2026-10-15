@@ -50,6 +50,8 @@ struct AppDetailView: View {
     @State private var headerAway = false
     @State private var extras: StoreService.ListingExtras?
     @State private var viewing: StoreService.Screenshot?
+    @State private var pageWidth: CGFloat = 0
+    @Namespace private var screenshotZoom
     @State private var developerApps: [StoreApp] = []
     /// Listing artwork, else what a download of this app brought along
     /// (delisted apps have no public listing to show).
@@ -76,7 +78,8 @@ struct AppDetailView: View {
             if let shots = extras?.screenshots, !shots.isEmpty {
                 Section {
                     // On the page background, edge to edge, as in the App Store.
-                    ScreenshotStrip(screenshots: shots, platform: store.settings.store.platform) { viewing = $0 }
+                    ScreenshotStrip(screenshots: shots, platform: store.settings.store.platform,
+                                    pageWidth: pageWidth, zoom: screenshotZoom) { viewing = $0 }
                         .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                         .listRowBackground(Color.clear)
                 } header: { sectionTitle("预览") }
@@ -222,8 +225,10 @@ struct AppDetailView: View {
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.2)) { developerApps = apps }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pageWidth = $0 }
         .fullScreenCover(item: $viewing) { shot in
             ScreenshotViewer(screenshots: extras?.screenshots ?? [shot], selection: shot)
+                .zoomTransition(shot.id, in: screenshotZoom)
         }
     }
     private func sectionTitle(_ text: String) -> some View {
@@ -596,18 +601,26 @@ struct AppDetailView: View {
 private struct ScreenshotStrip: View {
     let screenshots: [StoreService.Screenshot]
     let platform: AppPlatform
+    /// Width of the whole page; the strip scrolls from edge to edge of it
+    /// while its first screenshot lines up with the cards above.
+    let pageWidth: CGFloat
+    let zoom: Namespace.ID
     var open: (StoreService.Screenshot) -> Void
     /// Loaded images. The size in a screenshot link is only the box Apple
     /// fits the image into, so a landscape game shot can arrive under a
     /// portrait-looking link: lay each one out by the real image.
     @State private var images: [URL: UIImage] = [:]
+    @State private var failed = Set<URL>()
+    @State private var rowWidth: CGFloat = 0
     private func aspect(_ shot: StoreService.Screenshot) -> Double {
         guard let image = images[shot.url], image.size.height > 0 else { return shot.aspect }
         return image.size.width / image.size.height
     }
     private var ready: Bool { screenshots.allSatisfy { images[$0.url] != nil } || !failed.isEmpty }
-    @State private var failed = Set<URL>()
+    /// Gap between the page edge and the cards.
+    private var margin: CGFloat { rowWidth > 0 ? max(0, (pageWidth - rowWidth) / 2) : 0 }
     var body: some View {
+        let margin = margin
         VStack(alignment: .leading, spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -618,23 +631,29 @@ private struct ScreenshotStrip: View {
                             ScreenshotTile(image: images[shot.url], failed: failed.contains(shot.url),
                                            cornerRadius: portrait ? 22 : 14)
                                 .aspectRatio(ratio, contentMode: .fit)
-                                // Portrait: a bit over half the width; landscape: nearly all of it.
-                                .containerRelativeFrame(.horizontal) { length, _ in portrait ? length * 0.62 : length * 0.9 }
+                                // Portrait: about two thirds of the card width, so the
+                                // next one shows; landscape: nearly all of it.
+                                .containerRelativeFrame(.horizontal) { length, _ in
+                                    max(1, length - margin * 2) * (portrait ? 0.64 : 0.92)
+                                }
                         }
                         .buttonStyle(.plain)
+                        .zoomSource(shot.id, in: zoom)
                         .accessibilityLabel("截图")
                     }
                 }
                 .scrollTargetLayout()
             }
-            .contentMargins(.horizontal, 20, for: .scrollContent)
+            .contentMargins(.horizontal, margin, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
+            .scrollClipDisabled()
+            .padding(.horizontal, -margin)
             .opacity(ready ? 1 : 0.001)
             .overlay { if !ready { ProgressView() } }
             Label(platform.title == "iOS" ? "iPhone" : platform.title == "tvOS" ? "Apple TV" : platform.title, systemImage: platform.symbol)
                 .font(.footnote).foregroundStyle(.secondary)
-                .padding(.horizontal, 20)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
         .animation(.easeOut(duration: 0.2), value: ready)
         .task(id: screenshots.map(\.url)) { await load() }
         .accessibilityIdentifier("detail.screenshots")
@@ -643,15 +662,25 @@ private struct ScreenshotStrip: View {
     private func load() async {
         await withTaskGroup(of: (URL, UIImage?).self) { group in
             for shot in screenshots where images[shot.url] == nil {
-                group.addTask {
-                    guard let (data, _) = try? await URLSession.shared.data(from: shot.url) else { return (shot.url, nil) }
-                    return (shot.url, UIImage(data: data))
-                }
+                group.addTask { (shot.url, await ScreenshotCache.image(shot.url)) }
             }
             for await (url, image) in group {
                 if let image { images[url] = image } else { failed.insert(url) }
             }
         }
+    }
+}
+
+/// Screenshots already loaded by the strip, so the full-screen view opens
+/// on them at once.
+private enum ScreenshotCache {
+    private static let cache = NSCache<NSURL, UIImage>()
+    static func cached(_ url: URL) -> UIImage? { cache.object(forKey: url as NSURL) }
+    static func image(_ url: URL) async -> UIImage? {
+        if let image = cached(url) { return image }
+        guard let (data, _) = try? await URLSession.shared.data(from: url), let image = UIImage(data: data) else { return nil }
+        cache.setObject(image, forKey: url as NSURL)
+        return image
     }
 }
 
@@ -673,33 +702,75 @@ private struct ScreenshotTile: View {
     }
 }
 
-/// Full-screen screenshots, swiped through like Photos.
+/// Full-screen screenshots as in the App Store: one large screenshot in the
+/// middle with its neighbours peeking in, swiped one at a time.
 private struct ScreenshotViewer: View {
     let screenshots: [StoreService.Screenshot]
-    @State var selection: StoreService.Screenshot
+    let selection: StoreService.Screenshot
+    @State private var current: StoreService.Screenshot.ID?
+    @State private var images: [URL: UIImage] = [:]
     @Environment(\.dismiss) private var dismiss
+    init(screenshots: [StoreService.Screenshot], selection: StoreService.Screenshot) {
+        self.screenshots = screenshots; self.selection = selection
+        _current = State(initialValue: selection.id)
+    }
+    private func aspect(_ shot: StoreService.Screenshot) -> Double {
+        guard let image = images[shot.url] ?? ScreenshotCache.cached(shot.url), image.size.height > 0 else { return shot.aspect }
+        return image.size.width / image.size.height
+    }
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Color.black.ignoresSafeArea()
-            TabView(selection: $selection) {
-                ForEach(screenshots) { shot in
-                    AsyncImage(url: shot.url) { phase in
-                        if let image = phase.image { image.resizable().scaledToFit() }
-                        else { ProgressView().tint(.white) }
+        GeometryReader { proxy in
+            let height = max(1, proxy.size.height - 96)
+            let widest = proxy.size.width - 64
+            // Each screenshot as large as fits, leaving room for the neighbours.
+            let widths = screenshots.map { min(widest, height * aspect($0)) }
+            let margin = max(24, (proxy.size.width - (widths.max() ?? widest)) / 2)
+            ScrollViewReader { reader in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(Array(zip(screenshots, widths)), id: \.0.id) { shot, width in
+                            let ratio = aspect(shot)
+                            ScreenshotTile(image: images[shot.url] ?? ScreenshotCache.cached(shot.url), failed: false,
+                                           cornerRadius: ratio < 1 ? 28 : 18)
+                                .frame(width: width, height: width / ratio)
+                                .frame(maxHeight: .infinity)
+                                .id(shot.id)
+                        }
                     }
-                    .padding(.horizontal, 12)
-                    .tag(shot)
+                    .scrollTargetLayout()
                 }
+                .contentMargins(.horizontal, margin, for: .scrollContent)
+                .scrollTargetBehavior(.viewAligned(limitBehavior: .always))
+                .scrollPosition(id: $current)
+                .padding(.top, 72).padding(.bottom, 24)
+                .onAppear { reader.scrollTo(selection.id, anchor: .center) }
             }
-            .tabViewStyle(.page(indexDisplayMode: screenshots.count > 1 ? .always : .never))
+        }
+        .overlay(alignment: .topTrailing) {
             Button { dismiss() } label: {
-                Image(systemName: "xmark").font(.body.weight(.semibold)).foregroundStyle(.white)
-                    .frame(width: 36, height: 36).background(.ultraThinMaterial, in: Circle())
+                Image(systemName: "xmark").font(.title3.weight(.medium)).foregroundStyle(.primary)
+                    .frame(width: 48, height: 48).background(.regularMaterial, in: Circle())
+                    .overlay(Circle().stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
             }
-            .padding(16)
+            .padding(.trailing, 16).padding(.top, 8)
             .accessibilityLabel("关闭")
         }
-        .statusBarHidden()
+        .background(Color(.systemBackground).ignoresSafeArea())
+        .task(id: screenshots.map(\.url)) {
+            for shot in screenshots where images[shot.url] == nil {
+                if let image = await ScreenshotCache.image(shot.url) { images[shot.url] = image }
+            }
+        }
+    }
+}
+
+extension View {
+    /// Where a full-screen view zooms out of and back into (iOS 18 and later).
+    @ViewBuilder func zoomSource(_ id: some Hashable, in namespace: Namespace.ID) -> some View {
+        if #available(iOS 18, *) { matchedTransitionSource(id: id, in: namespace) } else { self }
+    }
+    @ViewBuilder func zoomTransition(_ id: some Hashable, in namespace: Namespace.ID) -> some View {
+        if #available(iOS 18, *) { navigationTransition(.zoom(sourceID: id, in: namespace)) } else { self }
     }
 }
 
