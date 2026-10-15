@@ -48,7 +48,9 @@ struct PackageInstallationView: View {
                         LabeledContent("安装方式", value: store.settings.automaticInstallation ? "一键安装" : "代理服务")
                     }.accessibilityIdentifier("installation.settings")
                 } footer: {
-                    Text(store.settings.automaticInstallation ? "安装完成前请勿退出 iPadn。" : "需要已配置的代理规则。")
+                    Text((store.settings.automaticInstallation ? "安装完成前请勿退出 iPadn。" : "需要已配置的代理规则。")
+                         + (InstallLog.insideLiveContainer
+                            ? "\n在 LiveContainer 中运行时，系统可能不会弹出安装窗口；可以点「导出安装包」交给其他安装工具。" : ""))
                 }
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
@@ -72,6 +74,7 @@ struct PackageInstallationView: View {
                     url = try await store.installation.installURL(job: job, file: file, plistServer: store.settings.plistServer)
                 }
                 openURL(url) { accepted in
+                    InstallLog.shared.add("install link handed to the system: " + (accepted ? "accepted" : "refused"))
                     if accepted { message = "请在系统弹窗中确认安装，完成前请勿退出 iPadn。" }
                     else { issue = "无法开始安装，请检查安装方式，或导出安装包。"; store.installation.stopHosting() }
                 }

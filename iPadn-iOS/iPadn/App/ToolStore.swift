@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import UIKit
 import UserNotifications
 
 struct SearchHistoryItem: Codable, Identifiable {
@@ -602,6 +603,8 @@ final class ToolStore: ObservableObject {
             "Version sources: \(settings.versionSources.filter(\.enabled).count)",
             "Task states: " + downloads.jobs.map { "\($0.id.uuidString.prefix(8)): \($0.status.rawValue)" }.joined(separator: ", "),
             "Installation: " + (settings.automaticInstallation ? "one-tap" : "proxy"),
+            "Runs inside LiveContainer: " + (InstallLog.insideLiveContainer ? "yes" : "no"),
+            "iOS " + UIDevice.current.systemVersion,
             "Installation server log:", InstallLog.shared.text.isEmpty ? "(empty)" : InstallLog.shared.text,
             "Contains no credentials, cookies, Apple account names or download URLs."
         ].joined(separator: "\n")

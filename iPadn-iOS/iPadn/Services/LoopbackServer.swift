@@ -27,6 +27,8 @@ struct HTTPByteRange: Equatable {
 /// and which resources were served. No tokens, file names or account data.
 final class InstallLog: @unchecked Sendable {
     static let shared = InstallLog()
+    /// LiveContainer runs apps inside its own process and sets this.
+    static let insideLiveContainer = ProcessInfo.processInfo.environment["LC_HOME_PATH"] != nil
     private let lock = NSLock()
     private var lines: [String] = []
     func add(_ line: String) {
