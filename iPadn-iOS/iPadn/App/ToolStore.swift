@@ -510,7 +510,9 @@ final class ToolStore: ObservableObject {
             if apple.activeID == nil { errorMessage = "请先在账号页登录" }
             return
         }
-        ownedLoading = true; ownedError = nil
+        // An earlier error stays until this sync settles, instead of
+        // disappearing and coming back.
+        ownedLoading = true
         defer {
             ownedLoading = false
             // The account changed mid-sync: sync the new one now.
@@ -519,6 +521,7 @@ final class ToolStore: ObservableObject {
         do {
             let apps = try await apple.ownedApps(useCache: settings.useSignerCache)
             guard apple.activeID == id else { return }
+            ownedError = nil
             let cached = Dictionary(owned.map { ($0.id, $0.iconURL) }, uniquingKeysWith: { first, _ in first })
             owned = apps.map { app in
                 var item = app

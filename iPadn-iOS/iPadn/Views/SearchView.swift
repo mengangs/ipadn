@@ -26,10 +26,12 @@ struct SearchView: View {
             }
             .listRowBackground(Color.clear).listRowSeparator(.hidden)
 
+            // Placeholders where the results will appear, so they replace the
+            // loading rows instead of pushing everything down.
             if store.searching {
                 Section {
                     HStack { ProgressView(); Text("正在搜索…").font(.subheadline).foregroundStyle(.secondary); Spacer(); Button("取消") { store.cancelSearch() } }
-                    if store.results.isEmpty && store.localResults.isEmpty { AppSkeleton(); AppSkeleton() }
+                    AppSkeleton(); AppSkeleton()
                 }
             }
             if let error = store.searchError {

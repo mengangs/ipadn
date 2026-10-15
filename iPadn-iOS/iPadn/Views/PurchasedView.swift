@@ -14,6 +14,7 @@ struct PurchasedView: View {
     @State private var selecting = false
     @State private var selection = Set<String>()
     @State private var batchProgress: (done: Int, total: Int)?
+    @State private var showsSyncSpinner = false
     private var filtered: [OwnedApp] {
         let cutoff = Calendar.current.date(byAdding: .month, value: -months, to: Date()) ?? .distantPast
         let term = query.trimmingCharacters(in: .whitespaces)
@@ -60,12 +61,18 @@ struct PurchasedView: View {
         List {
             Section {
                 PageHeader(title: "已购项目") {
-                    Button { Task { await store.refreshOwned() } } label: {
-                        Image(systemName: "arrow.clockwise").font(.body.weight(.semibold))
-                            .frame(width: 36, height: 36).background(Color(.tertiarySystemFill), in: Circle())
+                    // Syncing shows in this button, not as a row that pushes the list.
+                    Button { if !store.ownedLoading { Task { await store.refreshOwned() } } } label: {
+                        ZStack {
+                            if showsSyncSpinner { ProgressView().controlSize(.small) }
+                            else { Image(systemName: "arrow.clockwise").font(.body.weight(.semibold)) }
+                        }
+                        .frame(width: 36, height: 36).background(Color(.tertiarySystemFill), in: Circle())
                     }
                     .buttonStyle(.borderless)
-                    .disabled(store.ownedLoading || apple.active == nil || selecting).accessibilityLabel("同步购买记录")
+                    .disabled(apple.active == nil || selecting)
+                    .accessibilityLabel(store.ownedLoading ? "正在同步购买记录" : "同步购买记录")
+                    .revealAfterDelay(store.ownedLoading, into: $showsSyncSpinner)
                 }
                 .onScrolledUnderBar { headerAway = $0 }
                 .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 16))
@@ -83,10 +90,13 @@ struct PurchasedView: View {
                 .listRowBackground(Color.clear).listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 if let error = store.ownedError { Section { InlineIssue(message: error) { Task { await store.refreshOwned() } } } }
-                if store.ownedLoading {
-                    Section { HStack { ProgressView(); Text("正在同步购买记录…").font(.subheadline).foregroundStyle(.secondary) } }
-                }
                 let visible = filtered
+                if store.ownedLoading && store.owned.isEmpty {
+                    Section {
+                        HStack { ProgressView(); Text("正在同步购买记录…").font(.subheadline).foregroundStyle(.secondary) }
+                        AppSkeleton(); AppSkeleton(); AppSkeleton()
+                    }
+                }
                 let badges = downloadBadges
                 if !visible.isEmpty {
                     Section {

@@ -26,6 +26,10 @@ struct AppDetailView: View {
     @State private var metadataStopped = false
     /// Long histories start with the newest ten versions.
     @State private var showAllVersions = false
+    /// The rows on screen belong to the previous region, platform or source
+    /// and are replaced as soon as the new list arrives.
+    @State private var versionsStale = false
+    @State private var showsMacSpinner = false
     @State private var showLogin = false
     @State private var reauthenticationID: String?
     @State private var retryAfterLoginVersion: String?
@@ -210,8 +214,13 @@ struct AppDetailView: View {
             guard versionsKey != loadedVersionsKey else { return }
             let forced = reloadID != loadedReloadID
             // A different region, platform or account lists different versions.
-            if !forced { versions = []; showAllVersions = false }
-            if await fetchVersions(force: forced) { loadedVersionsKey = versionsKey; loadedReloadID = reloadID }
+            // The old rows stay (dimmed) until the new list replaces them, so the
+            // page doesn't collapse and grow again.
+            if !forced { versionsStale = !versions.isEmpty }
+            let loaded = await fetchVersions(force: forced)
+            if loaded { loadedVersionsKey = versionsKey; loadedReloadID = reloadID }
+            else if versionsStale, !Task.isCancelled { versions = [] }
+            if !Task.isCancelled { versionsStale = false }
         }
         .task(id: "\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
             await loadMacInstallers()
@@ -347,9 +356,8 @@ struct AppDetailView: View {
         CardSection {
             Toggle("从 Apple 获取完整版本列表", isOn: $official).font(.subheadline)
                 .disabled(apple.active == nil)
-            if versionsLoading { HStack { ProgressView(); Text("正在查找历史版本…").font(.subheadline).foregroundStyle(.secondary) } }
             if let versionError { InlineIssue(message: versionError) { reloadID += 1 } }
-            if let versionNote, !versionsLoading {
+            if let versionNote {
                 Label(versionNote, systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary)
             }
             if versions.count > 6 {
@@ -358,9 +366,18 @@ struct AppDetailView: View {
             let matches = filtered
             // A search shows every match; otherwise ten until expanded.
             let limit = showAllVersions || !versionSearch.isEmpty ? matches.count : 10
+            if versions.isEmpty && versionsLoading {
+                // Placeholders where the rows will be, instead of a spinner row
+                // that appears and disappears.
+                ForEach(0..<3, id: \.self) { _ in VersionRowSkeleton() }
+            }
             ForEach(matches.prefix(limit)) { version in
                 versionRow(version)
-                    .task(id: "\(version.id)-\(readsMetadata)") { await loadMetadata(version) }
+                    .opacity(versionsStale ? 0.4 : 1)
+                    .disabled(versionsStale)
+                    .task(id: "\(version.id)-\(readsMetadata)-\(versionsStale)") {
+                        if !versionsStale { await loadMetadata(version) }
+                    }
             }
             if !versions.isEmpty && matches.isEmpty { Text("没有匹配的版本。").font(.subheadline).foregroundStyle(.secondary) }
             if versionSearch.isEmpty && matches.count > 10 {
@@ -390,7 +407,8 @@ struct AppDetailView: View {
             HStack(alignment: .firstTextBaseline) {
                 sectionTitle("版本历史")
                 Spacer()
-                Button("刷新") { reloadID += 1 }.disabled(versionsLoading).font(.body).textCase(nil)
+                RefreshButton(busy: versionsLoading) { reloadID += 1 }
+                    .accessibilityIdentifier("detail.versions.refresh")
             }
         }
     }
@@ -441,7 +459,6 @@ struct AppDetailView: View {
                  ? "下载完成后可导出到 Mac 安装。"
                  : "仅支持下载未加密的 Mac 安装包。")
                 .font(.footnote).foregroundStyle(.secondary)
-            if macLoading { HStack { ProgressView(); Text("正在查找开发者安装包…").font(.subheadline).foregroundStyle(.secondary) } }
             ForEach(macInstallers) { installer in
                 HStack(spacing: 12) {
                     Image(systemName: "shippingbox").foregroundStyle(.secondary).frame(width: 28)
@@ -459,7 +476,16 @@ struct AppDetailView: View {
             if let website = macWebsite {
                 Link(destination: website) { Label("开发者网站", systemImage: "safari") }
             }
-        } header: { sectionTitle("Mac 安装包") }
+        } header: {
+            // Looking for the developer's installers shows here rather than
+            // as a row that comes and goes.
+            HStack(alignment: .firstTextBaseline) {
+                sectionTitle("Mac 安装包")
+                Spacer()
+                if showsMacSpinner { ProgressView().controlSize(.small).transition(.opacity) }
+            }
+            .revealAfterDelay(macLoading, into: $showsMacSpinner)
+        }
     }
 
     private func copy(_ text: String) { UIPasteboard.general.string = text; store.infoMessage = "已复制到剪贴板"; UX.feedback() }
@@ -467,7 +493,9 @@ struct AppDetailView: View {
     /// until the new one arrives.
     @discardableResult
     private func fetchVersions(force: Bool) async -> Bool {
-        versionsLoading = true; versionError = nil
+        // An earlier error stays until this attempt settles, instead of
+        // disappearing and coming back.
+        versionsLoading = true
         defer { versionsLoading = false }
         do {
             var result: [AppVersion]
@@ -479,7 +507,8 @@ struct AppDetailView: View {
                 result = try await store.loadVersions(for: app, force: force, official: false)
                 versionNote = "此账号还没有获取这个应用，下面是公开的版本资料。获取后可查看完整列表。"
             }
-            try Task.checkCancellation(); versions = result
+            try Task.checkCancellation(); versions = result; versionError = nil
+            if versionsStale { showAllVersions = false }
             if force { metadataStopped = false; metadataFailures = 0 }
             let cached = await store.cachedVersionMetadata(app: app, versionIDs: result.map(\.id))
             metadata.merge(cached) { current, _ in current }
@@ -678,6 +707,22 @@ private struct ScreenshotStrip: View {
             }
             images = loaded; failed = missing
         }
+    }
+}
+
+/// Where a version row will be while the list loads.
+private struct VersionRowSkeleton: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 7) {
+                RoundedRectangle(cornerRadius: 4).fill(Color(.tertiarySystemFill)).frame(width: 110, height: 15)
+                RoundedRectangle(cornerRadius: 4).fill(Color(.quaternarySystemFill)).frame(width: 170, height: 11)
+            }
+            Spacer(minLength: 8)
+            Capsule().fill(Color(.tertiarySystemFill)).frame(width: 74, height: 30)
+        }
+        .padding(.vertical, 2)
+        .accessibilityHidden(true)
     }
 }
 
