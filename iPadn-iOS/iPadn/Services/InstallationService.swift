@@ -61,25 +61,32 @@ final class InstallationService: ObservableObject {
             guard (try? InstallationCertificate.localProfile()) != nil else { throw error }
             throw ToolError.message("证书需要更新。请在「安装设置」中重新创建证书，并安装、信任新的描述文件。")
         }
-        let addresses = await Task.detached(priority: .userInitiated) { ManifestBuilder.addresses(of: host) }.value
-        InstallLog.shared.add("\(host) resolves to \(addresses.isEmpty ? "nothing" : addresses.joined(separator: ", "))")
         // The server listens on 127.0.0.1; any other answer (no network, or a
         // proxy app that answers DNS itself) means the system can't reach it.
-        guard addresses.contains(where: { $0.hasPrefix("127.") }) else {
+        let candidates = host == ManifestBuilder.defaultLocalHost ? ManifestBuilder.fallbackLocalHosts : [host]
+        let reachable = await Task.detached(priority: .userInitiated) { () -> String? in
+            for candidate in candidates {
+                let addresses = ManifestBuilder.addresses(of: candidate)
+                InstallLog.shared.add("\(candidate) resolves to \(addresses.isEmpty ? "nothing" : addresses.joined(separator: ", "))")
+                if addresses.contains(where: { $0.hasPrefix("127.") }) { return candidate }
+            }
+            return nil
+        }.value
+        guard let reachable else {
             throw ToolError.message("当前网络下无法连接本机安装服务。如果开启了代理或 VPN，请关闭后重试，或改用一键安装。")
         }
-        let server = LoopbackServer(identity: certificate.identity, certificates: certificate.certificates, publicHost: host)
+        let server = LoopbackServer(identity: certificate.identity, certificates: certificate.certificates, publicHost: reachable)
         try await server.start()
         let packageURL = try server.register(file)
         // The home screen shows these while the app installs.
         var images: (small: URL, large: URL)?
         if let icon = await Self.iconImages(icon) {
-            images = (try server.register(data: icon.small, contentType: "image/png"),
-                      try server.register(data: icon.large, contentType: "image/png"))
+            images = try (server.register(data: icon.small, contentType: "image/png"),
+                          server.register(data: icon.large, contentType: "image/png"))
         }
         let data = try ManifestBuilder.manifest(app: job.app, packageURL: packageURL, images: images)
         let manifestURL = try server.register(data: data, contentType: "application/xml")
-        InstallLog.shared.add("local install link created (host \(host), port \(manifestURL.port ?? 0), chain \(certificate.certificates.count))")
+        InstallLog.shared.add("local install link created (host \(reachable), port \(manifestURL.port ?? 0), chain \(certificate.certificates.count))")
         keepHosting(server)
         return try ManifestBuilder.systemURL(manifestURL: manifestURL)
     }
@@ -142,12 +149,16 @@ enum ManifestBuilder {
     /// address or "localhost". These public names resolve to 127.0.0.1, so
     /// the link carries a real domain while the connection stays on this
     /// device. The generated certificate covers all of them.
-    static let defaultLocalHost = "127.0.0.1.sslip.io"
-    static let localHostNames = [defaultLocalHost, "localtest.me", "*.localtest.me", "lvh.me", "*.lvh.me", "localhost"]
+    /// The install prompt names this host ("ipadn.localtest.me 想要安装…").
+    static let defaultLocalHost = "ipadn.localtest.me"
+    /// Tried in order when the default is set: the first that resolves to
+    /// this device on the current network is used.
+    static let fallbackLocalHosts = [defaultLocalHost, "ipadn.lvh.me", "127.0.0.1.sslip.io"]
+    static let localHostNames = ["127.0.0.1.sslip.io", "localtest.me", "*.localtest.me", "lvh.me", "*.lvh.me", "localhost"]
     /// Hosts that earlier versions used; they are replaced by the default.
     static func migratedLocalHost(_ value: String) -> String {
         let host = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return ["", "127.0.0.1", "localhost"].contains(host) ? defaultLocalHost : value
+        return ["", "127.0.0.1", "localhost", "127.0.0.1.sslip.io"].contains(host) ? defaultLocalHost : value
     }
     /// Numeric addresses the system resolves `host` to.
     static func addresses(of host: String) -> [String] {

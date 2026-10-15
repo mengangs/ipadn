@@ -49,6 +49,9 @@ struct AppDetailView: View {
     @State private var macDownloadURL = ""
     @State private var headerAway = false
     @State private var extras: StoreService.ListingExtras?
+    /// Until the store listing arrives, the preview keeps its place with
+    /// placeholders so the page below doesn't jump.
+    @State private var extrasLoaded = LocalResources.isPreview
     @State private var viewing: StoreService.Screenshot?
     @State private var pageWidth: CGFloat = 0
     @Namespace private var screenshotZoom
@@ -75,7 +78,7 @@ struct AppDetailView: View {
                     .onScrolledUnderBar { headerAway = $0 }
                 infoStrip.listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
             }
-            if let shots = extras?.screenshots, !shots.isEmpty {
+            if let shots = extrasLoaded ? extras?.screenshots : [], !extrasLoaded || !shots.isEmpty {
                 Section {
                     // On the page background, edge to edge, as in the App Store.
                     ScreenshotStrip(screenshots: shots, platform: store.settings.store.platform,
@@ -218,12 +221,12 @@ struct AppDetailView: View {
             let found = try? await StoreService.listingExtras(id: app.id, country: store.settings.store.country,
                                                             platform: store.settings.store.platform)
             guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.2)) { extras = found }
+            extras = found; extrasLoaded = true
             guard let developerID = found?.developerID else { developerApps = []; return }
             let apps = (try? await StoreService.developerApps(developerID, excluding: app.id, country: store.settings.store.country,
                                                              platform: store.settings.store.platform)) ?? []
             guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.2)) { developerApps = apps }
+            developerApps = apps
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pageWidth = $0 }
         .fullScreenCover(item: $viewing) { shot in
@@ -599,6 +602,7 @@ struct AppDetailView: View {
 /// App Store style preview strip: screenshots side by side on the page
 /// background, snapping to the leading margin, with the next one peeking in.
 private struct ScreenshotStrip: View {
+    /// Empty while the listing is still loading: placeholders only.
     let screenshots: [StoreService.Screenshot]
     let platform: AppPlatform
     /// Width of the whole page; the strip scrolls from edge to edge of it
@@ -608,27 +612,35 @@ private struct ScreenshotStrip: View {
     var open: (StoreService.Screenshot) -> Void
     /// Loaded images. The size in a screenshot link is only the box Apple
     /// fits the image into, so a landscape game shot can arrive under a
-    /// portrait-looking link: lay each one out by the real image.
+    /// portrait-looking link: once all are in, lay each one out by the real image.
     @State private var images: [URL: UIImage] = [:]
     @State private var failed = Set<URL>()
     @State private var rowWidth: CGFloat = 0
+    private var ready: Bool { !screenshots.isEmpty && screenshots.allSatisfy { images[$0.url] != nil || failed.contains($0.url) } }
     private func aspect(_ shot: StoreService.Screenshot) -> Double {
-        guard let image = images[shot.url], image.size.height > 0 else { return shot.aspect }
+        guard ready, let image = images[shot.url], image.size.height > 0 else { return shot.aspect }
         return image.size.width / image.size.height
     }
-    private var ready: Bool { screenshots.allSatisfy { images[$0.url] != nil } || !failed.isEmpty }
     /// Gap between the page edge and the cards.
     private var margin: CGFloat { rowWidth > 0 ? max(0, (pageWidth - rowWidth) / 2) : 0 }
     var body: some View {
         let margin = margin
+        let placeholders = screenshots.isEmpty
         VStack(alignment: .leading, spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
+                    if placeholders {
+                        ForEach(0..<3, id: \.self) { _ in
+                            ScreenshotTile(image: nil, failed: false, cornerRadius: 22)
+                                .aspectRatio(0.462, contentMode: .fit)
+                                .containerRelativeFrame(.horizontal) { length, _ in max(1, length - margin * 2) * 0.64 }
+                        }
+                    }
                     ForEach(screenshots) { shot in
                         let ratio = aspect(shot)
                         let portrait = ratio < 1
                         Button { open(shot) } label: {
-                            ScreenshotTile(image: images[shot.url], failed: failed.contains(shot.url),
+                            ScreenshotTile(image: ready ? images[shot.url] : nil, failed: failed.contains(shot.url),
                                            cornerRadius: portrait ? 22 : 14)
                                 .aspectRatio(ratio, contentMode: .fit)
                                 // Portrait: about two thirds of the card width, so the
@@ -647,14 +659,15 @@ private struct ScreenshotStrip: View {
             .contentMargins(.horizontal, margin, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
             .scrollClipDisabled()
+            .scrollDisabled(placeholders)
             .padding(.horizontal, -margin)
-            .opacity(ready ? 1 : 0.001)
-            .overlay { if !ready { ProgressView() } }
             Label(platform.title == "iOS" ? "iPhone" : platform.title == "tvOS" ? "Apple TV" : platform.title, systemImage: platform.symbol)
                 .font(.footnote).foregroundStyle(.secondary)
         }
+        // Lay out once the widths are known, never from a wrong first guess.
+        .opacity(rowWidth > 0 && pageWidth > 0 ? 1 : 0)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
-        .animation(.easeOut(duration: 0.2), value: ready)
+        .background(UnclippedListRow())
         .task(id: screenshots.map(\.url)) { await load() }
         .accessibilityIdentifier("detail.screenshots")
     }
@@ -664,11 +677,34 @@ private struct ScreenshotStrip: View {
             for shot in screenshots where images[shot.url] == nil {
                 group.addTask { (shot.url, await ScreenshotCache.image(shot.url)) }
             }
+            // Applied together, so the strip changes once.
+            var loaded = images, missing = failed
             for await (url, image) in group {
-                if let image { images[url] = image } else { failed.insert(url) }
+                if let image { loaded[url] = image } else { missing.insert(url) }
+            }
+            images = loaded; failed = missing
+        }
+    }
+}
+
+/// Lets a list row draw past its card, so a horizontal strip can run to the
+/// edges of the screen as in the App Store.
+private struct UnclippedListRow: UIViewRepresentable {
+    final class Marker: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            var view = superview
+            while let current = view {
+                current.clipsToBounds = false
+                if current is UICollectionViewCell || current is UITableViewCell { break }
+                view = current.superview
             }
         }
     }
+    func makeUIView(context: Context) -> Marker {
+        let view = Marker(); view.isUserInteractionEnabled = false; return view
+    }
+    func updateUIView(_ uiView: Marker, context: Context) {}
 }
 
 /// Screenshots already loaded by the strip, so the full-screen view opens
@@ -689,15 +725,15 @@ private struct ScreenshotTile: View {
     let failed: Bool
     var cornerRadius: CGFloat
     var body: some View {
-        ZStack {
-            if let image {
-                Image(uiImage: image).resizable().scaledToFill()
-            } else {
-                Rectangle().fill(Color(.tertiarySystemFill))
-                    .overlay { if failed { Image(systemName: "photo").foregroundStyle(.tertiary) } }
+        Rectangle().fill(Color(.tertiarySystemFill))
+            .overlay { if failed { Image(systemName: "photo").foregroundStyle(.tertiary) } }
+            .overlay {
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFill().transition(.opacity)
+                }
             }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .animation(.easeOut(duration: 0.25), value: image != nil)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).stroke(Color.primary.opacity(0.1), lineWidth: 0.5))
     }
 }

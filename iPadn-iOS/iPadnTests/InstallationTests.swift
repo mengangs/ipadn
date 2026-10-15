@@ -41,7 +41,7 @@ final class InstallationTests: XCTestCase {
         }
         XCTAssertTrue(try trusted("127.0.0.1"))
         XCTAssertTrue(try trusted("localhost"))
-        XCTAssertTrue(try trusted(ManifestBuilder.defaultLocalHost))
+        for host in ManifestBuilder.fallbackLocalHosts { XCTAssertTrue(try trusted(host), host) }
         XCTAssertTrue(try trusted("app.localtest.me"))
         XCTAssertTrue(try trusted("lvh.me"))
         XCTAssertFalse(try trusted("a.b.localtest.me"))
@@ -184,7 +184,8 @@ final class InstallationTests: XCTestCase {
     }
     func testLocalHostDefaultsToADomainAndOldAddressesMigrate() throws {
         XCTAssertEqual(ToolSettings().localInstallHost, ManifestBuilder.defaultLocalHost)
-        for old in ["127.0.0.1", " localhost ", ""] {
+        XCTAssertTrue(ManifestBuilder.defaultLocalHost.hasPrefix("ipadn."))
+        for old in ["127.0.0.1", " localhost ", "", "127.0.0.1.sslip.io"] {
             let data = try JSONSerialization.data(withJSONObject: ["localInstallHost": old])
             XCTAssertEqual(try JSONDecoder().decode(ToolSettings.self, from: data).localInstallHost, ManifestBuilder.defaultLocalHost)
         }
