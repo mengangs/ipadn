@@ -15,7 +15,7 @@ final class AppleService: ObservableObject {
         LocalResources.defaults.set(value, forKey: LocalResources.guid)
         return value
     }
-    static func randomGUID() -> String {
+    nonisolated static func randomGUID() -> String {
         (0..<6).map { _ in String(format: "%02X", UInt8.random(in: 0...255)) }.joined()
     }
     /// Replaces the identifier Apple sees for this device (专业模式).
