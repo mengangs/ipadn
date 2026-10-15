@@ -232,9 +232,20 @@ private struct PackageFileView: View {
         .sheet(item: $sharing) { ShareSheet(items: [$0.url]) }
         .task {
             guard previewsText || previewsImage, let url = await extract() else { return }
-            let data = try? Data(contentsOf: url)
-            if previewsImage { image = data.flatMap(UIImage.init(data:)) }
-            else if let data { text = Self.readable(data) }
+            let wantsImage = previewsImage
+            // Read and prepared off the main thread; long text is cut short so
+            // the page stays responsive.
+            let preview = await Task.detached(priority: .userInitiated) { () -> (UIImage?, String?) in
+                guard let data = try? Data(contentsOf: url) else { return (nil, nil) }
+                if wantsImage {
+                    guard let full = UIImage(data: data) else { return (nil, nil) }
+                    let scale = min(1, 1200 / max(full.size.width, full.size.height, 1))
+                    let size = CGSize(width: full.size.width * scale, height: full.size.height * scale)
+                    return (await full.byPreparingThumbnail(ofSize: size) ?? full, nil)
+                }
+                return (nil, Self.readable(data).map(Self.shortened))
+            }.value
+            image = preview.0; text = preview.1
         }
     }
     private func extract() async -> URL? {
@@ -247,8 +258,13 @@ private struct PackageFileView: View {
             return url
         } catch { failure = error.localizedDescription; return nil }
     }
+    nonisolated static func shortened(_ text: String) -> String {
+        let limit = 20_000
+        guard text.count > limit else { return text }
+        return String(text.prefix(limit)) + "\n\n…（仅显示前 \(limit) 个字符，完整内容请提取后查看）"
+    }
     /// Text as is; property lists (often binary) as XML.
-    static func readable(_ data: Data) -> String? {
+    nonisolated static func readable(_ data: Data) -> String? {
         if let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
            let xml = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0) {
             return String(data: xml, encoding: .utf8)

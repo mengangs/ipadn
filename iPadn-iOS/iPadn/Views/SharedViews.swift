@@ -11,7 +11,7 @@ struct AppIcon: View {
     var body: some View {
         let source = source
         // An icon already in memory shows in the very first frame.
-        let image = loaded.flatMap { $0.url == source ? $0.image : nil } ?? source.flatMap(IconCache.cached)
+        let image = loaded.flatMap { $0.url == source ? $0.image : nil } ?? source.flatMap { IconCache.cached($0, size: size) }
         ZStack {
             placeholder
             if let image {
@@ -26,11 +26,11 @@ struct AppIcon: View {
         .task(id: source) {
             guard let source else { return }
             // Kept here too, in case memory pressure later empties the cache.
-            if let cached = IconCache.cached(source) {
+            if let cached = IconCache.cached(source, size: size) {
                 if loaded?.url != source { loaded = (source, cached) }
                 return
             }
-            guard let image = await IconCache.load(source), !Task.isCancelled else { return }
+            guard let image = await IconCache.load(source, size: size), !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.2)) { loaded = (source, image) }
         }
     }
@@ -46,19 +46,28 @@ struct AppIcon: View {
 /// view, or the same app on the next page, shows its icon at once instead of
 /// a placeholder while it loads again.
 enum IconCache {
-    private static let cache: NSCache<NSURL, UIImage> = {
-        let cache = NSCache<NSURL, UIImage>(); cache.countLimit = 500; return cache
+    /// Bounded by memory, not count: hundreds of list icons fit.
+    private static let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>(); cache.totalCostLimit = 80 * 1024 * 1024; return cache
     }()
-    static func cached(_ url: URL) -> UIImage? { cache.object(forKey: url as NSURL) }
-    static func load(_ url: URL) async -> UIImage? {
-        if let image = cached(url) { return image }
+    /// List rows and the large detail icon keep separate, right-sized copies.
+    private static func pixels(for size: CGFloat) -> CGFloat { size <= 64 ? 192 : 384 }
+    private static func key(_ url: URL, _ size: CGFloat) -> NSString { "\(Int(pixels(for: size)))|\(url.absoluteString)" as NSString }
+    static func cost(of image: UIImage) -> Int {
+        Int(image.size.width * image.scale * image.size.height * image.scale * 4)
+    }
+    static func cached(_ url: URL, size: CGFloat) -> UIImage? { cache.object(forKey: key(url, size)) }
+    static func load(_ url: URL, size: CGFloat) async -> UIImage? {
+        if let image = cached(url, size: size) { return image }
         let data: Data?
         if url.isFileURL { data = await Task.detached(priority: .utility) { try? Data(contentsOf: url) }.value }
         else { data = try? await URLSession.shared.data(from: url).0 }
         guard let data, let image = UIImage(data: data) else { return nil }
-        // Decoded now, off the main thread, so drawing it doesn't stall scrolling.
-        let ready = await image.byPreparingForDisplay() ?? image
-        cache.setObject(ready, forKey: url as NSURL)
+        // Scaled and decoded now, off the main thread, so drawing it doesn't
+        // stall scrolling and a 1024 px icon doesn't sit in memory for a row.
+        let side = pixels(for: size)
+        let ready = await image.byPreparingThumbnail(ofSize: CGSize(width: side, height: side)) ?? image
+        cache.setObject(ready, forKey: key(url, size), cost: cost(of: ready))
         return ready
     }
 }

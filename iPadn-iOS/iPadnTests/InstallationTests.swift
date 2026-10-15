@@ -179,8 +179,19 @@ final class InstallationTests: XCTestCase {
         XCTAssertFalse(log.currentProgress.finished)
         log.packageSent(150)
         XCTAssertTrue(log.currentProgress.finished)
+        // The system starting the download over from the beginning.
+        log.packageRequested(size: 200)
+        XCTAssertFalse(log.currentProgress.finished)
+        log.packageRequested(size: 200, from: 120)
+        XCTAssertEqual(log.currentProgress.sent, 120)
         log.beginInstallation()
         XCTAssertEqual(log.currentProgress, InstallLog.Progress())
+    }
+    func testFirstLoopbackHostSkipsHostsThatDoNotResolveHere() async {
+        let host = await ManifestBuilder.firstLoopbackHost(["ipadn-test.invalid", "127.0.0.1"])
+        XCTAssertEqual(host, "127.0.0.1")
+        let none = await ManifestBuilder.firstLoopbackHost([])
+        XCTAssertNil(none)
     }
     func testLocalHostDefaultsToADomainAndOldAddressesMigrate() throws {
         XCTAssertEqual(ToolSettings().localInstallHost, ManifestBuilder.defaultLocalHost)

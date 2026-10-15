@@ -30,6 +30,9 @@ struct AppDetailView: View {
     /// and are replaced as soon as the new list arrives.
     @State private var versionsStale = false
     @State private var showsMacSpinner = false
+    /// The latest version-list load; an earlier, cancelled one must not end
+    /// its loading state.
+    @State private var versionsLoadID = UUID()
     @State private var showLogin = false
     @State private var reauthenticationID: String?
     @State private var retryAfterLoginVersion: String?
@@ -495,8 +498,9 @@ struct AppDetailView: View {
     private func fetchVersions(force: Bool) async -> Bool {
         // An earlier error stays until this attempt settles, instead of
         // disappearing and coming back.
+        let loadID = UUID(); versionsLoadID = loadID
         versionsLoading = true
-        defer { versionsLoading = false }
+        defer { if versionsLoadID == loadID { versionsLoading = false } }
         do {
             var result: [AppVersion]
             do {
@@ -649,6 +653,8 @@ private struct ScreenshotStrip: View {
     var body: some View {
         let margin = CardSection<EmptyView, EmptyView>.pageMargin
         let placeholders = screenshots.isEmpty
+        // iPhone shots are portrait; iPad, Apple TV and Mac shots are mostly wide.
+        let placeholderAspect = platform == .iOS ? 0.462 : platform == .iPadOS ? 1.33 : 1.6
         VStack(alignment: .leading, spacing: 10) {
             // Full page width: screenshots scroll from screen edge to screen
             // edge and rest lined up with the cards.
@@ -656,9 +662,11 @@ private struct ScreenshotStrip: View {
                 HStack(spacing: 10) {
                     if placeholders {
                         ForEach(0..<3, id: \.self) { _ in
-                            ScreenshotTile(image: nil, failed: false, cornerRadius: 22)
-                                .aspectRatio(0.462, contentMode: .fit)
-                                .containerRelativeFrame(.horizontal) { length, _ in max(1, length - margin * 2) * 0.64 }
+                            ScreenshotTile(image: nil, failed: false, cornerRadius: placeholderAspect < 1 ? 22 : 14)
+                                .aspectRatio(placeholderAspect, contentMode: .fit)
+                                .containerRelativeFrame(.horizontal) { length, _ in
+                                    Self.tileWidth(length - margin * 2, aspect: placeholderAspect)
+                                }
                         }
                     }
                     ForEach(screenshots) { shot in
@@ -668,10 +676,8 @@ private struct ScreenshotStrip: View {
                             ScreenshotTile(image: ready ? images[shot.url] : nil, failed: failed.contains(shot.url),
                                            cornerRadius: portrait ? 22 : 14)
                                 .aspectRatio(ratio, contentMode: .fit)
-                                // Portrait: about two thirds of the card width, so the
-                                // next one shows; landscape: nearly all of it.
                                 .containerRelativeFrame(.horizontal) { length, _ in
-                                    max(1, length - margin * 2) * (portrait ? 0.64 : 0.92)
+                                    Self.tileWidth(length - margin * 2, aspect: ratio)
                                 }
                         }
                         .buttonStyle(.plain)
@@ -695,6 +701,13 @@ private struct ScreenshotStrip: View {
         .accessibilityIdentifier("detail.screenshots")
     }
 
+    /// Portrait: about two thirds of the card width, so the next one shows;
+    /// landscape: nearly all of it. Never taller than 560 pt (wide screens).
+    nonisolated static func tileWidth(_ width: CGFloat, aspect: Double) -> CGFloat {
+        let width = max(1, width) * (aspect < 1 ? 0.64 : 0.92)
+        return min(width, CGFloat(560 * aspect))
+    }
+
     private func load() async {
         await withTaskGroup(of: (URL, UIImage?).self) { group in
             for shot in screenshots where images[shot.url] == nil {
@@ -705,6 +718,8 @@ private struct ScreenshotStrip: View {
             for await (url, image) in group {
                 if let image { loaded[url] = image } else { missing.insert(url) }
             }
+            // Left the page or tapped early: unloaded ones aren't failures.
+            guard !Task.isCancelled else { return }
             images = loaded; failed = missing
         }
     }
@@ -811,13 +826,18 @@ private struct CardLabeledContentStyle: LabeledContentStyle {
 /// Screenshots already loaded by the strip, so the full-screen view opens
 /// on them at once.
 private enum ScreenshotCache {
-    private static let cache = NSCache<NSURL, UIImage>()
+    /// Decoded screenshots are large (up to 2000 px); keep a bounded amount.
+    private static let cache: NSCache<NSURL, UIImage> = {
+        let cache = NSCache<NSURL, UIImage>(); cache.totalCostLimit = 96 * 1024 * 1024; return cache
+    }()
     static func cached(_ url: URL) -> UIImage? { cache.object(forKey: url as NSURL) }
     static func image(_ url: URL) async -> UIImage? {
         if let image = cached(url) { return image }
         guard let (data, _) = try? await URLSession.shared.data(from: url), let image = UIImage(data: data) else { return nil }
-        cache.setObject(image, forKey: url as NSURL)
-        return image
+        // Decoded now, off the main thread, so swiping through them stays smooth.
+        let ready = await image.byPreparingForDisplay() ?? image
+        cache.setObject(ready, forKey: url as NSURL, cost: IconCache.cost(of: ready))
+        return ready
     }
 }
 

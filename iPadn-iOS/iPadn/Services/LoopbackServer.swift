@@ -55,7 +55,11 @@ final class InstallLog: @unchecked Sendable {
     private var progress = Progress()
     var currentProgress: Progress { lock.lock(); defer { lock.unlock() }; return progress }
     func beginInstallation() { lock.lock(); progress = Progress(); lock.unlock() }
-    func packageRequested(size: UInt64) { lock.lock(); progress.total = size; lock.unlock() }
+    /// A request for the package starting at byte `start`; one from the
+    /// beginning is the system starting over.
+    func packageRequested(size: UInt64, from start: UInt64 = 0) {
+        lock.lock(); progress.total = size; progress.sent = start == 0 ? 0 : max(progress.sent, start); lock.unlock()
+    }
     func packageSent(_ count: Int) { lock.lock(); progress.sent += UInt64(count); lock.unlock() }
     var text: String { lock.lock(); defer { lock.unlock() }; return lines.joined(separator: "\n") }
 }
@@ -312,7 +316,7 @@ final class LoopbackServer: @unchecked Sendable {
             let header = responseHeader(status: selected == nil ? 200 : 206, length: length, contentType: mime, extra: extra)
             let file = try FileHandle(forReadingFrom: url)
             try file.seek(toOffset: selected?.start ?? 0)
-            if package && !head { InstallLog.shared.packageRequested(size: size) }
+            if package && !head { InstallLog.shared.packageRequested(size: size, from: selected?.start ?? 0) }
             connection.send(content: header, completion: .contentProcessed { error in
                 if error != nil || head { try? file.close(); connection.cancel(); return }
                 self.sendChunk(connection, file: file, remaining: length, package: package)

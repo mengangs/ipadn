@@ -9,6 +9,8 @@ final class InstallationService: ObservableObject {
     // an earlier one (retry, ranged request) after another install starts.
     private var hosted: [LoopbackServer] = []
     private var profileFiles: LoopbackServer?
+    /// The server of the latest install link, which also serves its Safari page.
+    private weak var installServer: LoopbackServer?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
     func stopHosting() {
@@ -16,7 +18,7 @@ final class InstallationService: ObservableObject {
         if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
     }
     private func keepHosting(_ server: LoopbackServer) {
-        hosted.append(server)
+        hosted.append(server); installServer = server
         if hosted.count > 3 { hosted.removeFirst(hosted.count - 3) }
         isHosting = true
         keepServingInBackground()
@@ -57,22 +59,18 @@ final class InstallationService: ObservableObject {
         guard let certificate = try InstallationCertificate.load() else {
             throw ToolError.message("请先在安装方式中创建证书")
         }
-        do { try await certificate.validateAsync(host: host) } catch {
-            guard (try? InstallationCertificate.localProfile()) != nil else { throw error }
+        do { try await certificate.validateAsync(host: host) }
+        catch InstallationCertificate.CheckFailure.outdated where (try? InstallationCertificate.localProfile()) != nil {
+            // Made by an earlier iPadn that didn't cover this address.
             throw ToolError.message("证书需要更新。请在「安装设置」中重新创建证书，并安装、信任新的描述文件。")
         }
         // The server listens on 127.0.0.1; any other answer (no network, or a
         // proxy app that answers DNS itself) means the system can't reach it.
-        let candidates = host == ManifestBuilder.defaultLocalHost ? ManifestBuilder.fallbackLocalHosts : [host]
-        let reachable = await Task.detached(priority: .userInitiated) { () -> String? in
-            for candidate in candidates {
-                let addresses = ManifestBuilder.addresses(of: candidate)
-                InstallLog.shared.add("\(candidate) resolves to \(addresses.isEmpty ? "nothing" : addresses.joined(separator: ", "))")
-                if addresses.contains(where: { $0.hasPrefix("127.") }) { return candidate }
-            }
-            return nil
-        }.value
-        guard let reachable else {
+        // Fallbacks are used only when the certificate covers them too.
+        let candidates = host == ManifestBuilder.defaultLocalHost
+            ? ManifestBuilder.fallbackLocalHosts.filter { $0 == host || (try? certificate.validate(host: $0)) != nil }
+            : [host]
+        guard let reachable = await ManifestBuilder.firstLoopbackHost(candidates) else {
             throw ToolError.message("当前网络下无法连接本机安装服务。如果开启了代理或 VPN，请关闭后重试，或改用一键安装。")
         }
         let server = LoopbackServer(identity: certificate.identity, certificates: certificate.certificates, publicHost: reachable)
@@ -111,7 +109,7 @@ final class InstallationService: ObservableObject {
     /// A page on this device that opens `installURL`, for installing from
     /// Safari when the install prompt doesn't appear from iPadn itself.
     func browserPage(installURL: URL, app: StoreApp) throws -> URL {
-        guard let server = hosted.last ?? (files.baseURL == nil ? nil : files) else {
+        guard let server = installServer, server.baseURL != nil else {
             throw ToolError.message("安装服务未就绪，请重试")
         }
         let page = Data(ManifestBuilder.browserPage(installURL: installURL, name: app.name.isEmpty ? app.bundleID : app.name).utf8)
@@ -127,6 +125,7 @@ final class InstallationService: ObservableObject {
         let url = try ManifestBuilder.installURL(app: job.app, filename: file.lastPathComponent, plistServer: plistServer)
         try await files.start()
         _ = try files.register(file)
+        installServer = files
         keepServingInBackground()
         return url
     }
@@ -159,6 +158,44 @@ enum ManifestBuilder {
     static func migratedLocalHost(_ value: String) -> String {
         let host = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return ["", "127.0.0.1", "localhost", "127.0.0.1.sslip.io"].contains(host) ? defaultLocalHost : value
+    }
+    /// The first of `hosts` (in order) that resolves to this device. The
+    /// lookups run side by side and give up after `timeout`, so a network
+    /// with broken DNS can't hold the install up.
+    static func firstLoopbackHost(_ hosts: [String], timeout: TimeInterval = 3) async -> String? {
+        guard !hosts.isEmpty else { return nil }
+        final class Race: @unchecked Sendable {
+            private let lock = NSLock()
+            private var answers: [Bool?]
+            private var continuation: CheckedContinuation<String?, Never>?
+            private let hosts: [String]
+            init(_ hosts: [String], _ continuation: CheckedContinuation<String?, Never>) {
+                self.hosts = hosts; answers = Array(repeating: nil, count: hosts.count); self.continuation = continuation
+            }
+            func record(_ index: Int, loopback: Bool) {
+                lock.lock(); answers[index] = loopback
+                // Decided once every host before the first loopback one has answered.
+                let decided = answers.firstIndex { $0 != false }
+                if decided == nil { finishLocked(nil) }
+                else if let decided, answers[decided] == true { finishLocked(hosts[decided]) }
+                lock.unlock()
+            }
+            func timeOut() {
+                lock.lock(); finishLocked(answers.firstIndex { $0 == true }.map { hosts[$0] }); lock.unlock()
+            }
+            private func finishLocked(_ host: String?) { continuation?.resume(returning: host); continuation = nil }
+        }
+        return await withCheckedContinuation { continuation in
+            let race = Race(hosts, continuation)
+            for (index, host) in hosts.enumerated() {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let addresses = ManifestBuilder.addresses(of: host)
+                    InstallLog.shared.add("\(host) resolves to \(addresses.isEmpty ? "nothing" : addresses.joined(separator: ", "))")
+                    race.record(index, loopback: addresses.contains { $0.hasPrefix("127.") })
+                }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { race.timeOut() }
+        }
     }
     /// Numeric addresses the system resolves `host` to.
     static func addresses(of host: String) -> [String] {

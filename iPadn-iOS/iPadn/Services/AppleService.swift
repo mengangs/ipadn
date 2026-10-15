@@ -21,7 +21,7 @@ final class AppleService: ObservableObject {
     /// Replaces the identifier Apple sees for this device (专业模式).
     func setGUID(_ value: String) throws {
         let id = value.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard id.count == 12, id.allSatisfy(\.isHexDigit) else {
+        guard id.count == 12, id.allSatisfy({ $0.isASCII && $0.isHexDigit }) else {
             throw ToolError.message("设备标识需要是 12 位十六进制字符（0–9、A–F）")
         }
         objectWillChange.send()

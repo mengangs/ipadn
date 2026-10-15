@@ -137,6 +137,8 @@ final class ToolStore: ObservableObject {
                 appCatalog[key] = Array(AppSearchIndex.unique(listed + (appCatalog[key] ?? [])).prefix(1000))
                 try? LocalResources.save(appCatalog, filename: "app-catalog.json")
                 remember(input)
+                // The results are in: missing artwork fills in quietly.
+                searching = false
                 await fillMissingArtwork(searchID: id, store: context, accountCountry: accountCountry)
             } catch is CancellationError { }
             catch {

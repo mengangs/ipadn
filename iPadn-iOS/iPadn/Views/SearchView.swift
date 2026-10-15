@@ -31,7 +31,7 @@ struct SearchView: View {
             if store.searching {
                 Section {
                     HStack { ProgressView(); Text("正在搜索…").font(.subheadline).foregroundStyle(.secondary); Spacer(); Button("取消") { store.cancelSearch() } }
-                    AppSkeleton(); AppSkeleton()
+                    if store.results.isEmpty { AppSkeleton(); AppSkeleton() }
                 }
             }
             if let error = store.searchError {

@@ -20,7 +20,22 @@ enum InstallationCertificate {
             SecTrustSetNetworkFetchAllowed(trust, false)
             var error: CFError?
             guard SecTrustEvaluateWithError(trust, &error) else {
-                throw ToolError.message("安装证书未通过系统信任检查：\(error?.localizedDescription ?? "证书不受信任")。请确认未过期、包含服务地址，并已在系统中信任签发它的 CA。")
+                let code = error.map { CFErrorGetCode($0) } ?? 0
+                if code == Int(errSecHostNameMismatch) || code == Int(errSecCertificateExpired) { throw CheckFailure.outdated }
+                throw CheckFailure.untrusted
+            }
+        }
+    }
+    /// Why the system would refuse the certificate.
+    enum CheckFailure: LocalizedError {
+        /// Doesn't name the service address, or has expired: a new one is needed.
+        case outdated
+        /// Its CA isn't trusted on this device (yet).
+        case untrusted
+        var errorDescription: String? {
+            switch self {
+            case .outdated: return "安装证书已过期或不包含服务地址，请重新创建或导入证书。"
+            case .untrusted: return "安装证书还没有被信任。请在「设置 › 通用 › 关于本机 › 证书信任设置」中开启对应 CA 的信任。"
             }
         }
     }

@@ -13,6 +13,8 @@ struct PackageInstallationView: View {
     /// The system took the install link; show how far it has got.
     @State private var started = false
     @State private var attempted = false
+    /// Which request the delayed connection check belongs to.
+    @State private var attempt = 0
     var body: some View {
         NavigationStack {
             Form {
@@ -82,6 +84,8 @@ struct PackageInstallationView: View {
     private func requestInstallation(viaBrowser: Bool = false) {
         guard !busy else { return }
         busy = true; message = nil; started = false; attempted = true
+        attempt += 1
+        let current = attempt
         Task { @MainActor in
             defer { busy = false }
             do {
@@ -112,7 +116,7 @@ struct PackageInstallationView: View {
                     // if it never did, it could not connect.
                     Task { @MainActor in
                         try? await Task.sleep(for: .seconds(6))
-                        if InstallLog.shared.manifestCount == served, !viaBrowser {
+                        if attempt == current, InstallLog.shared.manifestCount == served, !viaBrowser {
                             message = nil; started = false
                             issue = "系统没能连接到 iPadn 的本机安装服务。请在「设置 › 通用 › 关于本机 › 证书信任设置」中确认已开启 iPadn 本机安装 CA；也可以改用一键安装。"
                         }
@@ -135,8 +139,6 @@ private struct InstallProgressRow: View {
                 Label("正在传输安装包 \(Int(progress.fraction * 100))%", systemImage: "arrow.down.app")
                 ProgressView(value: progress.fraction).tint(UX.tint)
                     .animation(.linear(duration: 0.4), value: progress.fraction)
-            } else if progress.readManifest {
-                Label("系统已开始安装，正在准备…", systemImage: "hourglass")
             } else {
                 Label(note ?? "请在系统弹窗中确认安装。", systemImage: "hand.tap")
             }
