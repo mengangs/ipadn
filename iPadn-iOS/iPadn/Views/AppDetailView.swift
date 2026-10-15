@@ -53,7 +53,6 @@ struct AppDetailView: View {
     /// placeholders so the page below doesn't jump.
     @State private var extrasLoaded = LocalResources.isPreview
     @State private var viewing: StoreService.Screenshot?
-    @State private var pageWidth: CGFloat = 0
     @Namespace private var screenshotZoom
     @State private var developerApps: [StoreApp] = []
     /// Listing artwork, else what a download of this app brought along
@@ -72,56 +71,58 @@ struct AppDetailView: View {
     private var usesApple: Bool { official && apple.active != nil }
     private var readsMetadata: Bool { usesApple && versionNote == nil && !metadataStopped }
     var body: some View {
-        List {
-            Section {
-                header.listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
-                    .onScrolledUnderBar { headerAway = $0 }
-                infoStrip.listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
-            }
-            if let shots = extrasLoaded ? extras?.screenshots : [], !extrasLoaded || !shots.isEmpty {
-                Section {
-                    // On the page background, edge to edge, as in the App Store.
-                    ScreenshotStrip(screenshots: shots, platform: store.settings.store.platform,
-                                    pageWidth: pageWidth, zoom: screenshotZoom) { viewing = $0 }
-                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                        .listRowBackground(Color.clear)
-                } header: { sectionTitle("预览") }
-            }
-            versionSection
-            if store.settings.store.platform == .macOS { macSection }
-            if !app.description.isEmpty {
-                Section {
-                    Text(app.description).font(.subheadline).lineLimit(showDescription ? nil : 4).textSelection(.enabled)
-                    if !showDescription {
-                        Button("更多") { withAnimation { showDescription = true } }.font(.subheadline)
+        // A scroll view of drawn cards rather than a List, so the screenshot
+        // strip can run from screen edge to screen edge as in the App Store.
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                CardSection {
+                    header.onScrolledUnderBar { headerAway = $0 }
+                        .cardRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
+                    infoStrip.cardRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
+                }
+                if let shots = extrasLoaded ? extras?.screenshots : [], !extrasLoaded || !shots.isEmpty {
+                    CardSection(plain: true) {
+                        ScreenshotStrip(screenshots: shots, platform: store.settings.store.platform,
+                                        zoom: screenshotZoom) { viewing = $0 }
+                    } header: { sectionTitle("预览") }
+                }
+                versionSection
+                if store.settings.store.platform == .macOS { macSection }
+                if !app.description.isEmpty {
+                    CardSection {
+                        Text(app.description).font(.subheadline).lineLimit(showDescription ? nil : 4).textSelection(.enabled)
+                        if !showDescription {
+                            Button("更多") { withAnimation { showDescription = true } }.font(.subheadline)
+                        }
+                    } header: { sectionTitle("简介") }
+                }
+                CardSection {
+                    if app.isDelisted { LabeledContent("商店状态", value: "已下架") }
+                    if !app.displayCategory.isEmpty { LabeledContent("类别", value: app.displayCategory) }
+                    if app.size > 0 { LabeledContent("大小", value: app.size.byteLabel) }
+                    if !app.minimumOS.isEmpty {
+                        LabeledContent("兼容性", value: "\(store.settings.store.platform.title) \(app.minimumOS) 或更高版本")
                     }
-                } header: { sectionTitle("简介") }
-            }
-            Section {
-                if app.isDelisted { LabeledContent("商店状态", value: "已下架") }
-                if !app.displayCategory.isEmpty { LabeledContent("类别", value: app.displayCategory) }
-                if app.size > 0 { LabeledContent("大小", value: app.size.byteLabel) }
-                if !app.minimumOS.isEmpty {
-                    LabeledContent("兼容性", value: "\(store.settings.store.platform.title) \(app.minimumOS) 或更高版本")
-                }
-                if !app.price.isEmpty { LabeledContent("价格", value: app.price) }
-                LabeledContent("商店地区", value: store.settings.store.country)
-                if !app.bundleID.isEmpty {
-                    LabeledContent("Bundle ID") {
-                        Text(app.bundleID).font(.footnote.monospaced()).textSelection(.enabled).multilineTextAlignment(.trailing)
+                    if !app.price.isEmpty { LabeledContent("价格", value: app.price) }
+                    LabeledContent("商店地区", value: store.settings.store.country)
+                    if !app.bundleID.isEmpty {
+                        LabeledContent("Bundle ID") {
+                            Text(app.bundleID).font(.footnote.monospaced()).textSelection(.enabled).multilineTextAlignment(.trailing)
+                        }
                     }
+                    if let developer = extras?.developer, !developer.isEmpty { LabeledContent("开发者", value: developer) }
+                    if store.settings.store.platform != .macOS {
+                        Link(destination: storeURL) { Label("在 App Store 中查看", systemImage: "arrow.up.right.square") }
+                    }
+                } header: { sectionTitle("信息") }
+                if !developerApps.isEmpty {
+                    CardSection {
+                        DeveloperAppsStrip(apps: developerApps)
+                            .cardRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                    } header: { sectionTitle(extras?.developer.isEmpty == false ? "更多来自 \(extras!.developer)" : "同一开发者的其他应用") }
                 }
-                if let developer = extras?.developer, !developer.isEmpty { LabeledContent("开发者", value: developer) }
-                if store.settings.store.platform != .macOS {
-                    Link(destination: storeURL) { Label("在 App Store 中查看", systemImage: "arrow.up.right.square") }
-                }
-            } header: { sectionTitle("信息") }
-            if !developerApps.isEmpty {
-                Section {
-                    DeveloperAppsStrip(apps: developerApps)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
-                } header: { sectionTitle(extras?.developer.isEmpty == false ? "更多来自 \(extras!.developer)" : "同一开发者的其他应用") }
             }
+            .padding(.top, 8).padding(.bottom, 24)
         }
         .toolPage()
         .navigationTitle("")
@@ -228,7 +229,6 @@ struct AppDetailView: View {
             guard !Task.isCancelled else { return }
             developerApps = apps
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pageWidth = $0 }
         .fullScreenCover(item: $viewing) { shot in
             ScreenshotViewer(screenshots: extras?.screenshots ?? [shot], selection: shot)
                 .zoomTransition(shot.id, in: screenshotZoom)
@@ -344,7 +344,7 @@ struct AppDetailView: View {
     }
 
     @ViewBuilder private var versionSection: some View {
-        Section {
+        CardSection {
             Toggle("从 Apple 获取完整版本列表", isOn: $official).font(.subheadline)
                 .disabled(apple.active == nil)
             if versionsLoading { HStack { ProgressView(); Text("正在查找历史版本…").font(.subheadline).foregroundStyle(.secondary) } }
@@ -436,7 +436,7 @@ struct AppDetailView: View {
     }
 
     @ViewBuilder private var macSection: some View {
-        Section {
+        CardSection {
             Text(MacPackageDecryptor.isAvailable
                  ? "下载完成后可导出到 Mac 安装。"
                  : "仅支持下载未加密的 Mac 安装包。")
@@ -605,9 +605,6 @@ private struct ScreenshotStrip: View {
     /// Empty while the listing is still loading: placeholders only.
     let screenshots: [StoreService.Screenshot]
     let platform: AppPlatform
-    /// Width of the whole page; the strip scrolls from edge to edge of it
-    /// while its first screenshot lines up with the cards above.
-    let pageWidth: CGFloat
     let zoom: Namespace.ID
     var open: (StoreService.Screenshot) -> Void
     /// Loaded images. The size in a screenshot link is only the box Apple
@@ -615,18 +612,17 @@ private struct ScreenshotStrip: View {
     /// portrait-looking link: once all are in, lay each one out by the real image.
     @State private var images: [URL: UIImage] = [:]
     @State private var failed = Set<URL>()
-    @State private var rowWidth: CGFloat = 0
     private var ready: Bool { !screenshots.isEmpty && screenshots.allSatisfy { images[$0.url] != nil || failed.contains($0.url) } }
     private func aspect(_ shot: StoreService.Screenshot) -> Double {
         guard ready, let image = images[shot.url], image.size.height > 0 else { return shot.aspect }
         return image.size.width / image.size.height
     }
-    /// Gap between the page edge and the cards.
-    private var margin: CGFloat { rowWidth > 0 ? max(0, (pageWidth - rowWidth) / 2) : 0 }
     var body: some View {
-        let margin = margin
+        let margin = CardSection<EmptyView, EmptyView>.pageMargin
         let placeholders = screenshots.isEmpty
         VStack(alignment: .leading, spacing: 10) {
+            // Full page width: screenshots scroll from screen edge to screen
+            // edge and rest lined up with the cards.
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     if placeholders {
@@ -658,16 +654,14 @@ private struct ScreenshotStrip: View {
             }
             .contentMargins(.horizontal, margin, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
-            .scrollClipDisabled()
             .scrollDisabled(placeholders)
-            .padding(.horizontal, -margin)
-            Label(platform.title == "iOS" ? "iPhone" : platform.title == "tvOS" ? "Apple TV" : platform.title, systemImage: platform.symbol)
-                .font(.footnote).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                DeviceGlyph(platform: platform)
+                Text(platform == .iOS ? "iPhone" : platform == .tvOS ? "Apple TV" : platform.title)
+            }
+            .font(.footnote).foregroundStyle(.secondary)
+            .padding(.horizontal, margin)
         }
-        // Lay out once the widths are known, never from a wrong first guess.
-        .opacity(rowWidth > 0 && pageWidth > 0 ? 1 : 0)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
-        .background(UnclippedListRow())
         .task(id: screenshots.map(\.url)) { await load() }
         .accessibilityIdentifier("detail.screenshots")
     }
@@ -687,24 +681,86 @@ private struct ScreenshotStrip: View {
     }
 }
 
-/// Lets a list row draw past its card, so a horizontal strip can run to the
-/// edges of the screen as in the App Store.
-private struct UnclippedListRow: UIViewRepresentable {
-    final class Marker: UIView {
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            var view = superview
-            while let current = view {
-                current.clipsToBounds = false
-                if current is UICollectionViewCell || current is UITableViewCell { break }
-                view = current.superview
+/// The App Store's outline device glyph under the screenshots.
+private struct DeviceGlyph: View {
+    let platform: AppPlatform
+    var body: some View {
+        switch platform {
+        case .iOS:
+            RoundedRectangle(cornerRadius: 3, style: .continuous).stroke(lineWidth: 1.2).frame(width: 10, height: 17)
+        case .iPadOS:
+            RoundedRectangle(cornerRadius: 3, style: .continuous).stroke(lineWidth: 1.2).frame(width: 14, height: 18)
+        default:
+            Image(systemName: platform.symbol)
+        }
+    }
+}
+
+/// A titled group of rows on a rounded card, like an inset grouped list
+/// section, or (plain) content straight on the page.
+struct CardSection<Content: View, Header: View>: View {
+    static var pageMargin: CGFloat { 16 }
+    static var cornerRadius: CGFloat {
+        if #available(iOS 26, *) { return 26 }
+        return 10
+    }
+    var plain = false
+    @ViewBuilder var content: Content
+    @ViewBuilder var header: Header
+    init(plain: Bool = false, @ViewBuilder content: () -> Content, @ViewBuilder header: () -> Header) {
+        self.plain = plain; self.content = content(); self.header = header()
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header.padding(.horizontal, Self.pageMargin + 20)
+            if plain { content } else {
+                _VariadicView.Tree(CardRows()) { content }
+                    .labeledContentStyle(CardLabeledContentStyle())
+                    .background(Color(.secondarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+                    .padding(.horizontal, Self.pageMargin)
             }
         }
     }
-    func makeUIView(context: Context) -> Marker {
-        let view = Marker(); view.isUserInteractionEnabled = false; return view
+}
+extension CardSection where Header == EmptyView {
+    init(plain: Bool = false, @ViewBuilder content: () -> Content) {
+        self.init(plain: plain, content: content) { EmptyView() }
     }
-    func updateUIView(_ uiView: Marker, context: Context) {}
+}
+
+private struct CardRowInsetsKey: _ViewTraitKey {
+    static var defaultValue: EdgeInsets? { nil }
+}
+extension View {
+    /// Padding of this row inside a card (default: as in a list row).
+    func cardRowInsets(_ insets: EdgeInsets) -> some View { _trait(CardRowInsetsKey.self, insets) }
+}
+
+/// Rows of a card with hairlines between them.
+private struct CardRows: _VariadicView_UnaryViewRoot {
+    func body(children: _VariadicView.Children) -> some View {
+        let last = children.last?.id
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(children) { child in
+                child
+                    .padding(child[CardRowInsetsKey.self] ?? EdgeInsets(top: 11, leading: 20, bottom: 11, trailing: 20))
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                if child.id != last { Divider().padding(.leading, 20) }
+            }
+        }
+    }
+}
+
+/// Label on the left, value on the right, as in a list.
+private struct CardLabeledContentStyle: LabeledContentStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            configuration.label.foregroundStyle(.primary)
+            Spacer(minLength: 12)
+            configuration.content.foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+        }
+    }
 }
 
 /// Screenshots already loaded by the strip, so the full-screen view opens
