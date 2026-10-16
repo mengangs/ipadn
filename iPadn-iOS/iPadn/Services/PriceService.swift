@@ -169,10 +169,13 @@ enum InAppPriceService {
 
     /// The product page as a desktop browser gets it, following redirects.
     static func page(appID: String, country: String) async -> Result<[InAppPrice], PageFailure> {
-        guard let url = URL(string: "https://apps.apple.com/\(country.lowercased())/app/id\(appID)") else { return .failure(.status(0)) }
+        // English in every storefront (Apple picks its closest English page),
+        // so the same purchase has the same name everywhere.
+        guard let url = URL(string: "https://apps.apple.com/\(country.lowercased())/app/id\(appID)?l=en-US") else { return .failure(.status(0)) }
         var request = URLRequest(url: url, timeoutInterval: 30)
         request.setValue(browserAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("text/html", forHTTPHeaderField: "Accept")
+        request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
         let data: Data
         do {
             let (body, response) = try await pageSession.data(for: request)
@@ -246,7 +249,9 @@ enum InAppPriceService {
             }
         }
         visit(json, depth: 0)
-        return best
+        // Some apps list the same purchase twice (one per platform).
+        var seen = Set<InAppPrice>()
+        return best.filter { seen.insert($0).inserted }
     }
 
     /// A short amount with at most a currency sign or code around it.

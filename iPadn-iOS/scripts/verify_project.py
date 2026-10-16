@@ -125,10 +125,6 @@ check(hashes == expected, "Bundled runtime files or hashes differ from local man
 report = {"passed": not failures, "app_swift_files": len(actual_swift), "project_objects": len(objects), "runtime_sha256": hashes,
           "checks": ["OpenStep project graph", "referenced files", "plist parsing", "icon filenames and opaque square dimensions", "shared scheme targets", "Swift lexical delimiters", "bundled runtime hashes"],
           "not_run": ["Swift compilation/type checking", "XCTest", "iOS Simulator", "real device", "Apple account/server requests", "IPA installation"], "failures": failures}
-import os, runpy  # TEMPORARY store probe, removed before merge
-if os.environ.get("GITHUB_ACTIONS"):
-    try: runpy.run_path(str(ROOT / "scripts/store_probe.py"))
-    except Exception as error: print("PROBE: failed", error)
 (ROOT / "build").mkdir(exist_ok=True)
 (ROOT / "build/verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
 print(json.dumps({k: v for k, v in report.items() if k != "runtime_sha256"}, ensure_ascii=False, indent=2))

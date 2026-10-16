@@ -129,6 +129,10 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(items.map(\.name), ["Barrel of Gems (1200)", "Super Duolingo", "Super Duolingo"])
         XCTAssertEqual(items.map(\.price), [4.99, 9.99, 83.99])
         XCTAssertNil(InAppPriceService.items(fromPage: "<html>no data</html>"))
+        // A purchase listed twice (one per platform) counts once.
+        let doubled = html.replacingOccurrences(of: #"{"$kind":"button""#,
+                                                with: #"{"$kind":"textPair","leadingText":"Super Duolingo","trailingText":"$9.99"},{"$kind":"button""#)
+        XCTAssertEqual(InAppPriceService.items(fromPage: doubled)?.count, 3)
         XCTAssertEqual(InAppPriceService.items(fromPage: html.replacingOccurrences(of: "In-App Purchases\",\"summary\":\"Yes\",\"items\":[", with: "X\",\"items\":[{\"$kind\":\"textPair\",\"leadingText\":\"a\",\"trailingText\":\"many words here\"},"))?.count, 0)
 
         XCTAssertEqual(InAppPriceService.price("$1,099"), 1099)
