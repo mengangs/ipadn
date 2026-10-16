@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="iPadn-iOS/iPadn/Resources/Assets.xcassets/BrandMark.imageset/brand.png" width="120" alt="iPadn">
+<img src="docs/images/icon.png" width="120" alt="iPadn">
 
 # iPadn
 
@@ -14,6 +14,14 @@
 [下载](https://github.com/mengangs/ipadn/releases/latest) · [安装下载的应用](#安装下载的应用) · [常见问题](#常见问题) · [反馈问题](https://github.com/mengangs/ipadn/issues)
 
 </div>
+
+<p align="center">
+  <img src="docs/images/01-search.jpg" width="19%" alt="搜索应用">
+  <img src="docs/images/02-detail.jpg" width="19%" alt="应用详情">
+  <img src="docs/images/03-versions.jpg" width="19%" alt="历史版本与更新说明">
+  <img src="docs/images/04-prices.jpg" width="19%" alt="多地区比价">
+  <img src="docs/images/05-purchased.jpg" width="19%" alt="已购项目">
+</p>
 
 ---
 
