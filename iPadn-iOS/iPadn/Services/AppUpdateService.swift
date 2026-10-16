@@ -60,7 +60,11 @@ enum AppUpdateService {
     /// Downloads the release's IPA to a temporary file named after it.
     static func download(_ release: AppRelease, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         guard let url = release.package else { throw ToolError.message("这个版本没有可下载的安装包") }
-        let target = FileManager.default.temporaryDirectory.appendingPathComponent("iPadn-\(release.version).ipa")
+        try Task.checkCancellation()
+        // Its own folder, so a second download never replaces a file being shared.
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let target = folder.appendingPathComponent("iPadn-\(release.version).ipa")
         let downloader = Downloader(target: target, progress: progress)
         let session = URLSession(configuration: .ephemeral, delegate: downloader, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
@@ -77,6 +81,7 @@ enum AppUpdateService {
         let progress: @Sendable (Double) -> Void
         private let lock = NSLock()
         private var pending: CheckedContinuation<URL, Error>?
+        private var reported = -1
         var continuation: CheckedContinuation<URL, Error>? {
             get { lock.withLock { pending } }
             set { lock.withLock { pending = newValue } }
@@ -89,7 +94,14 @@ enum AppUpdateService {
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
                         totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
             guard totalBytesExpectedToWrite > 0 else { return }
-            progress(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+            let fraction = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+            // Whole percents only: the screen doesn't need thousands of updates.
+            let percent = Int(fraction * 100)
+            guard lock.withLock({ () -> Bool in
+                guard percent != reported else { return false }
+                reported = percent; return true
+            }) else { return }
+            progress(fraction)
         }
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
             guard let response = downloadTask.response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
@@ -97,7 +109,6 @@ enum AppUpdateService {
             }
             // The file is gone once this returns: move it now.
             do {
-                try? FileManager.default.removeItem(at: target)
                 try FileManager.default.moveItem(at: location, to: target)
                 finish(.success(target))
             } catch { finish(.failure(error)) }

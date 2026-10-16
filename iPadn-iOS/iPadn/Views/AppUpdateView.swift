@@ -7,6 +7,7 @@ struct AppUpdateView: View {
     let release: AppRelease
     @State private var progress: Double?
     @State private var share: SharedFile?
+    @State private var downloading: Task<Void, Never>?
 
     var body: some View {
         List {
@@ -55,11 +56,14 @@ struct AppUpdateView: View {
         .navigationTitle("iPadn 更新")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
+        .onDisappear { if share == nil { downloading?.cancel() } }
     }
 
     private func download() {
+        guard downloading == nil else { return }
         progress = 0
-        Task {
+        downloading = Task {
+            defer { downloading = nil }
             do {
                 let file = try await AppUpdateService.download(release) { value in
                     // A late report must not bring back a finished download's bar.

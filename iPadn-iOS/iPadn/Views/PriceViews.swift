@@ -13,16 +13,22 @@ struct RegionPriceView: View {
     @State private var inApps: [String: [InAppPrice]] = [:]
     @State private var inAppsLoading = false
     @State private var inAppNames: [String: String] = [:]
+    /// Bumped to reload: on opening, after the region list was edited, on pull to refresh.
+    @State private var reload = 0
+    /// The latest load; an older one that finishes late changes nothing.
+    @State private var generation = 0
+    @State private var loadedRegions: [String] = []
     static let currencies = ["CNY", "HKD", "TWD", "USD", "JPY", "KRW", "EUR", "GBP", "SGD", "AUD", "CAD", "TRY"]
 
     private var base: String { store.settings.baseCurrency }
-    private var sorted: [RegionPrice] { PriceComparison.sorted(prices, rates: rates) }
-    private var cheapest: String? {
-        sorted.first { $0.price.map { $0 > 0 } == true && rates?.convert($0.price!, from: $0.currency) != nil }?.country
+    private func cheapest(in sorted: [RegionPrice]) -> String? {
+        sorted.first { item in item.price.map { $0 > 0 && rates?.convert($0, from: item.currency) != nil } == true }?.country
     }
 
     var body: some View {
-        List {
+        let sorted = PriceComparison.sorted(prices, rates: rates)
+        let cheapest = cheapest(in: sorted)
+        return List {
             Section {
                 if prices.isEmpty && loading {
                     ForEach(0..<min(4, max(1, store.settings.priceRegions.count)), id: \.self) { _ in RegionPriceSkeleton() }
@@ -56,11 +62,14 @@ struct RegionPriceView: View {
                 .accessibilityLabel("比价设置")
             }
         }
-        .sheet(isPresented: $editingRegions) {
+        // Reloads once the region list is closed, not on every tap in it.
+        .sheet(isPresented: $editingRegions, onDismiss: {
+            if store.settings.priceRegions != loadedRegions { reload += 1 }
+        }) {
             NavigationStack { RegionSelectionView(selection: $store.settings.priceRegions) }
         }
         .revealAfterDelay(loading, into: $showSpinner)
-        .task(id: store.settings.priceRegions) { await load() }
+        .task(id: reload) { await load() }
         .task(id: base) { rates = await ExchangeRates.load(base: base) }
         .refreshable { await load() }
     }
@@ -136,21 +145,25 @@ struct RegionPriceView: View {
     }
 
     private func load() async {
+        generation += 1
+        let current = generation
+        let regions = store.settings.priceRegions
+        loadedRegions = regions
         loading = true
-        let found = await PriceComparison.regionPrices(appID: app.id, countries: store.settings.priceRegions)
-        guard !Task.isCancelled else { loading = false; return }
+        let found = await PriceComparison.regionPrices(appID: app.id, countries: regions)
+        guard current == generation else { return }
         withAnimation(.easeOut(duration: 0.2)) { prices = found }
         loading = false
         // In-app purchases come from each listed storefront's product page.
         inAppsLoading = true
-        defer { inAppsLoading = false }
         let listed = found.filter { $0.listing != nil }.map(\.country)
         let pages = await InAppPriceService.fetch(appID: app.id, countries: listed)
-        guard !Task.isCancelled else { return }
+        guard current == generation else { return }
         withAnimation(.easeOut(duration: 0.2)) { inApps = pages }
+        inAppsLoading = false
         // Matching uses the English names; show them in the system language.
         let names = await InAppPriceService.localizedNames(appID: app.id, english: pages)
-        guard !Task.isCancelled, !names.isEmpty else { return }
+        guard current == generation, !names.isEmpty else { return }
         withAnimation(.easeOut(duration: 0.2)) { inAppNames = names }
     }
 }
@@ -256,9 +269,8 @@ struct RegionSelectionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
     private var others: [String] {
-        StoreRegions.codes.filter { !selection.contains($0) }
+        StoreRegions.byName.filter { !selection.contains($0) }
             .filter { search.isEmpty || StoreRegions.name($0).localizedCaseInsensitiveContains(search) || $0.localizedCaseInsensitiveContains(search) }
-            .sorted { StoreRegions.name($0).localizedStandardCompare(StoreRegions.name($1)) == .orderedAscending }
     }
     var body: some View {
         List {

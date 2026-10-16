@@ -60,6 +60,7 @@ final class ToolStore: ObservableObject {
     @Published private(set) var watch: [String: WatchRecord] = [:]
     @Published private(set) var watchChecking = false
     private var watchChecked: (date: Date, keys: Set<String>)?
+    private var watchRecheck = false
     private var officialVersionCache: [String: (date: Date, versions: [AppVersion])] = [:]
     @Published var infoMessage: String?
     #if DEBUG
@@ -311,7 +312,12 @@ final class ToolStore: ObservableObject {
         var countries = [primary]
         for country in settings.priceRegions.map({ $0.uppercased() }) where !countries.contains(country) { countries.append(country) }
         let keys = ids.union(countries.map { "@" + $0 })
-        guard !apps.isEmpty, !watchChecking else { return [] }
+        guard !apps.isEmpty else { return [] }
+        if watchChecking {
+            // An app followed during a check gets its own check right after.
+            if force { watchRecheck = true }
+            return []
+        }
         if !force, let checked = watchChecked, checked.keys == keys, Date().timeIntervalSince(checked.date) < 3 * 3600 { return [] }
         watchChecking = true
         defer { watchChecking = false }
@@ -324,11 +330,21 @@ final class ToolStore: ObservableObject {
             for await (country, found) in group { if let found { listings[country] = found } }
         }
         guard var found = listings[primary] else { return [] }
-        // The list lookup can leave out an app now and then; ask once more
-        // on its own before treating it as removed from sale.
-        for app in apps where found[app.id] == nil && watch[WatchRecord.key(id: app.id, country: primary)]?.listed == true {
-            guard let single = try? await StoreService.lookup(ids: [app.id], country: primary).apps else { return [] }
-            if let listing = single[app.id] { found[app.id] = listing }
+        // The list lookup can leave out an app now and then: ask once more,
+        // together, for apps that just went missing before treating them as
+        // removed from sale. Apps already known to be removed aren't asked again.
+        let missing = apps.map(\.id).filter { id in
+            guard found[id] == nil, let record = watch[WatchRecord.key(id: id, country: primary)] else { return false }
+            return record.listed && !record.delisted
+        }
+        var unsure = Set<String>()
+        if !missing.isEmpty {
+            if let again = try? await StoreService.lookup(ids: missing, country: primary).apps {
+                found.merge(again) { first, _ in first }
+            } else {
+                // No answer: those records stay as they are this time.
+                unsure = Set(missing)
+            }
         }
         listings[primary] = found
         guard !Task.isCancelled, primary == watchCountry else { return [] }
@@ -337,7 +353,7 @@ final class ToolStore: ObservableObject {
         var refreshed = favorites
         // Skip apps unfollowed while the lookups were running.
         for app in apps where refreshed.contains(where: { $0.id == app.id }) {
-            for (country, found) in listings {
+            for (country, found) in listings where !(country == primary && unsure.contains(app.id)) {
                 let key = WatchRecord.key(id: app.id, country: country)
                 let listing = found[app.id]
                 let result = WatchService.update(records[key], id: app.id, country: country, listing: listing)
@@ -361,6 +377,10 @@ final class ToolStore: ObservableObject {
         watchChecked = (Date(), keys)
         persistWatch()
         if refreshed != favorites, (try? LocalResources.save(refreshed, filename: "favorites.json")) != nil { favorites = refreshed }
+        if watchRecheck {
+            watchRecheck = false
+            Task { await self.checkWatched(force: true) }
+        }
         return events
     }
 
@@ -535,6 +555,12 @@ final class ToolStore: ObservableObject {
             }
         }
         guard !Task.isCancelled else { return }
+        // A kept version holds only until a newer one is downloaded.
+        let outgrown = keptVersions.filter { key, kept in newest[key].map { VersionOrder.isNewer($0, than: kept) } ?? false }
+        if !outgrown.isEmpty {
+            for key in outgrown.keys { keptVersions[key] = nil }
+            LocalResources.defaults.set(keptVersions, forKey: "storage_keptVersions")
+        }
         var updates: [String: StoreApp] = [:]
         for (key, app) in listings where keptVersions[key] == nil {
             if let current = newest[key], VersionOrder.isNewer(app.version, than: current) { updates[key] = app }
@@ -621,7 +647,7 @@ final class ToolStore: ObservableObject {
         return file
     }
 
-    func keepsVersion(_ job: DownloadJob) -> Bool { job.updateKey.map { keptVersions[$0] != nil } ?? false }
+    func keepsVersion(_ job: DownloadJob) -> Bool { job.updateKey.map { keptVersions[$0] == job.storeVersion } ?? false }
     /// Keeps this download's app at its version (no update reminders), or
     /// lets reminders resume.
     func keepVersion(_ keep: Bool, of job: DownloadJob) {

@@ -114,14 +114,24 @@ enum WatchService {
     /// "免费" for zero, else the amount in its currency ("¥18", "$2.99").
     static func format(_ price: Double, currency: String) -> String {
         if price == 0 { return "免费" }
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.locale = Locale(identifier: "zh_CN")
-        if !currency.isEmpty { formatter.currencyCode = currency }
-        formatter.minimumFractionDigits = price.rounded() == price ? 0 : 2
-        formatter.maximumFractionDigits = 2
-        return formatter.string(from: NSNumber(value: price)) ?? String(format: "%.2f", price)
+        let whole = price.rounded() == price
+        return formatters.withLock { cache in
+            let key = currency + (whole ? "|0" : "|2")
+            let formatter = cache[key] ?? {
+                let formatter = NumberFormatter()
+                formatter.numberStyle = .currency
+                formatter.locale = Locale(identifier: "zh_CN")
+                if !currency.isEmpty { formatter.currencyCode = currency }
+                formatter.minimumFractionDigits = whole ? 0 : 2
+                formatter.maximumFractionDigits = 2
+                return formatter
+            }()
+            cache[key] = formatter
+            return formatter.string(from: NSNumber(value: price)) ?? String(format: "%.2f", price)
+        }
     }
+    /// Building a NumberFormatter is slow; rows and chart labels format many prices.
+    private static let formatters = NSLockedValue([String: NumberFormatter]())
 
     /// A sentence for a notification, or nil when the change is not worth one.
     static func message(_ change: WatchChange, currency: String) -> String? {

@@ -1,5 +1,13 @@
 import Foundation
 
+/// A value used from several threads, one at a time (formatters aren't thread-safe).
+final class NSLockedValue<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+    init(_ value: Value) { self.value = value }
+    func withLock<T>(_ body: (inout Value) -> T) -> T { lock.lock(); defer { lock.unlock() }; return body(&value) }
+}
+
 /// App Store storefronts, for price comparison.
 enum StoreRegions {
     static let codes = """
@@ -11,9 +19,13 @@ enum StoreRegions {
     """.split(separator: " ").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
     static let defaultComparison = ["CN", "HK", "US", "JP", "KR", "TR", "NG"]
 
-    static func name(_ code: String) -> String {
-        Locale(identifier: "zh_CN").localizedString(forRegionCode: code) ?? code
-    }
+    static func name(_ code: String) -> String { names[code] ?? code }
+    private static let names: [String: String] = {
+        let locale = Locale(identifier: "zh_CN")
+        return Dictionary(uniqueKeysWithValues: codes.map { ($0, locale.localizedString(forRegionCode: $0) ?? $0) })
+    }()
+    /// All storefronts in the order of their Chinese names.
+    static let byName: [String] = codes.sorted { name($0).localizedStandardCompare(name($1)) == .orderedAscending }
     static func flag(_ code: String) -> String {
         code.uppercased().unicodeScalars.compactMap { UnicodeScalar(127_397 + $0.value) }.map(String.init).joined()
     }
@@ -394,13 +406,20 @@ enum ReleaseNotesService {
                       language: String = Locale.preferredLanguages.first ?? "en-US") async -> [String: ReleaseNote] {
         for country in countries {
             let key = appID + "|" + country + "|" + language
-            if let cached = cache[key], Date().timeIntervalSince(cached.date) < 6 * 3600 { return cached.notes }
-            guard case .success(let html) = await InAppPriceService.fetchPage(appID: appID, country: country, language: language)
-            else { continue }
-            let notes = parse(html)
-            guard !notes.isEmpty else { continue }
+            if let cached = cache[key] {
+                let age = Date().timeIntervalSince(cached.date)
+                if !cached.notes.isEmpty && age < 6 * 3600 { return cached.notes }
+                // A page that couldn't be read (or was redirected) isn't fetched again for a while.
+                if cached.notes.isEmpty && age < 30 * 60 { continue }
+            }
+            var notes: [String: ReleaseNote] = [:]
+            if case .success(let html) = await InAppPriceService.fetchPage(appID: appID, country: country, language: language) {
+                // The page's data runs to megabytes: read it off the main thread.
+                notes = await Task.detached(priority: .utility) { parse(html) }.value
+            }
+            guard !Task.isCancelled else { return [:] }
             cache[key] = (Date(), notes)
-            return notes
+            if !notes.isEmpty { return notes }
         }
         return [:]
     }
@@ -444,9 +463,12 @@ enum ReleaseNotesService {
     /// "Tue Oct 06 2026 18:07:01 GMT+0000 (Coordinated Universal Time)".
     static func date(_ text: String) -> Date? {
         let core = text.components(separatedBy: " (").first ?? text
+        return dateFormatter.withLock { $0.date(from: core) }
+    }
+    private static let dateFormatter = NSLockedValue({
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "EEE MMM dd yyyy HH:mm:ss 'GMT'Z"
-        return formatter.date(from: core)
-    }
+        return formatter
+    }())
 }
