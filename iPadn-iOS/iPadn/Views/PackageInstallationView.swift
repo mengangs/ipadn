@@ -81,7 +81,7 @@ struct PackageInstallationView: View {
                          + (InstallLog.insideLiveContainer && store.settings.automaticInstallation
                             ? "\n在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。" : "")
                          + (proxied ? proxyHint : "")
-                         + "\n已安装的应用可以直接覆盖安装，数据会保留；如果设备上的版本更新，系统会提示先删除才能安装旧版本。")
+                         + "\n从 App Store 安装的应用可以直接覆盖安装，数据会保留。如果系统提示先删除，通常是设备上的版本更新，或设备上的应用来自 TestFlight、其他签名工具等不同渠道。")
                 }
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
