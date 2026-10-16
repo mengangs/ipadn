@@ -135,3 +135,23 @@ enum WatchService {
         }
     }
 }
+
+enum PurchaseExport {
+    /// One row per purchase: name, IDs, version, purchase date, store status, downloaded.
+    static func csv(_ apps: [OwnedApp], listed: [String: Bool], downloaded: Set<String>) -> String {
+        var rows = [["名称", "App ID", "Bundle ID", "版本", "购买日期", "商店状态", "已下载"]]
+        let date = Date.FormatStyle().year().month(.twoDigits).day(.twoDigits)
+        for app in apps {
+            let status = listed[app.id].map { $0 ? "在售" : "已下架" } ?? "未检查"
+            rows.append([app.name, app.id, app.bundleID, app.version, app.purchaseDate.map { $0.formatted(date) } ?? "",
+                         status, downloaded.contains(app.id) ? "是" : "否"])
+        }
+        return rows.map { $0.map(field).joined(separator: ",") }.joined(separator: "\r\n") + "\r\n"
+    }
+
+    /// Quoted when it holds a comma, quote or line break; quotes doubled.
+    static func field(_ value: String) -> String {
+        guard value.contains(where: { $0 == "," || $0 == "\"" || $0.isNewline }) else { return value }
+        return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+}

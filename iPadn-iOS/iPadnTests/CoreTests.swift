@@ -168,6 +168,20 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(InAppPriceService.nameMap(english: english, localized: english), [:], "an English page names nothing")
     }
 
+    func testPurchaseListExportsAsCSV() {
+        let apps = [OwnedApp(id: "1", bundleID: "a.b", name: "Notes, \"Pro\"", version: "2.0", purchaseDate: nil, iconURL: nil),
+                    OwnedApp(id: "2", bundleID: "c.d", name: "Gone", version: "1.0", purchaseDate: nil, iconURL: nil),
+                    OwnedApp(id: "3", bundleID: "e.f", name: "Plain", version: "3.1", purchaseDate: nil, iconURL: nil)]
+        let csv = PurchaseExport.csv(apps, listed: ["1": true, "2": false], downloaded: ["2"])
+        let lines = csv.components(separatedBy: "\r\n")
+        XCTAssertEqual(lines[0], "名称,App ID,Bundle ID,版本,购买日期,商店状态,已下载")
+        XCTAssertEqual(lines[1], "\"Notes, \"\"Pro\"\"\",1,a.b,2.0,,在售,否")
+        XCTAssertEqual(lines[2], "Gone,2,c.d,1.0,,已下架,是")
+        XCTAssertEqual(lines[3], "Plain,3,e.f,3.1,,未检查,否")
+        XCTAssertEqual(lines.last, "")
+        XCTAssertEqual(PurchaseExport.field("a\nb"), "\"a\nb\"")
+    }
+
     @MainActor
     func testPackagedIconChoicesMatchCurrentDevice() throws {
         typealias Selection = AppIconService.Selection

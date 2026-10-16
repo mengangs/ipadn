@@ -52,6 +52,10 @@ final class ToolStore: ObservableObject {
     /// Newer store versions of downloaded apps, by `DownloadJob.updateKey`.
     @Published private(set) var availableUpdates: [String: StoreApp] = [:]
     private var updatesChecked: (date: Date, keys: Set<String>)?
+    /// Apps kept at a downloaded version: no update reminders. Keyed by
+    /// `DownloadJob.updateKey`, valued by the kept version.
+    @Published private(set) var keptVersions: [String: String] =
+        LocalResources.defaults.dictionary(forKey: "storage_keptVersions") as? [String: String] ?? [:]
     /// What the latest checks saw of followed apps, by `WatchRecord.key`.
     @Published private(set) var watch: [String: WatchRecord] = [:]
     @Published private(set) var watchChecking = false
@@ -88,6 +92,7 @@ final class ToolStore: ObservableObject {
             self.ownedRevision = UUID()
             self.ownedError = nil
             self.owned = id.flatMap { self.ownedByAccount[$0] } ?? []
+            self.ownedListed = [:]
             self.updateLocalResults()
         }.store(in: &subscriptions)
         // A switch, sign-in or sign-out (not the restored account at launch).
@@ -531,11 +536,63 @@ final class ToolStore: ObservableObject {
         }
         guard !Task.isCancelled else { return }
         var updates: [String: StoreApp] = [:]
-        for (key, app) in listings {
+        for (key, app) in listings where keptVersions[key] == nil {
             if let current = newest[key], VersionOrder.isNewer(app.version, than: current) { updates[key] = app }
         }
         availableUpdates = updates
         updatesChecked = (Date(), keys)
+    }
+
+    /// Whether each purchase is still on sale in the account's storefront
+    /// (false: removed, but the account can still download it). Empty until checked.
+    @Published private(set) var ownedListed: [String: Bool] = [:]
+    @Published private(set) var checkingListings = false
+
+    /// Looks up every purchase in the account's storefront; returns how many
+    /// are no longer on sale, or nil when the lookup failed.
+    func checkOwnedListings() async -> Int? {
+        guard !owned.isEmpty, !checkingListings else { return nil }
+        let accountID = apple.activeID
+        let country = watchCountry
+        let ids = owned.map(\.id)
+        checkingListings = true
+        defer { checkingListings = false }
+        guard var found = try? await StoreService.lookup(ids: ids, country: country).apps else { return nil }
+        // The list lookup can leave out an app now and then: ask again for those.
+        let missing = ids.filter { found[$0] == nil }
+        if !missing.isEmpty {
+            guard let again = try? await StoreService.lookup(ids: missing, country: country).apps else { return nil }
+            found.merge(again) { first, _ in first }
+        }
+        guard apple.activeID == accountID else { return nil }
+        ownedListed = Dictionary(uniqueKeysWithValues: ids.map { ($0, found[$0] != nil) })
+        return ownedListed.values.filter { !$0 }.count
+    }
+
+    /// The purchase list as a CSV file for sharing.
+    func exportOwned() throws -> URL {
+        let downloaded = Set(downloads.jobs.filter { $0.status == .completed }.map(\.app.id))
+        let text = PurchaseExport.csv(owned, listed: ownedListed, downloaded: downloaded)
+        let stamp = Date().formatted(.iso8601.year().month().day())
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("iPadn-已购项目-\(stamp).csv")
+        // A byte-order mark lets spreadsheet apps read the Chinese text.
+        try Data(("\u{FEFF}" + text).utf8).write(to: file, options: .atomic)
+        return file
+    }
+
+    func keepsVersion(_ job: DownloadJob) -> Bool { job.updateKey.map { keptVersions[$0] != nil } ?? false }
+    /// Keeps this download's app at its version (no update reminders), or
+    /// lets reminders resume.
+    func keepVersion(_ keep: Bool, of job: DownloadJob) {
+        guard let key = job.updateKey else { return }
+        if keep {
+            keptVersions[key] = job.storeVersion
+            availableUpdates[key] = nil
+        } else {
+            keptVersions[key] = nil
+            Task { await checkForUpdates(force: true) }
+        }
+        LocalResources.defaults.set(keptVersions, forKey: "storage_keptVersions")
     }
 
     /// Notifies about updates found in the background, once per version.

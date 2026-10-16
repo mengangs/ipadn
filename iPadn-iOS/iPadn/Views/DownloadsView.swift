@@ -93,6 +93,16 @@ struct DownloadsView: View {
                                 if let latest = updates[job.id] {
                                     Button("下载新版本 \(latest.version)", systemImage: "arrow.down.circle") { downloadUpdate(job) }
                                 }
+                                if job.status == .completed && job.updateKey != nil {
+                                    if store.keepsVersion(job) {
+                                        Button("恢复更新提醒", systemImage: "bell") { store.keepVersion(false, of: job); UX.feedback() }
+                                    } else {
+                                        Button("保留此版本", systemImage: "pin") {
+                                            store.keepVersion(true, of: job); UX.feedback()
+                                            store.infoMessage = "已保留此版本，不再提醒更新"
+                                        }
+                                    }
+                                }
                                 Button("任务详情", systemImage: "info.circle") { inspecting = job }
                                 if let file = manager.fileURL(job) {
                                     Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: file) }
@@ -265,7 +275,7 @@ struct DownloadsView: View {
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
     }
     private func taskContent(_ job: DownloadJob, update: StoreApp?, editing: Bool = false) -> some View {
-        DownloadTaskRow(job: job, update: update, editing: editing, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
+        DownloadTaskRow(job: job, update: update, kept: store.keepsVersion(job), editing: editing, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
             if let file = manager.fileURL(job) { share = SharedFile(url: file) }
         }, updating: { downloadUpdate(job) })
     }
@@ -328,6 +338,8 @@ struct DownloadTaskRow: View {
     let job: DownloadJob
     /// The store's newer version of this app, when there is one.
     var update: StoreApp? = nil
+    /// Kept at this version: no update reminders.
+    var kept = false
     /// In edit mode the share button steps aside to leave the row room.
     var editing = false
     var inspecting: () -> Void
@@ -469,7 +481,11 @@ struct DownloadTaskRow: View {
                     .animation(.linear(duration: 0.25), value: job.progress)
                     .accessibilityLabel("下载进度").accessibilityValue("\(Int(job.progress * 100))%")
             }
-            if job.status == .completed, let update {
+            if job.status == .completed && kept {
+                Label("已保留此版本，不提醒更新", systemImage: "pin.fill")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    .accessibilityIdentifier("download.kept." + job.app.id)
+            } else if job.status == .completed, let update {
                 // Its own button: the heading above is already one.
                 Button(action: updating) {
                     Label("有新版本 \(update.version)，点按下载", systemImage: "arrow.down.circle.fill")
