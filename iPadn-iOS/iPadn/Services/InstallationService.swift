@@ -67,11 +67,28 @@ final class InstallationService: ObservableObject {
         // The server listens on 127.0.0.1; any other answer (no network, or a
         // proxy app that answers DNS itself) means the system can't reach it.
         // Fallbacks are used only when the certificate covers them too.
-        let candidates = host == ManifestBuilder.defaultLocalHost
+        var candidates = host == ManifestBuilder.defaultLocalHost
             ? ManifestBuilder.fallbackLocalHosts.filter { $0 == host || (try? certificate.validate(host: $0)) != nil }
             : [host]
-        guard let reachable = await ManifestBuilder.firstLoopbackHost(candidates) else {
-            throw ToolError.message("当前网络下无法连接本机安装服务。如果开启了代理或 VPN，请关闭后重试，或改用一键安装。")
+        // With a proxy or VPN on, public names go through it; ipadn.local is
+        // answered on this device and proxy apps leave *.local alone.
+        let proxied = LocalHostRecord.proxyOrVPNActive
+        let coversLocal = (try? certificate.validate(host: LocalHostRecord.host)) != nil
+        InstallLog.shared.add("proxy or VPN: \(proxied ? "on" : "off"), certificate covers ipadn.local: \(coversLocal)")
+        if proxied, coversLocal, host == ManifestBuilder.defaultLocalHost, LocalHostRecord.shared.publish() {
+            candidates.insert(LocalHostRecord.host, at: 0)
+        }
+        var found = await ManifestBuilder.firstLoopbackHost(candidates)
+        if found == nil, proxied {
+            // Proxy apps answer lookups with a stand-in address and still
+            // connect straight to this device when a rule says so (DIRECT);
+            // let the system try, and the check after opening the link
+            // reports it if it couldn't connect.
+            found = candidates.first { $0 != LocalHostRecord.host } ?? host
+            InstallLog.shared.add("no loopback answer behind the proxy; trying \(found ?? host)")
+        }
+        guard let reachable = found else {
+            throw ToolError.message("当前网络下无法连接本机安装服务，请检查网络后重试，或改用一键安装。")
         }
         let server = LoopbackServer(identity: certificate.identity, certificates: certificate.certificates, publicHost: reachable)
         try await server.start()
@@ -153,7 +170,7 @@ enum ManifestBuilder {
     /// Tried in order when the default is set: the first that resolves to
     /// this device on the current network is used.
     static let fallbackLocalHosts = [defaultLocalHost, "ipadn.lvh.me", "127.0.0.1.sslip.io"]
-    static let localHostNames = ["127.0.0.1.sslip.io", "localtest.me", "*.localtest.me", "lvh.me", "*.lvh.me", "localhost"]
+    static let localHostNames = ["127.0.0.1.sslip.io", "localtest.me", "*.localtest.me", "lvh.me", "*.lvh.me", "localhost", LocalHostRecord.host]
     /// Hosts that earlier versions used; they are replaced by the default.
     static func migratedLocalHost(_ value: String) -> String {
         let host = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

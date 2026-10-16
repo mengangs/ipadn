@@ -3,24 +3,45 @@ import Combine
 
 @MainActor
 final class AppIconService: ObservableObject {
+    /// Icon style.
     enum Choice: String, CaseIterable, Identifiable {
         case dimensional, flat
         var id: String { rawValue }
         var title: String { self == .dimensional ? "立体图标" : "扁平图标" }
         var preview: String { self == .dimensional ? "BrandMark" : "FlatBrandMark" }
-        var alternateName: String? { self == .flat ? "AppIconFlat" : nil }
+    }
+    /// Light or dark icon: following the system appearance (iOS 18), or fixed.
+    enum Theme: String, CaseIterable, Identifiable {
+        case automatic, light, dark
+        var id: String { rawValue }
+        var title: String { self == .automatic ? "跟随系统" : self == .light ? "浅色" : "深色" }
+    }
+    struct Selection: Equatable {
+        var style: Choice
+        var theme: Theme
+        /// nil is the primary icon (立体, following the system).
+        var alternateName: String? {
+            let base = style == .flat ? "AppIconFlat" : "AppIcon"
+            switch theme {
+            case .automatic: return style == .flat ? base : nil
+            case .light: return base + "Light"
+            case .dark: return base + "Dark"
+            }
+        }
     }
 
-    @Published private(set) var selected: Choice = .dimensional
+    @Published private(set) var current = Selection(style: .dimensional, theme: .automatic)
+    var selected: Choice { current.style }
+    var theme: Theme { current.theme }
     @Published private(set) var changing = false
-    @Published private(set) var awaitingSystem: Choice?
+    @Published private(set) var awaitingSystem: Selection?
     @Published private(set) var statusHint: String?
 
     private var reconciliation: Task<Void, Never>?
     // alternateIconName can lag behind (or stay stale after) a change the
     // system already confirmed. Remember the confirmed choice for this
     // process; every Settings screen creates a new service instance.
-    private static var confirmedThisLaunch: Choice?
+    private static var confirmedThisLaunch: Selection?
 
     private var simulatesChanges: Bool {
         #if DEBUG
@@ -31,20 +52,26 @@ final class AppIconService: ObservableObject {
     }
     var supported: Bool { simulatesChanges || UIApplication.shared.supportsAlternateIcons }
 
-    static func systemChoice(for alternateIconName: String?) -> Choice {
-        alternateIconName == Choice.flat.alternateName ? .flat : .dimensional
+    static func systemSelection(for alternateIconName: String?) -> Selection {
+        for style in Choice.allCases {
+            for theme in Theme.allCases where Selection(style: style, theme: theme).alternateName == alternateIconName {
+                return Selection(style: style, theme: theme)
+            }
+        }
+        return Selection(style: .dimensional, theme: .automatic)
     }
+    static func systemChoice(for alternateIconName: String?) -> Choice { systemSelection(for: alternateIconName).style }
 
     // External IPA re-signing tools can remove the uncompiled alternate PNGs.
     // supportsAlternateIcons alone does not prove that the installed bundle is complete.
-    static func bundledAlternateIsAvailable(in bundle: Bundle = .main) -> Bool {
+    static func bundledAlternateIsAvailable(_ name: String = "AppIconFlat", in bundle: Bundle = .main) -> Bool {
         guard let icons = bundle.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any],
               let alternates = icons["CFBundleAlternateIcons"] as? [String: Any],
-              let flat = alternates["AppIconFlat"] as? [String: Any],
-              let names = flat["CFBundleIconFiles"] as? [String], !names.isEmpty
+              let entry = alternates[name] as? [String: Any],
+              let names = entry["CFBundleIconFiles"] as? [String], !names.isEmpty
         else { return false }
-        return bundle.url(forResource: "AppIconFlat60x60@2x", withExtension: "png") != nil ||
-            bundle.url(forResource: "AppIconFlat60x60@3x", withExtension: "png") != nil
+        return bundle.url(forResource: name + "60x60@2x", withExtension: "png") != nil ||
+            bundle.url(forResource: name + "60x60@3x", withExtension: "png") != nil
     }
 
     /// EAGAIN: SpringBoard is still busy with the previous icon change.
@@ -56,34 +83,44 @@ final class AppIconService: ObservableObject {
     init() { refresh() }
     func refresh() {
         guard !simulatesChanges else { return }
-        let observed = Self.systemChoice(for: UIApplication.shared.alternateIconName)
-        selected = Self.confirmedThisLaunch ?? observed
+        let observed = Self.systemSelection(for: UIApplication.shared.alternateIconName)
+        current = Self.confirmedThisLaunch ?? observed
         if awaitingSystem == observed {
             confirm(observed)
         }
     }
 
-    private func confirm(_ choice: Choice) {
+    private func confirm(_ choice: Selection) {
         Self.confirmedThisLaunch = choice
-        selected = choice
+        current = choice
         awaitingSystem = nil
         statusHint = nil
         reconciliation?.cancel()
         reconciliation = nil
     }
 
-    func select(_ choice: Choice) async throws {
-        guard !changing else { throw ToolError.message("正在等待系统处理图标切换") }
+    /// A different style, keeping the theme.
+    func select(_ style: Choice) async throws {
         refresh()
-        guard choice != selected else { return }
+        try await apply(Selection(style: style, theme: current.theme))
+    }
+    /// A different theme, keeping the style.
+    func select(theme: Theme) async throws {
+        refresh()
+        try await apply(Selection(style: current.style, theme: theme))
+    }
+
+    private func apply(_ choice: Selection) async throws {
+        guard !changing else { throw ToolError.message("正在等待系统处理图标切换") }
+        guard choice != current else { return }
         guard supported else { throw ToolError.message("当前设备不支持更换图标") }
         guard simulatesChanges || UIApplication.shared.applicationState == .active else {
             throw ToolError.message("请回到应用前台再切换图标")
         }
         changing = true
         defer { changing = false }
-        if simulatesChanges { selected = choice; return }
-        guard Self.bundledAlternateIsAvailable() else {
+        if simulatesChanges { current = choice; return }
+        guard choice.alternateName.map({ Self.bundledAlternateIsAvailable($0) }) ?? true else {
             throw ToolError.message("当前安装的 iPadn 缺少图标资源，无法更换图标")
         }
         reconciliation?.cancel()
@@ -102,13 +139,13 @@ final class AppIconService: ObservableObject {
             let result = await request(choice)
             // A nil error is the system's confirmation, even if
             // alternateIconName has not caught up yet.
-            if result == nil || Self.systemChoice(for: UIApplication.shared.alternateIconName) == choice {
+            if result == nil || Self.systemSelection(for: UIApplication.shared.alternateIconName) == choice {
                 confirm(choice); return
             }
             lastError = result
             guard let error = result, Self.isTransientIconError(error), attempt < delays.count else { break }
             try await Task.sleep(for: .milliseconds(delays[attempt]))
-            if Self.systemChoice(for: UIApplication.shared.alternateIconName) == choice {
+            if Self.systemSelection(for: UIApplication.shared.alternateIconName) == choice {
                 confirm(choice); return
             }
         }
@@ -136,7 +173,7 @@ final class AppIconService: ObservableObject {
     }
 
     /// One setAlternateIconName call; returns its error, or a timeout after 15 s.
-    private func request(_ choice: Choice) async -> Error? {
+    private func request(_ choice: Selection) async -> Error? {
         await withCheckedContinuation { (continuation: CheckedContinuation<Error?, Never>) in
             let once = ResumeOnce(continuation)
             UIApplication.shared.setAlternateIconName(choice.alternateName) { error in once.resume(error) }

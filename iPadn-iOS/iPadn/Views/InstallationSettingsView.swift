@@ -13,6 +13,10 @@ struct InstallationSettingsView: View {
     @State private var issue: String?
     @State private var notice: String?
     @State private var busy = false
+    /// Which action is running, shown with a spinner on its own row.
+    @State private var working: Action?
+    private enum Action { case create, profile, check }
+    @Environment(\.scenePhase) private var scenePhase
     private enum Method: Hashable { case automatic, localCertificate, proxy }
     private var method: Binding<Method> {
         Binding(get: {
@@ -37,26 +41,30 @@ struct InstallationSettingsView: View {
                     Label("无需描述文件或证书", systemImage: "checkmark.seal")
                     Label("安装包不会离开这台设备", systemImage: "iphone")
                 } header: { Text("一键安装（推荐）") } footer: {
-                    Text("安装时需要联网。安装完成前请勿退出 iPadn。")
+                    Text("安装时需要联网。安装完成前请勿退出 iPadn。使用代理工具时，请为 api.palera.in 添加直连（DIRECT）规则。")
                 }
             } else if store.settings.localInstallation {
                 Section {
                     TextField("服务器地址", text: $store.settings.localInstallHost)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                     LabeledContent("证书", value: certificateName)
-                    Button("创建证书", systemImage: "lock.shield") {
+                    Button {
                         if certificateName == "未导入" { createLocalCertificate() }
                         else { replacingCertificate = true }
-                    }.disabled(busy).accessibilityIdentifier("installation.create-certificate")
+                    } label: { actionLabel("创建证书", systemImage: "lock.shield", action: .create) }
+                    .disabled(busy).accessibilityIdentifier("installation.create-certificate")
                     if hasLocalProfile {
-                        Button("安装描述文件", systemImage: "doc.badge.gearshape") { installProfile() }
-                            .disabled(busy).accessibilityIdentifier("installation.local-profile")
+                        Button { installProfile() } label: {
+                            actionLabel("安装描述文件", systemImage: "doc.badge.gearshape", action: .profile)
+                        }
+                        .disabled(busy).accessibilityIdentifier("installation.local-profile")
                     }
                     Button("导入证书", systemImage: "square.and.arrow.down") { importing = true }
                         .accessibilityIdentifier("installation.certificate")
-                    Button("检查证书", systemImage: "checkmark.shield") { checkCertificate() }.disabled(busy)
+                    Button { checkCertificate() } label: { actionLabel("检查证书", systemImage: "checkmark.shield", action: .check) }
+                        .disabled(busy)
                 } header: { Text("本机证书") } footer: {
-                    Text("首次使用需创建证书并安装描述文件，然后在「设置 › 通用 › 关于本机 › 证书信任设置」中开启信任。")
+                    Text("首次使用需创建证书并安装描述文件，然后在「设置 › 通用 › 关于本机 › 证书信任设置」中开启信任。使用代理工具时，请为 ipadn.localtest.me 添加直连（DIRECT）规则。")
                 }
             } else {
                 Section {
@@ -72,6 +80,7 @@ struct InstallationSettingsView: View {
             }
         }.toolPage().navigationTitle("安装设置").navigationBarTitleDisplayMode(.inline)
             .task { refreshCertificate() }
+            .onChange(of: scenePhase) { _, phase in if phase != .active, working == .profile { working = nil } }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
                 do {
                     guard let url = try result.get().first else { return }
@@ -99,6 +108,14 @@ struct InstallationSettingsView: View {
                 Button("知道了", role: .cancel) { issue = nil }
             } message: { Text(issue ?? "") }
     }
+    private func actionLabel(_ title: String, systemImage: String, action: Action) -> some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+            Spacer()
+            if working == action { ProgressView().transition(.opacity) }
+        }
+        .animation(.easeOut(duration: 0.15), value: working == action)
+    }
     private func refreshCertificate() {
         do {
             certificateName = try InstallationCertificate.load()?.name ?? "未导入"
@@ -107,9 +124,10 @@ struct InstallationSettingsView: View {
         catch { issue = error.localizedDescription }
     }
     private func createLocalCertificate() {
-        guard !busy else { return }; busy = true; notice = nil
+        guard !busy else { return }; busy = true; notice = nil; working = .create
+        UX.feedback()
         Task {
-            defer { busy = false }
+            defer { busy = false; working = nil }
             do {
                 let material = try await Task.detached(priority: .userInitiated) { try LocalInstallationIdentityFactory.create() }.value
                 try InstallationCertificate.save(data: material.pkcs12, password: material.password,
@@ -121,17 +139,20 @@ struct InstallationSettingsView: View {
         }
     }
     private func installProfile() {
-        guard !busy else { return }; busy = true
+        guard !busy else { return }; busy = true; working = .profile
+        UX.feedback()
         Task {
-            defer { busy = false }
+            // The spinner stays until Settings opens with the profile (the app
+            // leaves the screen) or a few seconds pass.
+            defer { busy = false; Task { try? await Task.sleep(for: .seconds(8)); if working == .profile { working = nil } } }
             do {
                 guard let profile = try InstallationCertificate.localProfile() else { throw ToolError.message("请先创建证书") }
                 let url = try await store.installation.profileURL(data: profile)
                 openURL(url) { accepted in
                     if accepted { notice = "请在「设置」中安装描述文件，然后在「通用 › 关于本机 › 证书信任设置」中开启信任。" }
-                    else { issue = "无法打开描述文件，请稍后重试。" }
+                    else { issue = "无法打开描述文件，请稍后重试。"; working = nil }
                 }
-            } catch { issue = error.localizedDescription }
+            } catch { issue = error.localizedDescription; working = nil }
         }
     }
     private func saveCertificate() {
@@ -144,9 +165,10 @@ struct InstallationSettingsView: View {
         } catch { issue = error.localizedDescription }
     }
     private func checkCertificate() {
-        busy = true; notice = nil
+        busy = true; notice = nil; working = .check
+        UX.feedback()
         Task {
-            defer { busy = false }
+            defer { busy = false; working = nil }
             do {
                 let host = try ManifestBuilder.localHost(store.settings.localInstallHost)
                 guard let certificate = try InstallationCertificate.load() else { throw ToolError.message("请先创建或导入证书") }

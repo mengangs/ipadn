@@ -41,6 +41,8 @@ for path, file_type in [("Resources/SAPRuntime", "folder"), ("Resources/Assets.x
     reference = add("File/" + path, "PBXFileReference", lastKnownFileType=file_type, path=path, sourceTree="<group>")
     app_files.append(reference)
     resources.append(add("Build/" + path, "PBXBuildFile", fileRef=reference))
+# Flat follows the system appearance; the others are fixed light or dark.
+ALTERNATE_ICONS = ["AppIconFlat", "AppIconLight", "AppIconDark", "AppIconFlatLight", "AppIconFlatDark"]
 # Alternate icons also ship as standalone PNGs for SpringBoard and signing tools.
 for path in sorted((ROOT / "iPadn/Resources/AlternateIcons").glob("*.png")):
     relative = path.relative_to(ROOT / "iPadn").as_posix()
@@ -179,8 +181,10 @@ info = {"CFBundleDevelopmentRegion": "$(DEVELOPMENT_LANGUAGE)", "CFBundleExecuta
         "CFBundleURLTypes": [{"CFBundleURLName": "app.local.iPadn", "CFBundleURLSchemes": ["ipadn"]}],
         "LSApplicationQueriesSchemes": ["itms-services"],
         "UIBackgroundModes": ["fetch"], "BGTaskSchedulerPermittedIdentifiers": ["app.local.iPadn.update-check"],
-        "CFBundleIcons": {"CFBundleAlternateIcons": {"AppIconFlat": {"CFBundleIconFiles": ["AppIconFlat60x60"], "UIPrerenderedIcon": False}}},
-        "CFBundleIcons~ipad": {"CFBundleAlternateIcons": {"AppIconFlat": {"CFBundleIconFiles": ["AppIconFlat60x60", "AppIconFlat76x76", "AppIconFlat83x83"], "UIPrerenderedIcon": False}}},
+        "CFBundleIcons": {"CFBundleAlternateIcons": {name: {"CFBundleIconFiles": [name + "60x60"], "UIPrerenderedIcon": False}
+                                                    for name in ALTERNATE_ICONS}},
+        "CFBundleIcons~ipad": {"CFBundleAlternateIcons": {name: {"CFBundleIconFiles": [name + "60x60", name + "76x76", name + "83x83"], "UIPrerenderedIcon": False}
+                                                         for name in ALTERNATE_ICONS}},
         "CFBundleDocumentTypes": [{"CFBundleTypeName": "IPA 安装包", "CFBundleTypeRole": "Viewer", "LSHandlerRank": "Alternate",
                                    "LSItemContentTypes": ["com.apple.itunes.ipa", "public.zip-archive"]}],
         "UTImportedTypeDeclarations": [{"UTTypeIdentifier": "com.apple.itunes.ipa", "UTTypeDescription": "iOS App Archive",

@@ -1,8 +1,18 @@
 {
   "images": [
     {
-      "idiom": "universal",
-      "filename": "brand.png"
+      "filename": "brand-light.png",
+      "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "brand.png",
+      "idiom": "universal"
     }
   ],
   "info": {
