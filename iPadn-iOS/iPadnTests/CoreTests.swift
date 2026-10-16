@@ -768,6 +768,22 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(DownloadJob(app: StoreApp(id: "1", name: "Test"), downloaded: -1, expected: 100).progress, 0)
     }
 
+    func testAppearanceFollowsSystemByDefaultAndReplacesTheSavedDarkDefault() throws {
+        XCTAssertEqual(ToolSettings().appearance, "system")
+        func decode(_ json: String) throws -> String {
+            try JSONDecoder().decode(ToolSettings.self, from: Data(json.utf8)).appearance
+        }
+        // Saved by 1.7.0, whose default was dark: follow the system.
+        XCTAssertEqual(try decode(#"{"appearance":"dark","appUpdateCheck":true}"#), "system")
+        // Chosen in an earlier version, or chosen again since 1.7.1: kept.
+        XCTAssertEqual(try decode(#"{"appearance":"dark"}"#), "dark")
+        XCTAssertEqual(try decode(#"{"appearance":"dark","appUpdateCheck":true,"appearanceSchema":2}"#), "dark")
+        XCTAssertEqual(try decode(#"{"appearance":"light","appUpdateCheck":true}"#), "light")
+        XCTAssertEqual(try decode(#"{"appearance":"sepia"}"#), "system")
+        var dark = ToolSettings(); dark.appearance = "dark"
+        XCTAssertEqual(try JSONDecoder().decode(ToolSettings.self, from: JSONEncoder().encode(dark)).appearance, "dark")
+    }
+
     func testPackagePathsCannotEscapeOrReferenceDirectories() throws {
         for name in ["", ".", "..", "../outside.ipa", "/outside.ipa", "folder/file.ipa", "folder\\file.ipa"] {
             XCTAssertNil(LocalResources.packageURL(name))
