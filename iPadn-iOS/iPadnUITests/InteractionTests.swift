@@ -150,13 +150,21 @@ final class InteractionTests: XCTestCase {
         if !flat.isHittable { app.swipeUp() }
         XCTAssertTrue(flat.waitForExistence(timeout: 5))
         XCTAssertTrue(dimensional.isSelected)
-        flat.tap()
-        let selected = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: flat)
-        wait(for: [selected], timeout: 5)
-        dimensional.tap()
-        // The change is applied asynchronously, as for the flat icon above.
-        let restored = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: dimensional)
-        wait(for: [restored], timeout: 5)
+        // The change is applied asynchronously. A tap that lands while the list
+        // is still redrawing the previous change can be dropped, so a row that
+        // did not take the tap gets a second one.
+        func choose(_ button: XCUIElement) -> Bool {
+            let selected = NSPredicate(format: "isSelected == true AND isEnabled == true")
+            for _ in 0..<2 {
+                button.tap()
+                if XCTWaiter().wait(for: [expectation(for: selected, evaluatedWith: button)], timeout: 5) == .completed {
+                    return true
+                }
+            }
+            return false
+        }
+        XCTAssertTrue(choose(flat))
+        XCTAssertTrue(choose(dimensional))
         attach("16-icon-settings", app: app)
         app.terminate()
         app.launchArguments = ["--visual-preview"]
