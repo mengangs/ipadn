@@ -108,3 +108,157 @@ enum PriceComparison {
         }.map(\.element)
     }
 }
+
+/// An in-app purchase as an App Store product page lists it.
+struct InAppPrice: Hashable {
+    var name: String
+    /// The page's text, e.g. "$4.99" or "199,99 TL".
+    var text: String
+    var price: Double?
+}
+
+/// The same in-app purchase across storefronts. Items share a name when the
+/// app sells several tiers (monthly, yearly): those are told apart by price
+/// order, cheapest first.
+struct InAppGroup: Identifiable, Equatable {
+    struct Entry: Equatable {
+        var country: String
+        var item: InAppPrice
+        var currency: String
+    }
+    var name: String
+    var tier: Int
+    var tiers: Int
+    var entries: [Entry]
+    var id: String { name + "#\(tier)" }
+}
+
+enum InAppPriceService {
+    /// The in-app purchases a product page lists (Apple shows up to ten),
+    /// [] when it lists none, nil when the page could not be read.
+    static func fetch(appID: String, country: String) async -> [InAppPrice]? {
+        guard let url = URL(string: "https://apps.apple.com/\(country.lowercased())/app/id\(appID)"),
+              let result = try? await HTTPClient.shared.request(url, headers: ["User-Agent": browserAgent]) else { return nil }
+        return items(fromPage: String(decoding: result.0, as: UTF8.self))
+    }
+    /// Several storefronts, a few pages at a time, kept for an hour.
+    @MainActor
+    static func fetch(appID: String, countries: [String]) async -> [String: [InAppPrice]] {
+        var results: [String: [InAppPrice]] = [:]
+        var missing: [String] = []
+        for country in countries {
+            if let cached = cache[appID + "|" + country], Date().timeIntervalSince(cached.date) < 3600 { results[country] = cached.items }
+            else { missing.append(country) }
+        }
+        await withTaskGroup(of: (String, [InAppPrice]?).self) { group in
+            var pending = missing.makeIterator()
+            for _ in 0..<4 {
+                if let country = pending.next() { group.addTask { (country, await fetch(appID: appID, country: country)) } }
+            }
+            while let result = await group.next() {
+                let (country, items) = result
+                if let items { results[country] = items; cache[appID + "|" + country] = (Date(), items) }
+                if let country = pending.next() { group.addTask { (country, await fetch(appID: appID, country: country)) } }
+            }
+        }
+        return results
+    }
+    @MainActor private static var cache: [String: (date: Date, items: [InAppPrice])] = [:]
+
+    static let browserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+
+    static func items(fromPage html: String) -> [InAppPrice]? {
+        guard let marker = html.range(of: "id=\"serialized-server-data\""),
+              let open = html[marker.upperBound...].firstIndex(of: ">"),
+              let close = html.range(of: "</script>", range: html.index(after: open)..<html.endIndex),
+              let json = try? JSONSerialization.jsonObject(with: Data(html[html.index(after: open)..<close.lowerBound].utf8))
+        else { return nil }
+        // The information section is a list of annotations; the in-app
+        // purchase one pairs item names with prices. Its title depends on the
+        // page language, so it is recognised by its contents.
+        var best: [InAppPrice] = []
+        func visit(_ value: Any, depth: Int) {
+            guard depth < 40 else { return }
+            if let dict = value as? [String: Any] {
+                if dict["$kind"] as? String == "Annotation", let entries = dict["items"] as? [[String: Any]] {
+                    let pairs = entries.filter { $0["$kind"] as? String == "textPair" }
+                    let found = pairs.compactMap { pair -> InAppPrice? in
+                        guard let name = pair["leadingText"] as? String, let text = pair["trailingText"] as? String,
+                              looksLikePrice(text) else { return nil }
+                        return InAppPrice(name: name, text: text, price: price(text))
+                    }
+                    if !pairs.isEmpty, found.count == pairs.count, found.count > best.count { best = found }
+                }
+                for child in dict.values { visit(child, depth: depth + 1) }
+            } else if let array = value as? [Any] {
+                for child in array { visit(child, depth: depth + 1) }
+            }
+        }
+        visit(json, depth: 0)
+        return best
+    }
+
+    /// A short amount with at most a currency sign or code around it.
+    static func looksLikePrice(_ text: String) -> Bool {
+        guard text.count <= 24, text.contains(where: \.isNumber) else { return false }
+        let ignored: Set<Character> = [".", ",", "'", " ", "\u{00A0}", "\u{202F}"]
+        let rest = text.filter { !$0.isNumber && !ignored.contains($0) }
+        return rest.count <= 4
+    }
+
+    /// The number in a formatted price, whatever the separators:
+    /// "$1,099" → 1099, "1.299,99 €" → 1299.99, "Rp 15.000" → 15000.
+    static func price(_ text: String) -> Double? {
+        let digits = text.filter { $0.isNumber || $0 == "." || $0 == "," }
+        guard !digits.isEmpty else { return nil }
+        let separators = digits.enumerated().filter { $0.element == "." || $0.element == "," }
+        var normalized = digits
+        if let last = separators.last {
+            let decimals = digits.count - last.offset - 1
+            let lastIsDecimal: Bool
+            if Set(separators.map(\.element)).count > 1 { lastIsDecimal = true }
+            else { lastIsDecimal = separators.count == 1 && decimals != 3 }
+            var chars = Array(digits)
+            for (offset, _) in separators { chars[offset] = offset == last.offset && lastIsDecimal ? "." : "_" }
+            normalized = String(chars.filter { $0 != "_" })
+        }
+        return Double(normalized)
+    }
+
+    /// Groups each storefront's items into comparable purchases, in the order
+    /// the first storefront lists them, cheapest storefront first in each.
+    static func groups(_ regions: [(country: String, currency: String, items: [InAppPrice])],
+                       rates: ExchangeRates?) -> [InAppGroup] {
+        var order: [String] = []
+        var groups: [String: InAppGroup] = [:]
+        for region in regions {
+            let byName = Dictionary(grouping: region.items, by: \.name)
+            for item in region.items where byName[item.name]?.first == item {
+                let tiers = (byName[item.name] ?? []).sorted { ($0.price ?? .infinity) < ($1.price ?? .infinity) }
+                for (tier, tierItem) in tiers.enumerated() {
+                    let key = item.name + "#\(tier)"
+                    if groups[key] == nil {
+                        order.append(key)
+                        groups[key] = InAppGroup(name: item.name, tier: tier, tiers: tiers.count, entries: [])
+                    }
+                    groups[key]!.tiers = max(groups[key]!.tiers, tiers.count)
+                    groups[key]!.entries.append(.init(country: region.country, item: tierItem, currency: region.currency))
+                }
+            }
+        }
+        return order.compactMap { key in
+            guard var group = groups[key] else { return nil }
+            group.entries = group.entries.enumerated().sorted { a, b in
+                let ca = a.element.item.price.flatMap { rates?.convert($0, from: a.element.currency) }
+                let cb = b.element.item.price.flatMap { rates?.convert($0, from: b.element.currency) }
+                switch (ca, cb) {
+                case let (x?, y?): return x != y ? x < y : a.offset < b.offset
+                case (.some, nil): return true
+                case (nil, .some): return false
+                default: return a.offset < b.offset
+                }
+            }.map(\.element)
+            return group
+        }
+    }
+}

@@ -9,6 +9,8 @@ struct RegionPriceView: View {
     @State private var loading = true
     @State private var showSpinner = false
     @State private var editingRegions = false
+    @State private var inApps: [String: [InAppPrice]] = [:]
+    @State private var inAppsLoading = false
     static let currencies = ["CNY", "HKD", "TWD", "USD", "JPY", "KRW", "EUR", "GBP", "SGD", "AUD", "CAD", "TRY"]
 
     private var base: String { store.settings.baseCurrency }
@@ -35,6 +37,7 @@ struct RegionPriceView: View {
                     if showSpinner { ProgressView().controlSize(.small) }
                 }
             } footer: { Text(footnote) }
+            inAppSection
         }
         .navigationTitle("多地区价格")
         .navigationBarTitleDisplayMode(.inline)
@@ -60,6 +63,41 @@ struct RegionPriceView: View {
         .refreshable { await load() }
     }
 
+    private var groups: [InAppGroup] {
+        let regions = prices.compactMap { item -> (country: String, currency: String, items: [InAppPrice])? in
+            guard let items = inApps[item.country], !items.isEmpty else { return nil }
+            return (item.country, item.currency, items)
+        }
+        return InAppPriceService.groups(regions, rates: rates)
+    }
+
+    @ViewBuilder private var inAppSection: some View {
+        let list = groups
+        if !list.isEmpty || inAppsLoading || !prices.isEmpty {
+            Section {
+                if list.isEmpty {
+                    if inAppsLoading {
+                        HStack(spacing: 10) { ProgressView(); Text("正在读取内购项目…").foregroundStyle(.secondary) }
+                    } else {
+                        Text(inApps.isEmpty ? "暂时无法读取内购项目，请下拉重试。" : "App Store 没有列出这个应用的内购项目。")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                ForEach(list) { group in InAppGroupRow(group: group, rates: rates) }
+            } header: {
+                HStack {
+                    Text("内购项目")
+                    Spacer()
+                    if inAppsLoading && !list.isEmpty { ProgressView().controlSize(.small) }
+                }
+            } footer: {
+                if !list.isEmpty {
+                    Text("App Store 每个地区最多列出 10 个热门内购项目。同名项目按价格分档，通常对应月度、年度等不同订阅。")
+                }
+            }
+        }
+    }
+
     private var footnote: String {
         var lines = ["按\(currencyName(base))换算，从低到高排列。"]
         if let rates {
@@ -79,10 +117,17 @@ struct RegionPriceView: View {
 
     private func load() async {
         loading = true
-        defer { loading = false }
         let found = await PriceComparison.regionPrices(appID: app.id, countries: store.settings.priceRegions)
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { loading = false; return }
         withAnimation(.easeOut(duration: 0.2)) { prices = found }
+        loading = false
+        // In-app purchases come from each listed storefront's product page.
+        inAppsLoading = true
+        defer { inAppsLoading = false }
+        let listed = found.filter { $0.listing != nil }.map(\.country)
+        let pages = await InAppPriceService.fetch(appID: app.id, countries: listed)
+        guard !Task.isCancelled else { return }
+        withAnimation(.easeOut(duration: 0.2)) { inApps = pages }
     }
 }
 
@@ -117,6 +162,50 @@ struct RegionPriceRow: View {
         guard let price = item.price, price > 0, let rates, item.currency != rates.base,
               let value = rates.convert(price, from: item.currency) else { return nil }
         return "≈ " + WatchService.format(value, currency: rates.base)
+    }
+}
+
+struct InAppGroupRow: View {
+    let group: InAppGroup
+    let rates: ExchangeRates?
+    var body: some View {
+        DisclosureGroup {
+            ForEach(Array(group.entries.enumerated()), id: \.offset) { index, entry in
+                HStack(spacing: 12) {
+                    Text(StoreRegions.flag(entry.country)).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(StoreRegions.name(entry.country))
+                            if index == 0 && group.entries.count > 1 && converted(entry) != nil { TagBadge(text: "最低", tint: .green) }
+                        }
+                        Text(entry.item.text).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    if let converted = converted(entry) { Text(converted).font(.body.monospacedDigit()) }
+                }
+                .accessibilityElement(children: .combine)
+            }
+        } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(group.name).foregroundStyle(.primary).lineLimit(2)
+                    Text(group.tiers > 1 ? "第 \(group.tier + 1) 档 · \(group.entries.count) 个地区" : "\(group.entries.count) 个地区")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if let cheapest = group.entries.first {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(converted(cheapest) ?? cheapest.item.text).font(.body.monospacedDigit().weight(.medium)).foregroundStyle(.primary)
+                        Text(StoreRegions.flag(cheapest.country) + " " + StoreRegions.name(cheapest.country))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+    private func converted(_ entry: InAppGroup.Entry) -> String? {
+        guard let price = entry.item.price, let rates, let value = rates.convert(price, from: entry.currency) else { return nil }
+        return (entry.currency == rates.base ? "" : "≈ ") + WatchService.format(value, currency: rates.base)
     }
 }
 

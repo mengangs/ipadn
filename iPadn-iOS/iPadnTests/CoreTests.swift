@@ -118,6 +118,43 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(StoreRegions.name("TR"), "土耳其")
     }
 
+    func testInAppPurchasesParsedFromProductPageAndGroupedByTier() throws {
+        // The shape of apps.apple.com's serialized page data (information section).
+        let data = #"{"data":[{"shelves":[{"$kind":"Annotation","title":"Compatibility","items":[{"$kind":"textPair","leadingText":"iPhone","trailingText":"Requires iOS 15.0 or later."}]},"#
+            + #"{"$kind":"Annotation","title":"In-App Purchases","summary":"Yes","items":[{"$kind":"textPair","leadingText":"Barrel of Gems (1200)","trailingText":"$4.99"},"#
+            + #"{"$kind":"textPair","leadingText":"Super Duolingo","trailingText":"$9.99"},{"$kind":"textPair","leadingText":"Super Duolingo","trailingText":"$83.99"},"#
+            + #"{"$kind":"button","action":{"title":"Learn More"}}]},{"$kind":"Annotation","title":"Copyright","summary":"© 2026","items":[]}]}]}"#
+        let html = "<html><script type=\"application/json\" id=\"serialized-server-data\">" + data + "</script></html>"
+        let items = try XCTUnwrap(InAppPriceService.items(fromPage: html))
+        XCTAssertEqual(items.map(\.name), ["Barrel of Gems (1200)", "Super Duolingo", "Super Duolingo"])
+        XCTAssertEqual(items.map(\.price), [4.99, 9.99, 83.99])
+        XCTAssertNil(InAppPriceService.items(fromPage: "<html>no data</html>"))
+        XCTAssertEqual(InAppPriceService.items(fromPage: html.replacingOccurrences(of: "In-App Purchases\",\"summary\":\"Yes\",\"items\":[", with: "X\",\"items\":[{\"$kind\":\"textPair\",\"leadingText\":\"a\",\"trailingText\":\"many words here\"},"))?.count, 0)
+
+        XCTAssertEqual(InAppPriceService.price("$1,099"), 1099)
+        XCTAssertEqual(InAppPriceService.price("1.299,99 €"), 1299.99)
+        XCTAssertEqual(InAppPriceService.price("Rp 15.000"), 15000)
+        XCTAssertEqual(InAppPriceService.price("199,99 TL"), 199.99)
+        XCTAssertEqual(InAppPriceService.price("¥160"), 160)
+        XCTAssertEqual(InAppPriceService.price("1 299,00 kr"), 1299)
+        XCTAssertTrue(InAppPriceService.looksLikePrice("HK$38.00"))
+        XCTAssertFalse(InAppPriceService.looksLikePrice("Requires iOS 15.0 or later."))
+
+        let json = #"{"result":"success","base_code":"CNY","rates":{"CNY":1,"USD":0.14,"TRY":4.5}}"#
+        let rates = try XCTUnwrap(ExchangeRates.parse(Data(json.utf8), base: "CNY"))
+        let us = [InAppPrice(name: "Super", text: "$9.99", price: 9.99), InAppPrice(name: "Super", text: "$83.99", price: 83.99),
+                  InAppPrice(name: "Gems", text: "$4.99", price: 4.99)]
+        let tr = [InAppPrice(name: "Gems", text: "99,99 TL", price: 99.99), InAppPrice(name: "Super", text: "1.499,99 TL", price: 1499.99),
+                  InAppPrice(name: "Super", text: "149,99 TL", price: 149.99)]
+        let groups = InAppPriceService.groups([("US", "USD", us), ("TR", "TRY", tr)], rates: rates)
+        XCTAssertEqual(groups.map(\.id), ["Super#0", "Super#1", "Gems#0"])
+        XCTAssertEqual(groups[0].tiers, 2)
+        // Monthly with monthly: $9.99 ≈ ¥71 against 149.99 TL ≈ ¥33, cheapest first.
+        XCTAssertEqual(groups[0].entries.map(\.country), ["TR", "US"])
+        XCTAssertEqual(groups[0].entries.first?.item.price, 149.99)
+        XCTAssertEqual(groups[1].entries.map(\.item.price), [1499.99, 83.99])
+    }
+
     @MainActor
     func testPackagedIconChoicesMatchCurrentDevice() throws {
         typealias Selection = AppIconService.Selection
