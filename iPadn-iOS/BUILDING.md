@@ -1,6 +1,6 @@
 # 自行编译 iPadn
 
-iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad。当前版本为 1.7.1（build 17）。
+iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad。当前版本为 1.7.2（build 18）。
 
 ## 准备
 
