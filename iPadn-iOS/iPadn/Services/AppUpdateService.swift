@@ -57,9 +57,10 @@ enum AppUpdateService {
         return release
     }
 
-    /// Where a downloaded package is kept, so leaving the page does not lose it.
+    /// Where a downloaded package is kept until the update is installed: not
+    /// Caches, which iOS may empty when storage runs low.
     static var packageFolder: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("AppUpdate", isDirectory: true)
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("AppUpdate", isDirectory: true)
     }
     static func packageFile(for release: AppRelease) -> URL {
         packageFolder.appendingPathComponent("iPadn-\(release.version).ipa")
@@ -94,7 +95,11 @@ enum AppUpdateService {
             }
         } onCancel: { session.invalidateAndCancel() }
         removeDownloads()
-        try FileManager.default.createDirectory(at: packageFolder, withIntermediateDirectories: true)
+        var kept = packageFolder
+        try FileManager.default.createDirectory(at: kept, withIntermediateDirectories: true)
+        // A package that can be downloaded again does not belong in device backups.
+        var values = URLResourceValues(); values.isExcludedFromBackup = true
+        try? kept.setResourceValues(values)
         let target = packageFile(for: release)
         try FileManager.default.moveItem(at: downloaded, to: target)
         return target
