@@ -1,5 +1,13 @@
 import Foundation
 
+/// A value used from several threads, one at a time (formatters aren't thread-safe).
+final class NSLockedValue<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+    init(_ value: Value) { self.value = value }
+    func withLock<T>(_ body: (inout Value) -> T) -> T { lock.lock(); defer { lock.unlock() }; return body(&value) }
+}
+
 /// App Store storefronts, for price comparison.
 enum StoreRegions {
     static let codes = """
@@ -11,9 +19,13 @@ enum StoreRegions {
     """.split(separator: " ").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
     static let defaultComparison = ["CN", "HK", "US", "JP", "KR", "TR", "NG"]
 
-    static func name(_ code: String) -> String {
-        Locale(identifier: "zh_CN").localizedString(forRegionCode: code) ?? code
-    }
+    static func name(_ code: String) -> String { names[code] ?? code }
+    private static let names: [String: String] = {
+        let locale = Locale(identifier: "zh_CN")
+        return Dictionary(uniqueKeysWithValues: codes.map { ($0, locale.localizedString(forRegionCode: $0) ?? $0) })
+    }()
+    /// All storefronts in the order of their Chinese names.
+    static let byName: [String] = codes.sorted { name($0).localizedStandardCompare(name($1)) == .orderedAscending }
     static func flag(_ code: String) -> String {
         code.uppercased().unicodeScalars.compactMap { UnicodeScalar(127_397 + $0.value) }.map(String.init).joined()
     }
@@ -143,52 +155,40 @@ enum InAppPriceService {
             try? await Task.sleep(for: .seconds(1))
             outcome = await page(appID: appID, country: country)
         }
-        let report: String
-        switch outcome {
-        case .success(let page): report = "\(page.items.count) items" + (page.items.isEmpty ? " · " + page.detail : "")
-        case .failure(let reason): report = reason.description
-        }
         let redirected: Bool
         if case .failure(let reason) = outcome { redirected = reason.isRedirect } else { redirected = false }
         await MainActor.run {
             let key = appID + "|" + country.uppercased()
-            diagnostics[key] = report
             if redirected { self.redirected.insert(key) } else { self.redirected.remove(key) }
         }
-        if case .success(let page) = outcome { return page.items }
+        if case .success(let items) = outcome { return items }
         return nil
     }
 
-    enum PageFailure: Error, CustomStringConvertible {
-        case network(String), status(Int), noData(Int), notJSON(Int), redirected(String)
+    enum PageFailure: Error {
+        case network, status(Int), noData, notJSON, redirected
         var isRedirect: Bool { if case .redirected = self { return true }; return false }
-        var description: String {
-            switch self {
-            case .network(let message): return "network: " + message
-            case .status(let code): return "HTTP \(code)"
-            case .noData(let bytes): return "no page data (\(bytes) bytes)"
-            case .redirected(let path): return "redirected to " + path
-            case .notJSON(let bytes): return "page data unreadable (\(bytes) bytes)"
-            }
-        }
     }
-    /// What each storefront's page gave, for 专业模式 ("7 items", "HTTP 403").
-    @MainActor static var diagnostics: [String: String] = [:]
     /// Storefront pages this network is sent away from (appID|COUNTRY).
     /// From mainland China, apps.apple.com redirects other storefronts'
     /// product pages to the China store's Today page.
     @MainActor static var redirected: Set<String> = []
 
-    struct Page {
-        var items: [InAppPrice]
-        /// Where the page ended up and what its information section holds, for 专业模式.
-        var detail: String
-    }
-
     /// The product page as a desktop browser gets it, following redirects.
     /// Pages are read in English by default (Apple picks its closest English
     /// page in every storefront), so the same purchase has the same name everywhere.
-    static func page(appID: String, country: String, language: String = "en-US") async -> Result<Page, PageFailure> {
+    static func page(appID: String, country: String, language: String = "en-US") async -> Result<[InAppPrice], PageFailure> {
+        switch await fetchPage(appID: appID, country: country, language: language) {
+        case .failure(let reason): return .failure(reason)
+        case .success(let html):
+            guard let items = items(fromPage: html) else { return .failure(.notJSON) }
+            return .success(items)
+        }
+    }
+
+    /// A storefront's product page in `language`, as long as the network
+    /// isn't sent to another storefront and the page carries its data.
+    static func fetchPage(appID: String, country: String, language: String) async -> Result<String, PageFailure> {
         guard let url = URL(string: "https://apps.apple.com/\(country.lowercased())/app/id\(appID)?l=\(language)") else { return .failure(.status(0)) }
         var request = URLRequest(url: url, timeoutInterval: 30)
         request.setValue(browserAgent, forHTTPHeaderField: "User-Agent")
@@ -201,49 +201,15 @@ enum InAppPriceService {
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard (200..<300).contains(code) else { return .failure(.status(code)) }
             data = body; landed = response.url
-        } catch { return .failure(.network((error as NSError).localizedDescription)) }
+        } catch { return .failure(.network) }
         if let landed, !landed.path.lowercased().hasPrefix("/\(country.lowercased())/") || !landed.path.contains("/app/") {
-            return .failure(.redirected(landed.path))
+            return .failure(.redirected)
         }
         let html = String(decoding: data, as: UTF8.self)
-        guard html.contains("serialized-server-data") else { return .failure(.noData(data.count)) }
-        guard let items = items(fromPage: html) else { return .failure(.notJSON(data.count)) }
-        var detail = ""
-        if items.isEmpty {
-            let path = landed.map { $0.path + ($0.query.map { "?" + $0 } ?? "") } ?? "?"
-            detail = "\(data.count / 1024) KB \(path) | " + summary(ofPage: html)
-        }
-        return .success(Page(items: items, detail: detail))
+        guard html.contains("serialized-server-data") else { return .failure(.noData) }
+        return .success(html)
     }
 
-    /// The information section's annotations: title, number of name/price
-    /// pairs and the first pair, so an unexpected page can be told apart.
-    static func summary(ofPage html: String) -> String {
-        guard let json = serializedData(html) else { return "no data" }
-        var notes: [String] = []
-        func visit(_ value: Any, depth: Int) {
-            guard depth < 40, notes.count < 14 else { return }
-            if let dict = value as? [String: Any] {
-                if dict["$kind"] as? String == "Annotation" {
-                    let entries = dict["items"] as? [[String: Any]] ?? []
-                    let pairs = entries.filter { $0["$kind"] as? String == "textPair" }
-                    var note = "\((dict["title"] as? String ?? "?").prefix(24))[\(pairs.count)/\(entries.count)]"
-                    if let first = pairs.first {
-                        note += " \(String(describing: first["leadingText"] ?? "").prefix(20))=\(String(describing: first["trailingText"] ?? "").prefix(20))"
-                    } else if let summary = dict["summary"] as? String {
-                        note += " " + summary.prefix(20)
-                    }
-                    notes.append(note)
-                }
-                for child in dict.values { visit(child, depth: depth + 1) }
-            } else if let array = value as? [Any] {
-                for child in array { visit(child, depth: depth + 1) }
-            }
-        }
-        visit(json, depth: 0)
-        let flag = html.contains("\"hasInAppPurchases\":true") ? "iap:yes" : "iap:?"
-        return flag + " " + (notes.isEmpty ? "no annotations" : notes.joined(separator: "; "))
-    }
     private static let pageSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForResource = 60
@@ -293,9 +259,9 @@ enum InAppPriceService {
             candidates.append(code)
         }
         for country in candidates.prefix(2) {
-            guard case .success(let localizedPage) = await page(appID: appID, country: country, language: language),
+            guard case .success(let localized) = await page(appID: appID, country: country, language: language),
                   let reference = english[country] else { continue }
-            let names = nameMap(english: reference, localized: localizedPage.items)
+            let names = nameMap(english: reference, localized: localized)
             if !names.isEmpty {
                 nameCache[key] = (Date(), names)
                 return names
@@ -422,4 +388,87 @@ enum InAppPriceService {
             return group
         }
     }
+}
+
+/// One version's entry in a product page's version history.
+struct ReleaseNote: Equatable {
+    var version: String
+    var date: Date?
+    var text: String
+}
+
+enum ReleaseNotesService {
+    /// The version history a product page carries, by version number, in
+    /// the system language where the storefront offers it. Tries the
+    /// storefronts in order; empty when none could be read.
+    @MainActor
+    static func notes(appID: String, countries: [String],
+                      language: String = Locale.preferredLanguages.first ?? "en-US") async -> [String: ReleaseNote] {
+        for country in countries {
+            let key = appID + "|" + country + "|" + language
+            if let cached = cache[key] {
+                let age = Date().timeIntervalSince(cached.date)
+                if !cached.notes.isEmpty && age < 6 * 3600 { return cached.notes }
+                // A page that couldn't be read (or was redirected) isn't fetched again for a while.
+                if cached.notes.isEmpty && age < 30 * 60 { continue }
+            }
+            var notes: [String: ReleaseNote] = [:]
+            if case .success(let html) = await InAppPriceService.fetchPage(appID: appID, country: country, language: language) {
+                // The page's data runs to megabytes: read it off the main thread.
+                notes = await Task.detached(priority: .utility) { parse(html) }.value
+            }
+            guard !Task.isCancelled else { return [:] }
+            cache[key] = (Date(), notes)
+            if !notes.isEmpty { return notes }
+        }
+        return [:]
+    }
+    @MainActor private static var cache: [String: (date: Date, notes: [String: ReleaseNote])] = [:]
+
+    /// Version history entries: TitledParagraph items whose subtitles hold
+    /// "Version 1.2.3" (localized) and the release date.
+    static func parse(_ html: String) -> [String: ReleaseNote] {
+        guard let json = InAppPriceService.serializedData(html) else { return [:] }
+        var notes: [String: ReleaseNote] = [:]
+        func visit(_ value: Any, depth: Int) {
+            guard depth < 40 else { return }
+            if let dict = value as? [String: Any] {
+                if dict["$kind"] as? String == "TitledParagraph", let text = dict["text"] as? String,
+                   let subtitle = dict["primarySubtitle"] as? String, let number = version(in: subtitle) {
+                    // The latest version appears twice (What's New and the history); keep any date either gives.
+                    let released = (dict["secondarySubtitle"] as? String).flatMap(date)
+                    if var known = notes[number] {
+                        if known.date == nil { known.date = released; notes[number] = known }
+                    } else {
+                        notes[number] = ReleaseNote(version: number, date: released,
+                                                     text: text.trimmingCharacters(in: .whitespacesAndNewlines))
+                    }
+                }
+                for child in dict.values { visit(child, depth: depth + 1) }
+            } else if let array = value as? [Any] {
+                for child in array { visit(child, depth: depth + 1) }
+            }
+        }
+        visit(json, depth: 0)
+        return notes
+    }
+
+    /// "Version 1.2.3", "版本 1.2.3" → "1.2.3".
+    static func version(in subtitle: String) -> String? {
+        let token = subtitle.split(whereSeparator: { $0.isWhitespace }).last.map(String.init) ?? subtitle
+        let trimmed = token.trimmingCharacters(in: CharacterSet(charactersIn: "0123456789.").inverted)
+        return trimmed.first?.isNumber == true ? trimmed : nil
+    }
+
+    /// "Tue Oct 06 2026 18:07:01 GMT+0000 (Coordinated Universal Time)".
+    static func date(_ text: String) -> Date? {
+        let core = text.components(separatedBy: " (").first ?? text
+        return dateFormatter.withLock { $0.date(from: core) }
+    }
+    private static let dateFormatter = NSLockedValue({
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEE MMM dd yyyy HH:mm:ss 'GMT'Z"
+        return formatter
+    }())
 }

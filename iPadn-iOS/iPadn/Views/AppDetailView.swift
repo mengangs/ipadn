@@ -26,6 +26,9 @@ struct AppDetailView: View {
     @State private var metadataStopped = false
     /// Long histories start with the newest ten versions.
     @State private var showAllVersions = false
+    /// Release notes by version number, from the App Store page's version history.
+    @State private var releaseNotes: [String: ReleaseNote] = [:]
+    @State private var expandedNotes = Set<String>()
     /// The rows on screen belong to the previous region, platform or source
     /// and are replaced as soon as the new list arrives.
     @State private var versionsStale = false
@@ -250,6 +253,15 @@ struct AppDetailView: View {
         .task(id: "\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
             await loadMacInstallers()
         }
+        .task(id: "notes-\(app.id)-\(store.settings.store.country)") {
+            guard !LocalResources.isPreview, !app.isDelisted else { return }
+            // The search region's page, else the account's.
+            var countries = [store.settings.store.country.uppercased()]
+            if !countries.contains(store.watchCountry) { countries.append(store.watchCountry) }
+            let notes = await ReleaseNotesService.notes(appID: app.id, countries: countries)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) { releaseNotes = notes }
+        }
         .task(id: "extras-\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
             // Demo data stays offline.
             guard !LocalResources.isPreview else { return }
@@ -442,20 +454,45 @@ struct AppDetailView: View {
         let name = displayVersion(version)
         let known = name != "未知版本"
         let reading = !known && metadataLoading.contains(version.id)
-        let date = metadata[version.id]?.released?.formatted(.dateTime.year().month().day())
-        return HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(known ? "版本 \(name)" : reading ? "版本 0.0.0" : "未知版本")
-                    .font(.body.weight(.medium))
-                    .redacted(reason: reading ? .placeholder : [])
-                Text([date, "版本 ID \(version.id)"].compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    .textSelection(.enabled)
+        let note = known ? releaseNotes[name] : nil
+        let date = (metadata[version.id]?.released ?? note?.date)?.formatted(.dateTime.year().month().day())
+        let expanded = expandedNotes.contains(version.id)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(known ? "版本 \(name)" : reading ? "版本 0.0.0" : "未知版本")
+                        .font(.body.weight(.medium))
+                        .redacted(reason: reading ? .placeholder : [])
+                    Text([date, "版本 ID \(version.id)"].compactMap { $0 }.joined(separator: " · "))
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                .animation(.easeOut(duration: 0.2), value: name)
+                Spacer(minLength: 8)
+                RowCapsule(title: "下载", enabled: !downloadLoading && !macOfficialLoading) { download(versionID: version.id) }
+                    .accessibilityLabel(known ? "下载版本 \(name)" : "下载版本 ID \(version.id)")
             }
-            .animation(.easeOut(duration: 0.2), value: name)
-            Spacer(minLength: 8)
-            RowCapsule(title: "下载", enabled: !downloadLoading && !macOfficialLoading) { download(versionID: version.id) }
-                .accessibilityLabel(known ? "下载版本 \(name)" : "下载版本 ID \(version.id)")
+            if let note, !note.text.isEmpty {
+                Button {
+                    withAnimation(.snappy) {
+                        if expanded { expandedNotes.remove(version.id) } else { expandedNotes.insert(version.id) }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(expanded ? "收起更新说明" : "更新说明")
+                        Image(systemName: "chevron.down").rotationEffect(.degrees(expanded ? 180 : 0))
+                    }
+                    .font(.caption.weight(.medium))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("detail.version.notes." + version.id)
+                if expanded {
+                    Text(note.text).font(.footnote).foregroundStyle(.secondary)
+                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity)
+                }
+            }
         }
         .padding(.vertical, 2)
         .contextMenu { Button("复制版本 ID", systemImage: "doc.on.doc") { copy(version.id) } }

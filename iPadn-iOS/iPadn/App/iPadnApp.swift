@@ -62,12 +62,16 @@ struct iPadnApp: App {
                 .environmentObject(store.signer)
                 .tint(UX.tint)
                 .onOpenURL { store.handleURL($0) }
+                .task {
+                    guard !LocalResources.isPreview, store.settings.appUpdateCheck else { return }
+                    await store.checkAppUpdate()
+                }
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .background, !LocalResources.isPreview else { return }
             // Only worth waking up for when there is something to check.
             if (store.settings.updateNotifications && store.downloads.jobs.contains(where: { $0.status == .completed && $0.updateKey != nil }))
-                || (store.settings.watchNotifications && !store.favorites.isEmpty) {
+                || (store.settings.watchNotifications && !store.favorites.isEmpty) || store.settings.appUpdateCheck {
                 UpdateCheckScheduler.schedule()
             } else {
                 UpdateCheckScheduler.cancel()

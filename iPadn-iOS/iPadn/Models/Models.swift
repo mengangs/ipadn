@@ -226,6 +226,8 @@ struct ToolSettings: Codable, Equatable {
     var updateNotifications = true
     /// Background checks of followed apps (new version, price drop, removal), with a notification.
     var watchNotifications = true
+    /// Checks GitHub for new iPadn releases, with a notification.
+    var appUpdateCheck = true
     /// Storefronts compared on the price page and tracked for followed apps.
     var priceRegions = StoreRegions.defaultComparison
     /// Currency prices are converted to for comparison.
@@ -248,7 +250,7 @@ struct ToolSettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
         case useSignerCache, appearance, plistServer, versionSources, localInstallation, localInstallHost
-        case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency
+        case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency, appUpdateCheck
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -264,6 +266,7 @@ struct ToolSettings: Codable, Equatable {
         let regions = (try values.decodeIfPresent([String].self, forKey: .priceRegions) ?? priceRegions).filter { StoreRegions.codes.contains($0) }
         priceRegions = regions.isEmpty ? priceRegions : regions
         baseCurrency = try values.decodeIfPresent(String.self, forKey: .baseCurrency) ?? baseCurrency
+        appUpdateCheck = try values.decodeIfPresent(Bool.self, forKey: .appUpdateCheck) ?? appUpdateCheck
         useSignerCache = try values.decodeIfPresent(Bool.self, forKey: .useSignerCache) ?? useSignerCache
         appearance = try values.decodeIfPresent(String.self, forKey: .appearance) ?? appearance
         if !["system", "light", "dark"].contains(appearance) { appearance = "dark" }

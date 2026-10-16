@@ -114,14 +114,24 @@ enum WatchService {
     /// "免费" for zero, else the amount in its currency ("¥18", "$2.99").
     static func format(_ price: Double, currency: String) -> String {
         if price == 0 { return "免费" }
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.locale = Locale(identifier: "zh_CN")
-        if !currency.isEmpty { formatter.currencyCode = currency }
-        formatter.minimumFractionDigits = price.rounded() == price ? 0 : 2
-        formatter.maximumFractionDigits = 2
-        return formatter.string(from: NSNumber(value: price)) ?? String(format: "%.2f", price)
+        let whole = price.rounded() == price
+        return formatters.withLock { cache in
+            let key = currency + (whole ? "|0" : "|2")
+            let formatter = cache[key] ?? {
+                let formatter = NumberFormatter()
+                formatter.numberStyle = .currency
+                formatter.locale = Locale(identifier: "zh_CN")
+                if !currency.isEmpty { formatter.currencyCode = currency }
+                formatter.minimumFractionDigits = whole ? 0 : 2
+                formatter.maximumFractionDigits = 2
+                return formatter
+            }()
+            cache[key] = formatter
+            return formatter.string(from: NSNumber(value: price)) ?? String(format: "%.2f", price)
+        }
     }
+    /// Building a NumberFormatter is slow; rows and chart labels format many prices.
+    private static let formatters = NSLockedValue([String: NumberFormatter]())
 
     /// A sentence for a notification, or nil when the change is not worth one.
     static func message(_ change: WatchChange, currency: String) -> String? {
@@ -133,5 +143,25 @@ enum WatchService {
         case .relisted: return "已重新上架"
         case .priceRise: return nil
         }
+    }
+}
+
+enum PurchaseExport {
+    /// One row per purchase: name, IDs, version, purchase date, store status, downloaded.
+    static func csv(_ apps: [OwnedApp], listed: [String: Bool], downloaded: Set<String>) -> String {
+        var rows = [["名称", "App ID", "Bundle ID", "版本", "购买日期", "商店状态", "已下载"]]
+        let date = Date.FormatStyle().year().month(.twoDigits).day(.twoDigits)
+        for app in apps {
+            let status = listed[app.id].map { $0 ? "在售" : "已下架" } ?? "未检查"
+            rows.append([app.name, app.id, app.bundleID, app.version, app.purchaseDate.map { $0.formatted(date) } ?? "",
+                         status, downloaded.contains(app.id) ? "是" : "否"])
+        }
+        return rows.map { $0.map(field).joined(separator: ",") }.joined(separator: "\r\n") + "\r\n"
+    }
+
+    /// Quoted when it holds a comma, quote or line break; quotes doubled.
+    static func field(_ value: String) -> String {
+        guard value.contains(where: { $0 == "," || $0 == "\"" || $0.isNewline }) else { return value }
+        return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 }

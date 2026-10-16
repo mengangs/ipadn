@@ -13,13 +13,27 @@ enum UpdateCheckScheduler {
             schedule()
             let work = Task { @MainActor in
                 let store = AppContainer.shared
-                if store.settings.updateNotifications {
-                    await store.checkForUpdates(force: true)
-                    if !Task.isCancelled { store.notifyNewUpdates() }
-                }
-                if store.settings.watchNotifications, !Task.isCancelled {
-                    let changes = await store.checkWatched(force: true)
-                    if !Task.isCancelled { store.notifyWatchChanges(changes) }
+                // iOS allows about half a minute: the checks run side by side,
+                // and each notifies as soon as it is done.
+                await withTaskGroup(of: Void.self) { group in
+                    if store.settings.watchNotifications {
+                        group.addTask { @MainActor in
+                            let changes = await store.checkWatched(force: true)
+                            if !Task.isCancelled { store.notifyWatchChanges(changes) }
+                        }
+                    }
+                    if store.settings.updateNotifications {
+                        group.addTask { @MainActor in
+                            await store.checkForUpdates(force: true)
+                            if !Task.isCancelled { store.notifyNewUpdates() }
+                        }
+                    }
+                    if store.settings.appUpdateCheck {
+                        group.addTask { @MainActor in
+                            await store.checkAppUpdate()
+                            if !Task.isCancelled { store.notifyAppUpdate() }
+                        }
+                    }
                 }
                 task.setTaskCompleted(success: !Task.isCancelled)
             }

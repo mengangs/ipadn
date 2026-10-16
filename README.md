@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="iPadn-iOS/iPadn/Resources/Assets.xcassets/BrandMark.imageset/brand.png" width="120" alt="iPadn">
+<img src="docs/images/icon.png" width="120" alt="iPadn">
 
 # iPadn
 
@@ -15,6 +15,15 @@
 
 </div>
 
+<p align="center">
+  <img src="docs/images/01-search.jpg" width="19%" alt="搜索应用">
+  <img src="docs/images/02-detail.jpg" width="19%" alt="应用详情">
+  <img src="docs/images/03-versions.jpg" width="19%" alt="历史版本与更新说明">
+  <img src="docs/images/04-prices.jpg" width="19%" alt="多地区比价">
+  <img src="docs/images/05-purchased.jpg" width="19%" alt="已购项目">
+</p>
+<p align="center"><sub>真机截图，机身外框来自 <a href="https://github.com/jonnyjackson26/device-frames-media">device-frames-media</a></sub></p>
+
 ---
 
 ## 能做什么
@@ -22,14 +31,15 @@
 | | |
 | --- | --- |
 | 🔍 **搜索** | 输入应用名称、App ID 或 App Store 链接，切换商店地区和平台（iPhone / iPad / Apple TV / Mac）。详情页有截图预览和同一开发者的其他应用。 |
-| 🕘 **历史版本** | 查看每个版本的版本号和日期并下载旧版本，也可以直接输入版本 ID。 |
+| 🕘 **历史版本** | 查看每个版本的版本号、日期和更新说明并下载旧版本，也可以直接输入版本 ID。已下载的应用可以「保留此版本」，不再提醒更新。 |
 | ⬇️ **下载管理** | 后台下载，随时暂停、继续、重试，实时显示速度与剩余时间。 |
 | 🔔 **更新提醒** | 已下载的应用有新版本时在列表里提示，后台检查后还会发送通知。 |
+| ⬆️ **iPadn 自动更新提醒** | 有新版本时在「设置」中提示并发送通知，可以直接在 App 内查看更新内容、下载新安装包，交给你的签名工具安装。 |
 | 👀 **关注应用** | 关注感兴趣的应用，有新版本、降价、限免或下架时提醒你，并记录价格走势。 |
 | 🌏 **多地区比价** | 对比应用和内购项目（含订阅）在各个国家或地区的价格，按你选的货币换算后从低到高排列，对比的地区可以自己选。 |
 | 📲 **一键安装** | 下载完成后点「安装」即可，无需描述文件或证书，并实时显示安装进度。 |
 | 💻 **Mac 应用** | 下载 Mac App Store 应用的 PKG 安装包，传到 Mac 上安装。 |
-| 🛍️ **已购项目** | 同步你获取过的所有应用，按名称或时间查找，可多选批量下载。 |
+| 🛍️ **已购项目** | 同步你获取过的所有应用，按名称或时间查找，可多选批量下载；一键找出已下架但仍可下载的应用并全部备份，已购清单可以导出成表格。 |
 | 📦 **已下架应用** | 只要你曾经获取过，下架应用也能通过 App ID 找到并下载。 |
 | 👥 **多个账号** | 保存多个 Apple 账号（邮箱或手机号），一键切换。 |
 | 🎮 **Apple Arcade** | 订阅了 Apple Arcade 的账号可以下载 Arcade 游戏。 |
@@ -116,6 +126,12 @@ Apple 只允许下载你的账号拥有许可的应用。版本也可能已经�
 <summary><b>点「安装」后没有反应？</b></summary>
 
 请确认设备已联网，并在系统弹窗中点「安装」。没有出现系统弹窗时，可以点「在 Safari 中安装」，或在安装设置中改用「本机证书」（在 LiveContainer 中运行时尤其需要）。仍不行的话，可以分享安装包给其他安装工具，或在「设置 › 维护」中导出诊断信息反馈给我们。
+</details>
+
+<details>
+<summary><b>安装时提示「已经安装，请删除后重试」？</b></summary>
+
+从 App Store 安装的应用可以直接覆盖安装同一版本或更新的版本，数据会保留。出现这个提示通常有两种情况：要装的版本比设备上的旧（系统不允许降级）；或设备上的应用来自 TestFlight、其他签名工具等不同渠道，签名不一致时系统不允许覆盖。这两种情况都需要先删除已安装的应用（应用数据也会一起删除）。
 </details>
 
 <details>

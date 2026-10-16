@@ -157,10 +157,12 @@ final class InstallationService: ObservableObject {
 
 enum ManifestBuilder {
     /// The version the install link announces. iOS only replaces an
-    /// installed app when the link names a newer version, so installing an
-    /// older (or the same) package over it would silently do nothing. The
-    /// package itself is installed as is and the app's data is kept.
-    static let overwriteVersion = "99999"
+    /// installed app when the link names a newer version than the one it
+    /// last installed, so installing an older (or the same) package over it
+    /// would be refused. It grows with every install, so an app installed
+    /// this way can be replaced again. The package itself is installed as is
+    /// and the app's data is kept.
+    static var overwriteVersion: String { "99999.\(Int(Date().timeIntervalSince1970))" }
     /// The installer does not open install links whose host is an IP
     /// address or "localhost". These public names resolve to 127.0.0.1, so
     /// the link carries a real domain while the connection stays on this

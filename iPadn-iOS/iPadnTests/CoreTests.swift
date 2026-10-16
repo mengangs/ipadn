@@ -168,6 +168,52 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(InAppPriceService.nameMap(english: english, localized: english), [:], "an English page names nothing")
     }
 
+    func testReleaseNotesReadFromVersionHistory() throws {
+        // The shape of apps.apple.com's version history (TitledParagraph items).
+        let data = #"{"shelves":{"mostRecentVersion":{"items":[{"$kind":"TitledParagraph","text":"Bug fixes.\n","primarySubtitle":"Version 1.2026.272","secondarySubtitle":"Tue Oct 06 2026 18:07:01 GMT+0000 (Coordinated Universal Time)"}]},"#
+            + #""history":{"items":[{"$kind":"TitledParagraph","text":"Bug fixes.","primarySubtitle":"Version 1.2026.272"},"#
+            + #"{"$kind":"TitledParagraph","text":"新增评分来源","primarySubtitle":"版本 8.3.1","secondarySubtitle":"Mon Sep 01 2025 08:00:00 GMT+0000 (UTC)"},"#
+            + #"{"$kind":"TitledParagraph","text":"Not a version","primarySubtitle":"Developer Response"}]}}}"#
+        let html = "<script type=\"application/json\" id=\"serialized-server-data\">" + data + "</script>"
+        let notes = ReleaseNotesService.parse(html)
+        XCTAssertEqual(Set(notes.keys), ["1.2026.272", "8.3.1"])
+        XCTAssertEqual(notes["1.2026.272"]?.text, "Bug fixes.")
+        XCTAssertEqual(notes["1.2026.272"]?.date, Date(timeIntervalSince1970: 1_791_310_021))
+        XCTAssertEqual(notes["8.3.1"]?.text, "新增评分来源")
+        XCTAssertEqual(ReleaseNotesService.version(in: "Version 2.0"), "2.0")
+        XCTAssertNil(ReleaseNotesService.version(in: "What’s New"))
+        XCTAssertTrue(ReleaseNotesService.parse("<html></html>").isEmpty)
+    }
+
+    func testAppReleaseParsedFromGitHub() throws {
+        let json = ###"{"tag_name":"v1.7.0","html_url":"https://github.com/mengangs/ipadn/releases/tag/v1.7.0","draft":false,"prerelease":false,"published_at":"2026-10-16T08:00:00Z","body":"## 1.7.0\n- 关注应用\n\n验证：设备 Release 编译与 IPA 检查通过。","assets":[{"name":"iPadn-1.7.0-unsigned.ipa.sha256","browser_download_url":"https://github.com/x.sha256","size":90},{"name":"iPadn-1.7.0-unsigned.ipa","browser_download_url":"https://github.com/mengangs/ipadn/releases/download/v1.7.0/iPadn-1.7.0-unsigned.ipa","size":52000000}]}"###
+        let release = try XCTUnwrap(AppUpdateService.parse(Data(json.utf8)))
+        XCTAssertEqual(release.version, "1.7.0")
+        XCTAssertEqual(release.notes, "## 1.7.0\n- 关注应用")
+        XCTAssertEqual(release.package?.lastPathComponent, "iPadn-1.7.0-unsigned.ipa")
+        XCTAssertEqual(release.packageSize, 52_000_000)
+        XCTAssertNotNil(release.published)
+        XCTAssertEqual(AppUpdateService.newer(release, than: "1.6.0")?.version, "1.7.0")
+        XCTAssertNil(AppUpdateService.newer(release, than: "1.7.0"))
+        XCTAssertNil(AppUpdateService.newer(release, than: "1.10.0"))
+        XCTAssertNil(AppUpdateService.parse(Data(json.replacingOccurrences(of: "\"prerelease\":false", with: "\"prerelease\":true").utf8)))
+        XCTAssertEqual(AppUpdateService.trollStoreURL(for: release)?.scheme, "apple-magnifier")
+    }
+
+    func testPurchaseListExportsAsCSV() {
+        let apps = [OwnedApp(id: "1", bundleID: "a.b", name: "Notes, \"Pro\"", version: "2.0", purchaseDate: nil, iconURL: nil),
+                    OwnedApp(id: "2", bundleID: "c.d", name: "Gone", version: "1.0", purchaseDate: nil, iconURL: nil),
+                    OwnedApp(id: "3", bundleID: "e.f", name: "Plain", version: "3.1", purchaseDate: nil, iconURL: nil)]
+        let csv = PurchaseExport.csv(apps, listed: ["1": true, "2": false], downloaded: ["2"])
+        let lines = csv.components(separatedBy: "\r\n")
+        XCTAssertEqual(lines[0], "名称,App ID,Bundle ID,版本,购买日期,商店状态,已下载")
+        XCTAssertEqual(lines[1], "\"Notes, \"\"Pro\"\"\",1,a.b,2.0,,在售,否")
+        XCTAssertEqual(lines[2], "Gone,2,c.d,1.0,,已下架,是")
+        XCTAssertEqual(lines[3], "Plain,3,e.f,3.1,,未检查,否")
+        XCTAssertEqual(lines.last, "")
+        XCTAssertEqual(PurchaseExport.field("a\nb"), "\"a\nb\"")
+    }
+
     @MainActor
     func testPackagedIconChoicesMatchCurrentDevice() throws {
         typealias Selection = AppIconService.Selection

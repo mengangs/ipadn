@@ -325,22 +325,36 @@ enum StoreService {
     /// `nativeMac` names the IDs whose listing is a Mac app.
     static func lookup(ids: [String], country: String) async throws -> (apps: [String: StoreApp], nativeMac: Set<String>) {
         let ids = ids.filter { UInt64($0).map { $0 > 0 } == true }
+        let chunks = stride(from: 0, to: ids.count, by: 100).map { Array(ids[$0..<min($0 + 100, ids.count)]) }
         var found: [String: StoreApp] = [:]
         var nativeMac = Set<String>()
-        for start in stride(from: 0, to: ids.count, by: 100) {
-            let chunk = ids[start..<min(start + 100, ids.count)]
-            let url = try endpoint("https://itunes.apple.com/lookup", items: [
-                URLQueryItem(name: "id", value: chunk.joined(separator: ",")), URLQueryItem(name: "country", value: country)
-            ])
-            let rows = (try await HTTPClient.shared.json(url) as? [String: Any])?["results"] as? [[String: Any]] ?? []
-            for row in rows {
-                let app = mapLookup(row)
-                guard chunk.contains(app.id) else { continue }
-                found[app.id] = app
-                if plistString(row["kind"]).lowercased() == "mac-software" { nativeMac.insert(app.id) }
+        // Large purchase lists: a few chunks at a time instead of one after another.
+        try await withThrowingTaskGroup(of: [(app: StoreApp, mac: Bool)].self) { group in
+            var pending = chunks.makeIterator()
+            for _ in 0..<4 {
+                if let chunk = pending.next() { group.addTask { try await lookupChunk(chunk, country: country) } }
+            }
+            while let rows = try await group.next() {
+                for row in rows {
+                    found[row.app.id] = row.app
+                    if row.mac { nativeMac.insert(row.app.id) }
+                }
+                if let chunk = pending.next() { group.addTask { try await lookupChunk(chunk, country: country) } }
             }
         }
         return (found, nativeMac)
+    }
+
+    private static func lookupChunk(_ chunk: [String], country: String) async throws -> [(app: StoreApp, mac: Bool)] {
+        let url = try endpoint("https://itunes.apple.com/lookup", items: [
+            URLQueryItem(name: "id", value: chunk.joined(separator: ",")), URLQueryItem(name: "country", value: country)
+        ])
+        let rows = (try await HTTPClient.shared.json(url) as? [String: Any])?["results"] as? [[String: Any]] ?? []
+        return rows.compactMap { row in
+            let app = mapLookup(row)
+            guard chunk.contains(app.id) else { return nil }
+            return (app, plistString(row["kind"]).lowercased() == "mac-software")
+        }
     }
 
     struct Screenshot: Hashable, Identifiable {
