@@ -156,9 +156,13 @@ final class InteractionTests: XCTestCase {
             let selected = NSPredicate(format: "value == '已选中' AND isEnabled == true")
             for _ in 0..<2 {
                 // The swipe that brought 扁平 into view can leave 立体 under the
-                // navigation bar, where a tap lands on the bar instead.
-                for _ in 0..<3 where !button.isHittable {
-                    if button.frame.midY < app.frame.midY { app.swipeDown(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
+                // navigation bar, where a tap lands on the bar instead (isHittable
+                // still reports true there), so keep the row clear of both bars.
+                let nav = app.navigationBars.firstMatch, tabs = app.tabBars.firstMatch
+                let top = nav.exists ? nav.frame.maxY : 120
+                let bottom = tabs.exists ? tabs.frame.minY : app.frame.maxY - 100
+                for _ in 0..<3 where button.frame.minY < top || button.frame.maxY > bottom {
+                    if button.frame.minY < top { app.swipeDown(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
                 }
                 button.tap()
                 if XCTWaiter().wait(for: [expectation(for: selected, evaluatedWith: button)], timeout: 5) == .completed {
