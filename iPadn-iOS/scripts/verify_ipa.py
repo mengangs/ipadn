@@ -7,7 +7,7 @@ import plistlib
 import sys
 import zipfile
 from pathlib import Path
-ALTERNATE_ICONS = ['AppIconFlat', 'AppIconLight', 'AppIconDark', 'AppIconFlatLight', 'AppIconFlatDark']
+ALTERNATE_ICONS = ['AppIconAuto', 'AppIconFlat', 'AppIconLight', 'AppIconDark', 'AppIconFlatLight', 'AppIconFlatDark']
 
 ROOT = Path(__file__).resolve().parents[1]
 ipa = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'build/iPadn-unsigned.ipa'

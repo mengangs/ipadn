@@ -59,9 +59,11 @@ final class CoreTests: XCTestCase {
     @MainActor
     func testPackagedIconChoicesMatchCurrentDevice() throws {
         typealias Selection = AppIconService.Selection
-        XCTAssertNil(Selection(style: .dimensional, theme: .automatic).alternateName)
+        XCTAssertNil(Selection(style: .dimensional, theme: .dark).alternateName)
+        XCTAssertEqual(AppIconService.systemSelection(for: nil), AppIconService.primary)
+        XCTAssertEqual(AppIconService.systemSelection(for: "AppIconDark"), AppIconService.primary)
+        XCTAssertEqual(Selection(style: .dimensional, theme: .automatic).alternateName, "AppIconAuto")
         XCTAssertEqual(Selection(style: .flat, theme: .automatic).alternateName, "AppIconFlat")
-        XCTAssertEqual(Selection(style: .dimensional, theme: .dark).alternateName, "AppIconDark")
         XCTAssertEqual(Selection(style: .flat, theme: .light).alternateName, "AppIconFlatLight")
         for style in AppIconService.Choice.allCases {
             for theme in AppIconService.Theme.allCases {

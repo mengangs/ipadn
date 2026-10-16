@@ -459,6 +459,46 @@
 			isa = PBXBuildFile;
 			fileRef = 1CDCE2D7B842ECAE64295E63;
 		};
+		B16C09C8BC30D4CC7B42836D = {
+			isa = PBXFileReference;
+			lastKnownFileType = image.png;
+			path = "Resources/AlternateIcons/AppIconAuto60x60@2x.png";
+			sourceTree = "<group>";
+		};
+		5D0F67C75A14F5F9E05AFB4A = {
+			isa = PBXBuildFile;
+			fileRef = B16C09C8BC30D4CC7B42836D;
+		};
+		07498F436E837AD5A8268353 = {
+			isa = PBXFileReference;
+			lastKnownFileType = image.png;
+			path = "Resources/AlternateIcons/AppIconAuto60x60@3x.png";
+			sourceTree = "<group>";
+		};
+		C803CD311DF260E5BC8296F3 = {
+			isa = PBXBuildFile;
+			fileRef = 07498F436E837AD5A8268353;
+		};
+		870DDB71219A07952B19FBC0 = {
+			isa = PBXFileReference;
+			lastKnownFileType = image.png;
+			path = "Resources/AlternateIcons/AppIconAuto76x76@2x~ipad.png";
+			sourceTree = "<group>";
+		};
+		060DF06315B22D1494FBA5C1 = {
+			isa = PBXBuildFile;
+			fileRef = 870DDB71219A07952B19FBC0;
+		};
+		5D9649A51B9F0BDB19E9377D = {
+			isa = PBXFileReference;
+			lastKnownFileType = image.png;
+			path = "Resources/AlternateIcons/AppIconAuto83x83@2x~ipad.png";
+			sourceTree = "<group>";
+		};
+		AF91536BB00E9E0CFECB0128 = {
+			isa = PBXBuildFile;
+			fileRef = 5D9649A51B9F0BDB19E9377D;
+		};
 		FF3D58AB2F2CF8034CC4A64B = {
 			isa = PBXFileReference;
 			lastKnownFileType = image.png;
@@ -768,6 +808,10 @@
 				8FEB83A29956DE0B59952846,
 				8D670B021DC9E9A81AD94FB4,
 				1CDCE2D7B842ECAE64295E63,
+				B16C09C8BC30D4CC7B42836D,
+				07498F436E837AD5A8268353,
+				870DDB71219A07952B19FBC0,
+				5D9649A51B9F0BDB19E9377D,
 				FF3D58AB2F2CF8034CC4A64B,
 				42FAD9E00872B3342914BC7A,
 				E2EDD0DC28ECB5E0F589B155,
@@ -879,6 +923,10 @@
 				FE8AD461736E2C3E2C8BE36E,
 				FE7CC9734AD8010D74C8E69A,
 				B03D1A024E90C64DA4480E67,
+				5D0F67C75A14F5F9E05AFB4A,
+				C803CD311DF260E5BC8296F3,
+				060DF06315B22D1494FBA5C1,
+				AF91536BB00E9E0CFECB0128,
 				1F6B5918830E525B26CA2857,
 				B68002DCBA53A7D8535E6AB9,
 				81CA868A05D21377B8155CA3,
