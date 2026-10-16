@@ -138,7 +138,7 @@ enum InAppPriceService {
     /// [] when it lists none, nil when the page could not be read.
     static func fetch(appID: String, country: String) async -> [InAppPrice]? {
         var outcome = await page(appID: appID, country: country)
-        if case .failure = outcome {
+        if case .failure(let reason) = outcome, !reason.isRedirect {
             // One retry: a busy storefront page often answers the second time.
             try? await Task.sleep(for: .seconds(1))
             outcome = await page(appID: appID, country: country)
@@ -148,24 +148,36 @@ enum InAppPriceService {
         case .success(let page): report = "\(page.items.count) items" + (page.items.isEmpty ? " · " + page.detail : "")
         case .failure(let reason): report = reason.description
         }
-        await MainActor.run { diagnostics[appID + "|" + country.uppercased()] = report }
+        let redirected: Bool
+        if case .failure(let reason) = outcome { redirected = reason.isRedirect } else { redirected = false }
+        await MainActor.run {
+            let key = appID + "|" + country.uppercased()
+            diagnostics[key] = report
+            if redirected { self.redirected.insert(key) } else { self.redirected.remove(key) }
+        }
         if case .success(let page) = outcome { return page.items }
         return nil
     }
 
     enum PageFailure: Error, CustomStringConvertible {
-        case network(String), status(Int), noData(Int), notJSON(Int)
+        case network(String), status(Int), noData(Int), notJSON(Int), redirected(String)
+        var isRedirect: Bool { if case .redirected = self { return true }; return false }
         var description: String {
             switch self {
             case .network(let message): return "network: " + message
             case .status(let code): return "HTTP \(code)"
             case .noData(let bytes): return "no page data (\(bytes) bytes)"
+            case .redirected(let path): return "redirected to " + path
             case .notJSON(let bytes): return "page data unreadable (\(bytes) bytes)"
             }
         }
     }
     /// What each storefront's page gave, for 专业模式 ("7 items", "HTTP 403").
     @MainActor static var diagnostics: [String: String] = [:]
+    /// Storefront pages this network is sent away from (appID|COUNTRY).
+    /// From mainland China, apps.apple.com redirects other storefronts'
+    /// product pages to the China store's Today page.
+    @MainActor static var redirected: Set<String> = []
 
     struct Page {
         var items: [InAppPrice]
@@ -190,6 +202,9 @@ enum InAppPriceService {
             guard (200..<300).contains(code) else { return .failure(.status(code)) }
             data = body; landed = response.url
         } catch { return .failure(.network((error as NSError).localizedDescription)) }
+        if let landed, !landed.path.lowercased().hasPrefix("/\(country.lowercased())/") || !landed.path.contains("/app/") {
+            return .failure(.redirected(landed.path))
+        }
         let html = String(decoding: data, as: UTF8.self)
         guard html.contains("serialized-server-data") else { return .failure(.noData(data.count)) }
         guard let items = items(fromPage: html) else { return .failure(.notJSON(data.count)) }

@@ -137,6 +137,12 @@ Apple 只允许下载你的账号拥有许可的应用。版本也可能已经�
 </details>
 
 <details>
+<summary><b>多地区比价里只显示了中国区的内购？</b></summary>
+
+在中国大陆网络下，Apple 会把其他地区的 App Store 页面转到中国区，因此读不到外区的内购价格（应用本身的价格不受影响）。在代理工具中让 apps.apple.com 走代理后，下拉刷新即可。
+</details>
+
+<details>
 <summary><b>移除账号会删除已下载的应用吗？</b></summary>
 
 不会。移除账号只清除该账号的登录信息和已购记录。

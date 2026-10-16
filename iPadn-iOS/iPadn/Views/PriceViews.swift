@@ -64,6 +64,12 @@ struct RegionPriceView: View {
         .refreshable { await load() }
     }
 
+    /// Listed storefronts whose pages this network could not open.
+    private var blocked: [String] {
+        prices.filter { $0.listing != nil && inApps[$0.country] == nil && InAppPriceService.redirected.contains(app.id + "|" + $0.country) }
+            .map(\.country)
+    }
+
     private var groups: [InAppGroup] {
         let regions = prices.compactMap { item -> (country: String, currency: String, items: [InAppPrice])? in
             guard let items = inApps[item.country], !items.isEmpty else { return nil }
@@ -80,12 +86,21 @@ struct RegionPriceView: View {
                     if inAppsLoading {
                         HStack(spacing: 10) { ProgressView(); Text("正在读取内购项目…").foregroundStyle(.secondary) }
                     } else {
-                        Text(inApps.isEmpty ? "暂时无法读取内购项目，请下拉重试。" : "App Store 没有列出这个应用的内购项目。")
+                        Text(blocked.isEmpty || !inApps.isEmpty ? (inApps.isEmpty ? "暂时无法读取内购项目，请下拉重试。" : "App Store 没有列出这个应用的内购项目。")
+                             : "没有读到内购项目。")
                             .foregroundStyle(.secondary)
 
                     }
                 }
                 ForEach(list) { group in InAppGroupRow(group: group, rates: rates) }
+                if !blocked.isEmpty && !inAppsLoading {
+                    Label {
+                        Text("当前网络打开\(blocked.map(StoreRegions.name).joined(separator: "、"))的 App Store 页面时会被转到中国区，所以读不到这些地区的内购价格。可以在代理工具中让 apps.apple.com 走代理，再下拉刷新。")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    } icon: {
+                        Image(systemName: "info.circle").foregroundStyle(.secondary)
+                    }
+                }
             } header: {
                 HStack {
                     Text("内购项目")
