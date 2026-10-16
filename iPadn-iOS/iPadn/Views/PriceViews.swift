@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The app's price in each chosen storefront, converted for comparison.
 struct RegionPriceView: View {
@@ -98,10 +99,15 @@ struct RegionPriceView: View {
                     }
                     if store.settings.proMode && !inAppsLoading {
                         // Per storefront: items read, or why the page failed.
-                        Text(prices.filter { $0.listing != nil }.map { item in
+                        let report = prices.filter { $0.listing != nil }.map { item in
                             item.country + ": " + (InAppPriceService.diagnostics[app.id + "|" + item.country] ?? "—")
-                        }.joined(separator: "\n"))
-                        .font(.caption2.monospaced()).textSelection(.enabled)
+                        }.joined(separator: "\n")
+                        Text(report).font(.caption2.monospaced()).lineLimit(30).textSelection(.enabled)
+                        Button("复制诊断信息", systemImage: "doc.on.doc") {
+                            UIPasteboard.general.string = "App \(app.id)\n" + report
+                            store.infoMessage = "已复制到剪贴板"
+                        }
+                        .font(.caption).textCase(nil)
                     }
                 }
             }

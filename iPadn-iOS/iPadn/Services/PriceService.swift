@@ -145,11 +145,11 @@ enum InAppPriceService {
         }
         let report: String
         switch outcome {
-        case .success(let items): report = "\(items.count) items"
+        case .success(let page): report = "\(page.items.count) items" + (page.items.isEmpty ? " · " + page.detail : "")
         case .failure(let reason): report = reason.description
         }
         await MainActor.run { diagnostics[appID + "|" + country.uppercased()] = report }
-        if case .success(let items) = outcome { return items }
+        if case .success(let page) = outcome { return page.items }
         return nil
     }
 
@@ -167,8 +167,14 @@ enum InAppPriceService {
     /// What each storefront's page gave, for 专业模式 ("7 items", "HTTP 403").
     @MainActor static var diagnostics: [String: String] = [:]
 
+    struct Page {
+        var items: [InAppPrice]
+        /// Where the page ended up and what its information section holds, for 专业模式.
+        var detail: String
+    }
+
     /// The product page as a desktop browser gets it, following redirects.
-    static func page(appID: String, country: String) async -> Result<[InAppPrice], PageFailure> {
+    static func page(appID: String, country: String) async -> Result<Page, PageFailure> {
         // English in every storefront (Apple picks its closest English page),
         // so the same purchase has the same name everywhere.
         guard let url = URL(string: "https://apps.apple.com/\(country.lowercased())/app/id\(appID)?l=en-US") else { return .failure(.status(0)) }
@@ -177,16 +183,51 @@ enum InAppPriceService {
         request.setValue("text/html", forHTTPHeaderField: "Accept")
         request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
         let data: Data
+        let landed: URL?
         do {
             let (body, response) = try await pageSession.data(for: request)
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard (200..<300).contains(code) else { return .failure(.status(code)) }
-            data = body
+            data = body; landed = response.url
         } catch { return .failure(.network((error as NSError).localizedDescription)) }
         let html = String(decoding: data, as: UTF8.self)
         guard html.contains("serialized-server-data") else { return .failure(.noData(data.count)) }
         guard let items = items(fromPage: html) else { return .failure(.notJSON(data.count)) }
-        return .success(items)
+        var detail = ""
+        if items.isEmpty {
+            let path = landed.map { $0.path + ($0.query.map { "?" + $0 } ?? "") } ?? "?"
+            detail = "\(data.count / 1024) KB \(path) | " + summary(ofPage: html)
+        }
+        return .success(Page(items: items, detail: detail))
+    }
+
+    /// The information section's annotations: title, number of name/price
+    /// pairs and the first pair, so an unexpected page can be told apart.
+    static func summary(ofPage html: String) -> String {
+        guard let json = serializedData(html) else { return "no data" }
+        var notes: [String] = []
+        func visit(_ value: Any, depth: Int) {
+            guard depth < 40, notes.count < 14 else { return }
+            if let dict = value as? [String: Any] {
+                if dict["$kind"] as? String == "Annotation" {
+                    let entries = dict["items"] as? [[String: Any]] ?? []
+                    let pairs = entries.filter { $0["$kind"] as? String == "textPair" }
+                    var note = "\((dict["title"] as? String ?? "?").prefix(24))[\(pairs.count)/\(entries.count)]"
+                    if let first = pairs.first {
+                        note += " \(String(describing: first["leadingText"] ?? "").prefix(20))=\(String(describing: first["trailingText"] ?? "").prefix(20))"
+                    } else if let summary = dict["summary"] as? String {
+                        note += " " + summary.prefix(20)
+                    }
+                    notes.append(note)
+                }
+                for child in dict.values { visit(child, depth: depth + 1) }
+            } else if let array = value as? [Any] {
+                for child in array { visit(child, depth: depth + 1) }
+            }
+        }
+        visit(json, depth: 0)
+        let flag = html.contains("\"hasInAppPurchases\":true") ? "iap:yes" : "iap:?"
+        return flag + " " + (notes.isEmpty ? "no annotations" : notes.joined(separator: "; "))
     }
     private static let pageSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
@@ -221,12 +262,16 @@ enum InAppPriceService {
     // The desktop page carries the information section with in-app purchases.
     static let browserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 
-    static func items(fromPage html: String) -> [InAppPrice]? {
+    static func serializedData(_ html: String) -> Any? {
         guard let marker = html.range(of: "id=\"serialized-server-data\""),
               let open = html[marker.upperBound...].firstIndex(of: ">"),
-              let close = html.range(of: "</script>", range: html.index(after: open)..<html.endIndex),
-              let json = try? JSONSerialization.jsonObject(with: Data(html[html.index(after: open)..<close.lowerBound].utf8))
+              let close = html.range(of: "</script>", range: html.index(after: open)..<html.endIndex)
         else { return nil }
+        return try? JSONSerialization.jsonObject(with: Data(html[html.index(after: open)..<close.lowerBound].utf8))
+    }
+
+    static func items(fromPage html: String) -> [InAppPrice]? {
+        guard let json = serializedData(html) else { return nil }
         // The information section is a list of annotations; the in-app
         // purchase one pairs item names with prices. Its title depends on the
         // page language, so it is recognised by its contents.
