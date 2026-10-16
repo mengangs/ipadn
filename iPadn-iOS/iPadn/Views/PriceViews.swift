@@ -12,6 +12,7 @@ struct RegionPriceView: View {
     @State private var editingRegions = false
     @State private var inApps: [String: [InAppPrice]] = [:]
     @State private var inAppsLoading = false
+    @State private var inAppNames: [String: String] = [:]
     static let currencies = ["CNY", "HKD", "TWD", "USD", "JPY", "KRW", "EUR", "GBP", "SGD", "AUD", "CAD", "TRY"]
 
     private var base: String { store.settings.baseCurrency }
@@ -92,7 +93,7 @@ struct RegionPriceView: View {
 
                     }
                 }
-                ForEach(list) { group in InAppGroupRow(group: group, rates: rates) }
+                ForEach(list) { group in InAppGroupRow(group: group, rates: rates, name: inAppNames[group.name] ?? group.name) }
                 if !blocked.isEmpty && !inAppsLoading {
                     Label {
                         Text("当前网络打开\(blocked.map(StoreRegions.name).joined(separator: "、"))的 App Store 页面时会被转到中国区，所以读不到这些地区的内购价格。可以在代理工具中让 apps.apple.com 走代理，再下拉刷新。")
@@ -159,6 +160,10 @@ struct RegionPriceView: View {
         let pages = await InAppPriceService.fetch(appID: app.id, countries: listed)
         guard !Task.isCancelled else { return }
         withAnimation(.easeOut(duration: 0.2)) { inApps = pages }
+        // Matching uses the English names; show them in the system language.
+        let names = await InAppPriceService.localizedNames(appID: app.id, english: pages)
+        guard !Task.isCancelled, !names.isEmpty else { return }
+        withAnimation(.easeOut(duration: 0.2)) { inAppNames = names }
     }
 }
 
@@ -199,6 +204,8 @@ struct RegionPriceRow: View {
 struct InAppGroupRow: View {
     let group: InAppGroup
     let rates: ExchangeRates?
+    /// The purchase's name in the system language when known.
+    var name: String
     var body: some View {
         DisclosureGroup {
             ForEach(Array(group.entries.enumerated()), id: \.offset) { index, entry in
@@ -219,7 +226,7 @@ struct InAppGroupRow: View {
         } label: {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(group.name).foregroundStyle(.primary).lineLimit(2)
+                    Text(name).foregroundStyle(.primary).lineLimit(2)
                     Text(group.tiers > 1 ? "第 \(group.tier + 1) 档 · \(group.entries.count) 个地区" : "\(group.entries.count) 个地区")
                         .font(.caption).foregroundStyle(.secondary)
                 }

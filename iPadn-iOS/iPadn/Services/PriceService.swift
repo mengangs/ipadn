@@ -186,14 +186,14 @@ enum InAppPriceService {
     }
 
     /// The product page as a desktop browser gets it, following redirects.
-    static func page(appID: String, country: String) async -> Result<Page, PageFailure> {
-        // English in every storefront (Apple picks its closest English page),
-        // so the same purchase has the same name everywhere.
-        guard let url = URL(string: "https://apps.apple.com/\(country.lowercased())/app/id\(appID)?l=en-US") else { return .failure(.status(0)) }
+    /// Pages are read in English by default (Apple picks its closest English
+    /// page in every storefront), so the same purchase has the same name everywhere.
+    static func page(appID: String, country: String, language: String = "en-US") async -> Result<Page, PageFailure> {
+        guard let url = URL(string: "https://apps.apple.com/\(country.lowercased())/app/id\(appID)?l=\(language)") else { return .failure(.status(0)) }
         var request = URLRequest(url: url, timeoutInterval: 30)
         request.setValue(browserAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("text/html", forHTTPHeaderField: "Accept")
-        request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        request.setValue(language + ",en;q=0.5", forHTTPHeaderField: "Accept-Language")
         let data: Data
         let landed: URL?
         do {
@@ -273,6 +273,51 @@ enum InAppPriceService {
         return results
     }
     @MainActor private static var cache: [String: (date: Date, items: [InAppPrice])] = [:]
+
+    /// Names in the system language for the English names in `english`, read
+    /// from one storefront's page in that language. Empty when the system
+    /// language is English or no page could be matched.
+    @MainActor
+    static func localizedNames(appID: String, english: [String: [InAppPrice]],
+                               language: String = Locale.preferredLanguages.first ?? "en") async -> [String: String] {
+        guard !language.lowercased().hasPrefix("en") else { return [:] }
+        let key = appID + "|" + language
+        if let cached = nameCache[key], Date().timeIntervalSince(cached.date) < 3600 { return cached.names }
+        // The storefront of the language's region first (CN for zh-Hans-CN),
+        // then the other storefronts that were read.
+        var candidates: [String] = []
+        let tagRegion = Locale(identifier: language).region?.identifier.uppercased()
+        let fallbackRegion: String? = language.hasPrefix("zh-Hans") ? "CN" : language.hasPrefix("zh-Hant") ? "TW" : nil
+        for code in [tagRegion, fallbackRegion, Locale.current.region?.identifier.uppercased()].compactMap({ $0 }) + english.keys.sorted()
+        where !candidates.contains(code) && english[code]?.isEmpty == false {
+            candidates.append(code)
+        }
+        for country in candidates.prefix(2) {
+            guard case .success(let localizedPage) = await page(appID: appID, country: country, language: language),
+                  let reference = english[country] else { continue }
+            let names = nameMap(english: reference, localized: localizedPage.items)
+            if !names.isEmpty {
+                nameCache[key] = (Date(), names)
+                return names
+            }
+        }
+        return [:]
+    }
+    @MainActor private static var nameCache: [String: (date: Date, names: [String: String])] = [:]
+
+    /// One storefront lists its purchases in the same order and at the same
+    /// prices in every language, so its two lists pair up item by item. Any
+    /// difference means the lists can't be paired: no names then.
+    static func nameMap(english: [InAppPrice], localized: [InAppPrice]) -> [String: String] {
+        guard english.count == localized.count, !english.isEmpty else { return [:] }
+        var names: [String: String] = [:]
+        for (en, local) in zip(english, localized) {
+            guard en.price == local.price else { return [:] }
+            if names[en.name] == nil { names[en.name] = local.name }
+        }
+        // Nothing to show if the "localized" page came back in English too.
+        return names.contains { $0.key != $0.value } ? names : [:]
+    }
 
     // The desktop page carries the information section with in-app purchases.
     static let browserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"

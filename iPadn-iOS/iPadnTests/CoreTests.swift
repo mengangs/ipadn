@@ -157,6 +157,15 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(groups[0].entries.map(\.country), ["TR", "US"])
         XCTAssertEqual(groups[0].entries.first?.item.price, 149.99)
         XCTAssertEqual(groups[1].entries.map(\.item.price), [1499.99, 83.99])
+
+        // English names match across storefronts; the same storefront's page in
+        // the system language pairs up item by item for display.
+        let english = [InAppPrice(name: "Lifetime access", text: "¥68.00", price: 68), InAppPrice(name: "Monthly", text: "¥15.00", price: 15)]
+        let chinese = [InAppPrice(name: "终身解锁", text: "¥68.00", price: 68), InAppPrice(name: "月度订阅", text: "¥15.00", price: 15)]
+        XCTAssertEqual(InAppPriceService.nameMap(english: english, localized: chinese), ["Lifetime access": "终身解锁", "Monthly": "月度订阅"])
+        XCTAssertEqual(InAppPriceService.nameMap(english: english, localized: chinese.reversed()), [:], "prices must line up")
+        XCTAssertEqual(InAppPriceService.nameMap(english: english, localized: Array(chinese.prefix(1))), [:])
+        XCTAssertEqual(InAppPriceService.nameMap(english: english, localized: english), [:], "an English page names nothing")
     }
 
     @MainActor
