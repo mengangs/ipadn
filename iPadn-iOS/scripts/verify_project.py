@@ -75,7 +75,8 @@ for path in (ROOT / "iPadn/Resources/Assets.xcassets").rglob("Contents.json"):
             data = file.read_bytes()
             check(data[:8] == b"\x89PNG\r\n\x1a\n", "Icon is not PNG: " + str(file))
             width, height, depth, color = struct.unpack(">IIBB", data[16:26])
-            expected = int(float(image["size"].split("x")[0]) * float(image["scale"].rstrip("x")))
+            # Single-size icons (light, dark, tinted) have no scale.
+            expected = int(float(image["size"].split("x")[0]) * float(image.get("scale", "1x").rstrip("x")))
             check(width == height == expected, "Incorrect icon dimensions: " + str(file))
             check(depth == 8 and color == 2, "Icon must be opaque 8-bit RGB: " + str(file))
 scheme = ET.parse(ROOT / "iPadn.xcodeproj/xcshareddata/xcschemes/iPadn.xcscheme")
