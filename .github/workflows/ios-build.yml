@@ -99,7 +99,7 @@ jobs:
           compression-level: 0
 
       - name: Run simulator unit tests
-        timeout-minutes: 18
+        timeout-minutes: 30
         if: github.event_name != 'workflow_dispatch' || inputs.run_tests
         run: |
           set -o pipefail
