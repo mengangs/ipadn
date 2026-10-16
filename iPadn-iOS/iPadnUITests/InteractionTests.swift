@@ -150,21 +150,34 @@ final class InteractionTests: XCTestCase {
         if !flat.isHittable { app.swipeUp() }
         XCTAssertTrue(flat.waitForExistence(timeout: 5))
         XCTAssertTrue(dimensional.isSelected)
-        // The change is applied asynchronously. A tap that lands while the list
-        // is still redrawing the previous change can be dropped, so a row that
-        // did not take the tap gets a second one.
+        // The change is applied asynchronously; a row that did not take the tap gets a second one.
         func choose(_ button: XCUIElement) -> Bool {
-            let selected = NSPredicate(format: "isSelected == true AND isEnabled == true")
+            // The row's value is what VoiceOver reads; the waitUntilSelected check above uses it too.
+            let selected = NSPredicate(format: "value == '已选中' AND isEnabled == true")
             for _ in 0..<2 {
+                // The swipe that brought 扁平 into view can leave 立体 under the
+                // navigation bar, where a tap lands on the bar instead (isHittable
+                // still reports true there), so keep the row clear of both bars.
+                let nav = app.navigationBars.firstMatch, tabs = app.tabBars.firstMatch
+                let top = nav.exists ? nav.frame.maxY : 120
+                let bottom = tabs.exists ? tabs.frame.minY : app.frame.maxY - 100
+                for _ in 0..<3 where button.frame.minY < top || button.frame.maxY > bottom {
+                    if button.frame.minY < top { app.swipeDown(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
+                }
                 button.tap()
                 if XCTWaiter().wait(for: [expectation(for: selected, evaluatedWith: button)], timeout: 5) == .completed {
                     return true
                 }
             }
+            for row in [dimensional, flat] {
+                print("ICON-DIAG \(row.identifier) value=\(row.value ?? "nil") selected=\(row.isSelected) enabled=\(row.isEnabled) hittable=\(row.isHittable) frame=\(row.frame)")
+            }
+            print("ICON-DIAG alerts=\(app.alerts.count) status=\(app.staticTexts["settings.icon.status"].exists)")
             return false
         }
         XCTAssertTrue(choose(flat))
         XCTAssertTrue(choose(dimensional))
+        print("ICON-DIAG restored dimensional selected=\(dimensional.isSelected) flat selected=\(flat.isSelected)")
         attach("16-icon-settings", app: app)
         app.terminate()
         app.launchArguments = ["--visual-preview"]
