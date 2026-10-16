@@ -235,7 +235,9 @@ struct ToolSettings: Codable, Equatable {
     /// Shows tools for advanced users: package contents, tokens, device ID.
     var proMode = false
     var useSignerCache = true
-    var appearance = "dark"
+    var appearance = "system"
+    /// 2 once the appearance default is following the system (1.7.0 saved its dark default).
+    var appearanceSchema = 2
     var plistServer = ""
     /// One-tap installation through the public loopback certificate (default).
     var automaticInstallation = true
@@ -251,6 +253,7 @@ struct ToolSettings: Codable, Equatable {
         case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
         case useSignerCache, appearance, plistServer, versionSources, localInstallation, localInstallHost
         case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency, appUpdateCheck
+        case appearanceSchema
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -269,7 +272,11 @@ struct ToolSettings: Codable, Equatable {
         appUpdateCheck = try values.decodeIfPresent(Bool.self, forKey: .appUpdateCheck) ?? appUpdateCheck
         useSignerCache = try values.decodeIfPresent(Bool.self, forKey: .useSignerCache) ?? useSignerCache
         appearance = try values.decodeIfPresent(String.self, forKey: .appearance) ?? appearance
-        if !["system", "light", "dark"].contains(appearance) { appearance = "dark" }
+        if !["system", "light", "dark"].contains(appearance) { appearance = "system" }
+        // 1.7.0 (the only version writing appUpdateCheck without appearanceSchema)
+        // defaulted to dark and saved it like a choice: follow the system instead.
+        if try values.decodeIfPresent(Int.self, forKey: .appearanceSchema) == nil,
+           values.contains(.appUpdateCheck), appearance == "dark" { appearance = "system" }
         plistServer = try values.decodeIfPresent(String.self, forKey: .plistServer) ?? plistServer
         localInstallation = try values.decodeIfPresent(Bool.self, forKey: .localInstallation) ?? plistServer.isEmpty
         localInstallHost = ManifestBuilder.migratedLocalHost(try values.decodeIfPresent(String.self, forKey: .localInstallHost) ?? localInstallHost)
