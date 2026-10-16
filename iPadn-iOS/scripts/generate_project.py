@@ -91,7 +91,7 @@ base = {"IPHONEOS_DEPLOYMENT_TARGET": "17.0", "SDKROOT": "iphoneos", "SWIFT_VERS
 project_configs = configs("Project", base, {"SWIFT_COMPILATION_MODE": "wholemodule", "VALIDATE_PRODUCT": "YES"})
 app_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
                 "DEVELOPMENT_TEAM": "", "TARGETED_DEVICE_FAMILY": "1,2", "INFOPLIST_FILE": "iPadn/Info.plist",
-                "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": "1.7.1", "CURRENT_PROJECT_VERSION": "17",
+                "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": "1.7.2", "CURRENT_PROJECT_VERSION": "18",
                 "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
                 "ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS": "YES", "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
                 "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks"],

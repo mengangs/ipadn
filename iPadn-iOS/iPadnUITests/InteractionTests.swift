@@ -260,7 +260,8 @@ final class InteractionTests: XCTestCase {
         app.buttons["downloads.import"].tap()
         let pickerCancel = app.buttons.matching(NSPredicate(format: "label IN %@ OR identifier IN %@",
             ["Cancel", "取消", "Close", "关闭"], ["Cancel", "Close"])).firstMatch
-        XCTAssertTrue(pickerCancel.waitForExistence(timeout: 15))
+        // The Files picker runs in its own process and has taken over 11 s to appear on CI runners.
+        XCTAssertTrue(pickerCancel.waitForExistence(timeout: 45))
         attach("15-import-picker", app: app)
         pickerCancel.tap()
         XCTAssertTrue(add.waitForExistence(timeout: 5))

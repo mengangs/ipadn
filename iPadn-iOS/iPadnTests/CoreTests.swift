@@ -198,6 +198,31 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(AppUpdateService.newer(release, than: "1.10.0"))
         XCTAssertNil(AppUpdateService.parse(Data(json.replacingOccurrences(of: "\"prerelease\":false", with: "\"prerelease\":true").utf8)))
         XCTAssertEqual(AppUpdateService.trollStoreURL(for: release)?.scheme, "apple-magnifier")
+        // The test host was not installed by TrollStore, so its button stays hidden.
+        XCTAssertFalse(AppUpdateService.installedByTrollStore)
+    }
+
+    func testReleaseNotesBecomeBlocksWithoutTheVersionTitle() {
+        let notes = "## iPadn 1.7.1\n\n适用于 iOS 17。\n\n### 改进\n\n- 外观默认跟随系统\n* 更新提醒\n\n更早版本见 [Releases](https://github.com/mengangs/ipadn/releases)。"
+        XCTAssertEqual(AppUpdateService.blocks(notes, version: "1.7.1"), [
+            .paragraph("适用于 iOS 17。"), .heading("改进"), .bullet("外观默认跟随系统"), .bullet("更新提醒"),
+            .paragraph("更早版本见 [Releases](https://github.com/mengangs/ipadn/releases)。")
+        ])
+        // A heading that is not the version title is kept.
+        XCTAssertEqual(AppUpdateService.blocks("### 新功能\n- A", version: "1.7.1"), [.heading("新功能"), .bullet("A")])
+    }
+
+    func testDownloadedUpdatePackageIsKeptOnlyWhenComplete() throws {
+        let page = try XCTUnwrap(URL(string: "https://github.com/mengangs/ipadn/releases/tag/v9.9.9"))
+        var release = AppRelease(version: "9.9.9", notes: "", page: page, package: page, packageSize: 4, published: nil)
+        AppUpdateService.removeDownloads()
+        defer { AppUpdateService.removeDownloads() }
+        XCTAssertNil(AppUpdateService.downloadedPackage(for: release))
+        try FileManager.default.createDirectory(at: AppUpdateService.packageFolder, withIntermediateDirectories: true)
+        try Data("ipa!".utf8).write(to: AppUpdateService.packageFile(for: release))
+        XCTAssertEqual(AppUpdateService.downloadedPackage(for: release), AppUpdateService.packageFile(for: release))
+        release.packageSize = 5
+        XCTAssertNil(AppUpdateService.downloadedPackage(for: release))
     }
 
     func testPurchaseListExportsAsCSV() {

@@ -594,6 +594,8 @@ final class ToolStore: ObservableObject {
         LocalResources.defaults.set(Date(), forKey: key)
         LocalResources.defaults.set(try? JSONEncoder().encode(latest), forKey: "storage_appUpdate")
         appUpdate = AppUpdateService.newer(latest)
+        // Installed already: the kept package is no longer needed.
+        if appUpdate == nil { AppUpdateService.removeDownloads() }
         return true
     }
 

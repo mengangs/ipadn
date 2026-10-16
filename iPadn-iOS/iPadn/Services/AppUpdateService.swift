@@ -57,23 +57,52 @@ enum AppUpdateService {
         return release
     }
 
-    /// Downloads the release's IPA to a temporary file named after it.
+    /// Where a downloaded package is kept until the update is installed: not
+    /// Caches, which iOS may empty when storage runs low.
+    static var packageFolder: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("AppUpdate", isDirectory: true)
+    }
+    static func packageFile(for release: AppRelease) -> URL {
+        packageFolder.appendingPathComponent("iPadn-\(release.version).ipa")
+    }
+    /// The release's package if it was downloaded completely before.
+    static func downloadedPackage(for release: AppRelease) -> URL? {
+        let file = packageFile(for: release)
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? NSNumber,
+              size.int64Value > 0, release.packageSize <= 0 || size.int64Value == release.packageSize else { return nil }
+        return file
+    }
+    /// Removes kept packages, for example once the update is installed.
+    static func removeDownloads() {
+        try? FileManager.default.removeItem(at: packageFolder)
+    }
+
+    /// Downloads the release's IPA and keeps it in `packageFolder`, replacing older versions.
     static func download(_ release: AppRelease, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         guard let url = release.package else { throw ToolError.message("这个版本没有可下载的安装包") }
         try Task.checkCancellation()
-        // Its own folder, so a second download never replaces a file being shared.
+        // Its own folder while downloading; moved into place once complete.
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let target = folder.appendingPathComponent("iPadn-\(release.version).ipa")
-        let downloader = Downloader(target: target, progress: progress)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let downloader = Downloader(target: folder.appendingPathComponent("iPadn.ipa"), progress: progress)
         let session = URLSession(configuration: .ephemeral, delegate: downloader, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
-        return try await withTaskCancellationHandler {
+        let downloaded: URL = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 downloader.continuation = continuation
                 session.downloadTask(with: url).resume()
             }
         } onCancel: { session.invalidateAndCancel() }
+        removeDownloads()
+        var kept = packageFolder
+        try FileManager.default.createDirectory(at: kept, withIntermediateDirectories: true)
+        // A package that can be downloaded again does not belong in device backups.
+        var values = URLResourceValues(); values.isExcludedFromBackup = true
+        try? kept.setResourceValues(values)
+        let target = packageFile(for: release)
+        try FileManager.default.moveItem(at: downloaded, to: target)
+        return target
     }
 
     private final class Downloader: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
@@ -118,10 +147,43 @@ enum AppUpdateService {
         }
     }
 
-    /// TrollStore installs an IPA from a link through this URL scheme.
+    /// TrollStore installs an IPA from a link through this URL scheme. Without
+    /// TrollStore the system Magnifier app answers it, so offer it only when
+    /// TrollStore installed iPadn.
     static func trollStoreURL(for release: AppRelease) -> URL? {
         guard let package = release.package?.absoluteString,
               let encoded = package.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { return nil }
         return URL(string: "apple-magnifier://install?url=" + encoded)
+    }
+    /// TrollStore leaves a marker file next to the bundles it installs.
+    static var installedByTrollStore: Bool {
+        let container = Bundle.main.bundleURL.deletingLastPathComponent()
+        return ["_TrollStore", "_TrollStoreLite"].contains {
+            FileManager.default.fileExists(atPath: container.appendingPathComponent($0).path)
+        }
+    }
+
+    /// A piece of the release notes as the update page shows it.
+    enum NoteBlock: Equatable {
+        case heading(String), bullet(String), paragraph(String)
+    }
+    /// The Markdown release notes as headings, bullets and paragraphs. The
+    /// title naming the version is left out: the page already shows it.
+    static func blocks(_ notes: String, version: String) -> [NoteBlock] {
+        var blocks: [NoteBlock] = []
+        for raw in notes.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty else { continue }
+            if line.hasPrefix("#") {
+                let text = line.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces)
+                if text.isEmpty || (blocks.isEmpty && text.hasSuffix(version)) { continue }
+                blocks.append(.heading(text))
+            } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
+                blocks.append(.bullet(String(line.dropFirst(2))))
+            } else {
+                blocks.append(.paragraph(line))
+            }
+        }
+        return blocks
     }
 }
