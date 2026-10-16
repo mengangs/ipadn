@@ -81,6 +81,9 @@ struct RegionPriceView: View {
                     } else {
                         Text(inApps.isEmpty ? "暂时无法读取内购项目，请下拉重试。" : "App Store 没有列出这个应用的内购项目。")
                             .foregroundStyle(.secondary)
+                        if inApps.isEmpty, store.settings.proMode, let reason = InAppPriceService.lastFailure {
+                            Text(reason).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                        }
                     }
                 }
                 ForEach(list) { group in InAppGroupRow(group: group, rates: rates) }

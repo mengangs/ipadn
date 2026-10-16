@@ -137,10 +137,52 @@ enum InAppPriceService {
     /// The in-app purchases a product page lists (Apple shows up to ten),
     /// [] when it lists none, nil when the page could not be read.
     static func fetch(appID: String, country: String) async -> [InAppPrice]? {
-        guard let url = URL(string: "https://apps.apple.com/\(country.lowercased())/app/id\(appID)"),
-              let result = try? await HTTPClient.shared.request(url, headers: ["User-Agent": browserAgent]) else { return nil }
-        return items(fromPage: String(decoding: result.0, as: UTF8.self))
+        switch await page(appID: appID, country: country) {
+        case .success(let items): return items
+        case .failure(let reason):
+            await MainActor.run { lastFailure = reason.description }
+            return nil
+        }
     }
+
+    enum PageFailure: Error, CustomStringConvertible {
+        case network(String), status(Int), noData(Int), notJSON(Int)
+        var description: String {
+            switch self {
+            case .network(let message): return "network: " + message
+            case .status(let code): return "HTTP \(code)"
+            case .noData(let bytes): return "no page data (\(bytes) bytes)"
+            case .notJSON(let bytes): return "page data unreadable (\(bytes) bytes)"
+            }
+        }
+    }
+    /// Why the latest page could not be read, for 专业模式.
+    @MainActor static var lastFailure: String?
+
+    /// The product page as a desktop browser gets it, following redirects.
+    static func page(appID: String, country: String) async -> Result<[InAppPrice], PageFailure> {
+        guard let url = URL(string: "https://apps.apple.com/\(country.lowercased())/app/id\(appID)") else { return .failure(.status(0)) }
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        request.setValue(browserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
+        let data: Data
+        do {
+            let (body, response) = try await pageSession.data(for: request)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(code) else { return .failure(.status(code)) }
+            data = body
+        } catch { return .failure(.network((error as NSError).localizedDescription)) }
+        let html = String(decoding: data, as: UTF8.self)
+        guard html.contains("serialized-server-data") else { return .failure(.noData(data.count)) }
+        guard let items = items(fromPage: html) else { return .failure(.notJSON(data.count)) }
+        return .success(items)
+    }
+    private static let pageSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForResource = 60
+        config.httpCookieStorage = nil
+        return URLSession(configuration: config)
+    }()
     /// Several storefronts, a few pages at a time, kept for an hour.
     @MainActor
     static func fetch(appID: String, countries: [String]) async -> [String: [InAppPrice]] {
@@ -165,7 +207,8 @@ enum InAppPriceService {
     }
     @MainActor private static var cache: [String: (date: Date, items: [InAppPrice])] = [:]
 
-    static let browserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+    // The desktop page carries the information section with in-app purchases.
+    static let browserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 
     static func items(fromPage html: String) -> [InAppPrice]? {
         guard let marker = html.range(of: "id=\"serialized-server-data\""),
