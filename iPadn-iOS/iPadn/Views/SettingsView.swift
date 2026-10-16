@@ -75,7 +75,7 @@ struct SettingsView: View {
                 } else if !icons.supported {
                     Text("当前设备不支持更换图标。")
                 } else {
-                    Text("「跟随系统」会随主屏幕的浅色、深色和着色外观切换（iOS 18 及更新版本），也可以固定使用浅色或深色图标。")
+                    Text("默认使用深色图标。「跟随系统」会随主屏幕的浅色、深色和着色外观切换（iOS 18 及更新版本），也可以固定使用浅色图标。")
                 }
             }
             ForEach($store.settings.versionSources) { $source in

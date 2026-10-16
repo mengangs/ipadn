@@ -19,18 +19,20 @@ final class AppIconService: ObservableObject {
     struct Selection: Equatable {
         var style: Choice
         var theme: Theme
-        /// nil is the primary icon (立体, following the system).
+        /// nil is the primary icon (立体, dark).
         var alternateName: String? {
-            let base = style == .flat ? "AppIconFlat" : "AppIcon"
-            switch theme {
-            case .automatic: return style == .flat ? base : nil
-            case .light: return base + "Light"
-            case .dark: return base + "Dark"
+            switch (style, theme) {
+            case (.dimensional, .dark): return nil
+            case (.dimensional, .automatic): return "AppIconAuto"
+            case (.flat, .automatic): return "AppIconFlat"
+            case (_, .light): return style == .flat ? "AppIconFlatLight" : "AppIconLight"
+            case (.flat, .dark): return "AppIconFlatDark"
             }
         }
     }
 
-    @Published private(set) var current = Selection(style: .dimensional, theme: .automatic)
+    static let primary = Selection(style: .dimensional, theme: .dark)
+    @Published private(set) var current = AppIconService.primary
     var selected: Choice { current.style }
     var theme: Theme { current.theme }
     @Published private(set) var changing = false
@@ -53,12 +55,14 @@ final class AppIconService: ObservableObject {
     var supported: Bool { simulatesChanges || UIApplication.shared.supportsAlternateIcons }
 
     static func systemSelection(for alternateIconName: String?) -> Selection {
+        // AppIconDark was the dark 立体 alternate before the primary icon became dark.
+        if alternateIconName == "AppIconDark" { return primary }
         for style in Choice.allCases {
             for theme in Theme.allCases where Selection(style: style, theme: theme).alternateName == alternateIconName {
                 return Selection(style: style, theme: theme)
             }
         }
-        return Selection(style: .dimensional, theme: .automatic)
+        return primary
     }
     static func systemChoice(for alternateIconName: String?) -> Choice { systemSelection(for: alternateIconName).style }
 

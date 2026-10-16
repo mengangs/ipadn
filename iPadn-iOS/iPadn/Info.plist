@@ -73,6 +73,15 @@
 	<dict>
 		<key>CFBundleAlternateIcons</key>
 		<dict>
+			<key>AppIconAuto</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>AppIconAuto60x60</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
 			<key>AppIconFlat</key>
 			<dict>
 				<key>CFBundleIconFiles</key>
@@ -124,6 +133,17 @@
 	<dict>
 		<key>CFBundleAlternateIcons</key>
 		<dict>
+			<key>AppIconAuto</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>AppIconAuto60x60</string>
+					<string>AppIconAuto76x76</string>
+					<string>AppIconAuto83x83</string>
+				</array>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
 			<key>AppIconFlat</key>
 			<dict>
 				<key>CFBundleIconFiles</key>

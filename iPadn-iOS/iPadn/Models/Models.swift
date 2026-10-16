@@ -224,7 +224,7 @@ struct ToolSettings: Codable, Equatable {
     /// Shows tools for advanced users: package contents, tokens, device ID.
     var proMode = false
     var useSignerCache = true
-    var appearance = "system"
+    var appearance = "dark"
     var plistServer = ""
     /// One-tap installation through the public loopback certificate (default).
     var automaticInstallation = true
@@ -253,7 +253,7 @@ struct ToolSettings: Codable, Equatable {
         proMode = try values.decodeIfPresent(Bool.self, forKey: .proMode) ?? proMode
         useSignerCache = try values.decodeIfPresent(Bool.self, forKey: .useSignerCache) ?? useSignerCache
         appearance = try values.decodeIfPresent(String.self, forKey: .appearance) ?? appearance
-        if !["system", "light", "dark"].contains(appearance) { appearance = "system" }
+        if !["system", "light", "dark"].contains(appearance) { appearance = "dark" }
         plistServer = try values.decodeIfPresent(String.self, forKey: .plistServer) ?? plistServer
         localInstallation = try values.decodeIfPresent(Bool.self, forKey: .localInstallation) ?? plistServer.isEmpty
         localInstallHost = ManifestBuilder.migratedLocalHost(try values.decodeIfPresent(String.self, forKey: .localInstallHost) ?? localInstallHost)

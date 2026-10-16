@@ -41,8 +41,10 @@ for path, file_type in [("Resources/SAPRuntime", "folder"), ("Resources/Assets.x
     reference = add("File/" + path, "PBXFileReference", lastKnownFileType=file_type, path=path, sourceTree="<group>")
     app_files.append(reference)
     resources.append(add("Build/" + path, "PBXBuildFile", fileRef=reference))
-# Flat follows the system appearance; the others are fixed light or dark.
-ALTERNATE_ICONS = ["AppIconFlat", "AppIconLight", "AppIconDark", "AppIconFlatLight", "AppIconFlatDark"]
+# The primary icon is the dark 立体 icon. AppIconAuto and AppIconFlat follow
+# the system appearance; the others are fixed light or dark. AppIconDark is
+# kept for installs that chose it before the primary icon became dark.
+ALTERNATE_ICONS = ["AppIconAuto", "AppIconFlat", "AppIconLight", "AppIconDark", "AppIconFlatLight", "AppIconFlatDark"]
 # Alternate icons also ship as standalone PNGs for SpringBoard and signing tools.
 for path in sorted((ROOT / "iPadn/Resources/AlternateIcons").glob("*.png")):
     relative = path.relative_to(ROOT / "iPadn").as_posix()
