@@ -1,8 +1,9 @@
 import BackgroundTasks
 import UserNotifications
 
-/// Checks downloaded apps for newer store versions while iPadn is in the
-/// background. iOS decides when the check actually runs.
+/// Checks downloaded apps for newer store versions, and followed apps for
+/// version, price and removal changes, while iPadn is in the background.
+/// iOS decides when the check actually runs.
 enum UpdateCheckScheduler {
     static let identifier = "app.local.iPadn.update-check"
 
@@ -15,6 +16,10 @@ enum UpdateCheckScheduler {
                 if store.settings.updateNotifications {
                     await store.checkForUpdates(force: true)
                     if !Task.isCancelled { store.notifyNewUpdates() }
+                }
+                if store.settings.watchNotifications, !Task.isCancelled {
+                    let changes = await store.checkWatched(force: true)
+                    if !Task.isCancelled { store.notifyWatchChanges(changes) }
                 }
                 task.setTaskCompleted(success: !Task.isCancelled)
             }

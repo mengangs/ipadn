@@ -52,6 +52,10 @@ final class ToolStore: ObservableObject {
     /// Newer store versions of downloaded apps, by `DownloadJob.updateKey`.
     @Published private(set) var availableUpdates: [String: StoreApp] = [:]
     private var updatesChecked: (date: Date, keys: Set<String>)?
+    /// What the latest checks saw of followed apps, by `WatchRecord.key`.
+    @Published private(set) var watch: [String: WatchRecord] = [:]
+    @Published private(set) var watchChecking = false
+    private var watchChecked: (date: Date, keys: Set<String>)?
     private var officialVersionCache: [String: (date: Date, versions: [AppVersion])] = [:]
     @Published var infoMessage: String?
     #if DEBUG
@@ -70,7 +74,8 @@ final class ToolStore: ObservableObject {
            let saved = try? JSONDecoder().decode(ToolSettings.self, from: data) { settings = saved }
         else { settings = ToolSettings() }
         do { favorites = try LocalResources.loadChecked([StoreApp].self, filename: "favorites.json") ?? [] }
-        catch { favoritesStorageError = "收藏文件读取失败；已保留原文件。"; errorMessage = favoritesStorageError }
+        catch { favoritesStorageError = "关注列表读取失败；已保留原文件。"; errorMessage = favoritesStorageError }
+        watch = (try? LocalResources.loadChecked([String: WatchRecord].self, filename: "watch.json")) ?? [:]
         do { ownedByAccount = try LocalResources.loadChecked([String: [OwnedApp]].self, filename: LocalResources.ownedFilename) ?? [:] }
         catch { ownedStorageError = "已购缓存读取失败；已保留原文件，不能覆盖其他账号记录。"; errorMessage = ownedStorageError }
         if let data = LocalResources.defaults.data(forKey: LocalResources.searchHistory) {
@@ -261,10 +266,117 @@ final class ToolStore: ObservableObject {
     func toggleFavorite(_ app: StoreApp) {
         guard favoritesStorageError == nil else { errorMessage = favoritesStorageError; return }
         var next = favorites
-        if next.contains(where: { $0.id == app.id }) { next.removeAll { $0.id == app.id } }
-        else { next.insert(app, at: 0) }
+        let following = !next.contains(where: { $0.id == app.id })
+        if following { next.insert(app, at: 0) } else { next.removeAll { $0.id == app.id } }
         do { try LocalResources.save(next, filename: "favorites.json"); favorites = next; updateLocalResults() }
-        catch { errorMessage = "收藏保存失败：" + error.localizedDescription }
+        catch { errorMessage = "关注保存失败：" + error.localizedDescription; return }
+        if following {
+            // Start the record now, so price changes count from this moment.
+            Task { await checkWatched(force: true) }
+            if settings.watchNotifications {
+                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+            }
+        } else {
+            watch = watch.filter { $0.value.id != app.id }
+            persistWatch()
+        }
+    }
+
+    /// The storefront followed apps are checked in: the signed-in account's,
+    /// else the search region.
+    var watchCountry: String {
+        (apple.active.flatMap { StoreService.country(forStorefront: $0.storeFront) } ?? settings.store.country).uppercased()
+    }
+    func watchRecord(_ id: String) -> WatchRecord? { watch[WatchRecord.key(id: id, country: watchCountry)] }
+
+    typealias WatchEvent = (app: StoreApp, change: WatchChange, currency: String, country: String)
+
+    /// Looks up every followed app and records version, price and removal
+    /// changes in the account's storefront, and prices in the comparison
+    /// storefronts. Runs at most every three hours unless forced or the list
+    /// changed. Returns the changes worth a notification.
+    @discardableResult
+    func checkWatched(force: Bool = false) async -> [WatchEvent] {
+        #if DEBUG
+        if visualPreview { return [] }
+        #endif
+        let apps = favorites
+        let ids = Set(apps.map(\.id))
+        let primary = watchCountry
+        var countries = [primary]
+        for country in settings.priceRegions.map({ $0.uppercased() }) where !countries.contains(country) { countries.append(country) }
+        let keys = ids.union(countries.map { "@" + $0 })
+        guard !apps.isEmpty, !watchChecking else { return [] }
+        if !force, let checked = watchChecked, checked.keys == keys, Date().timeIntervalSince(checked.date) < 3 * 3600 { return [] }
+        watchChecking = true
+        defer { watchChecking = false }
+        var listings: [String: [String: StoreApp]] = [:]
+        await withTaskGroup(of: (String, [String: StoreApp]?).self) { group in
+            for country in countries {
+                group.addTask { (country, try? await StoreService.lookup(ids: Array(ids), country: country).apps) }
+            }
+            // A failed request says nothing about the apps: that storefront's records stay as they are.
+            for await (country, found) in group { if let found { listings[country] = found } }
+        }
+        guard var found = listings[primary] else { return [] }
+        // The list lookup can leave out an app now and then; ask once more
+        // on its own before treating it as removed from sale.
+        for app in apps where found[app.id] == nil && watch[WatchRecord.key(id: app.id, country: primary)]?.listed == true {
+            guard let single = try? await StoreService.lookup(ids: [app.id], country: primary).apps else { return [] }
+            if let listing = single[app.id] { found[app.id] = listing }
+        }
+        listings[primary] = found
+        guard !Task.isCancelled, primary == watchCountry else { return [] }
+        var records = watch
+        var events: [WatchEvent] = []
+        var refreshed = favorites
+        // Skip apps unfollowed while the lookups were running.
+        for app in apps where refreshed.contains(where: { $0.id == app.id }) {
+            for (country, found) in listings {
+                let key = WatchRecord.key(id: app.id, country: country)
+                let listing = found[app.id]
+                let result = WatchService.update(records[key], id: app.id, country: country, listing: listing)
+                records[key] = result.record
+                // Other storefronts only matter for their prices.
+                let changes = country == primary ? result.changes : result.changes.filter {
+                    if case .priceDrop = $0 { return true }; if case .free = $0 { return true }; return false
+                }
+                events += changes.map { (app: listing ?? app, change: $0, currency: result.record.currency, country: country) }
+            }
+            // Keep the list's version and price current.
+            if let listing = found[app.id], let index = refreshed.firstIndex(where: { $0.id == app.id }) {
+                var updated = refreshed[index]
+                if !listing.version.isEmpty { updated.version = listing.version }
+                updated.price = listing.price; updated.priceValue = listing.priceValue; updated.currency = listing.currency
+                if updated.iconURL == nil { updated.iconURL = listing.iconURL }
+                refreshed[index] = updated
+            }
+        }
+        watch = records
+        watchChecked = (Date(), keys)
+        persistWatch()
+        if refreshed != favorites, (try? LocalResources.save(refreshed, filename: "favorites.json")) != nil { favorites = refreshed }
+        return events
+    }
+
+    private func persistWatch() {
+        try? LocalResources.save(watch, filename: "watch.json")
+    }
+
+    /// One notification for the changes a background check found.
+    func notifyWatchChanges(_ events: [WatchEvent]) {
+        let primary = watchCountry
+        let lines = events.compactMap { event in
+            WatchService.message(event.change, currency: event.currency).map {
+                event.app.name + (event.country == primary ? "" : "（\(StoreRegions.name(event.country))）") + $0
+            }
+        }
+        guard !lines.isEmpty else { return }
+        let content = UNMutableNotificationContent()
+        content.title = lines.count == 1 ? "关注的应用有变化" : "\(lines.count) 条关注应用变化"
+        content.body = lines.prefix(4).joined(separator: "\n") + (lines.count > 4 ? "\n等" : "")
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "watch-" + UUID().uuidString, content: content, trigger: nil))
     }
 
     private func remember(_ term: String) {
@@ -635,6 +747,13 @@ extension ToolStore {
         visualPreview = true
         results = []; hasSearched = false; searchText = ""
         favorites = [StoreApp(id: "preview-app", name: "像素日记", bundleID: "example.pixel", version: "3.2", category: "摄影与录像", size: 128_000_000)]
+        let day: TimeInterval = 86400
+        var record = WatchRecord(id: "preview-app", country: watchCountry, version: "3.2", price: 18, currency: "CNY",
+                                 history: [PricePoint(date: Date().addingTimeInterval(-30 * day), price: 30),
+                                           PricePoint(date: Date().addingTimeInterval(-3 * day), price: 18)],
+                                 started: Date().addingTimeInterval(-30 * day), checked: Date())
+        record.change = .priceDrop(from: 30, to: 18); record.changed = Date().addingTimeInterval(-3 * day)
+        watch = [record.key: record]
         searchHistory = [SearchHistoryItem(term: "效率工具", count: 3, lastUsed: Date()), SearchHistoryItem(term: "照片编辑", count: 1, lastUsed: Date())]
     }
 }

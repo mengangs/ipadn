@@ -437,6 +437,8 @@ enum StoreService {
                  description: plistString(raw["description"]), category: localizedGenre(plistString(raw["primaryGenreName"])),
                  size: Int64(plistString(raw["fileSizeBytes"])) ?? 0,
                  price: plistString(raw["formattedPrice"]).isEmpty ? "免费" : plistString(raw["formattedPrice"]),
+                 priceValue: (raw["price"] as? NSNumber)?.doubleValue,
+                 currency: plistString(raw["currency"]).isEmpty ? nil : plistString(raw["currency"]),
                  rating: (raw["averageUserRating"] as? NSNumber)?.doubleValue ?? 0,
                  minimumOS: plistString(raw["minimumOsVersion"]),
                  developerURL: MacInstallerService.safeWebsite(plistString(raw["sellerUrl"])))

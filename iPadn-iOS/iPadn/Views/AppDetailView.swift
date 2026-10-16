@@ -103,6 +103,24 @@ struct AppDetailView: View {
                         }
                     } header: { sectionTitle("简介") }
                 }
+                if !app.isDelisted {
+                    CardSection {
+                        if store.isFavorite(app) { PriceHistorySection(app: app) }
+                        else {
+                            Text("关注后会记录价格变化，降价或限免时提醒你。").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        NavigationLink { RegionPriceView(app: app) } label: {
+                            HStack {
+                                Label("多地区价格对比", systemImage: "globe")
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("detail.regionPrices")
+                    } header: { sectionTitle("价格") }
+                }
                 CardSection {
                     if app.isDelisted { LabeledContent("商店状态", value: "已下架") }
                     if !app.displayCategory.isEmpty { LabeledContent("类别", value: app.displayCategory) }
@@ -143,12 +161,16 @@ struct AppDetailView: View {
                     .accessibilityHidden(true)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { store.toggleFavorite(app); UX.feedback() } label: {
-                    Image(systemName: store.isFavorite(app) ? "star.fill" : "star")
+                Button {
+                    let following = !store.isFavorite(app)
+                    store.toggleFavorite(app); UX.feedback()
+                    if following { store.infoMessage = "已关注，有新版本、降价或下架时会提醒你" }
+                } label: {
+                    Image(systemName: store.isFavorite(app) ? "bell.fill" : "bell")
                         .contentTransition(.symbolEffect(.replace))
                         .frame(minWidth: 44, minHeight: 44)
                 }
-                .accessibilityLabel(store.isFavorite(app) ? "取消收藏" : "收藏应用")
+                .accessibilityLabel(store.isFavorite(app) ? "取消关注" : "关注应用")
             }
         }
         .alert("下载 Mac 安装包", isPresented: $enteringMacDownloadURL) {
