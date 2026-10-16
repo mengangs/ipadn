@@ -83,15 +83,10 @@ struct PackageInstallationView: View {
                 } message: { Text(issue ?? "") }
         }
     }
-    /// Shown while a proxy or VPN is on: what to do if the prompt doesn't come.
+    /// Shown while a proxy or VPN is on with 本机证书: what lets it through.
     private var proxyHint: String {
-        if store.settings.automaticInstallation {
-            return "\n已开启代理或 VPN：如果没有弹出安装窗口，请为 api.palera.in 添加直连规则，或关闭后重试。"
-        }
-        if store.settings.localInstallation {
-            return "\n已开启代理或 VPN：iPadn 会改用只在本机有效的地址安装；如果仍无法安装，请为 ipadn.localtest.me 添加直连规则。"
-        }
-        return ""
+        guard !store.settings.automaticInstallation, store.settings.localInstallation else { return "" }
+        return "\n已开启代理或 VPN：如果无法安装，请在代理规则中为 ipadn.localtest.me 添加直连（DIRECT）规则。"
     }
     private func requestInstallation(viaBrowser: Bool = false) {
         guard !busy else { return }
@@ -130,7 +125,9 @@ struct PackageInstallationView: View {
                         try? await Task.sleep(for: .seconds(6))
                         if attempt == current, InstallLog.shared.manifestCount == served, !viaBrowser {
                             message = nil; started = false
-                            issue = "系统没能连接到 iPadn 的本机安装服务。请在「设置 › 通用 › 关于本机 › 证书信任设置」中确认已开启 iPadn 本机安装 CA；也可以改用一键安装。"
+                            issue = proxied
+                                ? "系统没能连接到 iPadn 的本机安装服务。开启代理或 VPN 时，请在代理规则中为 ipadn.localtest.me 添加直连（DIRECT）规则，或暂时关闭代理；也可以改用一键安装。"
+                                : "系统没能连接到 iPadn 的本机安装服务。请在「设置 › 通用 › 关于本机 › 证书信任设置」中确认已开启 iPadn 本机安装 CA；也可以改用一键安装。"
                         }
                     }
                 }
