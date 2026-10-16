@@ -113,18 +113,6 @@ struct RegionPriceView: View {
                     if !list.isEmpty {
                         Text("App Store 每个地区最多列出 10 个热门内购项目。同名项目按价格分档，通常对应月度、年度等不同订阅。")
                     }
-                    if store.settings.proMode && !inAppsLoading {
-                        // Per storefront: items read, or why the page failed.
-                        let report = prices.filter { $0.listing != nil }.map { item in
-                            item.country + ": " + (InAppPriceService.diagnostics[app.id + "|" + item.country] ?? "—")
-                        }.joined(separator: "\n")
-                        Text(report).font(.caption2.monospaced()).lineLimit(30).textSelection(.enabled)
-                        Button("复制诊断信息", systemImage: "doc.on.doc") {
-                            UIPasteboard.general.string = "App \(app.id)\n" + report
-                            store.infoMessage = "已复制到剪贴板"
-                        }
-                        .font(.caption).textCase(nil)
-                    }
                 }
             }
         }

@@ -14,7 +14,6 @@ struct PurchasedView: View {
     @State private var selecting = false
     @State private var selection = Set<String>()
     @State private var batchProgress: (done: Int, total: Int)?
-    @State private var showsSyncSpinner = false
     /// Only purchases no longer on sale in the account's storefront.
     @State private var delistedOnly = false
     @State private var share: SharedFile?
@@ -101,18 +100,6 @@ struct PurchasedView: View {
                     .disabled(apple.active == nil || selecting)
                     .accessibilityLabel("更多操作")
                     .accessibilityIdentifier("purchased.more")
-                    // Syncing shows in this button, not as a row that pushes the list.
-                    Button { if !store.ownedLoading { Task { await store.refreshOwned() } } } label: {
-                        ZStack {
-                            if showsSyncSpinner { ProgressView().controlSize(.small) }
-                            else { Image(systemName: "arrow.clockwise").font(.body.weight(.semibold)) }
-                        }
-                        .frame(width: 36, height: 36).background(Color(.tertiarySystemFill), in: Circle())
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(apple.active == nil || selecting)
-                    .accessibilityLabel(store.ownedLoading ? "正在同步购买记录" : "同步购买记录")
-                    .revealAfterDelay(store.ownedLoading, into: $showsSyncSpinner)
                 }
                 .onScrolledUnderBar { headerAway = $0 }
                 .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 16))

@@ -80,7 +80,8 @@ struct PackageInstallationView: View {
                           : "需要已配置的代理规则。")
                          + (InstallLog.insideLiveContainer && store.settings.automaticInstallation
                             ? "\n在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。" : "")
-                         + (proxied ? proxyHint : ""))
+                         + (proxied ? proxyHint : "")
+                         + "\n已安装的应用可以直接覆盖安装，数据会保留；如果设备上的版本更新，系统会提示先删除才能安装旧版本。")
                 }
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }

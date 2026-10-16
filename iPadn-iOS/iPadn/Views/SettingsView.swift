@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UserNotifications
 
 struct SettingsView: View {
@@ -11,6 +12,15 @@ struct SettingsView: View {
     @State private var share: SharedFile?
     @State private var resetSettings = false
     @State private var clearCache = false
+    /// The appearance the home screen icon has: fixed by the icon theme, or the
+    /// system's (not iPadn's own appearance setting) when following the system.
+    private var iconScheme: ColorScheme {
+        switch icons.theme {
+        case .light: return .light
+        case .dark: return .dark
+        case .automatic: return UIScreen.main.traitCollection.userInterfaceStyle == .dark ? .dark : .light
+        }
+    }
     var body: some View {
         Form {
             Section("下载") {
@@ -50,7 +60,7 @@ struct SettingsView: View {
                             // The preview shows the chosen theme (or the current one when following the system).
                             Image(choice.preview).resizable().scaledToFit().frame(width: 48, height: 48)
                                 .clipShape(RoundedRectangle(cornerRadius: 11)).accessibilityHidden(true)
-                                .environment(\.colorScheme, icons.theme == .light ? .light : icons.theme == .dark ? .dark : colorScheme)
+                                .environment(\.colorScheme, iconScheme)
                             Text(choice.title).foregroundStyle(.primary)
                             Spacer()
                             if icons.changing && choice != icons.selected { ProgressView() }
@@ -139,7 +149,11 @@ struct SettingsView: View {
                 Button("恢复默认设置", role: .destructive) { resetSettings = true }
             }
             Section {
-                BrandMark(size: 64)
+                // The icon as chosen in 应用图标, in the appearance it currently shows.
+                Image(icons.selected.preview).resizable().scaledToFit().frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 64 * UX.iconCorner, style: .continuous))
+                    .environment(\.colorScheme, iconScheme)
+                    .accessibilityHidden(true)
                 Text("iPadn " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")).font(.headline)
                 Text("搜索、下载和管理你拥有许可的应用安装包，支持 iPhone、iPad、Apple TV 与 Mac。")
                     .font(.footnote).foregroundStyle(.secondary)
