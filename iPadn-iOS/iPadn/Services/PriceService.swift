@@ -137,12 +137,20 @@ enum InAppPriceService {
     /// The in-app purchases a product page lists (Apple shows up to ten),
     /// [] when it lists none, nil when the page could not be read.
     static func fetch(appID: String, country: String) async -> [InAppPrice]? {
-        switch await page(appID: appID, country: country) {
-        case .success(let items): return items
-        case .failure(let reason):
-            await MainActor.run { lastFailure = reason.description }
-            return nil
+        var outcome = await page(appID: appID, country: country)
+        if case .failure = outcome {
+            // One retry: a busy storefront page often answers the second time.
+            try? await Task.sleep(for: .seconds(1))
+            outcome = await page(appID: appID, country: country)
         }
+        let report: String
+        switch outcome {
+        case .success(let items): report = "\(items.count) items"
+        case .failure(let reason): report = reason.description
+        }
+        await MainActor.run { diagnostics[appID + "|" + country.uppercased()] = report }
+        if case .success(let items) = outcome { return items }
+        return nil
     }
 
     enum PageFailure: Error, CustomStringConvertible {
@@ -156,8 +164,8 @@ enum InAppPriceService {
             }
         }
     }
-    /// Why the latest page could not be read, for 专业模式.
-    @MainActor static var lastFailure: String?
+    /// What each storefront's page gave, for 专业模式 ("7 items", "HTTP 403").
+    @MainActor static var diagnostics: [String: String] = [:]
 
     /// The product page as a desktop browser gets it, following redirects.
     static func page(appID: String, country: String) async -> Result<[InAppPrice], PageFailure> {
@@ -194,7 +202,7 @@ enum InAppPriceService {
         }
         await withTaskGroup(of: (String, [InAppPrice]?).self) { group in
             var pending = missing.makeIterator()
-            for _ in 0..<4 {
+            for _ in 0..<3 {
                 if let country = pending.next() { group.addTask { (country, await fetch(appID: appID, country: country)) } }
             }
             while let result = await group.next() {

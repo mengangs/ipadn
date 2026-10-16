@@ -81,9 +81,7 @@ struct RegionPriceView: View {
                     } else {
                         Text(inApps.isEmpty ? "暂时无法读取内购项目，请下拉重试。" : "App Store 没有列出这个应用的内购项目。")
                             .foregroundStyle(.secondary)
-                        if inApps.isEmpty, store.settings.proMode, let reason = InAppPriceService.lastFailure {
-                            Text(reason).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
-                        }
+
                     }
                 }
                 ForEach(list) { group in InAppGroupRow(group: group, rates: rates) }
@@ -94,8 +92,17 @@ struct RegionPriceView: View {
                     if inAppsLoading && !list.isEmpty { ProgressView().controlSize(.small) }
                 }
             } footer: {
-                if !list.isEmpty {
-                    Text("App Store 每个地区最多列出 10 个热门内购项目。同名项目按价格分档，通常对应月度、年度等不同订阅。")
+                VStack(alignment: .leading, spacing: 6) {
+                    if !list.isEmpty {
+                        Text("App Store 每个地区最多列出 10 个热门内购项目。同名项目按价格分档，通常对应月度、年度等不同订阅。")
+                    }
+                    if store.settings.proMode && !inAppsLoading {
+                        // Per storefront: items read, or why the page failed.
+                        Text(prices.filter { $0.listing != nil }.map { item in
+                            item.country + ": " + (InAppPriceService.diagnostics[app.id + "|" + item.country] ?? "—")
+                        }.joined(separator: "\n"))
+                        .font(.caption2.monospaced()).textSelection(.enabled)
+                    }
                 }
             }
         }
