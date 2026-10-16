@@ -168,6 +168,23 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(InAppPriceService.nameMap(english: english, localized: english), [:], "an English page names nothing")
     }
 
+    func testReleaseNotesReadFromVersionHistory() throws {
+        // The shape of apps.apple.com's version history (TitledParagraph items).
+        let data = #"{"shelves":{"mostRecentVersion":{"items":[{"$kind":"TitledParagraph","text":"Bug fixes.\n","primarySubtitle":"Version 1.2026.272","secondarySubtitle":"Tue Oct 06 2026 18:07:01 GMT+0000 (Coordinated Universal Time)"}]},"#
+            + #""history":{"items":[{"$kind":"TitledParagraph","text":"Bug fixes.","primarySubtitle":"Version 1.2026.272"},"#
+            + #"{"$kind":"TitledParagraph","text":"新增评分来源","primarySubtitle":"版本 8.3.1","secondarySubtitle":"Mon Sep 01 2025 08:00:00 GMT+0000 (UTC)"},"#
+            + #"{"$kind":"TitledParagraph","text":"Not a version","primarySubtitle":"Developer Response"}]}}}"#
+        let html = "<script type=\"application/json\" id=\"serialized-server-data\">" + data + "</script>"
+        let notes = ReleaseNotesService.parse(html)
+        XCTAssertEqual(Set(notes.keys), ["1.2026.272", "8.3.1"])
+        XCTAssertEqual(notes["1.2026.272"]?.text, "Bug fixes.")
+        XCTAssertEqual(notes["1.2026.272"]?.date, Date(timeIntervalSince1970: 1_791_310_021))
+        XCTAssertEqual(notes["8.3.1"]?.text, "新增评分来源")
+        XCTAssertEqual(ReleaseNotesService.version(in: "Version 2.0"), "2.0")
+        XCTAssertNil(ReleaseNotesService.version(in: "What’s New"))
+        XCTAssertTrue(ReleaseNotesService.parse("<html></html>").isEmpty)
+    }
+
     func testPurchaseListExportsAsCSV() {
         let apps = [OwnedApp(id: "1", bundleID: "a.b", name: "Notes, \"Pro\"", version: "2.0", purchaseDate: nil, iconURL: nil),
                     OwnedApp(id: "2", bundleID: "c.d", name: "Gone", version: "1.0", purchaseDate: nil, iconURL: nil),

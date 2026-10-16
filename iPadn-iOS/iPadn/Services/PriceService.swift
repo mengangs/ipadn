@@ -189,6 +189,23 @@ enum InAppPriceService {
     /// Pages are read in English by default (Apple picks its closest English
     /// page in every storefront), so the same purchase has the same name everywhere.
     static func page(appID: String, country: String, language: String = "en-US") async -> Result<Page, PageFailure> {
+        let fetched = await fetchPage(appID: appID, country: country, language: language)
+        guard case .success(let (html, landed)) = fetched else {
+            if case .failure(let reason) = fetched { return .failure(reason) }
+            return .failure(.status(0))
+        }
+        guard let items = items(fromPage: html) else { return .failure(.notJSON(html.utf8.count)) }
+        var detail = ""
+        if items.isEmpty {
+            let path = landed.map { $0.path + ($0.query.map { "?" + $0 } ?? "") } ?? "?"
+            detail = "\(html.utf8.count / 1024) KB \(path) | " + summary(ofPage: html)
+        }
+        return .success(Page(items: items, detail: detail))
+    }
+
+    /// A storefront's product page in `language`, as long as the network
+    /// isn't sent to another storefront and the page carries its data.
+    static func fetchPage(appID: String, country: String, language: String) async -> Result<(String, URL?), PageFailure> {
         guard let url = URL(string: "https://apps.apple.com/\(country.lowercased())/app/id\(appID)?l=\(language)") else { return .failure(.status(0)) }
         var request = URLRequest(url: url, timeoutInterval: 30)
         request.setValue(browserAgent, forHTTPHeaderField: "User-Agent")
@@ -207,13 +224,7 @@ enum InAppPriceService {
         }
         let html = String(decoding: data, as: UTF8.self)
         guard html.contains("serialized-server-data") else { return .failure(.noData(data.count)) }
-        guard let items = items(fromPage: html) else { return .failure(.notJSON(data.count)) }
-        var detail = ""
-        if items.isEmpty {
-            let path = landed.map { $0.path + ($0.query.map { "?" + $0 } ?? "") } ?? "?"
-            detail = "\(data.count / 1024) KB \(path) | " + summary(ofPage: html)
-        }
-        return .success(Page(items: items, detail: detail))
+        return .success((html, landed))
     }
 
     /// The information section's annotations: title, number of name/price
@@ -421,5 +432,78 @@ enum InAppPriceService {
             }.map(\.element)
             return group
         }
+    }
+}
+
+/// One version's entry in a product page's version history.
+struct ReleaseNote: Equatable {
+    var version: String
+    var date: Date?
+    var text: String
+}
+
+enum ReleaseNotesService {
+    /// The version history a product page carries, by version number, in
+    /// the system language where the storefront offers it. Tries the
+    /// storefronts in order; empty when none could be read.
+    @MainActor
+    static func notes(appID: String, countries: [String],
+                      language: String = Locale.preferredLanguages.first ?? "en-US") async -> [String: ReleaseNote] {
+        for country in countries {
+            let key = appID + "|" + country + "|" + language
+            if let cached = cache[key], Date().timeIntervalSince(cached.date) < 6 * 3600 { return cached.notes }
+            guard case .success(let (html, _)) = await InAppPriceService.fetchPage(appID: appID, country: country, language: language)
+            else { continue }
+            let notes = parse(html)
+            guard !notes.isEmpty else { continue }
+            cache[key] = (Date(), notes)
+            return notes
+        }
+        return [:]
+    }
+    @MainActor private static var cache: [String: (date: Date, notes: [String: ReleaseNote])] = [:]
+
+    /// Version history entries: TitledParagraph items whose subtitles hold
+    /// "Version 1.2.3" (localized) and the release date.
+    static func parse(_ html: String) -> [String: ReleaseNote] {
+        guard let json = InAppPriceService.serializedData(html) else { return [:] }
+        var notes: [String: ReleaseNote] = [:]
+        func visit(_ value: Any, depth: Int) {
+            guard depth < 40 else { return }
+            if let dict = value as? [String: Any] {
+                if dict["$kind"] as? String == "TitledParagraph", let text = dict["text"] as? String,
+                   let subtitle = dict["primarySubtitle"] as? String, let number = version(in: subtitle) {
+                    // The latest version appears twice (What's New and the history); keep any date either gives.
+                    let released = (dict["secondarySubtitle"] as? String).flatMap(date)
+                    if var known = notes[number] {
+                        if known.date == nil { known.date = released; notes[number] = known }
+                    } else {
+                        notes[number] = ReleaseNote(version: number, date: released,
+                                                     text: text.trimmingCharacters(in: .whitespacesAndNewlines))
+                    }
+                }
+                for child in dict.values { visit(child, depth: depth + 1) }
+            } else if let array = value as? [Any] {
+                for child in array { visit(child, depth: depth + 1) }
+            }
+        }
+        visit(json, depth: 0)
+        return notes
+    }
+
+    /// "Version 1.2.3", "版本 1.2.3" → "1.2.3".
+    static func version(in subtitle: String) -> String? {
+        let token = subtitle.split(whereSeparator: { $0.isWhitespace }).last.map(String.init) ?? subtitle
+        let trimmed = token.trimmingCharacters(in: CharacterSet(charactersIn: "0123456789.").inverted)
+        return trimmed.first?.isNumber == true ? trimmed : nil
+    }
+
+    /// "Tue Oct 06 2026 18:07:01 GMT+0000 (Coordinated Universal Time)".
+    static func date(_ text: String) -> Date? {
+        let core = text.components(separatedBy: " (").first ?? text
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEE MMM dd yyyy HH:mm:ss 'GMT'Z"
+        return formatter.date(from: core)
     }
 }
