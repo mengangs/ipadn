@@ -4,6 +4,7 @@ import UserNotifications
 struct SettingsView: View {
     @EnvironmentObject private var store: ToolStore
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var icons = AppIconService()
     @State private var iconIssue: String?
     @State private var addingSource = false
@@ -38,12 +39,14 @@ struct SettingsView: View {
                         }
                     } label: {
                         HStack(spacing: 14) {
+                            // The preview shows the chosen theme (or the current one when following the system).
                             Image(choice.preview).resizable().scaledToFit().frame(width: 48, height: 48)
                                 .clipShape(RoundedRectangle(cornerRadius: 11)).accessibilityHidden(true)
+                                .environment(\.colorScheme, icons.theme == .light ? .light : icons.theme == .dark ? .dark : colorScheme)
                             Text(choice.title).foregroundStyle(.primary)
                             Spacer()
                             if icons.changing && choice != icons.selected { ProgressView() }
-                            else if icons.awaitingSystem == choice {
+                            else if icons.awaitingSystem?.style == choice {
                                 Image(systemName: "clock").foregroundStyle(.secondary)
                                     .accessibilityLabel("等待系统同步")
                             }
@@ -55,12 +58,24 @@ struct SettingsView: View {
                         .accessibilityRemoveTraits(icons.selected == choice ? [] : .isSelected)
                         .accessibilityValue(icons.selected == choice ? "已选中" : "未选中")
                 }
+                Picker("图标主题", selection: Binding(get: { icons.theme }, set: { theme in
+                    Task {
+                        do { try await icons.select(theme: theme) }
+                        catch { iconIssue = error.localizedDescription }
+                    }
+                })) {
+                    ForEach(AppIconService.Theme.allCases) { Text($0.title).tag($0) }
+                }
+                .disabled(icons.changing || !icons.supported)
+                .accessibilityIdentifier("settings.icon.theme")
             } header: { Text("应用图标") } footer: {
                 if let status = icons.statusHint {
                     Text(status)
                         .accessibilityIdentifier("settings.icon.status")
                 } else if !icons.supported {
                     Text("当前设备不支持更换图标。")
+                } else {
+                    Text("「跟随系统」会随主屏幕的浅色、深色和着色外观切换（iOS 18 及更新版本），也可以固定使用浅色或深色图标。")
                 }
             }
             ForEach($store.settings.versionSources) { $source in

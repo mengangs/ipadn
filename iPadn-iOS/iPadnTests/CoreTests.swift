@@ -58,8 +58,18 @@ final class CoreTests: XCTestCase {
     }
     @MainActor
     func testPackagedIconChoicesMatchCurrentDevice() throws {
-        XCTAssertNil(AppIconService.Choice.dimensional.alternateName)
-        XCTAssertEqual(AppIconService.Choice.flat.alternateName, "AppIconFlat")
+        typealias Selection = AppIconService.Selection
+        XCTAssertNil(Selection(style: .dimensional, theme: .automatic).alternateName)
+        XCTAssertEqual(Selection(style: .flat, theme: .automatic).alternateName, "AppIconFlat")
+        XCTAssertEqual(Selection(style: .dimensional, theme: .dark).alternateName, "AppIconDark")
+        XCTAssertEqual(Selection(style: .flat, theme: .light).alternateName, "AppIconFlatLight")
+        for style in AppIconService.Choice.allCases {
+            for theme in AppIconService.Theme.allCases {
+                let selection = Selection(style: style, theme: theme)
+                XCTAssertEqual(AppIconService.systemSelection(for: selection.alternateName), selection)
+                if let name = selection.alternateName { XCTAssertTrue(AppIconService.bundledAlternateIsAvailable(name), name) }
+            }
+        }
         XCTAssertEqual(AppIconService.systemChoice(for: nil), .dimensional)
         XCTAssertEqual(AppIconService.systemChoice(for: "AppIconFlat"), .flat)
         XCTAssertEqual(AppIconService.systemChoice(for: "some-other-icon"), .dimensional)

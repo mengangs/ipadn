@@ -7,6 +7,7 @@ import plistlib
 import sys
 import zipfile
 from pathlib import Path
+ALTERNATE_ICONS = ['AppIconFlat', 'AppIconLight', 'AppIconDark', 'AppIconFlatLight', 'AppIconFlatDark']
 
 ROOT = Path(__file__).resolve().parents[1]
 ipa = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'build/iPadn-unsigned.ipa'
@@ -22,11 +23,12 @@ with zipfile.ZipFile(ipa) as archive:
     for key in ['CFBundleIcons', 'CFBundleIcons~ipad']:
         icons = info[key]
         assert icons['CFBundlePrimaryIcon']['CFBundleIconName'] == 'AppIcon', key
-        alternate = icons['CFBundleAlternateIcons']['AppIconFlat']
-        assert alternate['CFBundleIconFiles'], 'Missing standalone alternate icon declaration: ' + key
-    for filename in ['AppIconFlat60x60@2x.png', 'AppIconFlat60x60@3x.png',
-                     'AppIconFlat76x76@2x~ipad.png', 'AppIconFlat83x83@2x~ipad.png']:
-        assert prefix + filename in archive.namelist(), 'Missing alternate icon PNG: ' + filename
+        for name in ALTERNATE_ICONS:
+            alternate = icons['CFBundleAlternateIcons'][name]
+            assert alternate['CFBundleIconFiles'], 'Missing standalone alternate icon declaration: ' + key + ' ' + name
+    for name in ALTERNATE_ICONS:
+        for suffix in ['60x60@2x.png', '60x60@3x.png', '76x76@2x~ipad.png', '83x83@2x~ipad.png']:
+            assert prefix + name + suffix in archive.namelist(), 'Missing alternate icon PNG: ' + name + suffix
     manifest = json.loads((ROOT / 'vendor/SAPRuntime/manifest.json').read_text())['files']
     for filename, expected in manifest.items():
         actual = hashlib.sha256(archive.read(prefix + 'SAPRuntime/' + filename)).hexdigest()
