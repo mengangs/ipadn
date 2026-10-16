@@ -17,6 +17,10 @@ enum UpdateCheckScheduler {
                     await store.checkForUpdates(force: true)
                     if !Task.isCancelled { store.notifyNewUpdates() }
                 }
+                if store.settings.appUpdateCheck, !Task.isCancelled {
+                    await store.checkAppUpdate()
+                    if !Task.isCancelled { store.notifyAppUpdate() }
+                }
                 if store.settings.watchNotifications, !Task.isCancelled {
                     let changes = await store.checkWatched(force: true)
                     if !Task.isCancelled { store.notifyWatchChanges(changes) }

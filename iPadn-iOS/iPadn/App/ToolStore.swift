@@ -543,6 +543,47 @@ final class ToolStore: ObservableObject {
         updatesChecked = (Date(), keys)
     }
 
+    /// A newer iPadn release than the running one, when found.
+    @Published private(set) var appUpdate: AppRelease?
+    @Published private(set) var appUpdateChecking = false
+
+    /// Looks for a newer iPadn release at most every 12 hours unless forced.
+    /// Returns whether the check reached GitHub.
+    @discardableResult
+    func checkAppUpdate(force: Bool = false) async -> Bool {
+        #if DEBUG
+        if visualPreview { return false }
+        #endif
+        let key = "storage_appUpdateChecked"
+        if !force, let last = LocalResources.defaults.object(forKey: key) as? Date, Date().timeIntervalSince(last) < 12 * 3600 {
+            if appUpdate == nil, let data = LocalResources.defaults.data(forKey: "storage_appUpdate") {
+                appUpdate = AppUpdateService.newer(try? JSONDecoder().decode(AppRelease.self, from: data))
+            }
+            return true
+        }
+        guard !appUpdateChecking else { return false }
+        appUpdateChecking = true
+        defer { appUpdateChecking = false }
+        guard let latest = await AppUpdateService.latest() else { return false }
+        LocalResources.defaults.set(Date(), forKey: key)
+        LocalResources.defaults.set(try? JSONEncoder().encode(latest), forKey: "storage_appUpdate")
+        appUpdate = AppUpdateService.newer(latest)
+        return true
+    }
+
+    /// Notifies once per new iPadn version.
+    func notifyAppUpdate() {
+        guard let release = appUpdate else { return }
+        let key = "storage_appUpdateNotified"
+        guard LocalResources.defaults.string(forKey: key) != release.version else { return }
+        LocalResources.defaults.set(release.version, forKey: key)
+        let content = UNMutableNotificationContent()
+        content.title = "iPadn \(release.version) 可以更新了"
+        content.body = "打开 iPadn，在「设置」中查看更新内容并下载新版本。"
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "app-update-" + release.version, content: content, trigger: nil))
+    }
+
     /// Whether each purchase is still on sale in the account's storefront
     /// (false: removed, but the account can still download it). Empty until checked.
     @Published private(set) var ownedListed: [String: Bool] = [:]

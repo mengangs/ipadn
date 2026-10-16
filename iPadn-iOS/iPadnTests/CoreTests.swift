@@ -185,6 +185,21 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(ReleaseNotesService.parse("<html></html>").isEmpty)
     }
 
+    func testAppReleaseParsedFromGitHub() throws {
+        let json = #"{"tag_name":"v1.7.0","html_url":"https://github.com/mengangs/ipadn/releases/tag/v1.7.0","draft":false,"prerelease":false,"published_at":"2026-10-16T08:00:00Z","body":"## 1.7.0\n- 关注应用\n\n验证：设备 Release 编译与 IPA 检查通过。","assets":[{"name":"iPadn-1.7.0-unsigned.ipa.sha256","browser_download_url":"https://github.com/x.sha256","size":90},{"name":"iPadn-1.7.0-unsigned.ipa","browser_download_url":"https://github.com/mengangs/ipadn/releases/download/v1.7.0/iPadn-1.7.0-unsigned.ipa","size":52000000}]}"#
+        let release = try XCTUnwrap(AppUpdateService.parse(Data(json.utf8)))
+        XCTAssertEqual(release.version, "1.7.0")
+        XCTAssertEqual(release.notes, "## 1.7.0\n- 关注应用")
+        XCTAssertEqual(release.package?.lastPathComponent, "iPadn-1.7.0-unsigned.ipa")
+        XCTAssertEqual(release.packageSize, 52_000_000)
+        XCTAssertNotNil(release.published)
+        XCTAssertEqual(AppUpdateService.newer(release, than: "1.6.0")?.version, "1.7.0")
+        XCTAssertNil(AppUpdateService.newer(release, than: "1.7.0"))
+        XCTAssertNil(AppUpdateService.newer(release, than: "1.10.0"))
+        XCTAssertNil(AppUpdateService.parse(Data(json.replacingOccurrences(of: "\"prerelease\":false", with: "\"prerelease\":true").utf8)))
+        XCTAssertEqual(AppUpdateService.trollStoreURL(for: release)?.scheme, "apple-magnifier")
+    }
+
     func testPurchaseListExportsAsCSV() {
         let apps = [OwnedApp(id: "1", bundleID: "a.b", name: "Notes, \"Pro\"", version: "2.0", purchaseDate: nil, iconURL: nil),
                     OwnedApp(id: "2", bundleID: "c.d", name: "Gone", version: "1.0", purchaseDate: nil, iconURL: nil),

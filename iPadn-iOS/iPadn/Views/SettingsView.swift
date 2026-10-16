@@ -157,6 +157,31 @@ struct SettingsView: View {
                 Text("iPadn " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")).font(.headline)
                 Text("搜索、下载和管理你拥有许可的应用安装包，支持 iPhone、iPad、Apple TV 与 Mac。")
                     .font(.footnote).foregroundStyle(.secondary)
+                if let update = store.appUpdate {
+                    NavigationLink { AppUpdateView(release: update) } label: {
+                        Label("iPadn \(update.version) 可以更新", systemImage: "arrow.down.app.fill")
+                            .foregroundStyle(.tint).fontWeight(.semibold)
+                    }
+                    .accessibilityIdentifier("settings.app-update")
+                }
+                Button {
+                    Task {
+                        let reached = await store.checkAppUpdate(force: true)
+                        if !reached { store.errorMessage = "暂时无法检查更新，请稍后重试。" }
+                        else if store.appUpdate == nil { store.infoMessage = "已是最新版本" }
+                    }
+                } label: {
+                    HStack {
+                        Text("检查更新")
+                        Spacer()
+                        if store.appUpdateChecking { ProgressView() }
+                    }
+                }
+                .disabled(store.appUpdateChecking)
+                Toggle("自动检查更新", isOn: $store.settings.appUpdateCheck)
+                    .onChange(of: store.settings.appUpdateCheck) { _, on in
+                        if on { UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in } }
+                    }
                 Link("项目与更新", destination: URL(string: "https://github.com/mengangs/ipadn")!)
             }
         }
