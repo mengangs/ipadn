@@ -83,10 +83,12 @@ struct PackageInstallationView: View {
                 } message: { Text(issue ?? "") }
         }
     }
-    /// Shown while a proxy or VPN is on with 本机证书: what lets it through.
+    /// Shown while a proxy or VPN is on: the address this method needs to reach directly.
     private var proxyHint: String {
-        guard !store.settings.automaticInstallation, store.settings.localInstallation else { return "" }
-        return "\n已开启代理或 VPN：如果无法安装，请在代理规则中为 ipadn.localtest.me 添加直连（DIRECT）规则。"
+        let host = store.settings.automaticInstallation ? "api.palera.in"
+            : store.settings.localInstallation ? "ipadn.localtest.me" : nil
+        guard let host else { return "" }
+        return "\n已开启代理：如果无法安装，请为 \(host) 添加直连（DIRECT）规则。"
     }
     private func requestInstallation(viaBrowser: Bool = false) {
         guard !busy else { return }

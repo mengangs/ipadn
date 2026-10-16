@@ -37,7 +37,7 @@ struct InstallationSettingsView: View {
                     Label("无需描述文件或证书", systemImage: "checkmark.seal")
                     Label("安装包不会离开这台设备", systemImage: "iphone")
                 } header: { Text("一键安装（推荐）") } footer: {
-                    Text("安装时需要联网。安装完成前请勿退出 iPadn。")
+                    Text("安装时需要联网。安装完成前请勿退出 iPadn。使用代理工具时，请为 api.palera.in 添加直连（DIRECT）规则。")
                 }
             } else if store.settings.localInstallation {
                 Section {
@@ -56,7 +56,7 @@ struct InstallationSettingsView: View {
                         .accessibilityIdentifier("installation.certificate")
                     Button("检查证书", systemImage: "checkmark.shield") { checkCertificate() }.disabled(busy)
                 } header: { Text("本机证书") } footer: {
-                    Text("首次使用需创建证书并安装描述文件，然后在「设置 › 通用 › 关于本机 › 证书信任设置」中开启信任。")
+                    Text("首次使用需创建证书并安装描述文件，然后在「设置 › 通用 › 关于本机 › 证书信任设置」中开启信任。使用代理工具时，请为 ipadn.localtest.me 添加直连（DIRECT）规则。")
                 }
             } else {
                 Section {
