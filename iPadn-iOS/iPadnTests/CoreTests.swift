@@ -1297,7 +1297,7 @@ final class AAStorePriceProbe: XCTestCase {
                 token = String(html[match]); p("  token in html")
             }
             if token == nil {
-                let scripts = html.matches(of: /src="([^"]+\.js)"/).map { String($0.1) }
+                let scripts = html.components(separatedBy: "src=\"").dropFirst().compactMap { $0.components(separatedBy: "\"").first }.filter { $0.hasSuffix(".js") }
                 p("  scripts: \(scripts.prefix(8))")
                 for script in scripts.prefix(8) {
                     let url = script.hasPrefix("http") ? script : "https://apps.apple.com" + script
