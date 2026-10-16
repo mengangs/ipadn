@@ -5,8 +5,12 @@ struct PackageInstallationView: View {
     @EnvironmentObject private var manager: DownloadManager
     @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     let job: DownloadJob
     @State private var busy = false
+    /// The link is open and the system is loading the install details: the
+    /// button keeps showing progress until its prompt actually appears.
+    @State private var openingSystem = false
     @State private var message: String?
     @State private var issue: String?
     @State private var sharedFile: SharedFile?
@@ -32,17 +36,20 @@ struct PackageInstallationView: View {
                             requestInstallation()
                         } label: {
                             HStack(spacing: 8) {
-                                if busy { ProgressView().tint(UX.onAccent) }
-                                Text(busy ? "正在准备…" : "安装")
-                            }.frame(maxWidth: .infinity)
+                                if busy || openingSystem { ProgressView().tint(UX.onAccent) }
+                                Text(busy ? "正在准备…" : openingSystem ? "正在打开安装…" : "安装")
+                                    .contentTransition(.opacity)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .animation(.easeOut(duration: 0.15), value: busy || openingSystem)
                         }
-                        .buttonStyle(PrimaryButtonStyle()).disabled(busy)
+                        .buttonStyle(PrimaryButtonStyle()).disabled(busy || openingSystem)
                         .accessibilityIdentifier("installation.request")
                         if attempted || InstallLog.insideLiveContainer {
                             Button { requestInstallation(viaBrowser: true) } label: {
                                 Label("在 Safari 中安装", systemImage: "safari").frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.borderless).disabled(busy)
+                            .buttonStyle(.borderless).disabled(busy || openingSystem)
                             .accessibilityIdentifier("installation.browser")
                         }
                         Button {
@@ -78,6 +85,7 @@ struct PackageInstallationView: View {
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
                 .sheet(item: $sharedFile) { ShareSheet(items: [$0.url]) }
+                .onChange(of: scenePhase) { _, phase in if phase != .active { openingSystem = false } }
                 .alert("安装未开始", isPresented: Binding(get: { issue != nil }, set: { if !$0 { issue = nil } })) {
                     Button("知道了", role: .cancel) { issue = nil }
                 } message: { Text(issue ?? "") }
@@ -91,7 +99,8 @@ struct PackageInstallationView: View {
         return "\n已开启代理：如果无法安装，请为 \(host) 添加直连（DIRECT）规则。"
     }
     private func requestInstallation(viaBrowser: Bool = false) {
-        guard !busy else { return }
+        guard !busy, !openingSystem else { return }
+        UX.feedback()
         busy = true; message = nil; started = false; attempted = true
         attempt += 1
         let current = attempt
@@ -117,6 +126,12 @@ struct PackageInstallationView: View {
                                           + (accepted ? "accepted" : "refused"))
                     if accepted {
                         started = true
+                        // Until the prompt (or Safari) takes over the screen.
+                        openingSystem = true
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(12))
+                            if attempt == current { openingSystem = false }
+                        }
                         message = viaBrowser ? "请在 Safari 中确认安装，然后回到 iPadn 等待完成。" : "请在系统弹窗中确认安装，完成前请勿退出 iPadn。"
                     }
                     else { issue = "无法开始安装，请检查安装方式，或导出安装包。"; store.installation.stopHosting() }
