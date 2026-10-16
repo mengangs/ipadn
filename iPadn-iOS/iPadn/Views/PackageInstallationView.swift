@@ -15,6 +15,7 @@ struct PackageInstallationView: View {
     @State private var attempted = false
     /// Which request the delayed connection check belongs to.
     @State private var attempt = 0
+    private let proxied = LocalHostRecord.proxyOrVPNActive
     var body: some View {
         NavigationStack {
             Form {
@@ -71,7 +72,8 @@ struct PackageInstallationView: View {
                           : store.settings.localInstallation ? "需先在安装方式中创建证书、安装描述文件并开启信任。"
                           : "需要已配置的代理规则。")
                          + (InstallLog.insideLiveContainer && store.settings.automaticInstallation
-                            ? "\n在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。" : ""))
+                            ? "\n在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。" : "")
+                         + (proxied ? proxyHint : ""))
                 }
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
@@ -80,6 +82,16 @@ struct PackageInstallationView: View {
                     Button("知道了", role: .cancel) { issue = nil }
                 } message: { Text(issue ?? "") }
         }
+    }
+    /// Shown while a proxy or VPN is on: what to do if the prompt doesn't come.
+    private var proxyHint: String {
+        if store.settings.automaticInstallation {
+            return "\n已开启代理或 VPN：如果没有弹出安装窗口，请为 api.palera.in 添加直连规则，或关闭后重试。"
+        }
+        if store.settings.localInstallation {
+            return "\n已开启代理或 VPN：iPadn 会改用只在本机有效的地址安装；如果仍无法安装，请为 ipadn.localtest.me 添加直连规则。"
+        }
+        return ""
     }
     private func requestInstallation(viaBrowser: Bool = false) {
         guard !busy else { return }

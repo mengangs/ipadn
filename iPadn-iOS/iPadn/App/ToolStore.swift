@@ -609,6 +609,7 @@ final class ToolStore: ObservableObject {
             "Task states: " + downloads.jobs.map { "\($0.id.uuidString.prefix(8)): \($0.status.rawValue)" }.joined(separator: ", "),
             "Installation: " + (settings.automaticInstallation ? "one-tap" : settings.localInstallation ? "local certificate" : "proxy"),
             "Runs inside LiveContainer: " + (InstallLog.insideLiveContainer ? "yes" : "no"),
+            "Proxy or VPN on: " + (LocalHostRecord.proxyOrVPNActive ? "yes" : "no"),
             "iOS " + UIDevice.current.systemVersion,
             "Installation server log:", InstallLog.shared.text.isEmpty ? "(empty)" : InstallLog.shared.text,
             "Contains no credentials, cookies, Apple account names or download URLs."

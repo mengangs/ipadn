@@ -41,7 +41,7 @@ final class InstallationTests: XCTestCase {
         }
         XCTAssertTrue(try trusted("127.0.0.1"))
         XCTAssertTrue(try trusted("localhost"))
-        for host in ManifestBuilder.fallbackLocalHosts { XCTAssertTrue(try trusted(host), host) }
+        for host in ManifestBuilder.fallbackLocalHosts + [LocalHostRecord.host] { XCTAssertTrue(try trusted(host), host) }
         XCTAssertTrue(try trusted("app.localtest.me"))
         XCTAssertTrue(try trusted("lvh.me"))
         XCTAssertFalse(try trusted("a.b.localtest.me"))
