@@ -62,6 +62,7 @@ struct SearchView: View {
         .navigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
         .actionConfirmation(isPresented: $confirmClear, title: "清除最近搜索？", confirmTitle: "清除") { withAnimation { store.clearHistory() } }
         .task { await store.loadNameCatalog() }
+        .task { await store.checkWatched() }
         .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
     }
 
@@ -73,7 +74,7 @@ struct SearchView: View {
             }
         }
         .contextMenu {
-            Button(store.isFavorite(app) ? "取消收藏" : "收藏", systemImage: store.isFavorite(app) ? "star.slash" : "star") {
+            Button(store.isFavorite(app) ? "取消关注" : "关注", systemImage: store.isFavorite(app) ? "bell.slash" : "bell") {
                 store.toggleFavorite(app); UX.feedback()
             }
         }
@@ -108,13 +109,17 @@ struct SearchView: View {
         if !store.favorites.isEmpty {
             Section {
                 ForEach(store.favorites) { app in
-                    NavigationLink { AppDetailView(app: app) } label: { AppRow(app: app) }
+                    NavigationLink { AppDetailView(app: app) } label: { WatchRow(app: app) }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button("取消收藏", systemImage: "star.slash") { withAnimation { store.toggleFavorite(app) } }.tint(.gray)
+                            Button("取消关注", systemImage: "bell.slash") { withAnimation { store.toggleFavorite(app) } }.tint(.gray)
                         }
                 }
             } header: {
-                Text("收藏").font(.title3.weight(.bold)).foregroundStyle(.primary).textCase(nil)
+                HStack {
+                    Text("关注").font(.title3.weight(.bold)).foregroundStyle(.primary).textCase(nil)
+                    Spacer()
+                    if store.watchChecking { ProgressView().controlSize(.small) }
+                }
             }
         }
     }

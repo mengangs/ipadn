@@ -154,7 +154,9 @@ final class InteractionTests: XCTestCase {
         let selected = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: flat)
         wait(for: [selected], timeout: 5)
         dimensional.tap()
-        XCTAssertTrue(dimensional.isSelected)
+        // The change is applied asynchronously, as for the flat icon above.
+        let restored = expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: dimensional)
+        wait(for: [restored], timeout: 5)
         attach("16-icon-settings", app: app)
         app.terminate()
         app.launchArguments = ["--visual-preview"]

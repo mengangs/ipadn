@@ -79,6 +79,9 @@ struct StoreApp: Codable, Identifiable, Hashable {
     var category = ""
     var size: Int64 = 0
     var price = "免费"
+    /// The listing's price as a number and its ISO currency, from the lookup API.
+    var priceValue: Double?
+    var currency: String?
     var rating: Double = 0
     var minimumOS = ""
     var externalVersionID: String?
@@ -221,6 +224,12 @@ struct ToolSettings: Codable, Equatable {
     var notifications = true
     /// Background checks for newer versions of downloaded apps, with a notification.
     var updateNotifications = true
+    /// Background checks of followed apps (new version, price drop, removal), with a notification.
+    var watchNotifications = true
+    /// Storefronts compared on the price page and tracked for followed apps.
+    var priceRegions = StoreRegions.defaultComparison
+    /// Currency prices are converted to for comparison.
+    var baseCurrency = "CNY"
     /// Shows tools for advanced users: package contents, tokens, device ID.
     var proMode = false
     var useSignerCache = true
@@ -239,7 +248,7 @@ struct ToolSettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
         case useSignerCache, appearance, plistServer, versionSources, localInstallation, localInstallHost
-        case automaticInstallation, updateNotifications, proMode
+        case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -251,6 +260,10 @@ struct ToolSettings: Codable, Equatable {
         notifications = try values.decodeIfPresent(Bool.self, forKey: .notifications) ?? notifications
         updateNotifications = try values.decodeIfPresent(Bool.self, forKey: .updateNotifications) ?? updateNotifications
         proMode = try values.decodeIfPresent(Bool.self, forKey: .proMode) ?? proMode
+        watchNotifications = try values.decodeIfPresent(Bool.self, forKey: .watchNotifications) ?? watchNotifications
+        let regions = (try values.decodeIfPresent([String].self, forKey: .priceRegions) ?? priceRegions).filter { StoreRegions.codes.contains($0) }
+        priceRegions = regions.isEmpty ? priceRegions : regions
+        baseCurrency = try values.decodeIfPresent(String.self, forKey: .baseCurrency) ?? baseCurrency
         useSignerCache = try values.decodeIfPresent(Bool.self, forKey: .useSignerCache) ?? useSignerCache
         appearance = try values.decodeIfPresent(String.self, forKey: .appearance) ?? appearance
         if !["system", "light", "dark"].contains(appearance) { appearance = "dark" }

@@ -66,7 +66,8 @@ struct iPadnApp: App {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .background, !LocalResources.isPreview else { return }
             // Only worth waking up for when there is something to check.
-            if store.settings.updateNotifications && store.downloads.jobs.contains(where: { $0.status == .completed && $0.updateKey != nil }) {
+            if (store.settings.updateNotifications && store.downloads.jobs.contains(where: { $0.status == .completed && $0.updateKey != nil }))
+                || (store.settings.watchNotifications && !store.favorites.isEmpty) {
                 UpdateCheckScheduler.schedule()
             } else {
                 UpdateCheckScheduler.cancel()

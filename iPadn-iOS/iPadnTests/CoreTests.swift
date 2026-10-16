@@ -56,6 +56,118 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(fresh, "new-context")
         signer.clearCache()
     }
+    func testWatchRecordsVersionPriceAndRemovalChanges() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        func listing(_ version: String, _ price: Double, _ currency: String = "CNY") -> StoreApp {
+            StoreApp(id: "1", name: "A", version: version, priceValue: price, currency: currency)
+        }
+        // The first check only records what is there.
+        var (record, changes) = WatchService.update(nil, id: "1", country: "cn", listing: listing("1.0", 30), now: start)
+        XCTAssertEqual(changes, []); XCTAssertEqual(record.key, "1|CN"); XCTAssertEqual(record.history.count, 1)
+        (record, changes) = WatchService.update(record, id: "1", country: "CN", listing: listing("1.1", 18), now: start + 60)
+        XCTAssertEqual(Set(changes), [.newVersion("1.1"), .priceDrop(from: 30, to: 18)])
+        XCTAssertEqual(record.change, .priceDrop(from: 30, to: 18)); XCTAssertEqual(record.history.map(\.price), [30, 18])
+        // An unchanged price adds no point.
+        (record, changes) = WatchService.update(record, id: "1", country: "CN", listing: listing("1.1", 18), now: start + 120)
+        XCTAssertEqual(changes, []); XCTAssertEqual(record.history.count, 2)
+        (record, changes) = WatchService.update(record, id: "1", country: "CN", listing: listing("1.1", 0), now: start + 180)
+        XCTAssertEqual(changes, [.free(from: 18)])
+        (record, changes) = WatchService.update(record, id: "1", country: "CN", listing: listing("1.1", 6), now: start + 240)
+        XCTAssertEqual(changes, [.priceRise(from: 0, to: 6)])
+        (record, changes) = WatchService.update(record, id: "1", country: "CN", listing: nil, now: start + 300)
+        XCTAssertEqual(changes, [.delisted]); XCTAssertTrue(record.delisted)
+        (record, changes) = WatchService.update(record, id: "1", country: "CN", listing: nil, now: start + 360)
+        XCTAssertEqual(changes, [], "a removal is reported once")
+        (record, changes) = WatchService.update(record, id: "1", country: "CN", listing: listing("1.1", 6), now: start + 420)
+        XCTAssertEqual(changes, [.relisted]); XCTAssertFalse(record.delisted)
+        // A different currency starts the history over instead of reporting a change.
+        (record, changes) = WatchService.update(record, id: "1", country: "CN", listing: listing("1.1", 1, "USD"), now: start + 480)
+        XCTAssertEqual(changes, []); XCTAssertEqual(record.history.map(\.price), [1]); XCTAssertEqual(record.currency, "USD")
+        // Never seen listed: not a removal.
+        XCTAssertEqual(WatchService.update(nil, id: "2", country: "CN", listing: nil, now: start).changes, [])
+        XCTAssertNotNil(record.recentChange(now: start + 480))
+        XCTAssertNil(record.recentChange(now: start + 8 * 86400))
+        XCTAssertEqual(WatchService.format(0, currency: "CNY"), "免费")
+        XCTAssertTrue(WatchService.format(18, currency: "CNY").contains("18"))
+        XCTAssertTrue(WatchService.format(2.99, currency: "USD").contains("2.99"))
+        XCTAssertNil(WatchService.message(.priceRise(from: 1, to: 2), currency: "CNY"))
+        XCTAssertEqual(WatchService.message(.newVersion("2.0"), currency: "CNY"), "有新版本 2.0")
+        let raw: [String: Any] = ["trackId": 5, "trackName": "P", "price": 4.99, "currency": "USD", "formattedPrice": "$4.99"]
+        XCTAssertEqual(StoreService.mapLookup(raw).priceValue, 4.99)
+        XCTAssertEqual(StoreService.mapLookup(raw).currency, "USD")
+    }
+
+    func testRegionPricesConvertAndSortCheapestFirst() throws {
+        let json = #"{"result":"success","base_code":"CNY","time_last_update_unix":1700000000,"rates":{"CNY":1,"USD":0.14,"TRY":4.5,"JPY":21}}"#
+        let rates = try XCTUnwrap(ExchangeRates.parse(Data(json.utf8), base: "CNY"))
+        XCTAssertEqual(rates.base, "CNY")
+        XCTAssertEqual(try XCTUnwrap(rates.convert(1.4, from: "USD")), 10, accuracy: 0.0001)
+        XCTAssertEqual(rates.convert(5, from: "CNY"), 5)
+        XCTAssertNil(rates.convert(5, from: "XXX"))
+        XCTAssertNil(ExchangeRates.parse(Data(#"{"result":"error"}"#.utf8), base: "CNY"))
+        func region(_ country: String, _ price: Double?, _ currency: String) -> RegionPrice {
+            RegionPrice(country: country, listing: price.map { StoreApp(id: "1", name: "A", priceValue: $0, currency: currency) })
+        }
+        let prices = [region("US", 2.99, "USD"), region("CN", 18, "CNY"), region("NG", nil, ""), region("XX", 1, "XXX"), region("TR", 49.99, "TRY")]
+        XCTAssertEqual(PriceComparison.sorted(prices, rates: rates).map(\.country), ["TR", "CN", "US", "XX", "NG"])
+        // Without rates the order stays as chosen, unlisted storefronts last.
+        XCTAssertEqual(PriceComparison.sorted(prices, rates: nil).map(\.country), ["US", "CN", "XX", "TR", "NG"])
+        XCTAssertTrue(StoreRegions.codes.count > 150)
+        XCTAssertTrue(StoreRegions.defaultComparison.allSatisfy { StoreRegions.codes.contains($0) })
+        XCTAssertEqual(StoreRegions.flag("cn"), "🇨🇳")
+        XCTAssertEqual(StoreRegions.name("TR"), "土耳其")
+    }
+
+    func testInAppPurchasesParsedFromProductPageAndGroupedByTier() throws {
+        // The shape of apps.apple.com's serialized page data (information section).
+        let data = #"{"data":[{"shelves":[{"$kind":"Annotation","title":"Compatibility","items":[{"$kind":"textPair","leadingText":"iPhone","trailingText":"Requires iOS 15.0 or later."}]},"#
+            + #"{"$kind":"Annotation","title":"In-App Purchases","summary":"Yes","items":[{"$kind":"textPair","leadingText":"Barrel of Gems (1200)","trailingText":"$4.99"},"#
+            + #"{"$kind":"textPair","leadingText":"Super Duolingo","trailingText":"$9.99"},{"$kind":"textPair","leadingText":"Super Duolingo","trailingText":"$83.99"},"#
+            + #"{"$kind":"button","action":{"title":"Learn More"}}]},{"$kind":"Annotation","title":"Copyright","summary":"© 2026","items":[]}]}]}"#
+        let html = "<html><script type=\"application/json\" id=\"serialized-server-data\">" + data + "</script></html>"
+        let items = try XCTUnwrap(InAppPriceService.items(fromPage: html))
+        XCTAssertEqual(items.map(\.name), ["Barrel of Gems (1200)", "Super Duolingo", "Super Duolingo"])
+        XCTAssertEqual(items.map(\.price), [4.99, 9.99, 83.99])
+        XCTAssertNil(InAppPriceService.items(fromPage: "<html>no data</html>"))
+        // A purchase listed twice (one per platform) counts once.
+        let doubled = html.replacingOccurrences(of: #"{"$kind":"button""#,
+                                                with: #"{"$kind":"textPair","leadingText":"Super Duolingo","trailingText":"$9.99"},{"$kind":"button""#)
+        XCTAssertEqual(InAppPriceService.items(fromPage: doubled)?.count, 3)
+        XCTAssertEqual(InAppPriceService.items(fromPage: html.replacingOccurrences(of: "In-App Purchases\",\"summary\":\"Yes\",\"items\":[", with: "X\",\"items\":[{\"$kind\":\"textPair\",\"leadingText\":\"a\",\"trailingText\":\"many words here\"},"))?.count, 0)
+
+        XCTAssertEqual(InAppPriceService.price("$1,099"), 1099)
+        XCTAssertEqual(InAppPriceService.price("1.299,99 €"), 1299.99)
+        XCTAssertEqual(InAppPriceService.price("Rp 15.000"), 15000)
+        XCTAssertEqual(InAppPriceService.price("199,99 TL"), 199.99)
+        XCTAssertEqual(InAppPriceService.price("¥160"), 160)
+        XCTAssertEqual(InAppPriceService.price("1 299,00 kr"), 1299)
+        XCTAssertTrue(InAppPriceService.looksLikePrice("HK$38.00"))
+        XCTAssertFalse(InAppPriceService.looksLikePrice("Requires iOS 15.0 or later."))
+
+        let json = #"{"result":"success","base_code":"CNY","rates":{"CNY":1,"USD":0.14,"TRY":4.5}}"#
+        let rates = try XCTUnwrap(ExchangeRates.parse(Data(json.utf8), base: "CNY"))
+        let us = [InAppPrice(name: "Super", text: "$9.99", price: 9.99), InAppPrice(name: "Super", text: "$83.99", price: 83.99),
+                  InAppPrice(name: "Gems", text: "$4.99", price: 4.99)]
+        let tr = [InAppPrice(name: "Gems", text: "99,99 TL", price: 99.99), InAppPrice(name: "Super", text: "1.499,99 TL", price: 1499.99),
+                  InAppPrice(name: "Super", text: "149,99 TL", price: 149.99)]
+        let groups = InAppPriceService.groups([("US", "USD", us), ("TR", "TRY", tr)], rates: rates)
+        XCTAssertEqual(groups.map(\.id), ["Super#0", "Super#1", "Gems#0"])
+        XCTAssertEqual(groups[0].tiers, 2)
+        // Monthly with monthly: $9.99 ≈ ¥71 against 149.99 TL ≈ ¥33, cheapest first.
+        XCTAssertEqual(groups[0].entries.map(\.country), ["TR", "US"])
+        XCTAssertEqual(groups[0].entries.first?.item.price, 149.99)
+        XCTAssertEqual(groups[1].entries.map(\.item.price), [1499.99, 83.99])
+
+        // English names match across storefronts; the same storefront's page in
+        // the system language pairs up item by item for display.
+        let english = [InAppPrice(name: "Lifetime access", text: "¥68.00", price: 68), InAppPrice(name: "Monthly", text: "¥15.00", price: 15)]
+        let chinese = [InAppPrice(name: "终身解锁", text: "¥68.00", price: 68), InAppPrice(name: "月度订阅", text: "¥15.00", price: 15)]
+        XCTAssertEqual(InAppPriceService.nameMap(english: english, localized: chinese), ["Lifetime access": "终身解锁", "Monthly": "月度订阅"])
+        XCTAssertEqual(InAppPriceService.nameMap(english: english, localized: chinese.reversed()), [:], "prices must line up")
+        XCTAssertEqual(InAppPriceService.nameMap(english: english, localized: Array(chinese.prefix(1))), [:])
+        XCTAssertEqual(InAppPriceService.nameMap(english: english, localized: english), [:], "an English page names nothing")
+    }
+
     @MainActor
     func testPackagedIconChoicesMatchCurrentDevice() throws {
         typealias Selection = AppIconService.Selection
@@ -1262,3 +1374,4 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(StoreService.developerApps(rows, excluding: "1", platform: .tvOS).map(\.id), ["3"])
     }
 }
+

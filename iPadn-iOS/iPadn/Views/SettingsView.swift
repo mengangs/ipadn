@@ -22,6 +22,14 @@ struct SettingsView: View {
                         if on { UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in } }
                     }
             }
+            Section {
+                Toggle("关注应用提醒", isOn: $store.settings.watchNotifications)
+                    .onChange(of: store.settings.watchNotifications) { _, on in
+                        if on { UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in } }
+                    }
+            } header: { Text("关注") } footer: {
+                Text("关注的应用有新版本、降价、限免或下架时通知你。后台检查的时间由系统决定，打开 iPadn 时也会检查。")
+            }
             Section("搜索与外观") {
                 Picker("搜索结果数量", selection: $store.settings.searchLimit) {
                     ForEach([10, 30, 50, 100, 200], id: \.self) { Text("\($0)").tag($0) }
