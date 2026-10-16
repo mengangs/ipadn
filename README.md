@@ -22,6 +22,7 @@
   <img src="docs/images/04-prices.jpg" width="19%" alt="多地区比价">
   <img src="docs/images/05-purchased.jpg" width="19%" alt="已购项目">
 </p>
+<p align="center"><sub>真机截图，机身外框来自 <a href="https://github.com/jonnyjackson26/device-frames-media">device-frames-media</a></sub></p>
 
 ---
 
