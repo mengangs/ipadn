@@ -7,6 +7,11 @@ enum UX {
     static let tint = Color.accentColor
     static let buttonTint = Color.accentColor
     static let onAccent = Color(uiColor: .systemBackground)
+    /// The monochrome accent is near-white in dark mode, which would make an "on" switch
+    /// track blend into its white thumb; switch to system green there.
+    static let switchTint = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .systemGreen : (UIColor(named: "AccentColor") ?? .label)
+    })
     static let iconCorner: CGFloat = 0.2237
     static func feedback() { UISelectionFeedbackGenerator().selectionChanged() }
     static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
@@ -28,6 +33,13 @@ struct PrimaryButtonStyle: ButtonStyle {
     }
 }
 typealias MonochromeButtonStyle = PrimaryButtonStyle
+
+/// System switch with a tint that stays legible in both appearances (see `UX.switchTint`).
+struct TintedSwitchToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Toggle(configuration).toggleStyle(.switch).tint(UX.switchTint)
+    }
+}
 
 /// App Store "获取 / 打开" capsule. `filled` is the prominent variant.
 struct CapsuleButtonStyle: ButtonStyle {
