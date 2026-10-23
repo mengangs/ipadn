@@ -61,7 +61,7 @@ struct iPadnApp: App {
                 .environmentObject(store.downloads)
                 .environmentObject(store.signer)
                 .tint(UX.tint)
-                .toggleStyle(TintedSwitchToggleStyle())
+                .toggleStyle(MonochromeSwitchToggleStyle())
                 .onOpenURL { store.handleURL($0) }
                 .task {
                     guard !LocalResources.isPreview, store.settings.appUpdateCheck else { return }

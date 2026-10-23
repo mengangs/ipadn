@@ -7,11 +7,6 @@ enum UX {
     static let tint = Color.accentColor
     static let buttonTint = Color.accentColor
     static let onAccent = Color(uiColor: .systemBackground)
-    /// The monochrome accent is near-white in dark mode, which would make an "on" switch
-    /// track blend into its white thumb; switch to system green there.
-    static let switchTint = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark ? .systemGreen : (UIColor(named: "AccentColor") ?? .label)
-    })
     static let iconCorner: CGFloat = 0.2237
     static func feedback() { UISelectionFeedbackGenerator().selectionChanged() }
     static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
@@ -34,10 +29,52 @@ struct PrimaryButtonStyle: ButtonStyle {
 }
 typealias MonochromeButtonStyle = PrimaryButtonStyle
 
-/// System switch with a tint that stays legible in both appearances (see `UX.switchTint`).
-struct TintedSwitchToggleStyle: ToggleStyle {
+/// Monochrome switch: accent track with an `onAccent` thumb when on, so it reads as
+/// black-on-white in light mode and white-on-black in dark mode. The system switch
+/// always draws a white thumb, which vanishes on the near-white dark-mode accent.
+struct MonochromeSwitchToggleStyle: ToggleStyle {
+    @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
-        Toggle(configuration).toggleStyle(.switch).tint(UX.switchTint)
+        HStack {
+            configuration.label
+            Spacer(minLength: 8)
+            Button {
+                withAnimation(.snappy(duration: 0.2)) { configuration.isOn.toggle() }
+            } label: {
+                MonochromeSwitch(isOn: configuration.isOn)
+            }
+            .buttonStyle(.plain)
+            .opacity(enabled ? 1 : 0.4)
+        }
+        .accessibilityRepresentation {
+            Toggle(isOn: configuration.$isOn) { configuration.label }.toggleStyle(.switch)
+        }
+    }
+}
+
+private struct MonochromeSwitch: View {
+    let isOn: Bool
+    // iOS 26 switches are a wider capsule with a pill thumb; earlier systems use 51×31 with a round one.
+    private var size: CGSize {
+        if #available(iOS 26, *) { return CGSize(width: 63, height: 28) }
+        return CGSize(width: 51, height: 31)
+    }
+    private var thumb: CGSize {
+        if #available(iOS 26, *) { return CGSize(width: 37, height: 24) }
+        return CGSize(width: 27, height: 27)
+    }
+    var body: some View {
+        Capsule()
+            .fill(isOn ? AnyShapeStyle(UX.tint) : AnyShapeStyle(Color(.systemFill)))
+            .frame(width: size.width, height: size.height)
+            .overlay(alignment: isOn ? .trailing : .leading) {
+                Capsule()
+                    .fill(isOn ? UX.onAccent : .white)
+                    .frame(width: thumb.width, height: thumb.height)
+                    .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
+                    .padding(2)
+            }
+            .contentShape(Capsule())
     }
 }
 
