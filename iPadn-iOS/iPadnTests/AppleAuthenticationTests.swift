@@ -10,7 +10,7 @@ final class AppleAuthenticationTests: XCTestCase {
             "https://p99-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate?x=1"]])
         let url = try AppleAuthentication.endpoint(from: data)
         XCTAssertEqual(url.host, "p99-buy.itunes.apple.com")
-        XCTAssertEqual(url.path, AppleAuthentication.path + "/")
+        XCTAssertEqual(url.path(percentEncoded: true), AppleAuthentication.path + "/")
         XCTAssertEqual(url.query, "x=1")
         XCTAssertEqual(AppleAuthentication.bagURL(guid: "AABBCCDDEEFF").query, "guid=AABBCCDDEEFF")
     }
@@ -22,6 +22,8 @@ final class AppleAuthenticationTests: XCTestCase {
                         "https://buy.itunes.apple.com:8443" + AppleAuthentication.path,
                         "https://buy.itunes.apple.com" + AppleAuthentication.path + "#fragment",
                         "https://pd.itunes.apple.com" + AppleAuthentication.path,
+                        "https://buy.itunes.apple.com" + AppleAuthentication.path + "//",
+                        "https://buy.itunes.apple.com" + AppleAuthentication.path + "%2F",
                         "https://buy.itunes.apple.com/unrelated"] {
             let data = try HTTPClient.encodePlist(["urlBag": ["authenticateAccount": address]])
             XCTAssertThrowsError(try AppleAuthentication.endpoint(from: data), address)

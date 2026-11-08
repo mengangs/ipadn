@@ -15,7 +15,7 @@ enum AppleAuthentication {
         guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased(),
               url.user == nil, url.password == nil, url.fragment == nil,
               url.port == nil || url.port == 443,
-              url.path == path || url.path == path + "/" else { return false }
+              url.path(percentEncoded: true) == path || url.path(percentEncoded: true) == path + "/" else { return false }
         return host == "buy.itunes.apple.com" || host.hasSuffix("-buy.itunes.apple.com")
     }
 
