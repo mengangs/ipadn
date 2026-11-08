@@ -57,28 +57,29 @@ const timeout = setTimeout(() => { console.error('Probe exceeded 240 seconds'); 
   // never reads credentials from environment variables or device storage.
   const body = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>appleId</key><string>ipadn-probe@example.invalid</string><key>attempt</key><string>1</string><key>guid</key><string>${guid}</string><key>password</key><string>invalid-nonexistent-test-password</string><key>rmp</key><string>0</string><key>why</key><string>signIn</string></dict></plist>`;
   const encoded = Buffer.from(body).toString('base64');
-  for (const style of ['split', 'once']) {
+  for (const style of ['split', 'unsigned']) {
     console.log(JSON.stringify({stage: 'start', style}));
     let signature;
     if (style === 'split') {
       await context.sapInitialize(guid, {proxyURL: 'https://localhost/proxy'});
       try { signature = await context.sapSign(encoded); } finally { await context.sapClose(); }
-    } else signature = await context.sapSignOnce(guid, encoded, {proxyURL: 'https://localhost/proxy'});
-    assert.equal(typeof signature, 'string');
-    console.log(JSON.stringify({stage:'signed', style, signatureBytes: Buffer.from(signature, 'base64').length}));
+    }
+    if (signature) console.log(JSON.stringify({stage:'signed', style, signatureBytes: Buffer.from(signature, 'base64').length}));
     let address = 'https://buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate/';
     for (let hop = 0; hop < 5; hop++) {
       const url = new URL(address);
       assert.ok(url.protocol === 'https:' && (url.hostname === 'buy.itunes.apple.com' || url.hostname.endsWith('-buy.itunes.apple.com')));
       const response = await fetch(url, {method:'POST', body, redirect:'manual', signal:AbortSignal.timeout(30000),
         headers:{'User-Agent':'Configurator/2.17 (Macintosh; OS X 15.2; 24C5089c) AppleWebKit/0620.1.16.11.6',
-          'Content-Type':'application/x-www-form-urlencoded', 'Accept':'application/xml', 'X-Apple-ActionSignature':signature, 'Connection':'close'}});
+          'Content-Type':'application/x-www-form-urlencoded', 'Accept':'application/xml', ...(signature ? {'X-Apple-ActionSignature':signature} : {}), 'Connection':'close'}});
       const data = Buffer.from(await response.arrayBuffer());
       const text = data.toString('utf8');
       const failure = text.match(/<key>failureType<\/key>\s*<(?:string|integer)>(-?[0-9]{1,6})<\/(?:string|integer)>/);
       console.log(JSON.stringify({stage:'response', style, hop, host:url.hostname, status:response.status, bytes:data.length,
         format: data.length === 0 ? 'empty' : /<(?:plist|Document|dict)[ >]/.test(text) ? 'xml' : 'other',
-        failure: failure ? failure[1] : undefined, cookieCount: response.headers.getSetCookie().length}));
+        failure: failure ? failure[1] : undefined, cookieCount: response.headers.getSetCookie().length, appleServer: response.headers.get('server') === 'Apple',
+        hasBackend: response.headers.has('x-responding-instance') || response.headers.has('apple-originating-system'),
+        hasCorrelation: response.headers.has('x-apple-jingle-correlation-key')}));
       const location = response.headers.get('location');
       if ([301,302,303,307,308].includes(response.status) && location) { address = new URL(location, url).href; continue; }
       break;
