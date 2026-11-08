@@ -1,0 +1,15 @@
+name: Inspect signed authentication without a real account
+on:
+  push:
+    branches: [investigate/auth-empty-response]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 iPadn-iOS/scripts/assemble_runtime.py
+      - name: Compare split and one-shot signing with a reserved invalid account
+        run: node iPadn-iOS/scripts/auth_protocol_probe.cjs
