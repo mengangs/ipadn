@@ -8,6 +8,7 @@ final class AppleService: ObservableObject {
     @Published var accountStorageError: String?
     let signer: SAPSigner
     private var loginInProgress = false
+    private(set) var loginDiagnostic = "No login attempted in this session."
     var active: AppleAccount? { accounts.first { $0.id == activeID } }
     var guid: String {
         if let value = LocalResources.defaults.string(forKey: LocalResources.guid) { return value }
@@ -38,7 +39,10 @@ final class AppleService: ObservableObject {
     func login(email: String, password: String, code: String, useCache: Bool) async throws {
         if accountStorageError != nil {
             do { accounts = try KeychainStore.load(); accountStorageError = nil }
-            catch { accountStorageError = error.localizedDescription; throw error }
+            catch {
+                loginDiagnostic = "stage=account-storage; " + AppleAuthentication.errorCode(error)
+                throw ToolError.message("本机账号记录无法读取，原记录已保留。请在设置中导出诊断信息。")
+            }
         }
         guard !loginInProgress else { throw ToolError.message("另一个账号正在登录，请稍后重试") }
         loginInProgress = true
@@ -48,14 +52,43 @@ final class AppleService: ObservableObject {
         let code = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !email.isEmpty, !password.isEmpty else { throw ToolError.message("请填写 Apple 账号和密码") }
         guard code.isEmpty || (code.count == 6 && code.allSatisfy({ $0.isASCII && $0.isNumber })) else { throw ToolError.message("请输入 6 位数字验证码") }
-        let body = try AppleLoginResponse.body(email: email, password: password, code: code, guid: guid)
-        let signature = try await signer.sign(body, guid: guid, useCache: useCache)
-        var headers = ["Content-Type": "application/x-www-form-urlencoded", "X-Apple-ActionSignature": signature]
-        if let storefront = AppleLoginResponse.phoneNumberStorefront(email) { headers["X-Apple-Store-Front"] = storefront }
-        let (raw, response) = try await HTTPClient.shared.plist(
-            URL(string: "https://p25-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate/")!, body: body,
-            headers: headers)
-        if let failure = AppleLoginResponse.failure(raw, submittedCode: !code.isEmpty) { throw failure }
+        var stage = "configuration"
+        loginDiagnostic = "stage=configuration"
+        let raw: [String: Any]
+        let response: HTTPURLResponse
+        do {
+            let deviceID = guid
+            let (bag, _) = try await HTTPClient.shared.request(AppleAuthentication.bagURL(guid: deviceID),
+                headers: ["Accept": "application/xml"])
+            let endpoint = try AppleAuthentication.endpoint(from: bag)
+            stage = "signing"
+            loginDiagnostic = "stage=signing"
+            let body = try AppleLoginResponse.body(email: email, password: password, code: code, guid: deviceID)
+            let signature = try await signer.sign(body, guid: deviceID, useCache: useCache)
+            var headers = ["Content-Type": "application/x-www-form-urlencoded", "Accept": "application/xml",
+                           "X-Apple-ActionSignature": signature]
+            if let storefront = AppleLoginResponse.phoneNumberStorefront(email) { headers["X-Apple-Store-Front"] = storefront }
+            stage = "authentication"
+            let result = try await AppleAuthentication.authenticate(endpoint: endpoint, body: body, headers: headers,
+                send: { url, body, headers in
+                    try await HTTPClient.shared.request(url, method: "POST", body: body, headers: headers,
+                                                        appleRedirects: true, authentication: true)
+                }, report: { self.loginDiagnostic = $0 })
+            raw = result.0; response = result.1
+        } catch is CancellationError {
+            loginDiagnostic = "stage=\(stage); cancelled"
+            throw CancellationError()
+        } catch {
+            if stage != "authentication" { loginDiagnostic = "stage=\(stage); " + AppleAuthentication.errorCode(error) }
+            if stage == "configuration" {
+                throw ToolError.message("无法获取 Apple 登录配置，请检查网络后重试。仍然失败可在设置中导出诊断信息。")
+            }
+            throw error
+        }
+        if let failure = AppleLoginResponse.failure(raw, submittedCode: !code.isEmpty) {
+            loginDiagnostic += "; result=apple-rejected-or-verification-required"
+            throw failure
+        }
         guard let info = raw["accountInfo"] as? [String: Any], !plistString(info["appleId"]).isEmpty else {
             throw ToolError.message("Apple 未返回完整登录信息，请重试")
         }
@@ -76,8 +109,13 @@ final class AppleService: ObservableObject {
         let updated = [account] + accounts.filter { $0.id != id }
         try Task.checkCancellation()
         guard activeID == initialAccount else { throw ToolError.message("账号已切换，已停止保存本次登录") }
-        try KeychainStore.save(updated)
+        do { try KeychainStore.save(updated) }
+        catch {
+            loginDiagnostic += "; stage=account-save; " + AppleAuthentication.errorCode(error)
+            throw error
+        }
         accounts = updated; select(id); accountStorageError = nil
+        loginDiagnostic += "; result=signed-in"
     }
 
     func select(_ id: String?) {

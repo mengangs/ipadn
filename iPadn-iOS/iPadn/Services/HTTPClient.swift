@@ -21,7 +21,7 @@ final class HTTPClient: Sendable {
     }
 
     func request(_ url: URL, method: String = "GET", body: Data? = nil,
-                 headers: [String: String] = [:], appleRedirects: Bool = false) async throws -> (Data, HTTPURLResponse) {
+                 headers: [String: String] = [:], appleRedirects: Bool = false, authentication: Bool = false) async throws -> (Data, HTTPURLResponse) {
         guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ToolError.message("链接无效") }
         var current = url
         for _ in 0..<5 {
@@ -37,7 +37,11 @@ final class HTTPClient: Sendable {
                let next = URL(string: location, relativeTo: current)?.absoluteURL {
                 guard next.scheme == "https", let host = next.host,
                       next.user == nil, next.password == nil else { throw ToolError.message("服务器响应异常，请稍后重试") }
-                if appleRedirects {
+                if authentication {
+                    guard AppleAuthentication.isEndpoint(next) else {
+                        throw ToolError.message("Apple 返回的登录地址无效，请稍后重试")
+                    }
+                } else if appleRedirects {
                     guard host == "itunes.apple.com" || host.hasSuffix(".itunes.apple.com") else {
                         throw ToolError.message("服务器响应异常，请稍后重试")
                     }

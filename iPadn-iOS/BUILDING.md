@@ -1,6 +1,14 @@
 # 自行编译 iPadn
 
-iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad。当前版本为 1.7.3（build 19）。
+iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad。当前版本为 1.7.4（build 20）。
+
+## GitHub 云编译（无需本地 Mac）
+
+日常构建和发布使用 GitHub Actions 的 macOS runner，不需要本地 Mac。推送到 `main` 或提交 PR 后会自动编译和测试；也可以在 Actions 中手动运行 **Build iPadn**，勾选 `run_tests` 和 `publish_release` 发布新版。
+
+也支持推送与项目版本一致的新标签（例如 `v1.7.4`）触发编译、完整测试和 Release 发布；标签与 IPA 版本不一致时拒绝发布。安装包在检查与测试全部通过后才发布。
+
+下文的 Mac 和 Xcode 要求仅适用于自行在本地编译。
 
 ## 准备
 
@@ -45,7 +53,7 @@ GitHub Actions 会对每个 PR 和 `main` 分支执行设备编译、IPA 检查�
 | `iPadn-unsigned-ipa` | 未签名安装包 |
 | `iPadn-build-diagnostics` | 构建日志与测试结果 |
 
-手动运行工作流并勾选 `run_tests` 与 `publish_release`，会在全部检查通过后发布 GitHub Release，发布说明取自仓库根目录的 `RELEASE_NOTES.md`。已存在的同名标签不会被覆盖。
+手动运行工作流并勾选 `run_tests` 与 `publish_release`，会在全部检查通过后发布 GitHub Release，发布说明取自仓库根目录的 `RELEASE_NOTES.md`。已存在的同名 Release 不会被覆盖；标签触发发布时使用该标签对应的源码。
 
 ## 扩展
 
@@ -53,3 +61,9 @@ GitHub Actions 会对每个 PR 和 `main` 分支执行设备编译、IPA 检查�
 - **下架应用名称目录**：`iPadn/Resources/app-name-directory.json`，每条记录包含 `id`、`name`、`aliases`、`platform`（`itunes` / `atv9`）和可核对的 `source`。只收录名称与 App ID 的对应关系，不收录下载链接或账号信息。
 
 第三方组件及许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 登录异常排查
+
+登录先读取 Apple 的 `bag.xml` 配置，再向经校验的 Apple 商店登录地址发送签名请求。空响应、非 plist 响应及部分临时 HTTP 错误最多重试一次；密码错误或双重认证响应不会自动重复提交，429 限流也不会立即重试。
+
+真机登录仍失败时，在「账号 › 设置 › 维护」中导出诊断信息。登录诊断只保留本次会话最近一次登录的阶段、请求次数、HTTP 状态、响应格式、字节数和系统错误码，不保存响应正文、账号、密码、验证码、签名、Cookie 或令牌。本机账号记录读取失败时保留原记录，不自动清空钥匙串。
