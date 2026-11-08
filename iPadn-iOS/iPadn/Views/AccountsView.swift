@@ -6,8 +6,15 @@ struct AccountsView: View {
     @EnvironmentObject private var apple: AppleService
     @State private var deleting: AppleAccount?
     @State private var signingOut = false
+    @State private var headerAway = false
     var body: some View {
         List {
+            Section {
+                PageHeader(title: "账号")
+                    .onScrolledUnderBar { headerAway = $0 }
+                    .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 16))
+            }
+            .listRowBackground(Color.clear).listRowSeparator(.hidden)
             if let error = apple.accountStorageError { Section { InlineIssue(message: error) } }
             Section {
                 if let account = apple.active {
@@ -71,7 +78,7 @@ struct AccountsView: View {
                 Section { Button("退出登录", role: .destructive) { signingOut = true }.frame(maxWidth: .infinity) }
             }
         }
-        .toolPage().navigationTitle("账号").navigationBarTitleDisplayMode(.large)
+        .toolPage().rootTabBar("账号", headerScrolledAway: headerAway)
         .actionConfirmation(isPresented: $signingOut, title: "退出当前账号？", message: "账号仍会保留，可随时切换回来。", confirmTitle: "退出登录") { apple.select(nil) }
         .actionConfirmation(isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), title: "移除账号？", message: "已下载的安装包会保留。", confirmTitle: "移除账号") {
             guard let id = deleting?.id else { return }

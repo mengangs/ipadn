@@ -15,6 +15,18 @@ final class AppleAuthenticationTests: XCTestCase {
         XCTAssertEqual(AppleAuthentication.bagURL(guid: "AABBCCDDEEFF").query, "guid=AABBCCDDEEFF")
     }
 
+    func testNativeBagEndpointsArePreservedWithoutRewritingPath() throws {
+        for native in ["/auth/v1/native", "/auth/v1/native/", "/auth/v1/native/fast", "/auth/v1/native/fast/"] {
+            let data = try HTTPClient.encodePlist(["authenticateAccount": "https://auth.itunes.apple.com" + native + "?pod=1"])
+            let url = try AppleAuthentication.endpoint(from: data)
+            XCTAssertEqual(url.host, "auth.itunes.apple.com")
+            XCTAssertEqual(url.path(percentEncoded: true), native)
+            XCTAssertEqual(url.query, "pod=1")
+            XCTAssertTrue(AppleAuthentication.needsStoreProof(url))
+            XCTAssertFalse(AppleAuthentication.needsStoreProof(url, method: "GET"))
+        }
+    }
+
     func testInvalidConfigurationAndCredentialDestinationsAreRejected() throws {
         for address in ["http://p99-buy.itunes.apple.com" + AppleAuthentication.path,
                         "https://p99-buy.itunes.apple.com.evil.example" + AppleAuthentication.path,
@@ -24,6 +36,9 @@ final class AppleAuthenticationTests: XCTestCase {
                         "https://pd.itunes.apple.com" + AppleAuthentication.path,
                         "https://buy.itunes.apple.com" + AppleAuthentication.path + "//",
                         "https://buy.itunes.apple.com" + AppleAuthentication.path + "%2F",
+                        "https://evil-buy.itunes.apple.com" + AppleAuthentication.path,
+                        "https://auth.itunes.apple.com/auth/v1/otp/1.5/finish",
+                        "https://auth.itunes.apple.com/auth/v1/native/extra",
                         "https://buy.itunes.apple.com/unrelated"] {
             let data = try HTTPClient.encodePlist(["urlBag": ["authenticateAccount": address]])
             XCTAssertThrowsError(try AppleAuthentication.endpoint(from: data), address)
@@ -126,5 +141,246 @@ final class AppleAuthenticationTests: XCTestCase {
             XCTFail("Cancellation must propagate")
         } catch is CancellationError { }
         XCTAssertEqual(requests, 1)
+    }
+
+    func testStoreProofAllowlistAndProvisionReplay() async throws {
+        let nativeAuth = URL(string: "https://auth.itunes.apple.com/auth/v1/native")!
+        let dispatch = URL(string: "https://downloaddispatch.itunes.apple.com/WebObjects/DownloadDispatch.woa/wa/ent/download?guid=AABBCCDDEEFF")!
+        let buyPod = URL(string: "https://p25-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/buyProduct")!
+        let legacyAuth = URL(string: "https://p25-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate/")!
+        let untrusted = URL(string: "https://evil-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/buyProduct")!
+
+        XCTAssertTrue(AppleAuthentication.needsStoreProof(nativeAuth))
+        XCTAssertTrue(AppleAuthentication.needsStoreProof(dispatch))
+        XCTAssertTrue(AppleAuthentication.needsStoreProof(buyPod))
+        XCTAssertFalse(AppleAuthentication.needsStoreProof(legacyAuth))
+        XCTAssertFalse(AppleAuthentication.needsStoreProof(untrusted))
+
+        let challenge = Data("server-challenge".utf8).base64EncodedString()
+        var callCount = 0
+        var provisionedChallenges: [String] = []
+        var resets = 0
+        var otpCounter = 0
+        let outcome = try await AppleAuthentication.withStoreProof(
+            endpoint: nativeAuth,
+            baseHeaders: ["X-Apple-ActionSignature": "sig-1"],
+            loadProof: {
+                otpCounter += 1
+                return ["X-Apple-AMD": "otp-\(otpCounter)", "X-Apple-AMD-M": "mid-1"]
+            },
+            provisionProof: { received in
+                provisionedChallenges.append(received)
+                return ["X-Apple-AMD": "fresh-otp", "X-Apple-AMD-M": "fresh-mid"]
+            },
+            resetProof: { resets += 1 },
+            execute: { headerProvider in
+                callCount += 1
+                let sentHeaders = try await headerProvider(nativeAuth)
+                XCTAssertEqual(sentHeaders["X-Apple-ActionSignature"], "sig-1")
+                if callCount == 1 {
+                    XCTAssertEqual(sentHeaders["X-Apple-AMD"], "otp-1")
+                    let resp = HTTPURLResponse(url: nativeAuth, statusCode: 200, httpVersion: nil,
+                                               headerFields: ["X-Apple-AMD-Action": "RP"])!
+                    return (["customerMessage": "AMD-Action::RP"], resp)
+                }
+                if callCount == 2 {
+                    XCTAssertNil(sentHeaders["X-Apple-AMD"])
+                    let resp = HTTPURLResponse(url: nativeAuth, statusCode: 200, httpVersion: nil,
+                                               headerFields: ["X-Apple-AMD-Action": "SP", "X-Apple-AMD-Data": challenge])!
+                    return (["customerMessage": "AMD-Action::SP"], resp)
+                }
+                XCTAssertEqual(sentHeaders["X-Apple-AMD"], "fresh-otp")
+                XCTAssertEqual(sentHeaders["X-Apple-AMD-M"], "fresh-mid")
+                let redirectedHeaders = try await headerProvider(nativeAuth)
+                XCTAssertEqual(redirectedHeaders["X-Apple-AMD"], "otp-2")
+                let resp = HTTPURLResponse(url: nativeAuth, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                return (["dsPersonId": "123456", "passwordToken": "tok"], resp)
+            }
+        )
+        XCTAssertEqual(callCount, 3)
+        XCTAssertEqual(resets, 1)
+        XCTAssertEqual(provisionedChallenges, [challenge])
+        XCTAssertEqual(outcome.0["dsPersonId"] as? String, "123456")
+
+        let malformedResp = HTTPURLResponse(url: nativeAuth, statusCode: 200, httpVersion: nil,
+                                            headerFields: ["X-Apple-AMD-Action": "SP", "X-Apple-AMD-Data": "not base64!"])!
+        XCTAssertEqual(AppleAuthentication.storeMachineAction(raw: [:], response: malformedResp), .invalidChallenge)
+    }
+
+    func testEmptyBodyChallengeAndCorruptStateSelfHealing() async throws {
+        let nativeAuth = URL(string: "https://auth.itunes.apple.com/auth/v1/native")!
+        let challenge = Data("empty-body-challenge".utf8).base64EncodedString()
+        let validSuccess = try PropertyListSerialization.data(
+            fromPropertyList: ["dsPersonId": "654321", "passwordToken": "tok-2"],
+            format: .xml, options: 0
+        )
+        var pauses = 0
+        var resets = 0
+        var wireAttempt = 0
+        var logs: [String] = []
+        let (decoded, _) = try await AppleAuthentication.withStoreProof(
+            endpoint: nativeAuth,
+            baseHeaders: ["Content-Type": "application/x-apple-plist", "X-Apple-ActionSignature": "sig-2"],
+            loadProof: {
+                throw ToolError.message("corrupt state")
+            },
+            provisionProof: { received in
+                XCTAssertEqual(received, challenge)
+                XCTAssertEqual(resets, 1, "Corrupt loadProof must reset stored state before provisioning")
+                return ["X-Apple-AMD": "prov-otp", "X-Apple-AMD-M": "prov-mid"]
+            },
+            resetProof: { resets += 1 },
+            execute: { headerProvider in
+                try await AppleAuthentication.authenticate(
+                    endpoint: nativeAuth,
+                    body: Data("signed".utf8),
+                    makeHeaders: { try await headerProvider(nativeAuth) },
+                    send: { url, _, sentHeaders in
+                        wireAttempt += 1
+                        if wireAttempt == 1 {
+                            XCTAssertNil(sentHeaders["X-Apple-AMD"])
+                            let challengeResp = HTTPURLResponse(
+                                url: url, statusCode: 200, httpVersion: nil,
+                                headerFields: ["X-Apple-AMD-Action": "SP", "X-Apple-AMD-Data": challenge]
+                            )!
+                            return (Data(), challengeResp)
+                        }
+                        XCTAssertEqual(sentHeaders["X-Apple-AMD"], "prov-otp")
+                        XCTAssertEqual(sentHeaders["X-Apple-AMD-M"], "prov-mid")
+                        let okResp = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                        return (validSuccess, okResp)
+                    },
+                    pause: { pauses += 1 },
+                    report: { logs.append($0) }
+                )
+            }
+        )
+        XCTAssertEqual(pauses, 0, "Header-only SP challenge must not waste a sleep/retry before provisioning")
+        XCTAssertEqual(wireAttempt, 2)
+        XCTAssertEqual(decoded["dsPersonId"] as? String, "654321")
+
+        do {
+            _ = try await AppleAuthentication.withStoreProof(
+                endpoint: nativeAuth,
+                baseHeaders: [:],
+                loadProof: { nil },
+                provisionProof: { _ in ["X-Apple-AMD": "otp-a", "X-Apple-AMD-M": "mid-a"] },
+                resetProof: {},
+                execute: { _ in
+                    let resp = HTTPURLResponse(
+                        url: nativeAuth, statusCode: 200, httpVersion: nil,
+                        headerFields: ["X-Apple-AMD-Action": "SP", "X-Apple-AMD-Data": challenge]
+                    )!
+                    return ([:], resp)
+                }
+            )
+            XCTFail("Repeated SP challenge must throw device verification error")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("设备验证未完成"))
+        }
+    }
+
+    func testHTTPClientRedirectsNormalizationAndHeaderScoping() async throws {
+        final class MockProtocol: URLProtocol {
+            nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+            override class func canInit(with request: URLRequest) -> Bool { true }
+            override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+            override func startLoading() {
+                do {
+                    let (response, data) = try Self.handler!(request)
+                    client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                    client?.urlProtocol(self, didLoad: data)
+                    client?.urlProtocolDidFinishLoading(self)
+                } catch {
+                    client?.urlProtocol(self, didFailWithError: error)
+                }
+            }
+            override func stopLoading() {}
+        }
+
+        let client = HTTPClient(protocolClasses: [MockProtocol.self])
+        let okPlist = try PropertyListSerialization.data(fromPropertyList: ["ok": "1"], format: .xml, options: 0)
+
+        // 1. Bare buy-pod 301 redirect is normalized to trailing slash and strips X-Apple-AMD when leaving native auth.
+        var seenAuthURLs: [String] = []
+        var secondHopAMD: String?
+        var secondHopSig: String?
+        MockProtocol.handler = { req in
+            let url = req.url!
+            seenAuthURLs.append(url.absoluteString)
+            if seenAuthURLs.count == 1 {
+                let redirect = HTTPURLResponse(
+                    url: url, statusCode: 301, httpVersion: nil,
+                    headerFields: ["Location": "https://p25-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate?Pod=25"]
+                )!
+                return (redirect, Data())
+            }
+            secondHopAMD = req.value(forHTTPHeaderField: "X-Apple-AMD")
+            secondHopSig = req.value(forHTTPHeaderField: "X-Apple-ActionSignature")
+            return (HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!, okPlist)
+        }
+        let (_, authResp) = try await client.request(
+            URL(string: "https://auth.itunes.apple.com/auth/v1/native")!,
+            method: "POST", body: Data("payload".utf8),
+            headers: ["X-Apple-AMD": "otp-1", "X-Apple-AMD-M": "mid-1", "X-Apple-ActionSignature": "sig"],
+            appleRedirects: true, authentication: true
+        )
+        XCTAssertEqual(authResp.url?.absoluteString, "https://p25-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate/?Pod=25")
+        XCTAssertNil(secondHopAMD)
+        XCTAssertEqual(secondHopSig, "sig")
+
+        // 2. HTTP 303 on authentication POST is rejected.
+        MockProtocol.handler = { req in
+            let redirect = HTTPURLResponse(
+                url: req.url!, statusCode: 303, httpVersion: nil,
+                headerFields: ["Location": "https://auth.itunes.apple.com/auth/v1/native/?Pod=7"]
+            )!
+            return (redirect, Data())
+        }
+        do {
+            _ = try await client.request(
+                URL(string: "https://auth.itunes.apple.com/auth/v1/native")!,
+                method: "POST", body: Data("payload".utf8),
+                appleRedirects: true, authentication: true
+            )
+            XCTFail("303 redirect on authentication POST must fail")
+        } catch {}
+
+        // 3. DAAP purchase redirect preserves X-Token across *.itunes.apple.com pods.
+        var daapSecondHopToken: String?
+        var daapHop = 0
+        MockProtocol.handler = { req in
+            daapHop += 1
+            if daapHop == 1 {
+                let redirect = HTTPURLResponse(
+                    url: req.url!, statusCode: 307, httpVersion: nil,
+                    headerFields: ["Location": "https://p42-pd.itunes.apple.com/WebObjects/MZPurchaseDaap.woa/purchase/login"]
+                )!
+                return (redirect, Data())
+            }
+            daapSecondHopToken = req.value(forHTTPHeaderField: "X-Token")
+            return (HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("ok".utf8))
+        }
+        _ = try await client.request(
+            URL(string: "https://pd.itunes.apple.com/WebObjects/MZPurchaseDaap.woa/purchase/login")!,
+            method: "POST", headers: ["X-Token": "keep-token"], appleRedirects: true
+        )
+        XCTAssertEqual(daapSecondHopToken, "keep-token")
+
+        // 4. HTTPClient.plist returns empty dict on HTTP 200 header-only SP challenge instead of failing plist decode.
+        let spChallenge = Data("spim".utf8).base64EncodedString()
+        MockProtocol.handler = { req in
+            let resp = HTTPURLResponse(
+                url: req.url!, statusCode: 200, httpVersion: nil,
+                headerFields: ["X-Apple-AMD-Action": "SP", "X-Apple-AMD-Data": spChallenge]
+            )!
+            return (resp, Data())
+        }
+        let (emptyChallengeDict, challengeHTTPResp) = try await client.plist(
+            URL(string: "https://downloaddispatch.itunes.apple.com/WebObjects/DownloadDispatch.woa/wa/ent/download")!,
+            body: okPlist, headers: [:]
+        )
+        XCTAssertTrue(emptyChallengeDict.isEmpty)
+        XCTAssertEqual(AppleAuthentication.storeMachineAction(raw: emptyChallengeDict, response: challengeHTTPResp), .provision(spChallenge))
     }
 }

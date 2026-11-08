@@ -64,22 +64,46 @@ final class AppleService: ObservableObject {
             stage = "signing"
             loginDiagnostic = "stage=signing"
             let body = try AppleLoginResponse.body(email: email, password: password, code: code, guid: deviceID)
-            let signature = try await signer.sign(body, guid: deviceID, useCache: useCache)
-            var headers = ["Content-Type": "application/x-www-form-urlencoded", "Accept": "application/xml",
+            let signature = try await signer.sign(body, guid: deviceID, useCache: useCache, cacheSignature: false)
+            var headers = ["Content-Type": "application/x-apple-plist",
                            "X-Apple-ActionSignature": signature]
             if let storefront = AppleLoginResponse.phoneNumberStorefront(email) { headers["X-Apple-Store-Front"] = storefront }
             stage = "authentication"
-            let result = try await AppleAuthentication.authenticate(endpoint: endpoint, body: body, headers: headers,
-                send: { url, body, headers in
-                    try await HTTPClient.shared.request(url, method: "POST", body: body, headers: headers,
-                                                        appleRedirects: true, authentication: true)
-                }, report: { self.loginDiagnostic = $0 })
+            let result = try await AppleAuthentication.withStoreProof(
+                endpoint: endpoint,
+                baseHeaders: headers,
+                loadProof: { try await self.signer.storeProofHeaders(guid: deviceID, useCache: useCache) },
+                provisionProof: { challenge in
+                    stage = "store-provisioning"
+                    self.loginDiagnostic = "stage=store-provisioning"
+                    let provisioned = try await self.signer.provisionStoreProof(challenge: challenge, guid: deviceID, useCache: useCache)
+                    stage = "authentication"
+                    return provisioned
+                },
+                resetProof: { self.signer.resetStoreProof(guid: deviceID) },
+                execute: { headerProvider in
+                    try await AppleAuthentication.authenticate(
+                        endpoint: endpoint, body: body,
+                        makeHeaders: { try await headerProvider(endpoint) },
+                        send: { url, body, headers in
+                            try await HTTPClient.shared.request(
+                                url, method: "POST", body: body, headers: headers,
+                                appleRedirects: true, authentication: true,
+                                refreshHeaders: headerProvider
+                            )
+                        },
+                        report: { self.loginDiagnostic = $0 }
+                    )
+                }
+            )
             raw = result.0; response = result.1
         } catch is CancellationError {
             loginDiagnostic = "stage=\(stage); cancelled"
             throw CancellationError()
         } catch {
-            if stage == "signing" { loginDiagnostic = "stage=signing; " + AppleAuthentication.errorCode(error) }
+            if stage == "signing" || stage == "store-provisioning" {
+                loginDiagnostic = "stage=\(stage); " + AppleAuthentication.errorCode(error)
+            }
             if stage == "configuration" {
                 throw ToolError.message("无法获取 Apple 登录配置，请检查网络后重试。仍然失败可在设置中导出诊断信息。")
             }
@@ -89,23 +113,45 @@ final class AppleService: ObservableObject {
             loginDiagnostic += "; result=apple-rejected-or-verification-required"
             throw failure
         }
-        guard let info = raw["accountInfo"] as? [String: Any], !plistString(info["appleId"]).isEmpty else {
-            throw ToolError.message("Apple 未返回完整登录信息，请重试")
-        }
-        guard !plistString(raw["dsPersonId"]).isEmpty, !plistString(raw["passwordToken"]).isEmpty else {
-            throw ToolError.message("Apple 返回的登录凭据不完整，请重新登录")
-        }
-        let id = plistString(info["appleId"])
-        let address = info["address"] as? [String: Any] ?? [:]
-        let name = [plistString(address["firstName"]), plistString(address["lastName"])].filter { !$0.isEmpty }.joined(separator: " ")
-        let fullStore = response.value(forHTTPHeaderField: "X-Set-Apple-Store-Front") ?? ""
         var cookieHeaders: [String: String] = [:]
         for (key, value) in response.allHeaderFields { cookieHeaders[String(describing: key)] = String(describing: value) }
-        let cookies = HTTPCookie.cookies(withResponseHeaderFields: cookieHeaders, for: response.url!)
+        let cookies = response.url.map { HTTPCookie.cookies(withResponseHeaderFields: cookieHeaders, for: $0) } ?? []
         let cookie = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+        var resolvedDSID = plistString(raw["dsPersonId"])
+        if resolvedDSID.isEmpty,
+           let headerDSID = response.value(forHTTPHeaderField: "X-Dsid")?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !headerDSID.isEmpty, headerDSID.allSatisfy({ $0.isASCII && $0.isNumber }) {
+            resolvedDSID = headerDSID
+        }
+        if resolvedDSID.isEmpty {
+            for item in cookies {
+                for prefix in ["mz_at0-", "mz_at_ssl-"] where item.name.hasPrefix(prefix) {
+                    let candidate = String(item.name.dropFirst(prefix.count))
+                    if !candidate.isEmpty, candidate.allSatisfy({ $0.isASCII && $0.isNumber }) {
+                        resolvedDSID = candidate; break
+                    }
+                }
+                if !resolvedDSID.isEmpty { break }
+            }
+        }
+        let info = raw["accountInfo"] as? [String: Any] ?? [:]
+        let reportedID = plistString(info["appleId"])
+        let passwordToken = plistString(raw["passwordToken"])
+        let id = reportedID.isEmpty && !resolvedDSID.isEmpty && !passwordToken.isEmpty ? email : reportedID
+        guard !id.isEmpty else {
+            throw ToolError.message("Apple 未返回完整登录信息，请重试")
+        }
+        guard !resolvedDSID.isEmpty, !passwordToken.isEmpty else {
+            throw ToolError.message("Apple 返回的登录凭据不完整，请重新登录")
+        }
+        let address = info["address"] as? [String: Any] ?? [:]
+        let name = [plistString(address["firstName"]), plistString(address["lastName"])].filter { !$0.isEmpty }.joined(separator: " ")
+        let fullStore = response.value(forHTTPHeaderField: "X-Set-Apple-Store-Front")
+            ?? response.value(forHTTPHeaderField: "X-Apple-Request-Store-Front")
+            ?? ""
         let account = AppleAccount(id: id, name: name.isEmpty ? id : name, password: password, cookie: cookie,
-                                   dsid: plistString(raw["dsPersonId"]), passwordToken: plistString(raw["passwordToken"]),
-                                   storeFront: String(fullStore.split(separator: "-").first ?? ""), fullStoreFront: fullStore)
+                                   dsid: resolvedDSID, passwordToken: passwordToken,
+                                   storeFront: StoreService.storefrontIdentifier(fullStore), fullStoreFront: fullStore)
         let updated = [account] + accounts.filter { $0.id != id }
         try Task.checkCancellation()
         guard activeID == initialAccount else { throw ToolError.message("账号已切换，已停止保存本次登录") }
@@ -233,8 +279,8 @@ final class AppleService: ObservableObject {
             // Node plist builder in the supplied source emits the returned Base64 as a string.
             payload["kbsync"] = kbsync
         }
-        let (raw, _) = try await HTTPClient.shared.plist(URL(string: root + "?guid=" + guid)!,
-            body: HTTPClient.encodePlist(payload), headers: authHeaders(account))
+        let (raw, _) = try await storePlist(URL(string: root + "?guid=" + guid)!,
+            body: HTTPClient.encodePlist(payload), headers: authHeaders(account), guid: guid, useCache: useCache)
         let failure = plistString(raw["failureType"])
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
         // Still expired right after a refresh: only signing in again can help.
@@ -258,7 +304,7 @@ final class AppleService: ObservableObject {
             // here always calls authenticate and can trigger an invisible 2FA prompt.
             // Acquire the free license using the current valid account first.
             guard activeID == account.id else { throw ToolError.message("账号已切换，请重新执行下载") }
-            try await acquireFreeApp(appID, account: account)
+            try await acquireFreeApp(appID, account: account, useCache: useCache)
             return try await fetchAsset(appID: appID, versionID: versionID, account: account,
                 useCache: useCache, fallback: fallback, refreshed: refreshed, purchased: true,
                 allowLicenseAcquisition: allowLicenseAcquisition)
@@ -312,9 +358,9 @@ final class AppleService: ObservableObject {
         let kbsync = try await signer.kbsync(guid: guid, dsid: account.dsid, useCache: useCache)
         let payload: [String: Any] = ["guid": guid, "salableAdamId": NSNumber(value: app), "serialNumber": "0",
                                       "externalVersionId": versionID, "kbsync": kbsync]
-        let (raw, _) = try await HTTPClient.shared.plist(
+        let (raw, _) = try await storePlist(
             URL(string: "https://downloaddispatch.itunes.apple.com/WebObjects/DownloadDispatch.woa/wa/ent/download?guid=" + guid)!,
-            body: HTTPClient.encodePlist(payload), headers: authHeaders(account))
+            body: HTTPClient.encodePlist(payload), headers: authHeaders(account), guid: guid, useCache: useCache)
         if AppleAuthError.requiresReauthentication(raw) || ["2034", "2042"].contains(plistString(raw["failureType"])) {
             throw AppleAuthError.reauthenticationRequired
         }
@@ -338,14 +384,18 @@ final class AppleService: ObservableObject {
 
     /// `arcade` false first; an iOS app that Apple reports unavailable (2059)
     /// is retried as an Apple Arcade game, as ipatool does.
-    private func acquireFreeApp(_ id: String, account: AppleAccount, mac: Bool = false, arcade: Bool = false) async throws {
-        let payload: [String: Any] = ["appExtVrsId": "0", "buyWithoutAuthorization": "true", "guid": guid,
+    private func acquireFreeApp(_ id: String, account: AppleAccount, mac: Bool = false, arcade: Bool = false,
+                                useCache: Bool = true) async throws {
+        let deviceID = guid
+        let payload: [String: Any] = ["appExtVrsId": "0", "buyWithoutAuthorization": "true", "guid": deviceID,
             "hasAskedToFulfillPreorder": "true", "hasDoneAgeCheck": "true", "price": "0",
             "pricingParameters": arcade ? "GAME" : "STDQ", "productType": "C", "salableAdamId": id]
-        var headers = authHeaders(account); headers["X-Token"] = account.passwordToken
-        let (raw, _) = try await HTTPClient.shared.plist(
+        var headers = authHeaders(account)
+        headers["Content-Type"] = "application/x-apple-plist"
+        if !account.passwordToken.isEmpty { headers["X-Token"] = account.passwordToken }
+        let (raw, _) = try await storePlist(
             URL(string: "https://buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/buyProduct")!,
-            body: HTTPClient.encodePlist(payload), headers: headers)
+            body: HTTPClient.encodePlist(payload), headers: headers, guid: deviceID, useCache: useCache)
         // A license acquisition can independently require a new trusted-device
         // approval, even when the previous download token was accepted.
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
@@ -355,7 +405,7 @@ final class AppleService: ObservableObject {
             throw ToolError.message("此应用属于 Apple Arcade，需要此账号订阅 Apple Arcade 后才能下载。")
         }
         if plistString(raw["failureType"]) == "2059" && !mac && !arcade {
-            return try await acquireFreeApp(id, account: account, mac: mac, arcade: true)
+            return try await acquireFreeApp(id, account: account, mac: mac, arcade: true, useCache: useCache)
         }
         if ["2034", "2042"].contains(plistString(raw["failureType"])) ||
            plistString(raw["customerMessage"]) == "MZFinance.BadLogin.Configurator_message" {
@@ -407,18 +457,19 @@ final class AppleService: ObservableObject {
         if let versionID { payload["externalVersionId"] = versionID }
         var headers = authHeaders(account)
         headers["Content-Type"] = "application/x-www-form-urlencoded; charset=utf-8"
-        headers["X-Apple-Store-Front"] = account.fullStoreFront.isEmpty ? account.storeFront : account.fullStoreFront
-        headers["X-Token"] = account.passwordToken
+        let macStoreFront = account.fullStoreFront.isEmpty ? account.storeFront : account.fullStoreFront
+        if !macStoreFront.isEmpty { headers["X-Apple-Store-Front"] = macStoreFront }
+        if !account.passwordToken.isEmpty { headers["X-Token"] = account.passwordToken }
         let endpoint = URL(string:
             "https://downloaddispatch.itunes.apple.com/WebObjects/DownloadDispatch.woa/wa/ent/download?guid=" + deviceID)!
-        let (raw, _) = try await HTTPClient.shared.plist(endpoint,
-            body: HTTPClient.encodePlist(payload), headers: headers)
+        let (raw, _) = try await storePlist(endpoint,
+            body: HTTPClient.encodePlist(payload), headers: headers, guid: deviceID, useCache: useCache)
         try Task.checkCancellation()
         guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
         if plistString(raw["failureType"]) == "9610" && !licenseAcquired {
             guard allowLicenseAcquisition else { throw AppleLicenseError.notOwned }
-            try await acquireFreeApp(app.id, account: account, mac: true)
+            try await acquireFreeApp(app.id, account: account, mac: true, useCache: useCache)
             try Task.checkCancellation()
             guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
             return try await macPackageOffer(app, versionID: versionID, useCache: useCache,
@@ -467,9 +518,37 @@ final class AppleService: ObservableObject {
         }.value
     }
 
+    private func storePlist(_ url: URL, body: Data, headers: [String: String], guid: String,
+                            useCache: Bool) async throws -> ([String: Any], HTTPURLResponse) {
+        try await AppleAuthentication.withStoreProof(
+            endpoint: url,
+            baseHeaders: headers,
+            loadProof: { try await self.signer.storeProofHeaders(guid: guid, useCache: useCache) },
+            provisionProof: { challenge in
+                try await self.signer.provisionStoreProof(challenge: challenge, guid: guid, useCache: useCache)
+            },
+            resetProof: { self.signer.resetStoreProof(guid: guid) },
+            execute: { headerProvider in
+                let initialHeaders = try await headerProvider(url)
+                return try await HTTPClient.shared.plist(
+                    url, body: body, headers: initialHeaders,
+                    refreshHeaders: headerProvider
+                )
+            }
+        )
+    }
+
     private func authHeaders(_ account: AppleAccount) -> [String: String] {
-        ["Content-Type": "application/x-www-form-urlencoded", "Cookie": account.cookie,
-         "X-Apple-Store-Front": account.storeFront, "X-Dsid": account.dsid, "iCloud-DSID": account.dsid]
+        var headers: [String: String] = [
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Dsid": account.dsid,
+            "iCloud-DSID": account.dsid
+        ]
+        if !account.cookie.isEmpty { headers["Cookie"] = account.cookie }
+        let storeFront = account.fullStoreFront.isEmpty ? account.storeFront : account.fullStoreFront
+        if !storeFront.isEmpty { headers["X-Apple-Store-Front"] = storeFront }
+        if !account.passwordToken.isEmpty { headers["X-Token"] = account.passwordToken }
+        return headers
     }
     private func purchaseHeaders(_ account: AppleAccount) -> [String: String] {
         let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
@@ -477,13 +556,17 @@ final class AppleService: ObservableObject {
         date.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
         let iso = ISO8601DateFormatter()
         var headers = authHeaders(account)
-        headers.merge(["Accept": "*/*", "Accept-Language": "en-us", "Client-Cloud-DAAP-Request-Reason": "5",
+        let storeFront = account.fullStoreFront.isEmpty ? account.storeFront : account.fullStoreFront
+        var extra: [String: String] = [
+            "Accept": "*/*", "Accept-Language": "en-us", "Client-Cloud-DAAP-Request-Reason": "5",
             "Client-Cloud-Purchase-Daap-Version": "1.1/Configurator-2.0", "Client-DAAP-Version": "3.12",
             "Date": date.string(from: now), "X-Apple-I-Client-Time": iso.string(from: now),
             "X-Apple-I-Locale": "en_US", "X-Apple-I-TimeZone": "Local",
-            "X-Apple-Store-Front": account.fullStoreFront.isEmpty ? account.storeFront : account.fullStoreFront,
-            "X-Apple-TZ": String(TimeZone.current.secondsFromGMT(for: now) / 60), "X-Guid": guid,
-            "X-Token": account.passwordToken], uniquingKeysWith: { _, new in new })
+            "X-Apple-TZ": String(TimeZone.current.secondsFromGMT(for: now) / 60), "X-Guid": guid
+        ]
+        if !storeFront.isEmpty { extra["X-Apple-Store-Front"] = storeFront }
+        if !account.passwordToken.isEmpty { extra["X-Token"] = account.passwordToken }
+        headers.merge(extra, uniquingKeysWith: { _, new in new })
         return headers
     }
 }
@@ -632,7 +715,11 @@ enum AppleLoginResponse {
         if message == "MZFinance.BadLogin.Configurator_message" {
             return submittedCode ? AppleLoginError.verificationRejected : AppleLoginError.verificationRequired
         }
+        if message.hasPrefix("AMD-Action") {
+            return ToolError.message("设备验证未完成，请稍后重试。")
+        }
         if let info = response["accountInfo"] as? [String: Any], !plistString(info["appleId"]).isEmpty { return nil }
+        if message.isEmpty, !plistString(response["passwordToken"]).isEmpty { return nil }
         if message.hasPrefix("MZ") { return ToolError.message("Apple 暂时无法完成登录，请稍后重试。") }
         return ToolError.message(message.isEmpty ? "Apple 未返回登录信息，请检查账号后重试。" : message)
     }

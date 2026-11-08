@@ -8,10 +8,15 @@ enum StoreService {
         return url
     }
 
-    // Apple sends storefront identifiers such as "143441-1,29". The selected
-    // search region can differ from the account's purchase region.
+    // Apple sends storefront identifiers such as "143441-1,29" or "143465,34".
+    // The selected search region can differ from the account's purchase region.
+    static func storefrontIdentifier(_ storefront: String) -> String {
+        String(storefront.split(whereSeparator: { $0 == "-" || $0 == "," }).first ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     static func country(forStorefront storefront: String) -> String? {
-        let identifier = String(storefront.split(separator: "-").first ?? "")
+        let identifier = storefrontIdentifier(storefront)
         return storefrontCountries[identifier]
     }
 

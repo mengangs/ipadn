@@ -4,7 +4,7 @@ iPadn 本身以 GPL-2.0-or-later 发布（见仓库根目录 `LICENSE`）。它�
 
 ## 验证运行组件
 
-`vendor/SAPRuntime` 包含 SAP WebAssembly、Unicorn 执行组件、Go WebAssembly 支持层和本地 JavaScript 适配层，构建时校验 `manifest.json` 的 SHA-256 后打包，无需下载其他项目资源。
+`vendor/SAPRuntime` 包含 SAP WebAssembly、Unicorn 执行组件、Go WebAssembly 支持层、Store 设备验证运行库（来自 Apple 官方软件包的 `libCoreADI.so` 与 `libstoreservicescore.so`）及本地 JavaScript 适配层（Store 验证加载与调用逻辑参考 [Dadoum/Provision](https://github.com/Dadoum/Provision) 与 `ipatool-store-proof`，LGPL-2.0），构建时校验 `manifest.json` 的 SHA-256 后打包，无需下载其他项目资源。
 
 现有组件内嵌的版权及许可证注释均保留。运行组件的来源记录保存于同目录的 `PROVENANCE.json`；组件没有因为本地维护而变为本项目原创。未确认的许可范围不由本项目扩张或另行授予。
 

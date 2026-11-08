@@ -397,6 +397,7 @@ struct ToolPageStyle: ViewModifier {
         content.listStyle(.insetGrouped).scrollContentBackground(.hidden)
             .background(Color(.systemGroupedBackground)).scrollDismissesKeyboard(.interactively)
             .listSectionSpacing(20)
+            .contentMargins(.bottom, 20, for: .scrollContent)
     }
 }
 extension View { func toolPage() -> some View { modifier(ToolPageStyle()) } }

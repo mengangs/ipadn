@@ -46,6 +46,16 @@ final class ServiceResponseTests: XCTestCase {
         XCTAssertEqual(credentials["passwordToken"] as? String, "a&b<c>")
         XCTAssertEqual(credentials["blob"] as? Data, Data("abc".utf8))
         XCTAssertEqual(credentials["ids"] as? [Int], [42])
+
+        XCTAssertEqual(StoreService.storefrontIdentifier("143465,34"), "143465")
+        XCTAssertEqual(StoreService.country(forStorefront: "143465,34"), "CN")
+        XCTAssertEqual(StoreService.country(forStorefront: "143441-1,29"), "US")
+
+        let amdFailure = AppleLoginResponse.failure(["customerMessage": "AMD-Action::SP"], submittedCode: false)
+        XCTAssertNotNil(amdFailure)
+        XCTAssertFalse(amdFailure?.localizedDescription.contains("AMD-Action") == true)
+
+        XCTAssertNil(AppleLoginResponse.failure(["dsPersonId": "10001", "passwordToken": "token"], submittedCode: false))
     }
 
     func testMalformedOrHTMLWrappedResponsesAreRejected() {
