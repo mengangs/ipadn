@@ -17,15 +17,43 @@ enum AppUpdateService {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
-    /// The latest published release, or nil when GitHub could not be reached.
-    static func latest() async -> AppRelease? {
-        guard let url = URL(string: "https://api.github.com/repos/\(repository)/releases/latest") else { return nil }
-        var request = URLRequest(url: url, timeoutInterval: 20)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("iPadn/" + currentVersion, forHTTPHeaderField: "User-Agent")
-        guard let result = try? await URLSession.shared.data(for: request),
-              (result.1 as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-        return parse(result.0)
+    /// API first, then the public release feed. Diagnostics contain metadata only.
+    @MainActor
+    static func latest(session: URLSession = .shared, report: (String) -> Void = { _ in }) async -> AppRelease? {
+        let sources = [
+            ("api", "https://api.github.com/repos/\(repository)/releases/latest", "application/vnd.github+json"),
+            ("feed", "https://github.com/\(repository)/releases.atom", "application/atom+xml")
+        ]
+        var diagnostics: [String] = []
+        for (source, address, accept) in sources {
+            guard let url = URL(string: address) else { continue }
+            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+            request.setValue(accept, forHTTPHeaderField: "Accept")
+            request.setValue("iPadn/" + currentVersion, forHTTPHeaderField: "User-Agent")
+            do {
+                let (data, rawResponse) = try await session.data(for: request)
+                guard let response = rawResponse as? HTTPURLResponse else {
+                    diagnostics.append("source=\(source); error=non-http"); report(diagnostics.joined(separator: "\n")); continue
+                }
+                var metadata = "source=\(source); http=\(response.statusCode); format=\(ApplePropertyList.format(data)); bytes=\(data.count)"
+                if response.statusCode == 429 || response.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0" {
+                    metadata += "; rate-limited=true"
+                }
+                if response.statusCode == 200, let release = source == "api" ? parse(data) : AppReleaseFeed.parse(data) {
+                    diagnostics.append(metadata + "; result=valid")
+                    report(diagnostics.joined(separator: "\n"))
+                    return release
+                }
+                diagnostics.append(metadata + "; result=unusable")
+            } catch is CancellationError {
+                diagnostics.append("source=\(source); cancelled"); report(diagnostics.joined(separator: "\n")); return nil
+            } catch {
+                diagnostics.append("source=\(source); " + AppleAuthentication.errorCode(error))
+                if (error as? URLError)?.code == .cancelled { report(diagnostics.joined(separator: "\n")); return nil }
+            }
+            report(diagnostics.joined(separator: "\n"))
+        }
+        return nil
     }
 
     static func parse(_ data: Data) -> AppRelease? {

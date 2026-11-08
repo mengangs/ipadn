@@ -59,3 +59,13 @@ jobs:
           } catch { print("Foundation parsing error:", (error as NSError).domain, (error as NSError).code) }
           SWIFT
           swift /tmp/probe.swift
+          cat iPadn-iOS/iPadn/Services/ApplePropertyList.swift > /tmp/fixed-probe.swift
+          cat >> /tmp/fixed-probe.swift <<'SWIFT'
+          let data = try Data(contentsOf: URL(fileURLWithPath: "/tmp/ipadn-bag.xml"))
+          let raw = try ApplePropertyList.dictionary(data)
+          let bag = raw["urlBag"] as? [String: Any] ?? raw
+          guard let address = bag["authenticateAccount"] as? String, let url = URL(string: address),
+                url.host == "buy.itunes.apple.com" else { fatalError("Actual Apple bag could not be decoded") }
+          print("PASS: actual Apple Document/Protocol bag decoded; authentication endpoint host:", url.host!)
+          SWIFT
+          swift /tmp/fixed-probe.swift

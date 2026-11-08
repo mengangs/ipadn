@@ -107,9 +107,7 @@ final class HTTPClient: Sendable {
 
     func plist(_ url: URL, body: Data, headers: [String: String]) async throws -> ([String: Any], HTTPURLResponse) {
         let (data, response) = try await request(url, method: "POST", body: body, headers: headers, appleRedirects: true)
-        guard let dictionary = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
-            throw ToolError.message("Apple 服务器响应异常，请稍后重试")
-        }
+        let dictionary = try ApplePropertyList.dictionary(data)
         return (dictionary, response)
     }
 
