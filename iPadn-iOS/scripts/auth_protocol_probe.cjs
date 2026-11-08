@@ -26,7 +26,9 @@ const document = {
   }
 };
 const sandbox = {
-  console: { log() {}, warn() {}, error() {} }, URL, TextEncoder, TextDecoder, WebAssembly, crypto: webcrypto, performance,
+  // Match the host WebAssembly realm so Emscripten can recognize its TypeError
+  // and install the required typed function wrapper. Browsers use one realm.
+  console: { log() {}, warn() {}, error() {} }, TypeError, URL, TextEncoder, TextDecoder, WebAssembly, crypto: webcrypto, performance,
   setTimeout, clearTimeout, setInterval, clearInterval, document,
   atob: value => Buffer.from(value, 'base64').toString('binary'),
   btoa: value => Buffer.from(value, 'binary').toString('base64'),
