@@ -849,6 +849,7 @@ final class ToolStore: ObservableObject {
             "Runs inside LiveContainer: " + (InstallLog.insideLiveContainer ? "yes" : "no"),
             "Proxy or VPN on: " + (LocalHostRecord.proxyOrVPNActive ? "yes" : "no"),
             "iOS " + UIDevice.current.systemVersion,
+            "Last login (metadata only):", apple.loginDiagnostic,
             "Installation server log:", InstallLog.shared.text.isEmpty ? "(empty)" : InstallLog.shared.text,
             "Contains no credentials, cookies, Apple account names or download URLs."
         ].joined(separator: "\n")
