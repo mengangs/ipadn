@@ -1,7 +1,6 @@
 name: Inspect signed authentication without a real account
 on:
-  push:
-    branches: [investigate/auth-empty-response]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

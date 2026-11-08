@@ -1,4 +1,6 @@
-// Offline smoke test: initializes the supplied WASM runtime, without Apple accounts or network.
+// Manual online diagnostic: compares bounded signed/unsigned Apple responses.
+// Uses only a reserved .invalid account; never reads or accepts real credentials.
+// Response status is evidence, not proof that a real account can authenticate.
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
