@@ -20,12 +20,13 @@ enum AppleAuthentication {
     }
 
     static func endpoint(from data: Data) throws -> URL {
-        guard let raw = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              let bag = raw["urlBag"] as? [String: Any],
-              let address = bag["authenticateAccount"] as? String,
-              let url = URL(string: address), isEndpoint(url),
+        let raw = try ApplePropertyList.dictionary(data)
+        // Apple currently returns a flat bag; older responses wrap it in urlBag.
+        let bag = raw["urlBag"] as? [String: Any] ?? raw
+        guard let address = bag["authenticateAccount"] as? String else { throw ConfigurationError.missingEndpoint }
+        guard let url = URL(string: address), isEndpoint(url),
               var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            throw ToolError.message("Apple 登录配置无效，请稍后重试")
+            throw ConfigurationError.invalidEndpoint
         }
         // Apple's bare authenticate path can return an unusable response.
         // Keep the bag's host and query; only normalize its trailing slash.
@@ -34,7 +35,37 @@ enum AppleAuthentication {
         return endpoint
     }
 
+    enum ConfigurationError: String, LocalizedError {
+        case missingEndpoint, invalidEndpoint
+        var errorDescription: String? { "Apple 登录配置中没有可用的登录地址，请稍后重试。" }
+    }
+
+    @MainActor
+    static func configuration(guid: String,
+        send: (URL) async throws -> (Data, HTTPURLResponse), report: (String) -> Void) async throws -> URL {
+        report("stage=configuration-request")
+        let data: Data
+        let response: HTTPURLResponse
+        do { (data, response) = try await send(bagURL(guid: guid)) }
+        catch {
+            report("stage=configuration-request; " + errorCode(error))
+            throw error
+        }
+        let metadata = "http=\(response.statusCode); format=\(ApplePropertyList.format(data)); bytes=\(data.count)"
+        do {
+            let url = try endpoint(from: data)
+            report("stage=configuration-decode; " + metadata + "; result=valid")
+            return url
+        } catch {
+            report("stage=configuration-decode; " + metadata + "; " + errorCode(error))
+            throw error
+        }
+    }
+
     static func errorCode(_ error: Error) -> String {
+        if let error = error as? ApplePropertyListError { return "error=plist-" + error.rawValue }
+        if let error = error as? ConfigurationError { return "error=configuration-" + error.rawValue }
+        if let error = error as? HTTPStatusError { return "http=\(error.code)" }
         let ns = error as NSError
         // Only known system domains. Custom NSError domains can contain arbitrary text.
         let domains = [NSURLErrorDomain, NSCocoaErrorDomain, "WebKitErrorDomain"]
@@ -47,7 +78,7 @@ enum AppleAuthentication {
 
     static func kind(_ data: Data) -> ResponseKind {
         if data.isEmpty { return .empty }
-        if (try? PropertyListSerialization.propertyList(from: data, format: nil)) != nil { return .plist }
+        if (try? ApplePropertyList.dictionary(data)) != nil { return .plist }
         let prefix = String(decoding: data.prefix(256), as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if prefix.hasPrefix("<!doctype html") || prefix.hasPrefix("<html") { return .html }
@@ -78,9 +109,9 @@ enum AppleAuthentication {
                 throw error
             }
             let format = kind(data)
-            report("stage=authentication; request=\(attempt); http=\(response.statusCode); format=\(format.rawValue); bytes=\(data.count)")
+            report("stage=authentication; request=\(attempt); http=\(response.statusCode); format=\(format.rawValue); envelope=\(ApplePropertyList.format(data)); bytes=\(data.count)")
             if response.statusCode == 200, format == .plist,
-               let raw = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
+               let raw = try? ApplePropertyList.dictionary(data) {
                 return (raw, response)
             }
             if attempt == 1, response.statusCode == 200 || response.statusCode == 204 {

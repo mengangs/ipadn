@@ -572,6 +572,7 @@ final class ToolStore: ObservableObject {
     /// A newer iPadn release than the running one, when found.
     @Published private(set) var appUpdate: AppRelease?
     @Published private(set) var appUpdateChecking = false
+    private(set) var appUpdateDiagnostic = "No update check attempted in this session."
 
     /// Looks for a newer iPadn release at most every 12 hours unless forced.
     /// Returns whether the check reached GitHub.
@@ -590,7 +591,7 @@ final class ToolStore: ObservableObject {
         guard !appUpdateChecking else { return false }
         appUpdateChecking = true
         defer { appUpdateChecking = false }
-        guard let latest = await AppUpdateService.latest() else { return false }
+        guard let latest = await AppUpdateService.latest(report: { self.appUpdateDiagnostic = $0 }) else { return false }
         LocalResources.defaults.set(Date(), forKey: key)
         LocalResources.defaults.set(try? JSONEncoder().encode(latest), forKey: "storage_appUpdate")
         appUpdate = AppUpdateService.newer(latest)
@@ -850,6 +851,7 @@ final class ToolStore: ObservableObject {
             "Proxy or VPN on: " + (LocalHostRecord.proxyOrVPNActive ? "yes" : "no"),
             "iOS " + UIDevice.current.systemVersion,
             "Last login (metadata only):", apple.loginDiagnostic,
+            "Last update check (metadata only):", appUpdateDiagnostic,
             "Installation server log:", InstallLog.shared.text.isEmpty ? "(empty)" : InstallLog.shared.text,
             "Contains no credentials, cookies, Apple account names or download URLs."
         ].joined(separator: "\n")

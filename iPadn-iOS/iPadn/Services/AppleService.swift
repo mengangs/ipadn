@@ -58,9 +58,9 @@ final class AppleService: ObservableObject {
         let response: HTTPURLResponse
         do {
             let deviceID = guid
-            let (bag, _) = try await HTTPClient.shared.request(AppleAuthentication.bagURL(guid: deviceID),
-                headers: ["Accept": "application/xml"])
-            let endpoint = try AppleAuthentication.endpoint(from: bag)
+            let endpoint = try await AppleAuthentication.configuration(guid: deviceID,
+                send: { try await HTTPClient.shared.request($0, headers: ["Accept": "application/xml"]) },
+                report: { self.loginDiagnostic = $0 })
             stage = "signing"
             loginDiagnostic = "stage=signing"
             let body = try AppleLoginResponse.body(email: email, password: password, code: code, guid: deviceID)
@@ -79,7 +79,7 @@ final class AppleService: ObservableObject {
             loginDiagnostic = "stage=\(stage); cancelled"
             throw CancellationError()
         } catch {
-            if stage != "authentication" { loginDiagnostic = "stage=\(stage); " + AppleAuthentication.errorCode(error) }
+            if stage == "signing" { loginDiagnostic = "stage=signing; " + AppleAuthentication.errorCode(error) }
             if stage == "configuration" {
                 throw ToolError.message("无法获取 Apple 登录配置，请检查网络后重试。仍然失败可在设置中导出诊断信息。")
             }
