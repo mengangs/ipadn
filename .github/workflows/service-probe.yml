@@ -29,6 +29,7 @@ jobs:
                       print(name, 'HTTP', response.status, 'type', response.headers.get('Content-Type'), 'bytes', len(data))
                   if name == 'bag':
                       Path('/tmp/ipadn-bag.xml').write_bytes(data)
+                      print('bag XML prefix:', data[:700].decode(errors='replace'))
                       raw = plistlib.loads(data)
                       print('bag root type', type(raw).__name__, 'root keys', list(raw)[:25])
                       bag = raw.get('urlBag', raw)
@@ -39,7 +40,7 @@ jobs:
                       print('release tag', json.loads(data).get('tag_name'))
                   else:
                       Path('/tmp/ipadn-releases.atom').write_bytes(data)
-                      print(data[:120].decode(errors='replace'))
+                      print('feed sample:', data[:2300].decode(errors='replace'))
               except Exception as e:
                   print(name, type(e).__name__, str(e)[:180])
           PY
