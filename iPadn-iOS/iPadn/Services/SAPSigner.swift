@@ -20,6 +20,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
     private var terminalError: Error?
     private var signatureCache: [String: String] = [:]
     private var kbCache: [String: String] = [:]
+    private var storeProofRecords: [String: StoreProofRecord]?
     private var cacheRevision = UUID()
     private var reusableWebView: WKWebView?
     private var reusableBase: URL?
@@ -36,10 +37,10 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
             }
     }
 
-    func sign(_ data: Data, guid: String, useCache: Bool) async throws -> String {
+    func sign(_ data: Data, guid: String, useCache: Bool, cacheSignature: Bool = true) async throws -> String {
         let key = guid + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         try Task.checkCancellation()
-        if useCache, let cached = signatureCache[key] { return cached }
+        if useCache, cacheSignature, let cached = signatureCache[key] { return cached }
         let revision = cacheRevision
         let result = try await execute(title: "验证请求", script: """
             reportStage(1);
@@ -47,7 +48,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
             try { reportStage(2); return await sapSign(body); }
             finally { await sapClose(); }
             """, arguments: ["guid": guid, "body": data.base64EncodedString()], reuseRuntime: useCache)
-        if useCache, revision == cacheRevision {
+        if useCache, cacheSignature, revision == cacheRevision {
             if signatureCache.count >= 128 { signatureCache.removeAll() }
             signatureCache[key] = result
         }
@@ -70,6 +71,116 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
             """, arguments: ["guid": guid, "dsid": dsid], reuseRuntime: useCache)
         if useCache, revision == cacheRevision { kbCache[key] = result }
         return result
+    }
+
+    private struct StoreStatePayload: Codable {
+        var identifier: String
+        var files: [String: String]
+    }
+
+    private struct StoreProofPayload: Decodable {
+        var provisioned: Bool
+        var headers: [String: String]?
+        var state: StoreStatePayload
+    }
+
+    private static func normalizedStoreGUID(_ guid: String) throws -> String {
+        let cleaned = guid.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ":", with: "")
+            .uppercased()
+        guard cleaned.count == 12, cleaned.allSatisfy({ $0.isASCII && $0.isHexDigit }) else {
+            throw ToolError.message("设备标识无效，请检查专业模式设置")
+        }
+        return cleaned
+    }
+
+    private static func derivedStoreIdentifier(guid: String) -> String {
+        let digest = SHA256.hash(data: Data(("iPadn-store-id:" + guid).utf8))
+        return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func randomStoreIdentifier() -> String {
+        (0..<8).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
+    }
+
+    private func currentStoreRecords() -> [String: StoreProofRecord] {
+        if let loaded = storeProofRecords { return loaded }
+        let loaded = StoreProofStore.load()
+        storeProofRecords = loaded
+        return loaded
+    }
+
+    private func record(for normalizedGUID: String) -> StoreProofRecord {
+        if let existing = currentStoreRecords()[normalizedGUID],
+           existing.identifier.count == 16,
+           existing.identifier.allSatisfy({ $0.isASCII && $0.isHexDigit }) {
+            return existing
+        }
+        return StoreProofRecord(identifier: Self.derivedStoreIdentifier(guid: normalizedGUID), files: [:])
+    }
+
+    private func saveRecord(_ record: StoreProofRecord, for normalizedGUID: String) {
+        var all = currentStoreRecords()
+        var updated = record
+        updated.updatedAt = Date()
+        all[normalizedGUID] = updated
+        storeProofRecords = all
+        StoreProofStore.save(all)
+    }
+
+    func storeProofHeaders(guid: String, useCache: Bool) async throws -> [String: String]? {
+        let normalized = try Self.normalizedStoreGUID(guid)
+        try Task.checkCancellation()
+        let existing = record(for: normalized)
+        guard !existing.files.isEmpty else { return nil }
+        let stateData = try JSONEncoder().encode(StoreStatePayload(identifier: existing.identifier, files: existing.files))
+        guard let stateJSON = String(data: stateData, encoding: .utf8) else { return nil }
+        let output = try await execute(title: "验证设备", script: """
+            reportStage(1);
+            reportStage(2);
+            return await sapStoreProofHeaders(state, {proxyURL: proxy});
+            """, arguments: ["state": stateJSON], reuseRuntime: useCache)
+        let payload = try JSONDecoder().decode(StoreProofPayload.self, from: Data(output.utf8))
+        if payload.state.identifier != existing.identifier || payload.state.files != existing.files {
+            saveRecord(StoreProofRecord(identifier: payload.state.identifier, files: payload.state.files), for: normalized)
+        }
+        guard payload.provisioned,
+              let headers = payload.headers,
+              let otp = headers["X-Apple-AMD"], !otp.isEmpty,
+              let mid = headers["X-Apple-AMD-M"], !mid.isEmpty else {
+            return nil
+        }
+        return ["X-Apple-AMD": otp, "X-Apple-AMD-M": mid]
+    }
+
+    func provisionStoreProof(challenge: String, guid: String, useCache: Bool) async throws -> [String: String] {
+        let normalized = try Self.normalizedStoreGUID(guid)
+        guard !challenge.isEmpty else { throw ToolError.message("设备验证参数无效，请稍后重试") }
+        try Task.checkCancellation()
+        let current = record(for: normalized)
+        let stateData = try JSONEncoder().encode(StoreStatePayload(identifier: current.identifier, files: current.files))
+        guard let stateJSON = String(data: stateData, encoding: .utf8) else {
+            throw ToolError.message("设备验证状态编码失败")
+        }
+        let output = try await execute(title: "验证设备", script: """
+            reportStage(1);
+            reportStage(2);
+            return await sapStoreProvision(state, challenge, guid, {proxyURL: proxy});
+            """, arguments: ["state": stateJSON, "challenge": challenge, "guid": normalized], reuseRuntime: useCache)
+        let payload = try JSONDecoder().decode(StoreProofPayload.self, from: Data(output.utf8))
+        guard payload.provisioned,
+              let headers = payload.headers,
+              let otp = headers["X-Apple-AMD"], !otp.isEmpty,
+              let mid = headers["X-Apple-AMD-M"], !mid.isEmpty else {
+            throw ToolError.message("设备验证未完成，请稍后重试")
+        }
+        saveRecord(StoreProofRecord(identifier: payload.state.identifier, files: payload.state.files), for: normalized)
+        return ["X-Apple-AMD": otp, "X-Apple-AMD-M": mid]
+    }
+
+    func resetStoreProof(guid: String) {
+        guard let normalized = try? Self.normalizedStoreGUID(guid) else { return }
+        saveRecord(StoreProofRecord(identifier: Self.randomStoreIdentifier(), files: [:]), for: normalized)
     }
 
     func execute(title: String, script: String, arguments: [String: Any], timeoutSeconds: UInt64 = 180, reuseRuntime: Bool = true) async throws -> String {
@@ -195,7 +306,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.webView === webView, operationID != nil, let index = message.body as? Int, (1...2).contains(index) else { return }
         stageIndex = index
-        stage = index == 1 ? "加载验证组件" : title == "准备下载" ? "生成下载授权数据" : "生成请求签名"
+        stage = index == 1 ? "加载验证组件" : title == "准备下载" ? "生成下载授权数据" : title == "验证设备" ? "完成设备安全验证" : "生成请求签名"
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard webView === self.webView, terminalError == nil else { return }

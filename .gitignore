@@ -1,0 +1,11 @@
+# Local xtool (WSL) build setup — not part of the Xcode/CI build
+/.bsp/
+/.build/
+/xtool/
+/*.ipa
+/Package.swift
+/Package.resolved
+/xtool.yml
+/Config/
+/scripts/
+/iPadn-iOS/vendor/ZIPFoundation/

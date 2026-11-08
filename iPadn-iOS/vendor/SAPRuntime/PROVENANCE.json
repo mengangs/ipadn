@@ -7,8 +7,14 @@
   "unchanged_files": [
     "sap.wasm",
     "unicorn_x86.js",
-    "wasm_exec.js"
+    "wasm_exec.js",
+    "libCoreADI.so",
+    "libstoreservicescore.so"
   ],
+  "store_proof_provenance": {
+    "libraries_source": "Official Apple Music for Android x86_64 package (verified by SHA-256)",
+    "loader_and_wrapper_reference": "Adapted from Dadoum/Provision, hpidcock/ap, and trikesh32/ipatool store-proof (LGPL-2.0-only, compatible with iPadn GPL-2.0-or-later)"
+  },
   "locally_adapted": [
     "sap-signer.js"
   ],

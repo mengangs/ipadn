@@ -15,7 +15,12 @@ def main():
     for name, sha in expected.items():
         if Path(name).name != name: raise ValueError('Unsafe runtime filename')
         data = (VENDOR / 'files' / name).read_bytes()
-        if hashlib.sha256(data).hexdigest() != sha: raise ValueError('Vendored runtime SHA-256 mismatch: ' + name)
+        if hashlib.sha256(data).hexdigest() != sha:
+            normalized = data.replace(b'\r\n', b'\n')
+            if hashlib.sha256(normalized).hexdigest() == sha:
+                data = normalized
+            else:
+                raise ValueError('Vendored runtime SHA-256 mismatch: ' + name)
         target = OUTPUT / name
         if target.exists() and target.read_bytes() == data: continue
         temporary = OUTPUT / (name + '.tmp')

@@ -88,7 +88,8 @@ final class LoopbackServer: @unchecked Sendable {
     }
     private let upstreams: Set<String> = [
         "https://s.mzstatic.com/sap/setupCert.plist",
-        "https://fpinit.itunes.apple.com/v1/signSapSetup/legacy"
+        "https://fpinit.itunes.apple.com/v1/signSapSetup/legacy",
+        "https://auth.itunes.apple.com/auth/v1/otp/1.5/finish"
     ]
 
     init(port: UInt16? = nil, compatibilityMode: Bool = false, identity: SecIdentity? = nil,
@@ -264,18 +265,36 @@ final class LoopbackServer: @unchecked Sendable {
         let path = String(components.path.dropFirst(token.count + 2))
         if method == "OPTIONS" { reply(connection, status: 204); return }
         if path == "proxy" {
+            let isFinish = components.queryItems?.first(where: { $0.name == "url" })?.value?.hasSuffix("/finish") == true
             guard let address = components.queryItems?.first(where: { $0.name == "url" })?.value,
                   upstreams.contains(address), let url = URL(string: address),
                   (method == "GET" && address.hasSuffix("setupCert.plist")) ||
-                  (method == "POST" && address.hasSuffix("/legacy")) else { reply(connection, status: 403); return }
+                  (method == "POST" && (address.hasSuffix("/legacy") || isFinish)) else { reply(connection, status: 403); return }
             Task {
                 do {
-                    let (data, response) = try await HTTPClient.shared.request(url, method: method,
+                    let proxyHeaders = isFinish
+                        ? ["Content-Type": "application/x-apple-plist", "Accept": "*/*"]
+                        : ["Content-Type": "application/x-plist"]
+                    let (rawData, response) = try await HTTPClient.shared.request(
+                        url, method: method,
                         body: method == "POST" ? body : nil,
-                        headers: ["Content-Type": "application/x-plist"])
-                    self.reply(connection, status: response.statusCode, body: data,
-                               contentType: response.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream")
-                } catch { self.reply(connection, status: 502, body: Data("签名上游请求失败".utf8)) }
+                        headers: proxyHeaders,
+                        allowRedirects: !isFinish
+                    )
+                    var outData = rawData
+                    var outType = response.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream"
+                    if isFinish,
+                       let dict = try? ApplePropertyList.dictionary(rawData),
+                       let xmlData = try? HTTPClient.encodePlist(dict) {
+                        outData = xmlData
+                        outType = "application/x-apple-plist"
+                    }
+                    self.reply(connection, status: response.statusCode, body: outData, contentType: outType)
+                } catch let statusError as HTTPStatusError {
+                    self.reply(connection, status: statusError.code, body: Data("上游状态异常".utf8))
+                } catch {
+                    self.reply(connection, status: 502, body: Data("签名上游请求失败".utf8))
+                }
             }
             return
         }
@@ -292,7 +311,7 @@ final class LoopbackServer: @unchecked Sendable {
             connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
         } else if parts.count == 2, parts[0] == "runtime", !parts[1].contains(".."),
            let root = Bundle.main.url(forResource: "SAPRuntime", withExtension: nil),
-           ["index.html", "sap-signer.js", "wasm_exec.js", "unicorn_x86.js", "sap.wasm"].contains(parts[1]) {
+           ["index.html", "sap-signer.js", "wasm_exec.js", "unicorn_x86.js", "sap.wasm", "libCoreADI.so", "libstoreservicescore.so"].contains(parts[1]) {
             sendFile(connection, url: root.appendingPathComponent(parts[1]), range: headers["range"], head: method == "HEAD")
         } else if parts.count == 3, parts[0] == "files" {
             lock.lock(); let file = registeredFiles[parts[1]]; lock.unlock()
