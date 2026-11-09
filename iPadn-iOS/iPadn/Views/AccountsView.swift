@@ -63,10 +63,11 @@ struct AccountsView: View {
                         .buttonStyle(.plain)
                         .accessibilityHint(account.id == apple.activeID ? "当前下载账号" : "切换到此账号")
                         .accessibilityIdentifier("account." + account.id)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) { Button("移除") { deleting = account }.tint(.red) }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) { Button("移除", role: .destructive) { deleting = account } }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) { Button("移除", role: .destructive) { deleting = account } }
                     }
                     NavigationLink { LoginView() } label: { Label("添加账号", systemImage: "plus") }
-                } header: { Text("账号") } footer: { Text("点按切换下载账号，左滑移除。") }
+                } header: { Text("账号") } footer: { Text("点按切换下载账号，侧滑移除。") }
             }
             Section {
                 Button { store.tab = 2 } label: { Label("已购项目", systemImage: "bag") }

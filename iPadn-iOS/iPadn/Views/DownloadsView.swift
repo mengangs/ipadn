@@ -83,9 +83,14 @@ struct DownloadsView: View {
                         }
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             if !editMode.isEditing && job.status != .processing && job.status != .pausing {
-                                Button { askDelete([job.id]) } label: { Label("删除", systemImage: "trash") }.tint(.red)
+                                Button(role: .destructive) { askDelete([job.id]) } label: { Label("删除", systemImage: "trash") }
+                            }
+                        }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            if !editMode.isEditing && job.status != .processing && job.status != .pausing {
+                                Button(role: .destructive) { askDelete([job.id]) } label: { Label("删除", systemImage: "trash") }
                             }
                         }
                         .contextMenu {

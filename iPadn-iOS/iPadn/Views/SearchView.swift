@@ -92,8 +92,11 @@ struct SearchView: View {
                         }.frame(minHeight: 36).contentShape(Rectangle())
                     }
                     .accessibilityIdentifier("history.\(item.id)")
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button { withAnimation { store.removeHistory(item.term) } } label: { Label("删除", systemImage: "trash") }.tint(.red)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) { withAnimation { store.removeHistory(item.term) } } label: { Label("删除", systemImage: "trash") }
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        Button(role: .destructive) { withAnimation { store.removeHistory(item.term) } } label: { Label("删除", systemImage: "trash") }
                     }
                 } header: {
                     if item.id == store.searchHistory.first?.id {

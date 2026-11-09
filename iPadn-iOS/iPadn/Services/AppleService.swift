@@ -391,8 +391,8 @@ final class AppleService: ObservableObject {
     /// installd records the purchaser from `com.apple.iTunesStore.downloadInfo`;
     /// without it App Store does not recognize the installed app as its own,
     /// shows a download button and never offers updates.
-    static func purchaseMetadata(_ source: [String: Any], account: AppleAccount, appID: String = "",
-                                 purchaseDate: Date) -> [String: Any] {
+    nonisolated static func purchaseMetadata(_ source: [String: Any], account: AppleAccount, appID: String = "",
+                                             purchaseDate: Date) -> [String: Any] {
         var metadata = source
         let parts = account.name == account.id ? [] : account.name.split(separator: " ", maxSplits: 1).map(String.init)
         let dsidNum = UInt64(account.dsid).map(NSNumber.init(value:)) ?? NSNumber(value: 0)

@@ -113,8 +113,11 @@ struct SettingsView: View {
                             Text(source.enabled ? "已启用" : "已停用").font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button("移除") { let id = source.id; withAnimation { store.settings.versionSources.removeAll { $0.id == id } } }.tint(.red)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button("移除", role: .destructive) { let id = source.id; withAnimation { store.settings.versionSources.removeAll { $0.id == id } } }
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        Button("移除", role: .destructive) { let id = source.id; withAnimation { store.settings.versionSources.removeAll { $0.id == id } } }
                     }
                 } header: { if source.id == store.settings.versionSources.first?.id { Text("历史版本来源") } }
             }

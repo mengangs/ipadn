@@ -61,8 +61,11 @@ struct StorageView: View {
                             Spacer(minLength: 8)
                             Text(sizes[job.id].map(\.byteLabel) ?? "…").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                         }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button { pendingDelete = job } label: { Label("删除", systemImage: "trash") }.tint(.red)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) { pendingDelete = job } label: { Label("删除", systemImage: "trash") }
+                        }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button(role: .destructive) { pendingDelete = job } label: { Label("删除", systemImage: "trash") }
                         }
                     }
                 }
