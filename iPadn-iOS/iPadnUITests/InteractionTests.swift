@@ -84,10 +84,13 @@ final class InteractionTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--visual-preview", "--accounts", "--system-icon-test"]
         app.launch()
-        app.buttons["accounts.settings"].tap()
+        let settings = app.buttons["accounts.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 15))
+        settings.tap()
         let flat = app.buttons["settings.icon.flat"]
         let dimensional = app.buttons["settings.icon.dimensional"]
-        XCTAssertTrue(flat.waitForExistence(timeout: 10))
+        if !flat.isHittable { app.swipeUp() }
+        XCTAssertTrue(flat.waitForExistence(timeout: 15))
         if !flat.isHittable { app.swipeUp() }
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         // iOS confirms each icon change with an alert, and the completion
@@ -118,8 +121,11 @@ final class InteractionTests: XCTestCase {
         // confirmation is still on screen.
         app.terminate()
         app.launch()
-        app.buttons["accounts.settings"].tap()
-        XCTAssertTrue(dimensional.waitForExistence(timeout: 10))
+        let settingsAgain = app.buttons["accounts.settings"]
+        XCTAssertTrue(settingsAgain.waitForExistence(timeout: 15))
+        settingsAgain.tap()
+        if !dimensional.isHittable { app.swipeUp() }
+        XCTAssertTrue(dimensional.waitForExistence(timeout: 15))
         if !dimensional.isHittable { app.swipeUp() }
         XCTAssertEqual(flat.value as? String, "已选中", "The system kept the alternate icon across launches")
         #if targetEnvironment(simulator)
