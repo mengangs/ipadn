@@ -23,10 +23,41 @@ final class HTTPClient: Sendable {
         }
     }
 
+    /// Failures that say nothing about the request itself: a busy Apple
+    /// server or a pooled connection the system dropped while the app was
+    /// in the background. Worth one or two quiet retries.
+    static func isTransient(_ error: Error) -> Bool {
+        if let status = error as? HTTPStatusError { return [408, 429, 500, 502, 503, 504].contains(status.code) }
+        let ns = error as NSError
+        guard ns.domain == NSURLErrorDomain else { return false }
+        return [NSURLErrorNetworkConnectionLost, NSURLErrorTimedOut, NSURLErrorCannotConnectToHost,
+                NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed, NSURLErrorSecureConnectionFailed].contains(ns.code)
+    }
+
     func request(_ url: URL, method: String = "GET", body: Data? = nil,
                  headers: [String: String] = [:], appleRedirects: Bool = false,
                  authentication: Bool = false, allowRedirects: Bool = true,
+                 retryTransient: Bool? = nil,
                  refreshHeaders: ((URL) async throws -> [String: String])? = nil) async throws -> (Data, HTTPURLResponse) {
+        let retries = (retryTransient ?? (method == "GET")) ? 2 : 0
+        var attempt = 0
+        while true {
+            do {
+                return try await requestOnce(url, method: method, body: body, headers: headers, appleRedirects: appleRedirects,
+                                             authentication: authentication, allowRedirects: allowRedirects,
+                                             refreshHeaders: refreshHeaders)
+            } catch {
+                guard attempt < retries, Self.isTransient(error), !Task.isCancelled else { throw error }
+                attempt += 1
+                try await Task.sleep(nanoseconds: UInt64(attempt) * 700_000_000)
+            }
+        }
+    }
+
+    private func requestOnce(_ url: URL, method: String, body: Data?,
+                             headers: [String: String], appleRedirects: Bool,
+                             authentication: Bool, allowRedirects: Bool,
+                             refreshHeaders: ((URL) async throws -> [String: String])?) async throws -> (Data, HTTPURLResponse) {
         guard url.scheme?.lowercased() == "https", url.host != nil, url.user == nil, url.password == nil else {
             throw ToolError.message("链接无效")
         }
@@ -142,10 +173,11 @@ final class HTTPClient: Sendable {
     }
 
     func plist(_ url: URL, body: Data, headers: [String: String], allowRedirects: Bool = true,
+               retryTransient: Bool = false,
                refreshHeaders: ((URL) async throws -> [String: String])? = nil) async throws -> ([String: Any], HTTPURLResponse) {
         let (data, response) = try await request(url, method: "POST", body: body, headers: headers,
                                                  appleRedirects: allowRedirects, allowRedirects: allowRedirects,
-                                                 refreshHeaders: refreshHeaders)
+                                                 retryTransient: retryTransient, refreshHeaders: refreshHeaders)
         do {
             let dictionary = try ApplePropertyList.dictionary(data)
             return (dictionary, response)

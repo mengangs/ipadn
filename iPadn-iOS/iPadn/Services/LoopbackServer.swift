@@ -98,7 +98,74 @@ final class LoopbackServer: @unchecked Sendable {
         self.identity = identity; self.chain = certificates; self.publicHost = publicHost
     }
 
+    /// Starts the listener, or checks the running one still accepts
+    /// connections. iOS reclaims listening sockets of suspended apps without
+    /// telling NWListener, which left every later request failing with
+    /// "could not connect to the server" until the app was relaunched.
     func start() async throws {
+        if let url = baseURL, let port = url.port.flatMap({ UInt16(exactly: $0) }) {
+            if await Self.isListening(port: port) { return }
+            InstallLog.shared.add((identity == nil ? "http" : "https") + " server unreachable, restarting")
+            await reset()
+            do { try await startListener() }
+            catch {
+                // A fixed port can take a moment to be released.
+                guard self.port != nil else { throw error }
+                try await Task.sleep(nanoseconds: 500_000_000)
+                try await startListener()
+            }
+            return
+        }
+        try await startListener()
+    }
+
+    func reset() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            queue.async {
+                let old = self.listener
+                self.listener = nil
+                self.lock.lock(); self.readyURL = nil; self.lock.unlock()
+                old?.newConnectionHandler = nil
+                old?.cancel()
+                continuation.resume()
+            }
+        }
+    }
+
+    /// Whether something accepts TCP connections on the loopback port.
+    static func isListening(port: UInt16, timeout: TimeInterval = 1.5) async -> Bool {
+        guard let endpointPort = NWEndpoint.Port(rawValue: port) else { return false }
+        final class Probe: @unchecked Sendable {
+            private let lock = NSLock()
+            private var continuation: CheckedContinuation<Bool, Never>?
+            let connection: NWConnection
+            init(_ connection: NWConnection, _ continuation: CheckedContinuation<Bool, Never>) {
+                self.connection = connection; self.continuation = continuation
+            }
+            func finish(_ value: Bool) {
+                lock.lock(); let pending = continuation; continuation = nil; lock.unlock()
+                guard let pending else { return }
+                connection.stateUpdateHandler = nil
+                connection.cancel()
+                pending.resume(returning: value)
+            }
+        }
+        let probeQueue = DispatchQueue(label: "iPadn.loopback.probe")
+        return await withCheckedContinuation { continuation in
+            let probe = Probe(NWConnection(host: "127.0.0.1", port: endpointPort, using: .tcp), continuation)
+            probe.connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready: probe.finish(true)
+                case .failed, .waiting, .cancelled: probe.finish(false)
+                default: break
+                }
+            }
+            probe.connection.start(queue: probeQueue)
+            probeQueue.asyncAfter(deadline: .now() + timeout) { probe.finish(false) }
+        }
+    }
+
+    private func startListener() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             queue.async {
                 if self.baseURL != nil { continuation.resume(); return }

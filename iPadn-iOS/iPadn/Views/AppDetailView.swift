@@ -569,6 +569,13 @@ struct AppDetailView: View {
                 // Not got by this account yet: show what is public, and say why.
                 result = try await store.loadVersions(for: app, force: force, official: false)
                 versionNote = "此账号还没有获取这个应用，下面是公开的版本资料。获取后可查看完整列表。"
+            } catch {
+                if usesApple, let publicVersions = try? await store.loadVersions(for: app, force: force, official: false), !publicVersions.isEmpty {
+                    result = publicVersions
+                    versionNote = "Apple 版本服务暂时未返回，已为你显示公开版本列表。可稍后点击刷新重试。"
+                } else {
+                    throw error
+                }
             }
             try Task.checkCancellation(); versions = result; versionError = nil
             if versionsStale { showAllVersions = false }
@@ -593,8 +600,13 @@ struct AppDetailView: View {
         catch {
             if !Task.isCancelled {
                 let message = error.localizedDescription
-                versionError = message.contains("暂时无法获取历史版本") || error is AppleLicenseError
-                    ? message : AppErrorMessage.forSearch(error)
+                if message.contains("暂时无法获取历史版本") || error is AppleLicenseError {
+                    versionError = message
+                } else if let tool = error as? ToolError, case .message(let text) = tool {
+                    versionError = text
+                } else {
+                    versionError = AppErrorMessage.forSearch(error)
+                }
             }
         }
         return false

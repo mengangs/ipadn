@@ -33,7 +33,10 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
             NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification),
             NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification))
             .sink { [weak self] _ in
-                Task { @MainActor in self?.discardIdleRuntime() }
+                Task { @MainActor in
+                    self?.discardIdleRuntime()
+                    await self?.server.reset()
+                }
             }
     }
 
@@ -184,6 +187,21 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
     }
 
     func execute(title: String, script: String, arguments: [String: Any], timeoutSeconds: UInt64 = 180, reuseRuntime: Bool = true) async throws -> String {
+        do {
+            return try await executeAttempt(title: title, script: script, arguments: arguments, timeoutSeconds: timeoutSeconds, reuseRuntime: reuseRuntime)
+        } catch {
+            let ns = error as NSError
+            if ns.domain == NSURLErrorDomain && (ns.code == NSURLErrorCannotConnectToHost || ns.code == NSURLErrorNetworkConnectionLost) {
+                InstallLog.shared.add("SAPSigner loopback error (\(ns.code)), resetting server and retrying")
+                await server.reset()
+                discardIdleRuntime()
+                return try await executeAttempt(title: title, script: script, arguments: arguments, timeoutSeconds: timeoutSeconds, reuseRuntime: false)
+            }
+            throw error
+        }
+    }
+
+    private func executeAttempt(title: String, script: String, arguments: [String: Any], timeoutSeconds: UInt64 = 180, reuseRuntime: Bool = true) async throws -> String {
         // One operation at a time: wait for the current one (for example a
         // background purchase sync) instead of failing the user's action.
         while operationID != nil {
@@ -226,21 +244,30 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
             armTimeout(id: id, seconds: timeoutSeconds, message: "验证已超过 3 分钟，已停止本次操作。请保持应用在前台后重试。")
             var values = arguments
             values["proxy"] = base.appendingPathComponent("proxy").absoluteString
-            let result: String = try await withCheckedThrowingContinuation { continuation in
-                evaluation = continuation
-                web.callAsyncJavaScript(script, arguments: values, in: nil, in: .page) { [weak self] result in
-                    Task { @MainActor in
-                        guard let self, self.operationID == id, let continuation = self.evaluation else { return }
-                        self.evaluation = nil
-                        switch result {
-                        case .success(let value):
-                            if let text = value as? String, !text.isEmpty { continuation.resume(returning: text) }
-                            else { continuation.resume(throwing: ToolError.message("验证结果为空，请重试")) }
-                        case .failure:
-                            continuation.resume(throwing: ToolError.message("验证未完成，请检查网络后重试"))
+            let result: String
+            do {
+                result = try await withCheckedThrowingContinuation { continuation in
+                    evaluation = continuation
+                    web.callAsyncJavaScript(script, arguments: values, in: nil, in: .page) { [weak self] result in
+                        Task { @MainActor in
+                            guard let self, self.operationID == id, let continuation = self.evaluation else { return }
+                            self.evaluation = nil
+                            switch result {
+                            case .success(let value):
+                                if let text = value as? String, !text.isEmpty { continuation.resume(returning: text) }
+                                else { continuation.resume(throwing: ToolError.message("验证结果为空，请重试")) }
+                            case .failure(let err):
+                                continuation.resume(throwing: err)
+                            }
                         }
                     }
                 }
+            } catch {
+                if warm {
+                    discardIdleRuntime()
+                    return try await executeAttempt(title: title, script: script, arguments: arguments, timeoutSeconds: timeoutSeconds, reuseRuntime: false)
+                }
+                throw ToolError.message("验证未完成，请检查网络后重试")
             }
             try checkActive(id)
             succeeded = true

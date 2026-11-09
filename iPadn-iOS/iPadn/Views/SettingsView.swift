@@ -23,7 +23,7 @@ struct SettingsView: View {
     }
     var body: some View {
         Form {
-            Section("下载") {
+            Section {
                 Stepper("同时下载：\(store.settings.maxConcurrentDownloads)", value: $store.settings.maxConcurrentDownloads, in: 1...6)
                 Stepper("等待任务上限：\(store.settings.maxQueuedDownloads)", value: $store.settings.maxQueuedDownloads, in: 1...100)
                 Toggle("下载完成通知", isOn: $store.settings.notifications)
@@ -31,6 +31,11 @@ struct SettingsView: View {
                     .onChange(of: store.settings.updateNotifications) { _, on in
                         if on { UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in } }
                     }
+                Toggle("兼容下载模式", isOn: $store.settings.compatibleDownloadMode)
+            } header: {
+                Text("下载")
+            } footer: {
+                Text("如在企业证书重签或特定环境下遇到“无法创建文件”报错，请开启兼容下载模式（使用应用前台直接下载，下载时请保持应用在前台）。")
             }
             Section {
                 Toggle("关注应用提醒", isOn: $store.settings.watchNotifications)

@@ -323,7 +323,8 @@ final class AppleService: ObservableObject {
         guard let url = URL(string: plistString(song["URL"])), url.scheme == "https",
               var metadata = song["metadata"] as? [String: Any] else { throw ToolError.message("暂时无法下载，请稍后重试") }
         guard activeID == account.id else { throw ToolError.message("账号已切换，请重新执行下载") }
-        metadata["appleId"] = account.id
+        metadata = Self.purchaseMetadata(metadata, account: account, appID: appID,
+                                         purchaseDate: song["purchaseDate"] as? Date ?? Date())
         let externalID = plistString(metadata["softwareVersionExternalIdentifier"])
         if let requested = versionID, !externalID.isEmpty, externalID != requested {
             throw ToolError.message("所选版本暂时无法下载，请换个版本重试")
@@ -336,13 +337,22 @@ final class AppleService: ObservableObject {
             version: plistString(metadata["bundleShortVersionString"]), iconURL: StoreService.icon(plistString(defaultArt?["url"])),
             size: (assetInfo?["file-size"] as? NSNumber)?.int64Value ?? 0,
             minimumOS: plistString(metadata["minimumOSVersion"] ?? metadata["minimumOsVersion"]), externalVersionID: externalID)
-        let sinfRaw = (song["sinfs"] as? [[String: Any]])?.first?["sinf"]
-        let sinf: Data?
-        if let data = sinfRaw as? Data { sinf = data }
-        else if let string = sinfRaw as? String { sinf = Data(base64Encoded: string, options: .ignoreUnknownCharacters) }
-        else { sinf = nil }
+        let rawSinfs = ((song["sinfs"] as? [[String: Any]]) ?? []).sorted { a, b in
+            let idA = (a["id"] as? NSNumber)?.intValue ?? Int(plistString(a["id"])) ?? 0
+            let idB = (b["id"] as? NSNumber)?.intValue ?? Int(plistString(b["id"])) ?? 0
+            return idA < idB
+        }
+        func extractBytes(_ value: Any?) -> Data? {
+            if let value = value as? Data { return value.isEmpty ? nil : value }
+            if let encoded = value as? String, let data = Data(base64Encoded: encoded, options: .ignoreUnknownCharacters), !data.isEmpty { return data }
+            return nil
+        }
+        let sinfs = rawSinfs.compactMap { extractBytes($0["sinf"]) }
+        let sinf = sinfs.first
         guard let sinf = sinf, !sinf.isEmpty else { throw ToolError.message("此账号没有该应用的下载授权") }
-        return DownloadAsset(app: app, url: url, sinf: sinf, metadata: try HTTPClient.encodePlist(metadata),
+        let encodedMetadata: Data = try (try? PropertyListSerialization.data(fromPropertyList: metadata, format: .binary, options: 0))
+            ?? HTTPClient.encodePlist(metadata)
+        return DownloadAsset(app: app, url: url, sinf: sinf, sinfs: sinfs, metadata: encodedMetadata,
             externalVersionIDs: (metadata["softwareVersionExternalIdentifiers"] as? [Any] ?? []).map { plistString($0) },
             platform: plistString(metadata["software-platform"]), account: account.id)
     }
@@ -376,6 +386,45 @@ final class AppleService: ObservableObject {
     }
 
     static let noOfferMessage = "Apple 没有返回该版本的下载信息"
+
+    /// The iTunesMetadata.plist Apple's own clients (iTunes, App Store) write.
+    /// installd records the purchaser from `com.apple.iTunesStore.downloadInfo`;
+    /// without it App Store does not recognize the installed app as its own,
+    /// shows a download button and never offers updates.
+    static func purchaseMetadata(_ source: [String: Any], account: AppleAccount, appID: String = "",
+                                 purchaseDate: Date) -> [String: Any] {
+        var metadata = source
+        let parts = account.name == account.id ? [] : account.name.split(separator: " ", maxSplits: 1).map(String.init)
+        let dsidNum = UInt64(account.dsid).map(NSNumber.init(value:)) ?? NSNumber(value: 0)
+        var info: [String: Any] = [
+            "AppleID": account.id, "UserName": account.id,
+            "DSPersonID": dsidNum, "DownloaderID": dsidNum, "PurchaserID": dsidNum,
+            "FamilyID": NSNumber(value: 0)
+        ]
+        if let first = parts.first { info["FirstName"] = first }
+        if parts.count > 1 { info["LastName"] = parts[1] }
+        let storeFront = account.fullStoreFront.isEmpty ? account.storeFront : account.fullStoreFront
+        if !storeFront.isEmpty { info["AccountStoreFront"] = storeFront }
+        let formatter = ISO8601DateFormatter()
+        metadata["com.apple.iTunesStore.downloadInfo"] = ["accountInfo": info, "purchaseDate": formatter.string(from: purchaseDate)]
+        metadata["appleId"] = account.id
+        metadata["apple-id"] = account.id
+        metadata["userName"] = account.id
+        if dsidNum.uint64Value > 0 {
+            metadata["DSPersonID"] = dsidNum
+            metadata["downloader-id"] = dsidNum
+            metadata["purchaser-id"] = dsidNum
+        }
+        if let currentItem = metadata["itemId"] {
+            if let str = currentItem as? String, let num = UInt64(str) {
+                metadata["itemId"] = NSNumber(value: num)
+            }
+        } else if let idNum = UInt64(appID) {
+            metadata["itemId"] = NSNumber(value: idNum)
+        }
+        if metadata["purchaseDate"] == nil { metadata["purchaseDate"] = purchaseDate }
+        return metadata
+    }
 
     static func shouldAcquireLicense(failure: String, purchased: Bool,
                                      allowLicenseAcquisition: Bool) -> Bool {
@@ -532,6 +581,7 @@ final class AppleService: ObservableObject {
                 let initialHeaders = try await headerProvider(url)
                 return try await HTTPClient.shared.plist(
                     url, body: body, headers: initialHeaders,
+                    retryTransient: true,
                     refreshHeaders: headerProvider
                 )
             }

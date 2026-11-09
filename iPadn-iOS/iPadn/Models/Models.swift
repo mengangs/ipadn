@@ -25,7 +25,10 @@ enum AppErrorMessage {
         if message.contains("2002") || message.contains("Your password has changed") {
             return "Apple 账号需要重新登录，请到「账号」页面更新密码。"
         }
-        if error is HTTPStatusError || message.contains("HTTP") || message.contains("JSON") || message.contains("itunes.apple.com") {
+        if let status = error as? HTTPStatusError {
+            return "商店暂时无法返回结果（\(status.code)），请稍后重试或更换地区。"
+        }
+        if message.contains("HTTP") || message.contains("JSON") || message.contains("itunes.apple.com") {
             return "商店暂时无法返回结果，请稍后重试或更换地区。"
         }
         return "暂时无法完成搜索，请稍后重试。"
@@ -119,10 +122,24 @@ struct DownloadAsset: Codable {
     var app: StoreApp
     var url: URL
     var sinf: Data?
+    var sinfs: [Data]?
     var metadata: Data?
     var externalVersionIDs: [String]
     var platform: String
     var account: String
+
+    init(app: StoreApp, url: URL, sinf: Data? = nil, sinfs: [Data]? = nil,
+         metadata: Data? = nil, externalVersionIDs: [String] = [],
+         platform: String = "", account: String = "") {
+        self.app = app
+        self.url = url
+        self.sinf = sinf ?? sinfs?.first
+        self.sinfs = sinfs ?? sinf.map { [$0] }
+        self.metadata = metadata
+        self.externalVersionIDs = externalVersionIDs
+        self.platform = platform
+        self.account = account
+    }
 }
 
 struct OwnedApp: Codable, Identifiable {
@@ -232,6 +249,8 @@ struct ToolSettings: Codable, Equatable {
     var priceRegions = StoreRegions.defaultComparison
     /// Currency prices are converted to for comparison.
     var baseCurrency = "CNY"
+    /// Use foreground in-process downloads to bypass nsurlsessiond sandbox issues on enterprise resigns.
+    var compatibleDownloadMode = false
     /// Shows tools for advanced users: package contents, tokens, device ID.
     var proMode = false
     var useSignerCache = true
@@ -253,7 +272,7 @@ struct ToolSettings: Codable, Equatable {
         case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
         case useSignerCache, appearance, plistServer, versionSources, localInstallation, localInstallHost
         case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency, appUpdateCheck
-        case appearanceSchema
+        case appearanceSchema, compatibleDownloadMode
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -269,6 +288,7 @@ struct ToolSettings: Codable, Equatable {
         let regions = (try values.decodeIfPresent([String].self, forKey: .priceRegions) ?? priceRegions).filter { StoreRegions.codes.contains($0) }
         priceRegions = regions.isEmpty ? priceRegions : regions
         baseCurrency = try values.decodeIfPresent(String.self, forKey: .baseCurrency) ?? baseCurrency
+        compatibleDownloadMode = try values.decodeIfPresent(Bool.self, forKey: .compatibleDownloadMode) ?? compatibleDownloadMode
         appUpdateCheck = try values.decodeIfPresent(Bool.self, forKey: .appUpdateCheck) ?? appUpdateCheck
         useSignerCache = try values.decodeIfPresent(Bool.self, forKey: .useSignerCache) ?? useSignerCache
         appearance = try values.decodeIfPresent(String.self, forKey: .appearance) ?? appearance
@@ -351,6 +371,13 @@ enum LocalResources {
         var values = URLResourceValues(); values.isExcludedFromBackup = true
         try? excluded.setResourceValues(values)
         return url
+    }
+    @discardableResult
+    static func ensureDirectoriesExist() -> Bool {
+        let fm = FileManager.default
+        let s = (try? fm.createDirectory(at: support, withIntermediateDirectories: true)) != nil
+        let p = (try? fm.createDirectory(at: packages, withIntermediateDirectories: true)) != nil
+        return s && p
     }
     static func resumeURL(_ id: UUID) -> URL { support.appendingPathComponent("\(id.uuidString).resume") }
     static func stagingURL(_ id: UUID) -> URL { support.appendingPathComponent("\(id.uuidString).download") }

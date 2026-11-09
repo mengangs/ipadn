@@ -5,7 +5,9 @@ import UIKit
 
 @MainActor
 final class DownloadManager: NSObject, ObservableObject {
-    static let sessionID = "iPadn.background.downloads"
+    static var sessionID: String {
+        (Bundle.main.bundleIdentifier ?? "app.local.iPadn") + ".background.downloads"
+    }
     @Published private(set) var jobs: [DownloadJob] = []
     @Published var storageError: String?
     @Published private(set) var discoveryWarning: String?
@@ -28,6 +30,9 @@ final class DownloadManager: NSObject, ObservableObject {
     private let persistQueue = DispatchQueue(label: "iPadn.download-jobs", qos: .utility)
     private var artworkCountry = "CN"
     private var notifications = true
+    private var compatibleDownloadMode = false
+    private var fallbackForegroundIDs = Set<UUID>()
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     private var lastSave = Date.distantPast
     private var transferMetrics: [UUID: TransferMetrics] = [:]
     private var progressPublishedAt: [UUID: TimeInterval] = [:]
@@ -41,6 +46,42 @@ final class DownloadManager: NSObject, ObservableObject {
         config.timeoutIntervalForResource = 24 * 3600
         return URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }()
+    private lazy var foregroundSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.httpMaximumConnectionsPerHost = 3
+        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForResource = 24 * 3600
+        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }()
+
+    private func activeSession(for id: UUID) -> URLSession {
+        if compatibleDownloadMode || fallbackForegroundIDs.contains(id) {
+            return foregroundSession
+        }
+        return session
+    }
+
+    private func updateBackgroundTask() {
+        let hasActive = tasks.contains { id, _ in
+            compatibleDownloadMode || fallbackForegroundIDs.contains(id)
+        }
+        if hasActive {
+            if backgroundTaskID == .invalid {
+                backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "iPadn.foregroundDownload") { [weak self] in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        if self.backgroundTaskID != .invalid {
+                            UIApplication.shared.endBackgroundTask(self.backgroundTaskID)
+                            self.backgroundTaskID = .invalid
+                        }
+                    }
+                }
+            }
+        } else if backgroundTaskID != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTaskID)
+            backgroundTaskID = .invalid
+        }
+    }
 
     #if DEBUG
     init(previewJobs: [DownloadJob], saveJobs: @escaping ([DownloadJob]) throws -> Void = { _ in }) {
@@ -72,6 +113,8 @@ final class DownloadManager: NSObject, ObservableObject {
         maxQueued = max(1, settings.maxQueuedDownloads)
         notifications = settings.notifications
         artworkCountry = settings.store.country
+        compatibleDownloadMode = settings.compatibleDownloadMode
+        updateBackgroundTask()
         schedule()
     }
 
@@ -210,6 +253,9 @@ final class DownloadManager: NSObject, ObservableObject {
             throw ToolError.message("账号已切换，请重新下载")
         }
         var next = jobs
+        if next[index].error?.contains("无法创建") == true {
+            fallbackForegroundIDs.insert(id)
+        }
         next[index].asset = asset; next[index].sourceURL = asset.url; next[index].app = asset.app
         next[index].error = nil
         let staged = FileManager.default.fileExists(atPath: LocalResources.stagingURL(id).path)
@@ -228,19 +274,22 @@ final class DownloadManager: NSObject, ObservableObject {
     }
     private func start(_ id: UUID) {
         guard tasks[id] == nil, let index = jobs.firstIndex(where: { $0.id == id }), let url = jobs[index].sourceURL else { return }
+        LocalResources.ensureDirectoriesExist()
+        let active = activeSession(for: id)
         let task: URLSessionDownloadTask
         if let resume = try? Data(contentsOf: LocalResources.resumeURL(id)), !resume.isEmpty {
-            task = session.downloadTask(withResumeData: resume)
+            task = active.downloadTask(withResumeData: resume)
         } else {
             var request = URLRequest(url: url)
             request.setValue(HTTPClient.userAgent, forHTTPHeaderField: "User-Agent")
-            task = session.downloadTask(with: request)
+            task = active.downloadTask(with: request)
         }
         task.taskDescription = id.uuidString
         tasks[id] = task
         transferMetrics.removeValue(forKey: id)
         progressPublishedAt.removeValue(forKey: id)
         jobs[index].status = .running; jobs[index].error = nil
+        updateBackgroundTask()
         persist(); task.resume()
     }
     func pause(_ id: UUID) {
@@ -254,6 +303,7 @@ final class DownloadManager: NSObject, ObservableObject {
                       self.tasks[id]?.taskIdentifier == task.taskIdentifier else { return }
                 if let data = data { try? data.write(to: LocalResources.resumeURL(id), options: .atomic) }
                 self.tasks.removeValue(forKey: id)
+                self.updateBackgroundTask()
                 self.jobs[index].status = .paused
                 self.persist(); self.schedule()
             }
@@ -304,6 +354,8 @@ final class DownloadManager: NSObject, ObservableObject {
             throw error
         }
         tasks.removeValue(forKey: id)?.cancel()
+        fallbackForegroundIDs.remove(id)
+        updateBackgroundTask()
         progressPublishedAt.removeValue(forKey: id)
         transferMetrics.removeValue(forKey: id)
         if file != nil { try? FileManager.default.removeItem(at: removal) }
@@ -551,6 +603,7 @@ final class DownloadManager: NSObject, ObservableObject {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
         tasks.removeValue(forKey: id)
         progressPublishedAt.removeValue(forKey: id)
+        updateBackgroundTask()
         jobs[index].status = .failed; jobs[index].error = error.localizedDescription
         persist(); schedule()
         notify(title: "下载任务失败", body: jobs[index].app.name + "：" + error.localizedDescription)
@@ -692,16 +745,27 @@ extension DownloadManager: URLSessionDownloadDelegate {
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         guard let value = downloadTask.taskDescription, let id = UUID(uuidString: value) else { return }
-        // A callback from an old task must never replace a newer task's staging file.
+        LocalResources.ensureDirectoriesExist()
         let received = LocalResources.support.appendingPathComponent("\(id.uuidString)-\(downloadTask.taskIdentifier).received")
         do {
             guard let response = downloadTask.response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
                 throw ToolError.message("下载失败（\((downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0)），请重试")
             }
+            if FileManager.default.fileExists(atPath: received.path) {
+                try? FileManager.default.removeItem(at: received)
+            }
             // Move synchronously: URLSession deletes its temporary file as soon as this delegate returns.
-            try FileManager.default.moveItem(at: location, to: received)
+            do {
+                try FileManager.default.moveItem(at: location, to: received)
+            } catch {
+                try FileManager.default.copyItem(at: location, to: received)
+                try? FileManager.default.removeItem(at: location)
+            }
             Task { @MainActor in
-                defer { try? FileManager.default.removeItem(at: received) }
+                defer {
+                    try? FileManager.default.removeItem(at: received)
+                    self.updateBackgroundTask()
+                }
                 // A transfer can finish while the app is not running; after a
                 // relaunch the job may already read paused or queued with no task.
                 guard let index = self.jobs.firstIndex(where: { $0.id == id }),
@@ -710,8 +774,14 @@ extension DownloadManager: URLSessionDownloadDelegate {
                         || self.restoring else { return }
                 do {
                     let destination = LocalResources.stagingURL(id)
+                    try? FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                     if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
-                    try FileManager.default.moveItem(at: received, to: destination)
+                    do {
+                        try FileManager.default.moveItem(at: received, to: destination)
+                    } catch {
+                        try FileManager.default.copyItem(at: received, to: destination)
+                        try? FileManager.default.removeItem(at: received)
+                    }
                 } catch { self.fail(id, error: error); return }
                 self.tasks.removeValue(forKey: id)
                 self.progressPublishedAt.removeValue(forKey: id)
@@ -720,6 +790,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
         } catch {
             try? FileManager.default.removeItem(at: received)
             Task { @MainActor in
+                self.updateBackgroundTask()
                 guard self.tasks[id]?.taskIdentifier == downloadTask.taskIdentifier || self.restoring else { return }
                 self.fail(id, error: error)
             }
@@ -733,6 +804,26 @@ extension DownloadManager: URLSessionDownloadDelegate {
             guard let job = self.jobs.first(where: { $0.id == id }), job.status != .completed && job.status != .processing else { return }
             guard self.tasks[id] == nil || self.tasks[id]?.taskIdentifier == task.taskIdentifier
                     || self.restoring else { return }
+
+            // Automatic fallback: if background nsurlsessiond failed to create file (-3000), retry in foreground process
+            if error.domain == NSURLErrorDomain, error.code == NSURLErrorCannotCreateFile {
+                if !self.fallbackForegroundIDs.contains(id) {
+                    self.fallbackForegroundIDs.insert(id)
+                    self.tasks.removeValue(forKey: id)
+                    self.progressPublishedAt.removeValue(forKey: id)
+                    self.updateBackgroundTask()
+                    try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
+                    if let index = self.jobs.firstIndex(where: { $0.id == id }) {
+                        self.jobs[index].status = .queued
+                        self.jobs[index].downloaded = 0
+                        self.jobs[index].error = nil
+                        self.persist()
+                        self.schedule()
+                        return
+                    }
+                }
+            }
+
             // Save resume data first: it is what lets a cancelled transfer continue.
             if let resume = resume { try? resume.write(to: LocalResources.resumeURL(id), options: .atomic) }
             if job.status == .pausing || job.status == .paused { return }
@@ -741,6 +832,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
                 // Cancelled by the system (app quit, low storage): pause, keep progress.
                 self.tasks.removeValue(forKey: id)
                 self.progressPublishedAt.removeValue(forKey: id)
+                self.updateBackgroundTask()
                 self.jobs[index].status = .paused
                 self.persist(); self.schedule()
                 return

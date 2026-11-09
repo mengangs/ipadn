@@ -81,22 +81,62 @@ enum PackageService {
                 throw ToolError.message("下载授权缺失，请重新下载")
             }
             let archive = try Archive(url: working, accessMode: .update)
-            let supplemental = archive.first { entry in
-                let parts = entry.path.split(separator: "/")
-                return parts.count == 4 && parts[0] == "Payload" && parts[1].hasSuffix(".app") &&
-                    parts[2] == "SC_Info" && parts[3].hasSuffix(".supp")
-            }
-            let existingSinf = archive.first { entry in
-                let parts = entry.path.split(separator: "/")
-                return parts.count == 4 && parts[0] == "Payload" && parts[1].hasSuffix(".app") &&
-                    parts[2] == "SC_Info" && parts[3].hasSuffix(".sinf")
-            }
-            guard let sourcePath = supplemental?.path ?? existingSinf?.path else { throw ToolError.message("安装包缺少授权信息，无法使用") }
-            var sinfPath = sourcePath
-            if sinfPath.hasSuffix(".supp") { sinfPath = String(sinfPath.dropLast(5)) + ".sinf" }
-            sinfPath = sinfPath.replacingOccurrences(of: #"\.v\d+(?=\.sinf$)"#, with: "", options: .regularExpression)
+
+            // 1. Write / Update iTunesMetadata.plist
             try replace("iTunesMetadata.plist", data: metadata, archive: archive)
-            try replace(sinfPath, data: sinf, archive: archive)
+
+            // 2. Replicate SINFs for all binaries (ipatool parity)
+            let allSinfs = (asset.sinfs?.isEmpty == false) ? asset.sinfs! : [sinf]
+            var sinfReplicated = false
+
+            // Look for Manifest.plist in Payload/*.app/SC_Info/Manifest.plist
+            if let manifestEntry = archive.first(where: { entry in
+                let parts = entry.path.split(separator: "/")
+                return parts.count == 4 && parts[0] == "Payload" && parts[1].hasSuffix(".app") &&
+                    parts[2] == "SC_Info" && parts[3] == "Manifest.plist"
+            }), let manifestData = try? readPlist(manifestEntry, archive: archive),
+               let sinfPaths = manifestData["SinfPaths"] as? [String], !sinfPaths.isEmpty {
+                let parts = manifestEntry.path.split(separator: "/")
+                let bundleFolder = String(parts[1])
+                for (index, relPath) in sinfPaths.enumerated() {
+                    let targetSinf = index < allSinfs.count ? allSinfs[index] : sinf
+                    let cleanRelPath = relPath.hasPrefix("/") ? String(relPath.dropFirst()) : relPath
+                    let fullPath = "Payload/\(bundleFolder)/\(cleanRelPath)"
+                    try replace(fullPath, data: targetSinf, archive: archive)
+                }
+                sinfReplicated = true
+            }
+
+            // Fallback for packages without Manifest.plist
+            if !sinfReplicated {
+                let supplemental = archive.first { entry in
+                    let parts = entry.path.split(separator: "/")
+                    return parts.count == 4 && parts[0] == "Payload" && parts[1].hasSuffix(".app") &&
+                        parts[2] == "SC_Info" && parts[3].hasSuffix(".supp")
+                }
+                let existingSinf = archive.first { entry in
+                    let parts = entry.path.split(separator: "/")
+                    return parts.count == 4 && parts[0] == "Payload" && parts[1].hasSuffix(".app") &&
+                        parts[2] == "SC_Info" && parts[3].hasSuffix(".sinf")
+                }
+                if let sourcePath = supplemental?.path ?? existingSinf?.path {
+                    var sinfPath = sourcePath
+                    if sinfPath.hasSuffix(".supp") { sinfPath = String(sinfPath.dropLast(5)) + ".sinf" }
+                    sinfPath = sinfPath.replacingOccurrences(of: #"\.v\d+(?=\.sinf$)"#, with: "", options: .regularExpression)
+                    try replace(sinfPath, data: sinf, archive: archive)
+                } else if let mainApp = archive.first(where: { entry in
+                    let parts = entry.path.split(separator: "/")
+                    return parts.count == 3 && parts[0] == "Payload" && parts[1].hasSuffix(".app") && parts[2] == "Info.plist"
+                }), let infoPlist = try? readPlist(mainApp, archive: archive),
+                   let executable = infoPlist["CFBundleExecutable"] as? String {
+                    let parts = mainApp.path.split(separator: "/")
+                    let bundleFolder = String(parts[1])
+                    let targetPath = "Payload/\(bundleFolder)/SC_Info/\(executable).sinf"
+                    try replace(targetPath, data: sinf, archive: archive)
+                } else {
+                    throw ToolError.message("安装包缺少授权信息，无法使用")
+                }
+            }
         }
         var app = try inspect(working)
         if let asset = asset {
@@ -120,7 +160,16 @@ enum PackageService {
         let filename = "\(id.uuidString)-\(filenameComponent(app.name, limit: 100))_\(filenameComponent(app.version, limit: 40)).ipa"
         let destination = LocalResources.packages.appendingPathComponent(filename)
         // A retry or identifier collision must not delete an existing user package.
-        try FileManager.default.moveItem(at: working, to: destination)
+        try? FileManager.default.createDirectory(at: LocalResources.packages, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try? FileManager.default.removeItem(at: destination)
+        }
+        do {
+            try FileManager.default.moveItem(at: working, to: destination)
+        } catch {
+            try FileManager.default.copyItem(at: working, to: destination)
+            try? FileManager.default.removeItem(at: working)
+        }
         return (filename, app)
     }
 

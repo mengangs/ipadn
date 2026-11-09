@@ -1316,6 +1316,83 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(payload, Data([1, 2, 3]))
     }
 
+    func testPackageServiceReplicatesMultipleSinfsFromManifest() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("manifest-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let staging = root.appendingPathComponent("test.download")
+        do {
+            let archive = try Archive(url: staging, accessMode: .create)
+            let manifest: [String: Any] = [
+                "SinfPaths": [
+                    "SC_Info/Multi.sinf",
+                    "PlugIns/Widget.appex/SC_Info/Widget.sinf"
+                ]
+            ]
+            let files: [String: Data] = [
+                "Payload/Multi.app/Info.plist": try HTTPClient.encodePlist(["CFBundleDisplayName": "Multi", "CFBundleIdentifier": "multi.bundle", "CFBundleShortVersionString": "1.0"]),
+                "Payload/Multi.app/SC_Info/Manifest.plist": try HTTPClient.encodePlist(manifest),
+                "Payload/Multi.app/SC_Info/Multi.v1.supp": Data([9]),
+                "Payload/Multi.app/PlugIns/Widget.appex/SC_Info/Widget.v1.supp": Data([8]),
+                "iTunesMetadata.plist": try HTTPClient.encodePlist(["itemId": "2"])
+            ]
+            for (path, data) in files {
+                let file = root.appendingPathComponent(path)
+                try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: file)
+                try archive.addEntry(with: path, relativeTo: root)
+            }
+        }
+        let asset = DownloadAsset(
+            app: StoreApp(id: "2", name: "Multi", bundleID: "multi.bundle", version: "1.0"),
+            url: URL(string: "https://example.com/app")!,
+            sinf: Data([1]),
+            sinfs: [Data([1, 2]), Data([3, 4])],
+            metadata: try HTTPClient.encodePlist(["itemId": "2", "appleId": "test@example.com"]),
+            externalVersionIDs: [], platform: "ios", account: "test@example.com"
+        )
+        let result = try PackageService.finish(staging: staging, id: UUID(), asset: asset)
+        let final = LocalResources.packages.appendingPathComponent(result.0)
+        defer { try? FileManager.default.removeItem(at: final) }
+        let archive = try Archive(url: final, accessMode: .read)
+        XCTAssertNotNil(archive["Payload/Multi.app/SC_Info/Multi.sinf"])
+        XCTAssertNotNil(archive["Payload/Multi.app/PlugIns/Widget.appex/SC_Info/Widget.sinf"])
+        XCTAssertNotNil(archive["Payload/Multi.app/SC_Info/Multi.v1.supp"])
+        XCTAssertNotNil(archive["Payload/Multi.app/PlugIns/Widget.appex/SC_Info/Widget.v1.supp"])
+
+        var mainPayload = Data()
+        _ = try archive.extract(archive["Payload/Multi.app/SC_Info/Multi.sinf"]!, consumer: { mainPayload.append($0) })
+        XCTAssertEqual(mainPayload, Data([1, 2]))
+
+        var widgetPayload = Data()
+        _ = try archive.extract(archive["Payload/Multi.app/PlugIns/Widget.appex/SC_Info/Widget.sinf"]!, consumer: { widgetPayload.append($0) })
+        XCTAssertEqual(widgetPayload, Data([3, 4]))
+    }
+
+    func testPurchaseMetadataRecordsPurchaserLikeAppStore() throws {
+        let account = AppleAccount(id: "test@example.com", name: "Test User", password: "", cookie: "", dsid: "123456",
+                                   passwordToken: "", storeFront: "143465", fullStoreFront: "143465-19,29")
+        let metadata = AppleService.purchaseMetadata(["itemId": NSNumber(value: 1)], account: account,
+                                                     purchaseDate: Date(timeIntervalSince1970: 0))
+        let info = try XCTUnwrap((metadata["com.apple.iTunesStore.downloadInfo"] as? [String: Any])?["accountInfo"] as? [String: Any])
+        XCTAssertEqual((info["DSPersonID"] as? NSNumber)?.uint64Value, 123456)
+        XCTAssertEqual((info["PurchaserID"] as? NSNumber)?.uint64Value, 123456)
+        XCTAssertEqual((info["DownloaderID"] as? NSNumber)?.uint64Value, 123456)
+        XCTAssertEqual((metadata["DSPersonID"] as? NSNumber)?.uint64Value, 123456)
+        XCTAssertEqual(info["AppleID"] as? String, "test@example.com")
+        XCTAssertEqual(info["FirstName"] as? String, "Test")
+        XCTAssertEqual(info["LastName"] as? String, "User")
+        XCTAssertEqual(metadata["appleId"] as? String, "test@example.com")
+        XCTAssertNoThrow(try HTTPClient.encodePlist(metadata))
+    }
+
+    func testTransientStoreFailuresAreRetried() {
+        XCTAssertTrue(HTTPClient.isTransient(HTTPStatusError(code: 503)))
+        XCTAssertFalse(HTTPClient.isTransient(HTTPStatusError(code: 404)))
+        XCTAssertTrue(HTTPClient.isTransient(URLError(.networkConnectionLost)))
+        XCTAssertFalse(HTTPClient.isTransient(ToolError.message("x")))
+    }
+
     private struct MemoryRangeReader: RangeReader {
         let data: Data
         func tail(_ count: Int) async throws -> (data: Data, size: Int64) {
