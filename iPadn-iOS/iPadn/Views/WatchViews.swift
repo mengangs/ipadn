@@ -2,6 +2,17 @@ import SwiftUI
 import Charts
 
 extension WatchChange {
+    /// A short tag for lists.
+    var tag: LocalizedStringKey {
+        switch self {
+        case .newVersion: return "新版本"
+        case .priceDrop: return "降价"
+        case .free: return "限免"
+        case .priceRise: return "涨价"
+        case .delisted: return "已下架"
+        case .relisted: return "重新上架"
+        }
+    }
     var tint: Color {
         switch self {
         case .free, .priceDrop: return .green
@@ -23,7 +34,7 @@ struct WatchRow: View {
         let subtitle = [price, version.map { "v" + $0 }].compactMap { $0 }.joined(separator: " · ")
         AppRow(app: app, subtitle: subtitle.isEmpty ? nil : subtitle, badge: badge(record))
     }
-    private func badge(_ record: WatchRecord?) -> (text: String, tint: Color)? {
+    private func badge(_ record: WatchRecord?) -> (text: LocalizedStringKey, tint: Color)? {
         guard let record else { return nil }
         if record.delisted { return app.isDelisted ? nil : (WatchChange.delisted.tag, WatchChange.delisted.tint) }
         return record.recentChange().map { ($0.tag, $0.tint) }
@@ -88,7 +99,7 @@ struct PriceHistoryChart: View {
         // Prices hold until the next change: draw steps, extended to today.
         let points = record.history + (record.history.last.map { [PricePoint(date: max(Date(), $0.date), price: $0.price)] } ?? [])
         Chart(Array(points.enumerated()), id: \.offset) { item in
-            LineMark(x: .value("日期", item.element.date), y: .value("价格", item.element.price))
+            LineMark(x: .value(AppText.text("日期"), item.element.date), y: .value(AppText.text("价格"), item.element.price))
                 .interpolationMethod(.stepEnd)
                 .foregroundStyle(Color.accentColor)
         }

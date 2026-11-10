@@ -131,10 +131,10 @@ enum PackageIconService {
         guard entry.type == .file, entry.uncompressedSize <= UInt64(limit) else { return nil }
         var data = Data()
         let checksum = try archive.extract(entry) { chunk in
-            guard data.count + chunk.count <= limit else { throw ToolError.message("图标资源过大") }
+            guard data.count + chunk.count <= limit else { throw ToolError.message(AppText.text("图标资源过大")) }
             data.append(chunk)
         }
-        guard checksum == entry.checksum else { throw ToolError.message("安装包已损坏") }
+        guard checksum == entry.checksum else { throw ToolError.message(AppText.text("安装包已损坏")) }
         return data
     }
 }

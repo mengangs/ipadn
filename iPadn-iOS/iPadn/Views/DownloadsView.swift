@@ -78,7 +78,7 @@ struct DownloadsView: View {
                             if editMode.isEditing {
                                 Button { toggleSelection(job.id) } label: { Color.clear.contentShape(Rectangle()) }
                                     .buttonStyle(.plain)
-                                    .accessibilityLabel((selection.contains(job.id) ? "取消选择 " : "选择 ") + job.app.name)
+                                    .accessibilityLabel(selection.contains(job.id) ? AppText.text("取消选择 \(job.app.name)") : AppText.text("选择 \(job.app.name)"))
                                     .accessibilityIdentifier("download.select." + job.id.uuidString)
                             }
                         }
@@ -97,7 +97,7 @@ struct DownloadsView: View {
                                     } else {
                                         Button("保留此版本", systemImage: "pin") {
                                             store.keepVersion(true, of: job); UX.feedback()
-                                            store.infoMessage = "已保留此版本，不再提醒更新"
+                                            store.infoMessage = AppText.text("已保留此版本，不再提醒更新")
                                         }
                                     }
                                 }
@@ -111,7 +111,7 @@ struct DownloadsView: View {
                                         perform {
                                             let url = try await store.installation.localURL(file: file)
                                             UIPasteboard.general.string = url.absoluteString
-                                            store.infoMessage = "已复制链接"
+                                            store.infoMessage = AppText.text("已复制链接")
                                         }
                                     }
                                 }
@@ -122,8 +122,7 @@ struct DownloadsView: View {
                         }
                     } header: {
                         if job.id == visible.first?.id {
-                            Text((filter == .all ? "\(visible.count) 个项目" : "\(filter.rawValue) · \(visible.count)")
-                                 + (updates.isEmpty ? "" : " · \(updates.count) 个可更新"))
+                            Text(headerSummary(visible: visible, updates: updates))
                         }
                     }
                 }
@@ -147,16 +146,22 @@ struct DownloadsView: View {
                 .accessibilityIdentifier("downloads.edit")
                 if !manager.jobs.isEmpty {
                     Menu {
-                        Picker("下载状态", selection: $filter) {
-                            ForEach(DownloadFilter.allCases) { item in
-                                Label(item.rawValue, systemImage: item.symbol).tag(item)
-                                    .accessibilityIdentifier("download.filter." + item.id)
+                        // Buttons rather than a Picker: each menu item keeps its
+                        // own accessibility identifier, which a Picker does not
+                        // reliably carry through to the menu.
+                        ForEach(DownloadFilter.allCases) { item in
+                            Button {
+                                filter = item
+                            } label: {
+                                Label(item.title, systemImage: item.symbol)
                             }
+                            .accessibilityIdentifier("download.filter." + item.id)
+                            .accessibilityAddTraits(filter == item ? .isSelected : [])
                         }
                     } label: {
                         Image(systemName: filter.symbol)
                             .frame(minWidth: 44, minHeight: 44)
-                    }.accessibilityLabel("筛选下载任务，当前" + filter.rawValue).accessibilityIdentifier("download.filter.menu")
+                    }.accessibilityLabel(AppText.text("筛选下载任务，当前\(filter.title)")).accessibilityIdentifier("download.filter.menu")
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -196,7 +201,7 @@ struct DownloadsView: View {
                 }.buttonStyle(.plain)
                 if manager.jobs.contains(where: { [.running, .queued, .paused].contains($0.status) }) {
                     Divider()
-                    Button("暂停全部", systemImage: "pause.circle") { manager.pauseAll(); showingActions = false; store.infoMessage = "已暂停下载" }
+                    Button("暂停全部", systemImage: "pause.circle") { manager.pauseAll(); showingActions = false; store.infoMessage = AppText.text("已暂停下载") }
                         .disabled(!manager.jobs.contains { [.running, .queued].contains($0.status) }).frame(minHeight: 44)
                     Button("继续全部", systemImage: "play.circle") { manager.resumeAll(); showingActions = false }
                         .disabled(!manager.jobs.contains { $0.status == .paused }).frame(minHeight: 44)
@@ -251,8 +256,8 @@ struct DownloadsView: View {
             TextField("https://…", text: $link).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
             Button("加入下载") {
                 do {
-                    guard let url = URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines)) else { throw ToolError.message("链接无效") }
-                    try manager.enqueueURL(url); link = ""; filter = .all; term = ""; store.infoMessage = "已开始下载"
+                    guard let url = URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines)) else { throw ToolError.message(AppText.text("链接无效")) }
+                    try manager.enqueueURL(url); link = ""; filter = .all; term = ""; store.infoMessage = AppText.text("已开始下载")
                 } catch { store.errorMessage = error.localizedDescription }
             }
             Button("取消", role: .cancel) { }
@@ -265,13 +270,19 @@ struct DownloadsView: View {
                 let count = try await manager.removeBatch(ids)
                 selection.subtract(ids)
                 if manager.jobs.isEmpty { editMode = .inactive }
-                store.infoMessage = "已删除 \(count) 项任务与文件"
+                store.infoMessage = AppText.text("已删除 \(count) 项任务与文件")
             }
         }
         .sheet(item: $installing) { job in
             PackageInstallationView(job: job).environmentObject(store).environmentObject(manager)
         }
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
+    }
+    /// Row-header count: the active filter, then how many have updates.
+    private func headerSummary(visible: [DownloadJob], updates: [UUID: StoreApp]) -> String {
+        var text = filter == .all ? AppText.text("\(visible.count) 个项目") : AppText.text("\(filter.title) · \(visible.count)")
+        if !updates.isEmpty { text += AppText.text(" · \(updates.count) 个可更新") }
+        return text
     }
     private func taskContent(_ job: DownloadJob, update: StoreApp?, editing: Bool = false) -> some View {
         DownloadTaskRow(snapshot: job, progress: manager.progress(for: job.id), update: update, kept: store.keepsVersion(job), editing: editing, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
@@ -294,11 +305,11 @@ struct DownloadsView: View {
             let temporary = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().path
             for url in files {
                 do { try await manager.importFile(url); imported += 1 }
-                catch { failures.append(url.lastPathComponent + "：" + error.localizedDescription) }
+                catch { failures.append(AppText.text("\(url.lastPathComponent)：\(error.localizedDescription)")) }
                 // The picker hands over a private copy; don't leave a second copy of a large IPA behind.
                 if url.resolvingSymlinksInPath().path.hasPrefix(temporary) { try? FileManager.default.removeItem(at: url) }
             }
-            if imported > 0 { filter = .all; term = ""; store.infoMessage = "已导入 \(imported) 个安装包" }
+            if imported > 0 { filter = .all; term = ""; store.infoMessage = AppText.text("已导入 \(imported) 个安装包") }
             if !failures.isEmpty { store.errorMessage = failures.joined(separator: "\n") }
         }
     }
@@ -323,7 +334,7 @@ struct DownloadsView: View {
     }
     private func askDelete(_ ids: Set<UUID>) {
         pendingDelete = Set(manager.jobs.filter { ids.contains($0.id) && $0.status != .processing && $0.status != .pausing }.map(\.id))
-        if pendingDelete.isEmpty { store.infoMessage = "任务处理完成后才能删除" }
+        if pendingDelete.isEmpty { store.infoMessage = AppText.text("任务处理完成后才能删除") }
         else { confirmingDelete = true }
     }
     private func perform(_ operation: @escaping () async throws -> Void) {
@@ -411,7 +422,7 @@ struct DownloadTaskRow: View {
             Text([job.status.title, progressText].filter { !$0.isEmpty }.joined(separator: " · "))
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
         case .processing:
-            Text(manager.cancelling.contains(job.id) ? "正在取消…" : manager.processingDetail[job.id] ?? job.status.title)
+            Text(manager.cancelling.contains(job.id) ? AppText.text("正在取消…") : manager.processingDetail[job.id] ?? job.status.title)
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(2)
         default:
             TaskStatusPill(status: job.status)
@@ -422,8 +433,9 @@ struct DownloadTaskRow: View {
     }
     private func etaText(_ seconds: TimeInterval?) -> String {
         guard let seconds, seconds.isFinite else { return "" }
-        return seconds < 60 ? "剩余 \(max(1, Int(seconds))) 秒" : seconds < 3600 ? "剩余 \(Int(ceil(seconds / 60))) 分钟"
-            : "剩余 \(Int(ceil(min(seconds / 3600, 999)))) 小时"
+        return seconds < 60 ? AppText.text("剩余 \(max(1, Int(seconds))) 秒")
+            : seconds < 3600 ? AppText.text("剩余 \(Int(ceil(seconds / 60))) 分钟")
+            : AppText.text("剩余 \(Int(ceil(min(seconds / 3600, 999)))) 小时")
     }
     @ViewBuilder private var trailingControl: some View {
         switch job.status {
@@ -523,7 +535,7 @@ private struct PackagePlatformRow: View {
             .task(id: file) {
                 let url = file
                 summary = await Task.detached(priority: .utility) {
-                    (try? PackageService.platformSummary(url)) ?? "未知"
+                    (try? PackageService.platformSummary(url)) ?? AppText.text("未知")
                 }.value
             }
     }

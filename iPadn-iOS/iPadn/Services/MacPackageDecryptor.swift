@@ -9,10 +9,10 @@ enum MacPackageDecryptor {
         case idle = 0, components, starting, decrypting
         var title: String {
             switch self {
-            case .idle: return "准备中"
-            case .components: return "正在下载所需组件"
-            case .starting: return "准备中"
-            case .decrypting: return "正在处理"
+            case .idle: return AppText.text("准备中")
+            case .components: return AppText.text("正在下载所需组件")
+            case .starting: return AppText.text("准备中")
+            case .decrypting: return AppText.text("正在处理")
             }
         }
     }
@@ -37,10 +37,10 @@ enum MacPackageDecryptor {
     /// time; concurrent calls wait inside the bridge.
     static func decrypt(hardwareID: String, dpInfo: Data, from source: URL, to destination: URL) throws {
         guard let decryptFunction else {
-            throw ToolError.message("当前版本不支持下载此 Mac 安装包")
+            throw ToolError.message(AppText.text("当前版本不支持下载此 Mac 安装包"))
         }
         guard hardwareID.count == 12, hardwareID.allSatisfy(\.isHexDigit), !dpInfo.isEmpty else {
-            throw ToolError.message("下载授权已失效，请重新获取")
+            throw ToolError.message(AppText.text("下载授权已失效，请重新获取"))
         }
         var message = [CChar](repeating: 0, count: 1024)
         let code = dpInfo.withUnsafeBytes { raw -> Int32 in
@@ -56,7 +56,7 @@ enum MacPackageDecryptor {
         if code == 1 { throw CancellationError() }
         guard code == 0 else {
             let text = String(cString: message)
-            throw ToolError.message(text.isEmpty ? "Mac 安装包处理失败（\(code)）" : text)
+            throw ToolError.message(text.isEmpty ? AppText.text("Mac 安装包处理失败（\(code)）") : text)
         }
     }
 
@@ -167,7 +167,7 @@ enum MacPackageSecrets {
         item[kSecValueData as String] = try JSONEncoder().encode(entry)
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         let status = SecItemAdd(item as CFDictionary, nil)
-        guard status == errSecSuccess else { throw ToolError.message("无法保存 Mac 下载授权（\(status)）") }
+        guard status == errSecSuccess else { throw ToolError.message(AppText.text("无法保存 Mac 下载授权（\(status)）")) }
     }
 
     static func load(_ id: UUID) throws -> Entry {
@@ -178,7 +178,7 @@ enum MacPackageSecrets {
         let status = SecItemCopyMatching(request as CFDictionary, &result)
         guard status == errSecSuccess, let data = result as? Data,
               let entry = try? JSONDecoder().decode(Entry.self, from: data) else {
-            throw ToolError.message("下载授权已失效，请删除任务后重新获取")
+            throw ToolError.message(AppText.text("下载授权已失效，请删除任务后重新获取"))
         }
         return entry
     }

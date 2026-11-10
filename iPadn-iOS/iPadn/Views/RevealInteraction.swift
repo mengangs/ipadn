@@ -380,7 +380,7 @@ private struct RevealDeleteModifier: ViewModifier {
     let id: String
     let enabled: Bool
     let grouping: RevealRowGrouping
-    let title: String
+    let title: LocalizedStringKey
     let style: RevealActionStyle
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -495,7 +495,7 @@ extension View {
                 RevealCoordinator.shared.active = nil
             }
     }
-    func revealDelete(id: String, enabled: Bool = true, grouping: RevealRowGrouping = .standalone, style: RevealActionStyle = .round, title: String = "删除", action: @escaping () -> Void) -> some View {
+    func revealDelete(id: String, enabled: Bool = true, grouping: RevealRowGrouping = .standalone, style: RevealActionStyle = .round, title: LocalizedStringKey = "删除", action: @escaping () -> Void) -> some View {
         modifier(RevealDeleteModifier(id: id, enabled: enabled, grouping: grouping, title: title, style: style, action: action))
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)

@@ -4,6 +4,14 @@ import UIKit
 @testable import iPadn
 
 final class VisualTests: XCTestCase {
+    /// Assertions below check the Chinese copy: pin the language instead of
+    /// following whatever the simulator is set to. Set `locale:` on the
+    /// formatting calls whose numbers or currency symbols are asserted.
+    override func setUp() {
+        super.setUp()
+        AppText.locale = Locale(identifier: "zh-Hans")
+    }
+
     @MainActor
     func testNativeScreenLayouts() async throws {
         let a = StoreApp(id: "preview-1", name: "像素日记", bundleID: "example.pixel", version: "3.2.1", category: "摄影与录像", size: 128_000_000)

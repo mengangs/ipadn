@@ -19,13 +19,23 @@ enum StoreRegions {
     """.split(separator: " ").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
     static let defaultComparison = ["CN", "HK", "US", "JP", "KR", "TR", "NG"]
 
-    static func name(_ code: String) -> String { names[code] ?? code }
-    private static let names: [String: String] = {
-        let locale = Locale(identifier: "zh_CN")
-        return Dictionary(uniqueKeysWithValues: codes.map { ($0, locale.localizedString(forRegionCode: $0) ?? $0) })
-    }()
-    /// All storefronts in the order of their Chinese names.
-    static let byName: [String] = codes.sorted { name($0).localizedStandardCompare(name($1)) == .orderedAscending }
+    /// A storefront's name in the interface language, cached per language.
+    static func name(_ code: String, locale: Locale = AppText.locale) -> String { names(locale)[code] ?? code }
+    /// All storefronts in the order of their names in the interface language.
+    static func byName(_ locale: Locale = AppText.locale) -> [String] {
+        codes.sorted { name($0, locale: locale).localizedStandardCompare(name($1, locale: locale)) == .orderedAscending }
+    }
+    private static func names(_ locale: Locale) -> [String: String] {
+        let key = locale.identifier
+        return cachedNames.withLock { cache in
+            if let done = cache[key] { return done }
+            let localizer = Locale(identifier: key)
+            let done = Dictionary(uniqueKeysWithValues: codes.map { ($0, localizer.localizedString(forRegionCode: $0) ?? $0) })
+            cache[key] = done
+            return done
+        }
+    }
+    private static let cachedNames = NSLockedValue([String: [String: String]]())
     static func flag(_ code: String) -> String {
         code.uppercased().unicodeScalars.compactMap { UnicodeScalar(127_397 + $0.value) }.map(String.init).joined()
     }

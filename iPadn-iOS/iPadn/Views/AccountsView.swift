@@ -62,7 +62,7 @@ struct AccountsView: View {
                             }.contentShape(Rectangle())
                         }
                         .buttonStyle(RevealRowButtonStyle())
-                        .accessibilityHint(account.id == apple.activeID ? "当前下载账号" : "切换到此账号")
+                        .accessibilityHint(account.id == apple.activeID ? AppText.text("当前下载账号") : AppText.text("切换到此账号"))
                         .accessibilityIdentifier("account." + account.id)
                         .disabled(store.accountRemoving != nil)
                         .revealDelete(id: "account." + account.id, enabled: store.accountRemoving == nil,
@@ -85,13 +85,21 @@ struct AccountsView: View {
         .overlay { if store.accountRemoving != nil { ProgressView("正在移除账号…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
         .toolPage().rootTabBar("账号", headerScrolledAway: headerAway)
         .actionConfirmation(isPresented: $signingOut, title: "退出当前账号？", message: "账号仍会保留，可随时切换回来。", confirmTitle: "退出登录") { apple.select(nil) }
-        .actionConfirmation(isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), title: "移除账号？", message: (deleting?.id ?? "") + (deleting?.id == apple.activeID ? "\n这是当前下载账号，移除后将退出登录。" : "") + "\n已下载的安装包会保留。", confirmTitle: "移除账号") {
+        .actionConfirmation(isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), title: "移除账号？", message: removalMessage, confirmTitle: "移除账号") {
             guard let id = deleting?.id else { return }
             Task {
-                do { try await store.deleteAccount(id); store.infoMessage = "已移除账号" } catch { store.errorMessage = error.localizedDescription }
+                do { try await store.deleteAccount(id); store.infoMessage = AppText.text("已移除账号") } catch { store.errorMessage = error.localizedDescription }
             }
             deleting = nil
         }
+    }
+
+    /// The account ID, then what removing it means for this device.
+    private var removalMessage: LocalizedStringKey {
+        let id = deleting?.id ?? ""
+        return deleting?.id == apple.activeID
+            ? "\(id)\n这是当前下载账号，移除后将退出登录。\n已下载的安装包会保留。"
+            : "\(id)\n已下载的安装包会保留。"
     }
 }
 
@@ -102,7 +110,7 @@ struct VerificationStep: View {
     @Binding var code: String
     let busy: Bool
     let issue: String?
-    var submitTitle = "验证"
+    var submitTitle = AppText.text("验证")
     let submit: () -> Void
     var changeAccount: (() -> Void)? = nil
     @State private var showingHelp = false
@@ -168,7 +176,7 @@ struct LoginView: View {
             VStack(spacing: 22) {
                 if verifying {
                     VerificationStep(account: email.trimmingCharacters(in: .whitespacesAndNewlines), code: $code,
-                                     busy: busy, issue: failure, submitTitle: "验证并登录", submit: submit,
+                                     busy: busy, issue: failure, submitTitle: AppText.text("验证并登录"), submit: submit,
                                      changeAccount: { verifying = false; code = ""; failure = nil; focus = .password })
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 } else {
@@ -241,7 +249,7 @@ struct LoginView: View {
             } catch AppleLoginError.verificationRequired {
                 verifying = true; code = ""
             } catch is CancellationError {
-                failure = "登录已取消，可以重新尝试。"
+                failure = AppText.text("登录已取消，可以重新尝试。")
             } catch {
                 failure = error.localizedDescription
                 code = ""
@@ -265,7 +273,7 @@ struct ExistingAccountVerificationView: View {
         NavigationStack {
             ScrollView {
                 VerificationStep(account: accountID, code: $code, busy: busy, issue: issue,
-                                 submitTitle: "验证并继续", submit: verify)
+                                 submitTitle: AppText.text("验证并继续"), submit: verify)
                     .frame(maxWidth: 460).padding(24).frame(maxWidth: .infinity)
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
@@ -287,7 +295,7 @@ struct ExistingAccountVerificationView: View {
                 onVerified()
                 dismiss()
             } catch is CancellationError {
-                issue = "验证已取消，请重试"
+                issue = AppText.text("验证已取消，请重试")
             } catch {
                 issue = error.localizedDescription
                 code = ""

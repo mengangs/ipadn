@@ -12,13 +12,13 @@ struct AppNameEntry: Codable {
 enum AppNameCatalog {
     static let cacheFile = "app-name-directory.json"
     static func decode(_ data: Data) throws -> [AppNameEntry] {
-        guard data.count <= 2_000_000 else { throw ToolError.message("名称目录过大") }
+        guard data.count <= 2_000_000 else { throw ToolError.message(AppText.text("名称目录过大")) }
         let entries = try JSONDecoder().decode([AppNameEntry].self, from: data)
         guard entries.count <= 10_000, entries.allSatisfy({
             !$0.id.isEmpty && $0.id.allSatisfy { $0.isASCII && $0.isNumber } &&
             !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.name.count <= 300 &&
             $0.aliases.count <= 30 && $0.aliases.allSatisfy { $0.count <= 300 }
-        }) else { throw ToolError.message("名称目录格式不正确") }
+        }) else { throw ToolError.message(AppText.text("名称目录格式不正确")) }
         return entries
     }
     static func bundled() -> [AppNameEntry] {
@@ -43,7 +43,7 @@ enum AppNameCatalog {
         defer { session.invalidateAndCancel() }
         let url = URL(string: "https://raw.githubusercontent.com/mengangs/ipadn/main/iPadn-iOS/iPadn/Resources/app-name-directory.json")!
         let (data, response) = try await session.data(from: url)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw ToolError.message("名称目录暂时无法更新") }
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw ToolError.message(AppText.text("名称目录暂时无法更新")) }
         return try decode(data)
     }
 }

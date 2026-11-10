@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate a standard, shared-scheme Xcode project without requiring XcodeGen."""
+import argparse
 import hashlib
 import json
 import plistlib
@@ -8,6 +9,16 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# `xcodebuild -exportLocalizations` refuses to run when the project's
+# development language differs from a string catalog's source language, so
+# extraction needs a throwaway project whose development language is Chinese.
+# The shipped project keeps English as its development language: devices in
+# languages the app doesn't ship then see English rather than Chinese.
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--development-language", default="en",
+                    help="Only for -exportLocalizations; regenerating without it restores en.")
+OPTIONS = parser.parse_args()
 objects = {}
 
 def uid(name):
@@ -37,7 +48,10 @@ for path in sorted((ROOT / "iPadn").rglob("*.swift")):
     app_files.append(reference)
     sources.append(add("Build/" + relative, "PBXBuildFile", fileRef=reference))
 resources = []
-for path, file_type in [("Resources/SAPRuntime", "folder"), ("Resources/Assets.xcassets", "folder.assetcatalog"), ("Resources/PrivacyInfo.xcprivacy", "text.xml"), ("Resources/app-name-directory.json", "text.json")]:
+# String catalogs hold every user-facing string. The source language stays
+# Chinese (the keys are the Chinese text); English is translated in the catalog.
+for path, file_type in [("Resources/SAPRuntime", "folder"), ("Resources/Assets.xcassets", "folder.assetcatalog"), ("Resources/PrivacyInfo.xcprivacy", "text.xml"), ("Resources/app-name-directory.json", "text.json"),
+                       ("Resources/Localizable.xcstrings", "text.json.xcstrings"), ("Resources/InfoPlist.xcstrings", "text.json.xcstrings"), ("Resources/AppShortcuts.xcstrings", "text.json.xcstrings")]:
     reference = add("File/" + path, "PBXFileReference", lastKnownFileType=file_type, path=path, sourceTree="<group>")
     app_files.append(reference)
     resources.append(add("Build/" + path, "PBXBuildFile", fileRef=reference))
@@ -92,6 +106,7 @@ project_configs = configs("Project", base, {"SWIFT_COMPILATION_MODE": "wholemodu
 app_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
                 "DEVELOPMENT_TEAM": "", "TARGETED_DEVICE_FAMILY": "1,2", "INFOPLIST_FILE": "iPadn/Info.plist",
                 "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": "1.8.5", "CURRENT_PROJECT_VERSION": "24",
+                "SWIFT_EMIT_LOC_STRINGS": "YES", "LOCALIZATION_PREFERS_STRING_CATALOGS": "YES",
                 "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
                 "ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS": "YES", "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
                 "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks"],
@@ -127,7 +142,9 @@ ui_configs = configs("UITests", ui_settings)
 add("UITestTarget", "PBXNativeTarget", buildConfigurationList=ui_configs, buildPhases=[ui_sources], buildRules=[], dependencies=[dependency], name="iPadnUITests", productName="iPadnUITests", productReference=ui_product, productType="com.apple.product-type.bundle.ui-testing")
 project_id = add("Project", "PBXProject", attributes={"BuildIndependentTargetsInParallel": "1", "LastUpgradeCheck": "1600",
     "TargetAttributes": {app_id: {"CreatedOnToolsVersion": "16.0"}, test_id: {"CreatedOnToolsVersion": "16.0", "TestTargetID": app_id}}},
-    buildConfigurationList=project_configs, compatibilityVersion="Xcode 14.0", developmentRegion="zh-Hans",
+    # English is the fallback for devices whose language the app doesn't ship,
+    # while the Chinese source strings stay the keys of the string catalogs.
+    buildConfigurationList=project_configs, compatibilityVersion="Xcode 14.0", developmentRegion=OPTIONS.development_language,
     hasScannedForEncodings="0", knownRegions=["zh-Hans", "en", "Base"], mainGroup=root_group, productRefGroup=products,
     projectDirPath="", projectRoot="", targets=[app_id, test_id, ui_id], packageReferences=[package])
 

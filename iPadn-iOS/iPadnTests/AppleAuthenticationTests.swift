@@ -3,6 +3,14 @@ import XCTest
 
 @MainActor
 final class AppleAuthenticationTests: XCTestCase {
+    /// Assertions below check the Chinese copy: pin the language instead of
+    /// following whatever the simulator is set to. Set `locale:` on the
+    /// formatting calls whose numbers or currency symbols are asserted.
+    override func setUp() {
+        super.setUp()
+        AppText.locale = Locale(identifier: "zh-Hans")
+    }
+
     private let endpoint = URL(string: "https://p99-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate/")!
 
     func testBagEndpointKeepsSelectedPodAndQuery() throws {

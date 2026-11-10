@@ -19,23 +19,23 @@ enum DMAP {
     }
     static func string(_ name: String, _ value: String) -> Data { tag(name, Data(value.utf8)) }
     static func integer(_ data: Data) throws -> UInt64 {
-        guard [1, 4, 8].contains(data.count) else { throw ToolError.message("DMAP 整数长度错误") }
+        guard [1, 4, 8].contains(data.count) else { throw ToolError.message(AppText.text("DMAP 整数长度错误")) }
         return data.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
     }
     /// Walks tags without copying: payloads are slices of the original buffer
     /// (purchase lists can be several megabytes with deep nesting).
     static func walk(_ data: Data, depth: Int = 0, visitor: (Tag) throws -> Void) throws {
-        guard depth <= 16 else { throw ToolError.message("DMAP 嵌套过深") }
+        guard depth <= 16 else { throw ToolError.message(AppText.text("DMAP 嵌套过深")) }
         var offset = data.startIndex
         let end = data.endIndex
         while offset < end {
-            guard end - offset >= 8 else { throw ToolError.message("DMAP 标签被截断") }
+            guard end - offset >= 8 else { throw ToolError.message(AppText.text("DMAP 标签被截断")) }
             let nameBytes = data[offset..<(offset + 4)]
             guard nameBytes.allSatisfy({ (32...126).contains($0) }),
-                  let name = String(bytes: nameBytes, encoding: .ascii) else { throw ToolError.message("DMAP 标签名称无效") }
+                  let name = String(bytes: nameBytes, encoding: .ascii) else { throw ToolError.message(AppText.text("DMAP 标签名称无效")) }
             let length = data[(offset + 4)..<(offset + 8)].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
             let start = offset + 8
-            guard UInt64(length) <= UInt64(end - start) else { throw ToolError.message("DMAP 负载被截断") }
+            guard UInt64(length) <= UInt64(end - start) else { throw ToolError.message(AppText.text("DMAP 负载被截断")) }
             let stop = start + Int(length)
             let payload = data[start..<stop]
             try visitor(Tag(name: name, payload: payload))
@@ -49,7 +49,7 @@ enum DMAP {
             try walk(data) { tag in
                 guard tag.name == name else { return }
                 let number = try integer(tag.payload)
-                guard number <= UInt32.max else { throw ToolError.message("DMAP 数值超出 uint32") }
+                guard number <= UInt32.max else { throw ToolError.message(AppText.text("DMAP 数值超出 uint32")) }
                 throw Found(value: UInt32(number)) // stop at the first match
             }
         } catch let found as Found { return found.value }
@@ -57,10 +57,10 @@ enum DMAP {
     }
     static func validate(_ data: Data) throws {
         guard let status = try firstInteger(data, name: "mstt") else {
-            throw ToolError.message("暂时无法同步购买记录，请稍后重试")
+            throw ToolError.message(AppText.text("暂时无法同步购买记录，请稍后重试"))
         }
         if status != 200 {
-            throw ToolError.message("暂时无法同步购买记录（\(status)），请稍后重试")
+            throw ToolError.message(AppText.text("暂时无法同步购买记录（\(status)），请稍后重试"))
         }
     }
     static func ownedApps(_ data: Data) throws -> [OwnedApp] {

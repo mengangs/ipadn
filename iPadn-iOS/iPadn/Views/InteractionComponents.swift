@@ -3,9 +3,9 @@ import UniformTypeIdentifiers
 import UIKit
 
 struct ActionConfirmationView: View {
-    let title: String
-    let message: String
-    let confirmTitle: String
+    let title: LocalizedStringKey
+    let message: LocalizedStringKey?
+    let confirmTitle: LocalizedStringKey
     var destructive = true
     var showsCancel = true
     let action: () -> Void
@@ -24,7 +24,7 @@ struct ActionConfirmationView: View {
     private var confirmation: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text(title).font(.title3.weight(.semibold)).accessibilityAddTraits(.isHeader).accessibilityIdentifier("confirmation.title")
-            if !message.isEmpty { Text(message).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("confirmation.message") }
+            if let message { Text(message).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("confirmation.message") }
             VStack(spacing: 10) {
                 Button(role: destructive ? .destructive : nil) { action(); dismiss() } label: {
                     Text(confirmTitle).font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 24)
@@ -41,9 +41,9 @@ struct ActionConfirmationView: View {
 private struct ActionConfirmationModifier: ViewModifier {
     @Binding var isPresented: Bool
     @Environment(\.dynamicTypeSize) private var typeSize
-    let title: String
-    let message: String
-    let confirmTitle: String
+    let title: LocalizedStringKey
+    let message: LocalizedStringKey?
+    let confirmTitle: LocalizedStringKey
     let destructive: Bool
     let action: () -> Void
     func body(content: Content) -> some View {
@@ -56,7 +56,7 @@ private struct ActionConfirmationModifier: ViewModifier {
     }
 }
 extension View {
-    func actionConfirmation(isPresented: Binding<Bool>, title: String, message: String = "", confirmTitle: String, destructive: Bool = true, action: @escaping () -> Void) -> some View {
+    func actionConfirmation(isPresented: Binding<Bool>, title: LocalizedStringKey, message: LocalizedStringKey? = nil, confirmTitle: LocalizedStringKey, destructive: Bool = true, action: @escaping () -> Void) -> some View {
         modifier(ActionConfirmationModifier(isPresented: isPresented, title: title, message: message, confirmTitle: confirmTitle, destructive: destructive, action: action))
     }
 }

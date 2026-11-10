@@ -34,7 +34,7 @@ struct StorageView: View {
         let older = olderVersions
         List {
             Section {
-                LabeledContent("安装包", value: measuring ? "正在计算…" : "\(completed.count) 个 · \(total(completed).byteLabel)")
+                LabeledContent("安装包", value: measuring ? AppText.text("正在计算…") : AppText.text("\(completed.count) 个 · \(total(completed).byteLabel)"))
                 if let available { LabeledContent("设备可用空间", value: available.byteLabel) }
             } footer: {
                 Text("安装包保存在 iPadn 中，也可以在「文件」App 的「我的 iPhone › iPadn › Packages」中查看。")
@@ -42,7 +42,7 @@ struct StorageView: View {
             if !older.isEmpty {
                 Section {
                     Button(role: .destructive) { confirmingCleanup = true } label: {
-                        LabeledContent("删除旧版本", value: "\(older.count) 个 · \(total(older).byteLabel)")
+                        LabeledContent("删除旧版本", value: AppText.text("\(older.count) 个 · \(total(older).byteLabel)"))
                     }
                     .accessibilityIdentifier("storage.remove-older")
                 } footer: {
@@ -110,7 +110,7 @@ struct StorageView: View {
             defer { deleting = false }
             do {
                 _ = try await manager.removeBatch(Set(jobs.map(\.id)))
-                store.infoMessage = "已释放 \(freed.byteLabel)"
+                store.infoMessage = AppText.text("已释放 \(freed.byteLabel)")
             } catch { store.errorMessage = error.localizedDescription }
         }
     }

@@ -22,7 +22,7 @@ enum XARValidator {
         try file.seek(toOffset: 0)
         let header = try file.read(upToCount: headerLength) ?? Data()
         guard header.count == headerLength, header.prefix(4) == Data("xar!".utf8) else {
-            throw failure("不是 XAR 安装包")
+            throw failure(AppText.text("不是 XAR 安装包"))
         }
         let headerSize = number(header, 4, 2)
         let version = number(header, 6, 2)
@@ -33,7 +33,7 @@ enum XARValidator {
               compressedTOC > 2, compressedTOC <= maxCompressedTOC,
               uncompressedTOC > 0, uncompressedTOC <= maxUncompressedTOC,
               headerSize + compressedTOC <= UInt64(fileSize) else {
-            throw failure("安装包头部或目录长度无效")
+            throw failure(AppText.text("安装包头部或目录长度无效"))
         }
         var headerAlgorithm: String?
         switch checksumKind {
@@ -44,12 +44,12 @@ enum XARValidator {
             // Named algorithm, NUL-terminated, directly after the fixed header.
             let extra = try file.read(upToCount: Int(headerSize) - headerLength) ?? Data()
             headerAlgorithm = String(decoding: extra.prefix { $0 != 0 }, as: UTF8.self).lowercased()
-        default: throw failure("不支持的目录校验方式")
+        default: throw failure(AppText.text("不支持的目录校验方式"))
         }
 
         try file.seek(toOffset: headerSize)
         let compressed = try file.read(upToCount: Int(compressedTOC)) ?? Data()
-        guard compressed.count == Int(compressedTOC) else { throw failure("安装包目录不完整") }
+        guard compressed.count == Int(compressedTOC) else { throw failure(AppText.text("安装包目录不完整")) }
         let xml = try inflateZlib(compressed, expectedLength: Int(uncompressedTOC))
         let toc = try TOCParser.parse(xml)
         let heapStart = Int64(headerSize + compressedTOC)
@@ -57,41 +57,41 @@ enum XARValidator {
 
         func range(offset: UInt64, size: UInt64) throws -> UInt64 {
             let (end, overflow) = offset.addingReportingOverflow(size)
-            guard !overflow, end <= UInt64(heapBytes) else { throw failure("安装包数据超出文件范围，文件可能不完整") }
+            guard !overflow, end <= UInt64(heapBytes) else { throw failure(AppText.text("安装包数据超出文件范围，文件可能不完整")) }
             return UInt64(heapStart) + offset
         }
 
         if let checksum = toc.checksum {
             guard headerAlgorithm == nil || headerAlgorithm == checksum.style else {
-                throw failure("安装包目录校验方式不一致")
+                throw failure(AppText.text("安装包目录校验方式不一致"))
             }
             guard let length = Digest.length(checksum.style), checksum.size == UInt64(length) else {
-                throw failure("不支持的目录校验方式")
+                throw failure(AppText.text("不支持的目录校验方式"))
             }
             try file.seek(toOffset: try range(offset: checksum.offset, size: checksum.size))
             let stored = try file.read(upToCount: length) ?? Data()
             guard stored == Digest.hash(checksum.style, compressed) else {
-                throw failure("安装包目录校验失败，文件可能仍被加密或已损坏")
+                throw failure(AppText.text("安装包目录校验失败，文件可能仍被加密或已损坏"))
             }
         } else if headerAlgorithm != nil {
-            throw failure("安装包缺少目录校验信息")
+            throw failure(AppText.text("安装包缺少目录校验信息"))
         }
 
-        guard !toc.files.isEmpty else { throw failure("安装包中没有文件") }
+        guard !toc.files.isEmpty else { throw failure(AppText.text("安装包中没有文件")) }
         for entry in toc.files {
             guard let style = entry.style, let expected = Data(hex: entry.checksum),
                   Digest.length(style) == expected.count else {
-                throw failure("安装包文件缺少可验证的校验值")
+                throw failure(AppText.text("安装包文件缺少可验证的校验值"))
             }
             try file.seek(toOffset: try range(offset: entry.offset, size: entry.length))
             guard try Digest.stream(style, file: file, count: entry.length) == expected else {
-                throw failure("安装包文件校验失败，文件可能仍被加密或已损坏")
+                throw failure(AppText.text("安装包文件校验失败，文件可能仍被加密或已损坏"))
             }
         }
         return Report(files: toc.files.count, heapBytes: heapBytes)
     }
 
-    private static func failure(_ text: String) -> ToolError { .message("PKG 校验未通过：" + text) }
+    private static func failure(_ text: String) -> ToolError { .message(AppText.text("PKG 校验未通过：\(text)")) }
 
     private static func number(_ data: Data, _ offset: Int, _ length: Int) -> UInt64 {
         data[data.startIndex + offset ..< data.startIndex + offset + length].reduce(0) { ($0 << 8) | UInt64($1) }
@@ -100,16 +100,16 @@ enum XARValidator {
     // XAR stores the TOC as a zlib stream (2-byte header, raw DEFLATE body,
     // big-endian Adler-32 trailer); Foundation's .zlib handles the body only.
     static func inflateZlib(_ data: Data, expectedLength: Int) throws -> Data {
-        guard data.count > 6 else { throw failure("安装包目录不完整") }
+        guard data.count > 6 else { throw failure(AppText.text("安装包目录不完整")) }
         let cmf = data[data.startIndex], flags = data[data.startIndex + 1]
         guard cmf & 0x0f == 8, (UInt16(cmf) << 8 | UInt16(flags)) % 31 == 0, flags & 0x20 == 0 else {
-            throw failure("安装包目录不是有效的压缩数据")
+            throw failure(AppText.text("安装包目录不是有效的压缩数据"))
         }
         let raw = Data(data.dropFirst(2).dropLast(4))
         let trailer = data.suffix(4).reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
         guard let inflated = try? (raw as NSData).decompressed(using: .zlib) as Data,
               inflated.count == expectedLength, adler32(inflated) == trailer else {
-            throw failure("安装包目录解压失败或长度不符")
+            throw failure(AppText.text("安装包目录解压失败或长度不符"))
         }
         return inflated
     }
@@ -149,7 +149,7 @@ enum XARValidator {
                 let chunk = try autoreleasepool { () -> Data in
                     try file.read(upToCount: Int(min(remaining, 1 << 20))) ?? Data()
                 }
-                guard !chunk.isEmpty else { throw failure("安装包数据不完整") }
+                guard !chunk.isEmpty else { throw failure(AppText.text("安装包数据不完整")) }
                 switch style {
                 case "md5": md5.update(data: chunk)
                 case "sha256": sha256.update(data: chunk)
@@ -195,7 +195,7 @@ enum XARValidator {
             parser.shouldResolveExternalEntities = false
             parser.delegate = delegate
             guard parser.parse(), delegate.error == nil else {
-                throw delegate.error ?? failure("安装包目录格式错误")
+                throw delegate.error ?? failure(AppText.text("安装包目录格式错误"))
             }
             return delegate.toc
         }
@@ -246,11 +246,11 @@ enum XARValidator {
         }
 
         func parser(_ parser: XMLParser, parseErrorOccurred parseError: Error) {
-            if error == nil { error = failure("安装包目录格式错误") }
+            if error == nil { error = failure(AppText.text("安装包目录格式错误")) }
         }
 
         private func fail(_ parser: XMLParser) {
-            error = failure("安装包目录缺少必要字段")
+            error = failure(AppText.text("安装包目录缺少必要字段"))
             parser.abortParsing()
         }
     }

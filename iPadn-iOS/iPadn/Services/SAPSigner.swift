@@ -8,8 +8,8 @@ import UIKit
 final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMessageHandler {
     @Published private(set) var isPresented = false
     @Published private(set) var webView: WKWebView?
-    @Published private(set) var title = "正在验证请求"
-    @Published private(set) var stage = "准备本地环境"
+    @Published private(set) var title = AppText.text("正在验证请求")
+    @Published private(set) var stage = AppText.text("准备本地环境")
     @Published private(set) var stageIndex = 0
     @Published private(set) var startedAt = Date()
     let server = LoopbackServer()
@@ -45,7 +45,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
         try Task.checkCancellation()
         if useCache, cacheSignature, let cached = signatureCache[key] { return cached }
         let revision = cacheRevision
-        let result = try await execute(title: "验证请求", script: """
+        let result = try await execute(title: AppText.text("验证请求"), script: """
             reportStage(1);
             await sapInitialize(guid, {proxyURL: proxy});
             try { reportStage(2); return await sapSign(body); }
@@ -60,13 +60,13 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
 
     func kbsync(guid: String, dsid: String, useCache: Bool) async throws -> String {
         guard guid.count == 12, guid.allSatisfy(\.isHexDigit), let value = UInt64(dsid), value > 0 else {
-            throw ToolError.message("设备标识或账号标识无效，请重新登录")
+            throw ToolError.message(AppText.text("设备标识或账号标识无效，请重新登录"))
         }
         try Task.checkCancellation()
         let key = guid + ":" + dsid
         if useCache, let cached = kbCache[key] { return cached }
         let revision = cacheRevision
-        let result = try await execute(title: "准备下载", script: """
+        let result = try await execute(title: AppText.text("准备下载"), script: """
             reportStage(1);
             await loadSapSigner();
             reportStage(2);
@@ -92,7 +92,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
             .replacingOccurrences(of: ":", with: "")
             .uppercased()
         guard cleaned.count == 12, cleaned.allSatisfy({ $0.isASCII && $0.isHexDigit }) else {
-            throw ToolError.message("设备标识无效，请检查专业模式设置")
+            throw ToolError.message(AppText.text("设备标识无效，请检查专业模式设置"))
         }
         return cleaned
     }
@@ -138,7 +138,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
         guard !existing.files.isEmpty else { return nil }
         let stateData = try JSONEncoder().encode(StoreStatePayload(identifier: existing.identifier, files: existing.files))
         guard let stateJSON = String(data: stateData, encoding: .utf8) else { return nil }
-        let output = try await execute(title: "验证设备", script: """
+        let output = try await execute(title: AppText.text("验证设备"), script: """
             reportStage(1);
             reportStage(2);
             return await sapStoreProofHeaders(state, {proxyURL: proxy});
@@ -158,14 +158,14 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
 
     func provisionStoreProof(challenge: String, guid: String, useCache: Bool) async throws -> [String: String] {
         let normalized = try Self.normalizedStoreGUID(guid)
-        guard !challenge.isEmpty else { throw ToolError.message("设备验证参数无效，请稍后重试") }
+        guard !challenge.isEmpty else { throw ToolError.message(AppText.text("设备验证参数无效，请稍后重试")) }
         try Task.checkCancellation()
         let current = record(for: normalized)
         let stateData = try JSONEncoder().encode(StoreStatePayload(identifier: current.identifier, files: current.files))
         guard let stateJSON = String(data: stateData, encoding: .utf8) else {
-            throw ToolError.message("设备验证状态编码失败")
+            throw ToolError.message(AppText.text("设备验证状态编码失败"))
         }
-        let output = try await execute(title: "验证设备", script: """
+        let output = try await execute(title: AppText.text("验证设备"), script: """
             reportStage(1);
             reportStage(2);
             return await sapStoreProvision(state, challenge, guid, {proxyURL: proxy});
@@ -175,7 +175,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
               let headers = payload.headers,
               let otp = headers["X-Apple-AMD"], !otp.isEmpty,
               let mid = headers["X-Apple-AMD-M"], !mid.isEmpty else {
-            throw ToolError.message("设备验证未完成，请稍后重试")
+            throw ToolError.message(AppText.text("设备验证未完成，请稍后重试"))
         }
         saveRecord(StoreProofRecord(identifier: payload.state.identifier, files: payload.state.files), for: normalized)
         return ["X-Apple-AMD": otp, "X-Apple-AMD-M": mid]
@@ -220,13 +220,13 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
         let revision = cacheRevision
         var succeeded = false
         idleTimeout?.cancel(); idleTimeout = nil
-        self.title = title; stage = "准备本地环境"; stageIndex = 0; startedAt = Date()
+        self.title = title; stage = AppText.text("准备本地环境"); stageIndex = 0; startedAt = Date()
         defer { release(id: id, reuse: reuseRuntime && succeeded && cacheRevision == revision) }
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
             try await server.start()
             try checkActive(id)
-            guard let base = server.baseURL else { throw ToolError.message("暂时无法完成验证，请重试") }
+            guard let base = server.baseURL else { throw ToolError.message(AppText.text("暂时无法完成验证，请重试")) }
             let web: WKWebView
             let warm = reuseRuntime && reusableBase == base && reusableWebView != nil
             if warm, let saved = reusableWebView { web = saved }
@@ -240,16 +240,16 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
             web.navigationDelegate = self
             webView = web; isPresented = true
             if !warm {
-                armTimeout(id: id, seconds: 45, message: "本地验证环境加载超时，请重试。")
+                armTimeout(id: id, seconds: 45, message: AppText.text("本地验证环境加载超时，请重试。"))
                 try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                     navigation = continuation
                     web.load(URLRequest(url: base.appendingPathComponent("runtime/index.html")))
                 }
             } else {
-                stage = "复用本机验证组件"
+                stage = AppText.text("复用本机验证组件")
             }
             try checkActive(id)
-            armTimeout(id: id, seconds: timeoutSeconds, message: "验证已超过 3 分钟，已停止本次操作。请保持应用在前台后重试。")
+            armTimeout(id: id, seconds: timeoutSeconds, message: AppText.text("验证已超过 3 分钟，已停止本次操作。请保持应用在前台后重试。"))
             var values = arguments
             values["proxy"] = base.appendingPathComponent("proxy").absoluteString
             let result: String
@@ -263,7 +263,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
                             switch result {
                             case .success(let value):
                                 if let text = value as? String, !text.isEmpty { continuation.resume(returning: text) }
-                                else { continuation.resume(throwing: ToolError.message("验证结果为空，请重试")) }
+                                else { continuation.resume(throwing: ToolError.message(AppText.text("验证结果为空，请重试"))) }
                             case .failure(let err):
                                 continuation.resume(throwing: err)
                             }
@@ -278,7 +278,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
                     discardIdleRuntime()
                     throw RuntimeRetry.coldStart
                 }
-                throw ToolError.message("验证未完成，请检查网络后重试")
+                throw ToolError.message(AppText.text("验证未完成，请检查网络后重试"))
             }
             try checkActive(id)
             succeeded = true
@@ -344,7 +344,9 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.webView === webView, operationID != nil, let index = message.body as? Int, (1...2).contains(index) else { return }
         stageIndex = index
-        stage = index == 1 ? "加载验证组件" : title == "准备下载" ? "生成下载授权数据" : title == "验证设备" ? "完成设备安全验证" : "生成请求签名"
+        stage = index == 1 ? AppText.text("加载验证组件")
+            : title == AppText.text("准备下载") ? AppText.text("生成下载授权数据")
+            : title == AppText.text("验证设备") ? AppText.text("完成设备安全验证") : AppText.text("生成请求签名")
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard webView === self.webView, terminalError == nil else { return }
@@ -358,6 +360,6 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
     }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         guard webView === self.webView, let id = operationID else { return }
-        stop(id: id, error: ToolError.message("验证意外中断，请重试"))
+        stop(id: id, error: ToolError.message(AppText.text("验证意外中断，请重试")))
     }
 }

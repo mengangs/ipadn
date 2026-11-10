@@ -5,6 +5,14 @@ import XCTest
 #endif
 
 final class RevealMotionTests: XCTestCase {
+    /// Assertions below check the Chinese copy: pin the language instead of
+    /// following whatever the simulator is set to. Set `locale:` on the
+    /// formatting calls whose numbers or currency symbols are asserted.
+    override func setUp() {
+        super.setUp()
+        AppText.locale = Locale(identifier: "zh-Hans")
+    }
+
     private func model() -> ItemListRevealMotion {
         var motion = ItemListRevealMotion()
         var parameters = ItemListRevealMotionParameters()
