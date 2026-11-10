@@ -59,6 +59,8 @@ private final class RevealDriver: NSObject, ObservableObject {
         guard !reduced, !motion.isAtRest, displayLink == nil else { return }
         target.owner = self; lastTime = 0
         let link = CADisplayLink(target: target, selector: #selector(Target.tick(_:)))
+        let maximum = Float(UIScreen.main.maximumFramesPerSecond)
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: maximum, preferred: maximum)
         link.add(to: .main, forMode: .common); displayLink = link
     }
     private func tick(_ link: CADisplayLink) {
@@ -84,6 +86,7 @@ private struct RevealDeleteModifier: ViewModifier {
     @State private var rejected = false
     @State private var previousSample: (time: Date, x: CGFloat)?
     @State private var velocity: CGFloat = 0
+    @GestureState private var touching = false
 
     func body(content: Content) -> some View {
         content
@@ -102,6 +105,7 @@ private struct RevealDeleteModifier: ViewModifier {
             .clipped()
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .simultaneousGesture(DragGesture(minimumDistance: 25)
+                .updating($touching) { _, touching, _ in touching = true }
                 .onChanged { value in
                     guard enabled, !rejected, width > 0 else { return }
                     if !driver.dragging {
@@ -129,6 +133,11 @@ private struct RevealDeleteModifier: ViewModifier {
             .onChange(of: coordinator.active) { _, active in if active != id { driver.close() } }
             .onChange(of: enabled) { _, enabled in if !enabled { driver.close(immediately: true) } }
             .onChange(of: reduceMotion) { _, _ in driver.close(immediately: true) }
+            .onChange(of: touching) { _, touching in
+                if !touching && driver.dragging {
+                    driver.close(); rejected = false; previousSample = nil; velocity = 0
+                }
+            }
             .onDisappear { driver.close(immediately: true) }
             .accessibilityAction(named: Text(title)) { if enabled { commit() } }
     }
@@ -142,6 +151,12 @@ private struct RevealDeleteModifier: ViewModifier {
 extension View {
     func dismissRevealsOnTap() -> some View {
         simultaneousGesture(TapGesture().onEnded { RevealCoordinator.shared.active = nil })
+            .simultaneousGesture(DragGesture(minimumDistance: 10).onChanged { value in
+                if abs(value.translation.height) > abs(value.translation.width) { RevealCoordinator.shared.active = nil }
+            })
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+                RevealCoordinator.shared.active = nil
+            }
     }
     func revealDelete(id: String, enabled: Bool = true, title: String = "删除", action: @escaping () -> Void) -> some View {
         modifier(RevealDeleteModifier(id: id, enabled: enabled, title: title, action: action))

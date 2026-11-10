@@ -183,6 +183,7 @@ info = {"CFBundleDevelopmentRegion": "$(DEVELOPMENT_LANGUAGE)", "CFBundleExecuta
         "CFBundleURLTypes": [{"CFBundleURLName": "app.local.iPadn", "CFBundleURLSchemes": ["ipadn"]}],
         "LSApplicationQueriesSchemes": ["itms-services"],
         "UIBackgroundModes": ["fetch"], "BGTaskSchedulerPermittedIdentifiers": ["app.local.iPadn.update-check"],
+        "CADisableMinimumFrameDurationOnPhone": True,
         "CFBundleIcons": {"CFBundleAlternateIcons": {name: {"CFBundleIconFiles": [name + "60x60"], "UIPrerenderedIcon": False}
                                                     for name in ALTERNATE_ICONS}},
         "CFBundleIcons~ipad": {"CFBundleAlternateIcons": {name: {"CFBundleIconFiles": [name + "60x60", name + "76x76", name + "83x83"], "UIPrerenderedIcon": False}
