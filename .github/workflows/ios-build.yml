@@ -23,6 +23,14 @@ on:
         required: true
         default: false
         type: boolean
+      ui_test_scope:
+        description: UI coverage (use full for a complete release validation)
+        required: true
+        default: full
+        type: choice
+        options:
+          - full
+          - notices
 
 permissions:
   contents: read
@@ -109,11 +117,17 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.run_tests
         env:
           RUN_UI_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.run_ui_tests }}
+          UI_TEST_SCOPE: ${{ inputs.ui_test_scope || 'full' }}
         run: |
           set -o pipefail
           test_targets=(-only-testing:iPadnTests)
           if [ "$RUN_UI_TESTS" = "true" ]; then
-            test_targets+=(-only-testing:iPadnUITests)
+            if [ "$UI_TEST_SCOPE" = "notices" ]; then
+              test_targets+=(-only-testing:iPadnUITests/InteractionTests/testCompactNoticeAndAccessibleConfirmation
+                             -only-testing:iPadnUITests/InteractionTests/testHistoryDeletionCanBeUndone)
+            else
+              test_targets+=(-only-testing:iPadnUITests)
+            fi
           fi
           killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
           xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
@@ -192,7 +206,7 @@ jobs:
 
   publish-release:
     needs: build
-    if: (github.event_name == 'workflow_dispatch' && inputs.publish_release && inputs.run_tests) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    if: (github.event_name == 'workflow_dispatch' && inputs.publish_release && inputs.run_tests && inputs.ui_test_scope != 'notices') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -325,7 +325,8 @@ final class InteractionTests: XCTestCase {
         XCTAssertLessThanOrEqual(notice.frame.height, 48)
         XCTAssertLessThanOrEqual(notice.frame.width, 320)
         attach("23-compact-notice", app: app)
-        notice.tap()
+        // The padded edge must dismiss too, beyond the text's ink bounds.
+        notice.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)).tap()
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: notice)
         waitForExpectations(timeout: 5)
         app.terminate()
