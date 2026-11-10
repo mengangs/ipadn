@@ -17,6 +17,15 @@ iPadn 本身以 GPL-2.0-or-later 发布（见仓库根目录 `LICENSE`）。它�
 
 Apple 的 StoreAgent 等运行文件不包含在仓库或 IPA 中，由应用在首次处理时从 Apple 官方软件更新服务器下载，并按 ipatool 固定的 SHA-256 校验后缓存在本机。
 
+## 原生安装组件
+
+设备版 IPA 由 `scripts/build_native_install.sh` 静态链接 `NativeInstall`（本项目的 Rust 调用层）及其依赖，许可证文本随 IPA 一并放在应用包内：
+
+- [idevice](https://github.com/jkcoxson/idevice) 0.1.68（MIT，Jackson Coxson）：远程配对、设备隧道、文件传输与系统安装服务的协议实现。版本在 `NativeInstall/Cargo.toml` 中固定，依赖树由 `Cargo.lock` 固定。
+- 其余 Rust 依赖（tokio、rustls、RustCrypto 等）均为 MIT 或 Apache-2.0 许可，完整清单见 `NativeInstall/Cargo.lock`。
+
+该组件只连接本机的系统安装服务，不包含签名、改包或绕过授权的代码。
+
 ## ZIPFoundation
 
 使用 Swift Package Manager 固定解析 ZIPFoundation 0.9.19。作者及许可证见组件原始 [LICENSE](https://github.com/weichsel/ZIPFoundation/blob/0.9.19/LICENSE)，打包和再分发时应保留相应声明。

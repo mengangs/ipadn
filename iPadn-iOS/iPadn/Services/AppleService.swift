@@ -36,7 +36,17 @@ final class AppleService: ObservableObject {
         if !accounts.contains(where: { $0.id == activeID }) { activeID = nil }
     }
 
+    /// Session cookies updated by store responses, by account, not yet saved.
+    private var liveCookies: [String: String] = [:]
+    private var cookiesSavedAt = Date.distantPast
+
     func login(email: String, password: String, code: String, useCache: Bool) async throws {
+        // Someone is waiting on sign-in; it goes ahead of background signing.
+        try await SAPSigner.$userInitiated.withValue(true) {
+            try await performLogin(email: email, password: password, code: code, useCache: useCache)
+        }
+    }
+    private func performLogin(email: String, password: String, code: String, useCache: Bool) async throws {
         if accountStorageError != nil {
             do { accounts = try KeychainStore.load(); accountStorageError = nil }
             catch {
@@ -160,6 +170,7 @@ final class AppleService: ObservableObject {
             loginDiagnostic += "; stage=account-save; " + AppleAuthentication.errorCode(error)
             throw error
         }
+        liveCookies[id] = nil
         accounts = updated; select(id); accountStorageError = nil
         loginDiagnostic += "; result=signed-in"
     }
@@ -176,6 +187,26 @@ final class AppleService: ObservableObject {
         accounts = updated
         if activeID == id { select(nil) }
     }
+    /// Apple sends a code to trusted devices only when it is asked to sign in
+    /// with the password and no code. Store requests that need verification
+    /// (claiming an app, a download) never send one, so the code page must ask
+    /// first. Returns false when Apple signed in without needing a code.
+    func requestVerificationCode(expectedID: String, useCache: Bool) async throws -> Bool {
+        try await SAPSigner.$userInitiated.withValue(true) { try await requestCode(expectedID: expectedID, useCache: useCache) }
+    }
+    private func requestCode(expectedID: String, useCache: Bool) async throws -> Bool {
+        guard let account = active, account.id == expectedID else {
+            throw ToolError.message("验证期间账号已改变，请重新选择下载账号")
+        }
+        guard !account.password.isEmpty else { throw AppleAuthError.reauthenticationRequired }
+        do {
+            try await login(email: account.id, password: account.password, code: "", useCache: useCache)
+            return false
+        } catch AppleLoginError.verificationRequired {
+            return true
+        }
+    }
+
     func verifyCurrentAccount(code: String, expectedID: String, useCache: Bool) async throws {
         guard let account = active, account.id == expectedID else {
             throw ToolError.message("验证期间账号已改变，请重新选择下载账号")
@@ -455,7 +486,6 @@ final class AppleService: ObservableObject {
             "pricingParameters": arcade ? "GAME" : "STDQ", "productType": "C", "salableAdamId": id]
         var headers = authHeaders(account)
         headers["Content-Type"] = "application/x-apple-plist"
-        if !account.passwordToken.isEmpty { headers["X-Token"] = account.passwordToken }
         let (raw, _) = try await storePlist(
             URL(string: "https://buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/buyProduct")!,
             body: HTTPClient.encodePlist(payload), headers: headers, guid: deviceID, useCache: useCache)
@@ -583,7 +613,7 @@ final class AppleService: ObservableObject {
 
     private func storePlist(_ url: URL, body: Data, headers: [String: String], guid: String,
                             useCache: Bool) async throws -> ([String: Any], HTTPURLResponse) {
-        try await AppleAuthentication.withStoreProof(
+        let result = try await AppleAuthentication.withStoreProof(
             endpoint: url,
             baseHeaders: headers,
             loadProof: { try await self.signer.storeProofHeaders(guid: guid, useCache: useCache) },
@@ -600,9 +630,69 @@ final class AppleService: ObservableObject {
                 )
             }
         )
+        absorbCookies(from: result.1, dsid: headers["X-Dsid"])
+        return result
+    }
+
+    /// Apple refreshes the session cookies on store responses. Keeping only
+    /// the ones from sign-in lets the session go stale, and Apple then asks
+    /// to verify the account again for every app claimed.
+    private func absorbCookies(from response: HTTPURLResponse, dsid: String?) {
+        guard let dsid, !dsid.isEmpty, let url = response.url,
+              let account = accounts.first(where: { $0.dsid == dsid }) else { return }
+        var fields: [String: String] = [:]
+        for (key, value) in response.allHeaderFields { fields[String(describing: key)] = String(describing: value) }
+        let received = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
+        guard !received.isEmpty else { return }
+        let current = liveCookies[account.id] ?? account.cookie
+        let merged = Self.mergedCookie(current, with: received)
+        guard merged != current else { return }
+        // Requests use the in-memory value at once. Saving republishes the
+        // account list, so it is written at most once a minute.
+        liveCookies[account.id] = merged
+        guard Date().timeIntervalSince(cookiesSavedAt) > 60 else { return }
+        saveLiveCookies()
+    }
+
+    /// Writes the session cookies kept in memory to the saved accounts.
+    /// Best effort: requests already succeeded with them.
+    func saveLiveCookies() {
+        guard !liveCookies.isEmpty else { return }
+        var updated = accounts
+        for index in updated.indices { if let cookie = liveCookies[updated[index].id] { updated[index].cookie = cookie } }
+        cookiesSavedAt = Date()
+        guard (try? KeychainStore.save(updated)) != nil else { return }
+        accounts = updated
+        liveCookies.removeAll()
+    }
+
+    /// `existing` with `received` applied: new values replace old ones by
+    /// name, expired or emptied cookies are dropped, order is kept.
+    nonisolated static func mergedCookie(_ existing: String, with received: [HTTPCookie], now: Date = Date()) -> String {
+        var names: [String] = []
+        var values: [String: String] = [:]
+        for part in existing.split(separator: ";") {
+            let pair = part.trimmingCharacters(in: .whitespaces)
+            guard let equals = pair.firstIndex(of: "="), equals != pair.startIndex else { continue }
+            let name = String(pair[..<equals])
+            if values[name] == nil { names.append(name) }
+            values[name] = String(pair[pair.index(after: equals)...])
+        }
+        for cookie in received {
+            if cookie.value.isEmpty || (cookie.expiresDate.map { $0 <= now } ?? false) {
+                values[cookie.name] = nil
+                names.removeAll { $0 == cookie.name }
+            } else {
+                if values[cookie.name] == nil { names.append(cookie.name) }
+                values[cookie.name] = cookie.value
+            }
+        }
+        return names.compactMap { name in values[name].map { "\(name)=\($0)" } }.joined(separator: "; ")
     }
 
     private func authHeaders(_ account: AppleAccount) -> [String: String] {
+        var account = accounts.first { $0.id == account.id && $0.dsid == account.dsid } ?? account
+        if let cookie = liveCookies[account.id] { account.cookie = cookie }
         var headers: [String: String] = [
             "Content-Type": "application/x-www-form-urlencoded",
             "X-Dsid": account.dsid,

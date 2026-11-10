@@ -91,14 +91,17 @@ base = {"IPHONEOS_DEPLOYMENT_TARGET": "17.0", "SDKROOT": "iphoneos", "SWIFT_VERS
 project_configs = configs("Project", base, {"SWIFT_COMPILATION_MODE": "wholemodule", "VALIDATE_PRODUCT": "YES"})
 app_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
                 "DEVELOPMENT_TEAM": "", "TARGETED_DEVICE_FAMILY": "1,2", "INFOPLIST_FILE": "iPadn/Info.plist",
-                "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": "1.8.5", "CURRENT_PROJECT_VERSION": "24",
+                "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": "1.9.0", "CURRENT_PROJECT_VERSION": "25",
                 "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
                 "ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS": "YES", "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
                 "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks"],
                 "ENABLE_PREVIEWS": "YES", "SUPPORTS_MACCATALYST": "NO", "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD": "NO",
                 "ENABLE_USER_SCRIPT_SANDBOXING": "NO",
                 # Empty unless scripts/build_unsigned_ipa.sh built the Mac PKG bridge.
-                "IPADN_MACPKG_LDFLAGS": "", "OTHER_LDFLAGS": ["$(inherited)", "$(IPADN_MACPKG_LDFLAGS)"]}
+                "IPADN_MACPKG_LDFLAGS": "",
+                # Empty unless scripts/build_unsigned_ipa.sh built the native installation library.
+                "IPADN_NATIVE_LDFLAGS": "",
+                "OTHER_LDFLAGS": ["$(inherited)", "$(IPADN_MACPKG_LDFLAGS)", "$(IPADN_NATIVE_LDFLAGS)"]}
 test_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadnTests", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
                  "DEVELOPMENT_TEAM": "", "TARGETED_DEVICE_FAMILY": "1,2", "GENERATE_INFOPLIST_FILE": "YES",
                  "TEST_HOST": "$(BUILT_PRODUCTS_DIR)/iPadn.app/iPadn", "BUNDLE_LOADER": "$(TEST_HOST)",
@@ -125,11 +128,38 @@ ui_settings = {k: v for k, v in test_settings.items() if k not in ["TEST_HOST", 
 ui_settings.update({"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadnUITests", "TEST_TARGET_NAME": "iPadn"})
 ui_configs = configs("UITests", ui_settings)
 add("UITestTarget", "PBXNativeTarget", buildConfigurationList=ui_configs, buildPhases=[ui_sources], buildRules=[], dependencies=[dependency], name="iPadnUITests", productName="iPadnUITests", productReference=ui_product, productType="com.apple.product-type.bundle.ui-testing")
+# Live Activity extension: the pairing steps and code on the Lock Screen and in the Dynamic Island.
+extension_id = uid("ExtensionTarget")
+extension_product = add("ExtensionProduct", "PBXFileReference", explicitFileType="wrapper.app-extension", includeInIndex="0", path="iPadnLiveActivity.appex", sourceTree="BUILT_PRODUCTS_DIR")
+objects[products]["children"].append(extension_product)
+extension_files, extension_sources = [], []
+for path in sorted((ROOT / "iPadnLiveActivity").glob("*.swift")):
+    reference = add("ExtensionFile/" + path.name, "PBXFileReference", lastKnownFileType="sourcecode.swift", path=path.name, sourceTree="<group>")
+    extension_files.append(reference)
+    extension_sources.append(add("ExtensionBuild/" + path.name, "PBXBuildFile", fileRef=reference))
+extension_files.append(add("ExtensionInfoPlist", "PBXFileReference", lastKnownFileType="text.plist.xml", path="Info.plist", sourceTree="<group>"))
+objects[root_group]["children"].append(add("ExtensionGroup", "PBXGroup", children=extension_files, path="iPadnLiveActivity", sourceTree="<group>"))
+extension_phase = add("ExtensionSources", "PBXSourcesBuildPhase", buildActionMask="2147483647", files=extension_sources, runOnlyForDeploymentPostprocessing="0")
+extension_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn.LiveActivity", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
+                      "DEVELOPMENT_TEAM": "", "TARGETED_DEVICE_FAMILY": "1,2", "INFOPLIST_FILE": "iPadnLiveActivity/Info.plist",
+                      "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": app_settings["MARKETING_VERSION"],
+                      "CURRENT_PROJECT_VERSION": app_settings["CURRENT_PROJECT_VERSION"], "SKIP_INSTALL": "YES",
+                      "APPLICATION_EXTENSION_API_ONLY": "YES",
+                      "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks"]}
+extension_configs = configs("Extension", extension_settings)
+add("ExtensionTarget", "PBXNativeTarget", buildConfigurationList=extension_configs, buildPhases=[extension_phase], buildRules=[], dependencies=[],
+    name="iPadnLiveActivity", productName="iPadnLiveActivity", productReference=extension_product,
+    productType="com.apple.product-type.app-extension")
+extension_proxy = add("ExtensionProxy", "PBXContainerItemProxy", containerPortal=uid("Project"), proxyType="1", remoteGlobalIDString=extension_id, remoteInfo="iPadnLiveActivity")
+objects[app_id]["dependencies"].append(add("ExtensionDependency", "PBXTargetDependency", target=extension_id, targetProxy=extension_proxy))
+embed = add("EmbedExtension", "PBXBuildFile", fileRef=extension_product, settings={"ATTRIBUTES": ["RemoveHeadersOnCopy"]})
+objects[app_id]["buildPhases"].append(add("EmbedExtensions", "PBXCopyFilesBuildPhase", buildActionMask="2147483647", dstPath="",
+    dstSubfolderSpec="13", files=[embed], name="Embed Foundation Extensions", runOnlyForDeploymentPostprocessing="0"))
 project_id = add("Project", "PBXProject", attributes={"BuildIndependentTargetsInParallel": "1", "LastUpgradeCheck": "1600",
     "TargetAttributes": {app_id: {"CreatedOnToolsVersion": "16.0"}, test_id: {"CreatedOnToolsVersion": "16.0", "TestTargetID": app_id}}},
     buildConfigurationList=project_configs, compatibilityVersion="Xcode 14.0", developmentRegion="zh-Hans",
     hasScannedForEncodings="0", knownRegions=["zh-Hans", "en", "Base"], mainGroup=root_group, productRefGroup=products,
-    projectDirPath="", projectRoot="", targets=[app_id, test_id, ui_id], packageReferences=[package])
+    projectDirPath="", projectRoot="", targets=[app_id, test_id, ui_id, extension_id], packageReferences=[package])
 
 def render(value, indent=0):
     tab = "\t" * indent
@@ -182,7 +212,9 @@ info = {"CFBundleDevelopmentRegion": "$(DEVELOPMENT_LANGUAGE)", "CFBundleExecuta
         "UISupportedInterfaceOrientations~ipad": ["UIInterfaceOrientationPortrait", "UIInterfaceOrientationPortraitUpsideDown", "UIInterfaceOrientationLandscapeLeft", "UIInterfaceOrientationLandscapeRight"],
         "CFBundleURLTypes": [{"CFBundleURLName": "app.local.iPadn", "CFBundleURLSchemes": ["ipadn"]}],
         "LSApplicationQueriesSchemes": ["itms-services"],
-        "UIBackgroundModes": ["fetch"], "BGTaskSchedulerPermittedIdentifiers": ["app.local.iPadn.update-check"],
+        # audio keeps iPadn answering while the user pairs in Settings (on-device pairing only).
+        "UIBackgroundModes": ["fetch", "audio"], "BGTaskSchedulerPermittedIdentifiers": ["app.local.iPadn.update-check"],
+        "NSSupportsLiveActivities": True,
         "CADisableMinimumFrameDurationOnPhone": True,
         "CFBundleIcons": {"CFBundleAlternateIcons": {name: {"CFBundleIconFiles": [name + "60x60"], "UIPrerenderedIcon": False}
                                                     for name in ALTERNATE_ICONS}},
@@ -194,7 +226,10 @@ info = {"CFBundleDevelopmentRegion": "$(DEVELOPMENT_LANGUAGE)", "CFBundleExecuta
                                         "UTTypeConformsTo": ["public.zip-archive"], "UTTypeTagSpecification": {"public.filename-extension": ["ipa"]}}],
         "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True,
                                     "NSExceptionDomains": {"127.0.0.1": {"NSExceptionAllowsInsecureHTTPLoads": True}}},
-        "NSLocalNetworkUsageDescription": "通过本机回环地址加载签名资源和提供安装包文件。"}
+        "NSLocalNetworkUsageDescription": "通过本机回环地址加载签名资源和提供安装包文件，并查找本机的安装服务。",
+        # Native installation finds this device's remote pairing port, and on
+        # iOS 27 advertises iPadn as a computer the device can pair with.
+        "NSBonjourServices": ["_remotepairing._tcp", "_remotepairing-pairable-host._tcp"]}
 (ROOT / "iPadn/Info.plist").write_bytes(plistlib.dumps(info, sort_keys=False))
 privacy = {"NSPrivacyTracking": False, "NSPrivacyTrackingDomains": [], "NSPrivacyCollectedDataTypes": [],
            "NSPrivacyAccessedAPITypes": [

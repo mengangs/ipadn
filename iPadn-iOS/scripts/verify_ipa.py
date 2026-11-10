@@ -40,6 +40,20 @@ with zipfile.ZipFile(ipa) as archive:
         for symbol in [b'_iPadnMacPKGDecrypt', b'_iPadnMacPKGStatus', b'_uc_emu_start']:
             assert symbol in executable, 'Mac PKG bridge symbol missing: ' + symbol.decode()
         assert macpkg and prefix + 'ipatool-MIT.txt' in archive.namelist(), 'Missing Mac PKG bridge license notices'
+    native = (prefix + 'idevice-MIT.txt') in archive.namelist()
+    if native or os.environ.get('IPADN_REQUIRE_NATIVE') == '1':
+        executable = archive.read(prefix + info['CFBundleExecutable'])
+        for symbol in [b'_iPadnNativeInstall', b'_iPadnNativeLookup', b'_iPadnNativeCancel', b'_iPadnNativeFree',
+                       b'_iPadnNativePair', b'_iPadnNativePairCancel']:
+            assert symbol in executable, 'Native installation symbol missing: ' + symbol.decode()
+        assert native, 'Missing native installation license notice'
+        extension = prefix + 'PlugIns/iPadnLiveActivity.appex/'
+        assert extension + 'Info.plist' in archive.namelist(), 'Missing pairing Live Activity extension'
+        extension_info = plistlib.loads(archive.read(extension + 'Info.plist'))
+        assert extension_info['CFBundleIdentifier'] == 'app.local.iPadn.LiveActivity', 'Unexpected extension identifier'
+        assert info.get('NSSupportsLiveActivities') is True, 'Live Activities not declared'
+        for service in ['_remotepairing._tcp', '_remotepairing-pairable-host._tcp']:
+            assert service in info.get('NSBonjourServices', []), 'Missing Bonjour service declaration: ' + service
     assert prefix + 'embedded.mobileprovision' not in archive.namelist(), 'Unexpected provisioning profile'
     assert not any(name.startswith(prefix + '_CodeSignature/') for name in archive.namelist()), 'Unexpected signing envelope'
 
@@ -50,7 +64,8 @@ report = {
     'bundle_id': info['CFBundleIdentifier'],
     'checks': ['ZIP CRC integrity', 'iPadn identity', 'phone/pad primary and alternate icon metadata',
                'vendored runtime SHA-256', 'no provisioning profile or signing envelope',
-               'Mac PKG bridge linked' if macpkg else 'Mac PKG bridge not linked'],
+               'Mac PKG bridge linked' if macpkg else 'Mac PKG bridge not linked',
+               'native installation linked' if native else 'native installation not linked'],
     'not_run': ['Apple authorization', 'real-device installation', 'launch animation'],
 }
 (ROOT / 'build').mkdir(exist_ok=True)

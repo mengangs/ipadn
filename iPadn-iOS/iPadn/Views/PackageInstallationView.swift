@@ -20,6 +20,9 @@ struct PackageInstallationView: View {
     /// Which request the delayed connection check belongs to.
     @State private var attempt = 0
     private let proxied = LocalHostRecord.proxyOrVPNActive
+    /// How far a native installation has got; nil when none is running.
+    @State private var nativePhase: NativeInstaller.Phase?
+    private var native: Bool { store.settings.usesNativeInstallation }
     var body: some View {
         NavigationStack {
             Form {
@@ -37,7 +40,7 @@ struct PackageInstallationView: View {
                         } label: {
                             HStack(spacing: 8) {
                                 if busy || openingSystem { ProgressView().tint(UX.onAccent) }
-                                Text(busy ? "正在准备…" : openingSystem ? "正在打开安装…" : "安装")
+                                Text(nativePhase != nil ? "正在安装…" : busy ? "正在准备…" : openingSystem ? "正在打开安装…" : "安装")
                                     .contentTransition(.opacity)
                             }
                             .frame(maxWidth: .infinity)
@@ -45,7 +48,7 @@ struct PackageInstallationView: View {
                         }
                         .buttonStyle(PrimaryButtonStyle()).disabled(busy || openingSystem)
                         .accessibilityIdentifier("installation.request")
-                        if attempted || InstallLog.insideLiveContainer {
+                        if !native, attempted || InstallLog.insideLiveContainer {
                             Button { requestInstallation(viaBrowser: true) } label: {
                                 Label("在 Safari 中安装", systemImage: "safari").frame(maxWidth: .infinity)
                             }
@@ -60,7 +63,9 @@ struct PackageInstallationView: View {
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 10)
                 }
-                if started {
+                if let nativePhase {
+                    Section { NativeProgressRow(phase: nativePhase) }
+                } else if started {
                     Section {
                         TimelineView(.periodic(from: .now, by: 0.5)) { _ in
                             InstallProgressRow(progress: InstallLog.shared.currentProgress, note: message)
@@ -71,20 +76,25 @@ struct PackageInstallationView: View {
                 }
                 Section {
                     NavigationLink { InstallationSettingsView() } label: {
-                        LabeledContent("安装方式", value: store.settings.automaticInstallation ? "一键安装"
-                                       : store.settings.localInstallation ? "本机证书" : "代理服务")
+                        LabeledContent("安装方式", value: store.settings.installationMethodTitle)
                     }.accessibilityIdentifier("installation.settings")
+                    .disabled(nativePhase != nil)
                 } footer: {
+                    if native {
+                        Text("安装前请先在 LocalDevVPN 中点按连接，完成前请勿退出 iPadn。\n安装后 App Store 能识别并更新这个应用；设备上已有的 App Store 版本会被直接覆盖，数据保留。")
+                    } else {
                     Text((store.settings.automaticInstallation ? "安装完成前请勿退出 iPadn。"
                           : store.settings.localInstallation ? "需先在安装方式中创建证书、安装描述文件并开启信任。"
                           : "需要已配置的代理规则。")
                          + (InstallLog.insideLiveContainer && store.settings.automaticInstallation
                             ? "\n在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。" : "")
                          + (proxied ? proxyHint : "")
-                         + "\n从 App Store 安装的应用可以直接覆盖安装，数据会保留。如果系统提示先删除，通常是设备上的版本更新，或设备上的应用来自 TestFlight、其他签名工具等不同渠道。")
+                         + "\n这种方式安装的应用 App Store 无法识别和更新，也不能覆盖设备上已有的 App Store 版本；需要这两项时请改用「原生安装」或导出到电脑安装。")
+                    }
                 }
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.disabled(nativePhase != nil) } }
+                .interactiveDismissDisabled(nativePhase != nil)
                 .sheet(item: $sharedFile) { ShareSheet(items: [$0.url]) }
                 .onChange(of: scenePhase) { _, phase in if phase != .active { openingSystem = false } }
                 .alert("安装未开始", isPresented: Binding(get: { issue != nil }, set: { if !$0 { issue = nil } })) {
@@ -99,7 +109,29 @@ struct PackageInstallationView: View {
         guard let host else { return "" }
         return "\n已开启代理：如果无法安装，请为 \(host) 添加直连（DIRECT）规则。"
     }
+    /// Hands the package to the system installer and waits for it to finish.
+    private func requestNativeInstallation() {
+        guard !busy else { return }
+        UX.feedback()
+        busy = true; message = nil; started = false; nativePhase = .connecting
+        Task { @MainActor in
+            defer { busy = false; nativePhase = nil }
+            do {
+                guard let file = manager.fileURL(job) else { throw ToolError.message("找不到安装包文件，请重新下载。") }
+                let outcome = try await NativeInstaller.install(package: file, bundleID: job.app.bundleID) { phase in
+                    Task { @MainActor in if nativePhase != nil { nativePhase = phase } }
+                }
+                UX.feedback()
+                message = outcome.after?.recognisedByAppStore == false
+                    ? "安装完成，但系统没有保留这个安装包的购买记录，App Store 可能无法识别它。"
+                    : outcome.upgraded ? "已覆盖安装，原有数据保留。" : "安装完成。"
+            } catch is CancellationError {
+                message = nil
+            } catch { issue = error.localizedDescription }
+        }
+    }
     private func requestInstallation(viaBrowser: Bool = false) {
+        if native, !viaBrowser { requestNativeInstallation(); return }
         guard !busy, !openingSystem else { return }
         UX.feedback()
         busy = true; message = nil; started = false; attempted = true
@@ -151,6 +183,28 @@ struct PackageInstallationView: View {
                 }
             } catch { issue = error.localizedDescription }
         }
+    }
+}
+
+/// The step a native installation is at.
+private struct NativeProgressRow: View {
+    let phase: NativeInstaller.Phase
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            switch phase {
+            case .connecting:
+                Label("正在连接本机安装服务…", systemImage: "point.3.connected.trianglepath.dotted")
+                ProgressView().tint(UX.tint)
+            case .uploading(let fraction):
+                Label("正在传输安装包 \(Int(fraction * 100))%", systemImage: "arrow.down.app")
+                ProgressView(value: fraction).tint(UX.tint).animation(.linear(duration: 0.3), value: fraction)
+            case .installing(let fraction):
+                Label("系统正在安装 \(Int(fraction * 100))%", systemImage: "gearshape.2")
+                ProgressView(value: fraction).tint(UX.tint).animation(.linear(duration: 0.3), value: fraction)
+            }
+        }
+        .font(.subheadline)
+        .accessibilityIdentifier("installation.native-progress")
     }
 }
 

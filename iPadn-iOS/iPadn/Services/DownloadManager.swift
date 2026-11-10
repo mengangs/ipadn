@@ -67,6 +67,55 @@ final class DownloadManager: NSObject, ObservableObject {
     private var notifications = true
     private var compatibleDownloadMode = false
     private var fallbackForegroundIDs = Set<UUID>()
+    /// The system download service could not write into iPadn's container
+    /// (seen with some re-signed builds). Kept per app build: a new install
+    /// or signature may behave differently, so it is checked again then.
+    @Published private(set) var backgroundDownloadsUnavailable = DownloadManager.loadBackgroundUnavailable()
+    private static let backgroundUnavailableKey = "backgroundDownloadsUnavailableBuild"
+    private static var currentBuild: String {
+        let info = Bundle.main.infoDictionary
+        return "\(info?["CFBundleShortVersionString"] as? String ?? "")-\(info?["CFBundleVersion"] as? String ?? "")-\(Bundle.main.bundlePath)"
+    }
+    private static func loadBackgroundUnavailable() -> Bool {
+        UserDefaults.standard.string(forKey: backgroundUnavailableKey) == currentBuild
+    }
+    /// Lets the next download try the system download service again.
+    func retryBackgroundDownloads() {
+        UserDefaults.standard.removeObject(forKey: Self.backgroundUnavailableKey)
+        UserDefaults.standard.removeObject(forKey: Self.backgroundProbedKey)
+        backgroundDownloadsUnavailable = false
+        startBackgroundProbeIfNeeded()
+    }
+    private func markBackgroundUnavailable() {
+        guard !backgroundDownloadsUnavailable else { return }
+        backgroundDownloadsUnavailable = true
+        UserDefaults.standard.set(Self.currentBuild, forKey: Self.backgroundUnavailableKey)
+    }
+
+    // A tiny download through the system download service, once per install:
+    // with signatures it cannot write for, it fails the same way a package
+    // would, but before the user waits for a whole package to download twice.
+    nonisolated static let backgroundProbeDescription = "ipadn.background-probe"
+    /// Apple's own 68-byte connectivity page; no third-party host is contacted.
+    private static let backgroundProbeURL = URL(string: "https://www.apple.com/library/test/success.html")!
+    private static let backgroundProbedKey = "backgroundDownloadsProbedBuild"
+    private func startBackgroundProbeIfNeeded() {
+        guard !backgroundDownloadsUnavailable, !LocalResources.isPreview,
+              ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil,
+              UserDefaults.standard.string(forKey: Self.backgroundProbedKey) != Self.currentBuild else { return }
+        let task = session.downloadTask(with: Self.backgroundProbeURL)
+        task.taskDescription = Self.backgroundProbeDescription
+        task.resume()
+    }
+    /// The probe's outcome. Only a file-creation failure says anything; other
+    /// errors (offline, captive Wi-Fi) leave it to be tried on a later launch.
+    private func finishBackgroundProbe(error: NSError?) {
+        if let error {
+            guard error.domain == NSURLErrorDomain, error.code == NSURLErrorCannotCreateFile else { return }
+            markBackgroundUnavailable()
+        }
+        UserDefaults.standard.set(Self.currentBuild, forKey: Self.backgroundProbedKey)
+    }
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     private var lastSave = Date.distantPast
     private var transferMetrics: [UUID: TransferMetrics] = [:]
@@ -90,7 +139,7 @@ final class DownloadManager: NSObject, ObservableObject {
     }()
 
     private func activeSession(for id: UUID) -> URLSession {
-        if compatibleDownloadMode || fallbackForegroundIDs.contains(id) {
+        if compatibleDownloadMode || backgroundDownloadsUnavailable || fallbackForegroundIDs.contains(id) {
             return foregroundSession
         }
         return session
@@ -98,7 +147,7 @@ final class DownloadManager: NSObject, ObservableObject {
 
     private func updateBackgroundTask() {
         let hasActive = tasks.contains { id, _ in
-            compatibleDownloadMode || fallbackForegroundIDs.contains(id)
+            compatibleDownloadMode || backgroundDownloadsUnavailable || fallbackForegroundIDs.contains(id)
         }
         if hasActive {
             if backgroundTaskID == .invalid {
@@ -147,6 +196,7 @@ final class DownloadManager: NSObject, ObservableObject {
             } catch { storageError = "任务文件读取失败；已保留原文件，请先导出诊断再处理。\n" + error.localizedDescription }
             loadingJobs = false
             await restore()
+            startBackgroundProbeIfNeeded()
         }
     }
 
@@ -347,6 +397,9 @@ final class DownloadManager: NSObject, ObservableObject {
                 if let data = data { try? data.write(to: LocalResources.resumeURL(id), options: .atomic) }
                 self.tasks.removeValue(forKey: id)
                 self.updateBackgroundTask()
+                // The byte count lives in the row's progress while running;
+                // keep it on the task so everything showing it stays right.
+                if let progress = self.rowProgress[id] { self.jobs[index] = progress.applying(to: self.jobs[index]) }
                 self.jobs[index].status = .paused
                 self.persist(); self.schedule()
             }
@@ -871,6 +924,12 @@ extension DownloadManager: URLSessionDownloadDelegate {
     }
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        if downloadTask.taskDescription == Self.backgroundProbeDescription {
+            // Reaching here means the service could create the file.
+            try? FileManager.default.removeItem(at: location)
+            Task { @MainActor in self.finishBackgroundProbe(error: nil); self.finishBackgroundIfReady() }
+            return
+        }
         guard let value = downloadTask.taskDescription, let id = UUID(uuidString: value) else { return }
         deliveries.begin()
         LocalResources.ensureDirectoriesExist()
@@ -930,6 +989,12 @@ extension DownloadManager: URLSessionDownloadDelegate {
     }
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if task.taskDescription == Self.backgroundProbeDescription {
+            if let error = error as NSError? {
+                Task { @MainActor in self.finishBackgroundProbe(error: error); self.finishBackgroundIfReady() }
+            }
+            return
+        }
         guard let error = error as NSError?, let value = task.taskDescription, let id = UUID(uuidString: value) else { return }
         let resume = error.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
         Task { @MainActor in
@@ -942,6 +1007,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
             if error.domain == NSURLErrorDomain, error.code == NSURLErrorCannotCreateFile {
                 if !self.fallbackForegroundIDs.contains(id) {
                     self.fallbackForegroundIDs.insert(id)
+                    self.markBackgroundUnavailable()
                     self.tasks.removeValue(forKey: id)
                     self.progressPublishedAt.removeValue(forKey: id)
                     self.updateBackgroundTask()

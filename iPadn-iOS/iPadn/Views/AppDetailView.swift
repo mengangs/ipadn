@@ -146,7 +146,7 @@ struct AppDetailView: View {
                 if !developerApps.isEmpty {
                     CardSection {
                         DeveloperAppsStrip(apps: developerApps)
-                            .cardRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                            .cardRowInsets(EdgeInsets())
                     } header: { sectionTitle(extras?.developer.isEmpty == false ? "更多来自 \(extras!.developer)" : "同一开发者的其他应用") }
                 }
             }
@@ -230,6 +230,8 @@ struct AppDetailView: View {
         }
         .onDisappear { downloadTask?.cancel(); macOfficialTask?.cancel() }
         .task {
+            // Getting the app needs the signing runtime; load it while the page is read.
+            if apple.active != nil, store.settings.useSignerCache { store.signer.prewarm() }
             guard autoStart, !autoStarted else { return }
             autoStarted = true
             if apple.active == nil { showLogin = true }
@@ -621,7 +623,9 @@ struct AppDetailView: View {
         macOfficialTask = Task {
             defer { macOfficialLoading = false; macOfficialTask = nil }
             do {
-                let offer = try await apple.macPackageOffer(app, versionID: versionID, useCache: store.settings.useSignerCache)
+                let offer = try await SAPSigner.$userInitiated.withValue(true) {
+                    try await apple.macPackageOffer(app, versionID: versionID, useCache: store.settings.useSignerCache)
+                }
                 try Task.checkCancellation()
                 try store.downloads.enqueueOfficialMacPackage(offer, for: app)
                 store.infoMessage = "已开始下载"
@@ -631,7 +635,7 @@ struct AppDetailView: View {
                 reauthenticationID = apple.activeID
                 showLogin = true
             } catch AppleLoginError.verificationRequired {
-                store.errorMessage = "请在「账号」中重新验证 Apple 账号后重试。"
+                store.requestVerification { downloadAppleMacPKG(versionID: versionID) }
             } catch is CancellationError { }
             catch {
                 store.errorMessage = error.localizedDescription
@@ -1037,9 +1041,11 @@ private struct DeveloperAppsStrip: View {
                 }
             }
             .scrollTargetLayout()
-            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
         }
+        .contentMargins(.horizontal, 20, for: .scrollContent)
         .scrollTargetBehavior(.viewAligned)
+        .clipShape(RoundedRectangle(cornerRadius: CardSection<EmptyView, EmptyView>.cornerRadius, style: .continuous))
         .accessibilityIdentifier("detail.developer-apps")
     }
 }

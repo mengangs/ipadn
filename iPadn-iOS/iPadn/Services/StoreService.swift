@@ -697,9 +697,23 @@ actor VersionService {
         return Array(result.prefix(2000))
     }
 
-    private static func fetch(_ id: String, source: VersionSource) async throws -> [AppVersion] {
-        guard source.urlTemplate.contains("{id}"),
-              let url = URL(string: source.urlTemplate.replacingOccurrences(of: "{id}", with: id)), url.scheme == "https" else {
+    /// The result of checking one source against a well-known app.
+    struct SourceCheck: Equatable, Sendable {
+        let versions: Int
+        let seconds: Double
+    }
+    /// An app every source tracks, so an empty answer means the source is broken.
+    static let probeAppID = "414478124"
+    /// Asks `source` for a well-known app's history, as a real lookup would.
+    static func check(_ source: VersionSource) async throws -> SourceCheck {
+        let start = Date()
+        let versions = try await fetch(probeAppID, source: source)
+        guard !versions.isEmpty else { throw ToolError.message("返回的版本列表为空") }
+        return SourceCheck(versions: versions.count, seconds: Date().timeIntervalSince(start))
+    }
+
+    static func fetch(_ id: String, source: VersionSource) async throws -> [AppVersion] {
+        guard let url = source.url(for: id) else {
             throw ToolError.message("\(source.name)：接口地址无效")
         }
         let object = try await HTTPClient.shared.json(url)

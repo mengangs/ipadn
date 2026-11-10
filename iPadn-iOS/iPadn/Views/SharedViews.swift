@@ -184,6 +184,13 @@ struct RootView: View {
         }
         .preferredColorScheme(store.settings.appearance == "system" ? nil : store.settings.appearance == "dark" ? .dark : .light)
         .sensoryFeedback(.selection, trigger: store.tab)
+        .sheet(item: $store.verificationRequest) { request in
+            ExistingAccountVerificationView(accountID: request.accountID) {
+                // Runs after the sheet has closed, so a retry can present again.
+                let retry = request.retry
+                Task { @MainActor in try? await Task.sleep(for: .milliseconds(400)); retry?() }
+            }
+        }
         .background {
             if let web = signer.webView {
                 SignerWebView(web: web).frame(width: 1, height: 1).opacity(0.01).allowsHitTesting(false).accessibilityHidden(true)

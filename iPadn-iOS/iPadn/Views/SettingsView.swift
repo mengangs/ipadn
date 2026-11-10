@@ -10,6 +10,8 @@ struct SettingsView: View {
     @State private var iconIssue: String?
     @State private var addingSource = false
     @State private var editingSourceID: UUID?
+    /// Results of the last "check all sources", by source.
+    @State private var sourceChecks: [UUID: SourceCheckState] = [:]
     @State private var share: SharedFile?
     @State private var resetSettings = false
     @State private var clearCache = false
@@ -33,10 +35,17 @@ struct SettingsView: View {
                         if on { UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in } }
                     }
                 Toggle("兼容下载模式", isOn: $store.settings.compatibleDownloadMode)
+                if store.downloads.backgroundDownloadsUnavailable && !store.settings.compatibleDownloadMode {
+                    Button("重新尝试后台下载") { store.downloads.retryBackgroundDownloads(); store.infoMessage = "下一个下载任务会重新尝试后台下载" }
+                }
             } header: {
                 Text("下载")
             } footer: {
-                Text("如在企业证书重签或特定环境下遇到“无法创建文件”报错，请开启兼容下载模式（使用应用前台直接下载，下载时请保持应用在前台）。")
+                if store.downloads.backgroundDownloadsUnavailable && !store.settings.compatibleDownloadMode {
+                    Text("当前签名下系统后台下载无法保存文件，已自动改用应用内下载，下载时请保持 iPadn 在前台。更换签名后可以点按「重新尝试后台下载」。")
+                } else {
+                    Text("如在企业证书重签或特定环境下遇到“无法创建文件”报错，请开启兼容下载模式（使用应用前台直接下载，下载时请保持应用在前台）。")
+                }
             }
             Section {
                 Toggle("关注应用提醒", isOn: $store.settings.watchNotifications)
@@ -109,6 +118,7 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(source.name)
                                 Text(source.urlTemplate).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                if let check = sourceChecks[source.id] { SourceCheckLabel(state: check) }
                             }
                             Spacer()
                             Text(source.enabled ? "已启用" : "已停用").font(.caption).foregroundStyle(.secondary)
@@ -123,9 +133,18 @@ struct SettingsView: View {
                 } header: { if source.id == store.settings.versionSources.first?.id { Text("历史版本来源") } }
             }
             Section {
+                Button { checkSources() } label: {
+                    HStack {
+                        Label("检测全部来源", systemImage: "checkmark.circle")
+                        Spacer()
+                        if sourceChecks.values.contains(.checking) { ProgressView() }
+                    }
+                }
+                .disabled(sourceChecks.values.contains(.checking) || store.settings.versionSources.isEmpty)
+                .accessibilityIdentifier("settings.sources.check")
                 Button("添加版本来源", systemImage: "plus") { addingSource = true }
             } footer: {
-                Text("用于查询应用的历史版本。")
+                Text("用于查询应用的历史版本。检测会用微信的版本记录逐个请求每个来源，显示是否可用、返回的版本数和耗时。")
             }
             Section {
                 Toggle("加快重复下载", isOn: $store.settings.useSignerCache)
@@ -213,6 +232,53 @@ struct SettingsView: View {
     }
 }
 
+extension SettingsView {
+    /// Checks every source at once, enabled or not, and shows each result
+    /// under its row as it arrives.
+    private func checkSources() {
+        let sources = store.settings.versionSources
+        UX.feedback()
+        for source in sources { sourceChecks[source.id] = .checking }
+        for source in sources {
+            Task {
+                let result: SourceCheckState
+                do {
+                    let check = try await VersionService.check(source)
+                    result = .available(versions: check.versions, seconds: check.seconds)
+                } catch { result = .unavailable(error.localizedDescription) }
+                sourceChecks[source.id] = result
+            }
+        }
+    }
+}
+
+enum SourceCheckState: Equatable {
+    case checking
+    case available(versions: Int, seconds: Double)
+    case unavailable(String)
+}
+
+/// One line under a version source: whether it answered, and how.
+struct SourceCheckLabel: View {
+    let state: SourceCheckState
+    var body: some View {
+        Group {
+            switch state {
+            case .checking:
+                Label("正在检测…", systemImage: "clock").foregroundStyle(.secondary)
+            case .available(let versions, let seconds):
+                Label("可用 · \(versions) 个版本 · \(String(format: "%.1f", seconds)) 秒", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            case .unavailable(let reason):
+                Label("不可用：" + reason, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange).lineLimit(2)
+            }
+        }
+        .font(.caption)
+        .accessibilityIdentifier("settings.sourceCheckResult")
+    }
+}
+
 struct VersionSourceEditor: View {
     @Binding var source: VersionSource
     var body: some View {
@@ -220,7 +286,7 @@ struct VersionSourceEditor: View {
             Section("来源设置") {
                 Toggle("启用", isOn: $source.enabled)
                 TextField("来源名称", text: $source.name)
-                TextField("接口地址，用 {id} 代表 App ID", text: $source.urlTemplate)
+                TextField("接口地址，用 {id} 或 {appId} 代表 App ID", text: $source.urlTemplate)
                     .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                 TextField("列表字段名（可留空）", text: $source.containerKey)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -249,9 +315,7 @@ struct AddVersionSourceView: View {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("添加") {
                             guard !source.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                                  source.urlTemplate.contains("{id}"),
-                                  let url = URL(string: source.urlTemplate.replacingOccurrences(of: "{id}", with: "123")),
-                                  url.scheme == "https", url.host != nil else { error = "请填写名称，以及包含 {id} 的 https 接口地址"; return }
+                                  source.url(for: "123") != nil else { error = "请填写名称，以及包含 {id} 或 {appId} 的 https 接口地址"; return }
                             store.settings.versionSources.append(source); dismiss()
                         }
                     }

@@ -66,7 +66,9 @@ struct AccountsView: View {
                         .accessibilityIdentifier("account." + account.id)
                         .disabled(store.accountRemoving != nil)
                         .revealDelete(id: "account." + account.id, enabled: store.accountRemoving == nil,
-                                      grouping: account.id == apple.accounts.first?.id ? .first : .middle, title: "移除") { deleting = account }
+                                      grouping: account.id == apple.accounts.first?.id ? .first : .middle,
+                                      // Text starts after the 20pt margin, 36pt avatar and 12pt gap.
+                                      separatorInset: 68, title: "移除") { deleting = account }
                     }
                     NavigationLink { LoginView() } label: { Label("添加账号", systemImage: "plus") }
                 } header: { Text("账号") } footer: { Text("点按切换下载账号，侧滑移除。") }
@@ -103,15 +105,21 @@ struct VerificationStep: View {
     let busy: Bool
     let issue: String?
     var submitTitle = "验证"
+    /// False while iPadn is still asking Apple to send a code.
+    var sent = true
+    /// Asks Apple to send a new code; nil hides the button.
+    var resend: (() -> Void)? = nil
     let submit: () -> Void
     var changeAccount: (() -> Void)? = nil
     @State private var showingHelp = false
+    @State private var resendAvailableAt = Date().addingTimeInterval(30)
     var body: some View {
         VStack(spacing: 18) {
             Image(systemName: "lock.shield.fill").font(.system(size: 56)).foregroundStyle(.tint)
                 .padding(.top, 12).accessibilityHidden(true)
             Text("双重认证").font(.title.weight(.bold))
-            Text("验证码已发送到“\(account)”的受信任设备。请输入 6 位验证码以继续。")
+            Text(sent ? "Apple 已向“\(account)”的受信任设备发送登录请求。在设备上点按「允许」后会显示 6 位验证码，请输入以继续。"
+                 : "正在请求 Apple 向“\(account)”的受信任设备发送验证码…")
                 .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             VerificationCodeField(code: $code, disabled: busy) { _ in submit() }
@@ -126,6 +134,17 @@ struct VerificationStep: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(busy || code.count != 6)
                 .accessibilityIdentifier("apple.verification.submit")
+            if let resend {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let wait = Int(resendAvailableAt.timeIntervalSince(context.date).rounded(.up))
+                    Button(wait > 0 ? "重新发送验证码（\(wait) 秒）" : "重新发送验证码") {
+                        resendAvailableAt = Date().addingTimeInterval(30)
+                        resend()
+                    }
+                    .font(.subheadline).disabled(busy || !sent || wait > 0)
+                    .accessibilityIdentifier("apple.verification.resend")
+                }
+            }
             Button("没有收到验证码？") { showingHelp = true }.font(.subheadline)
             if let changeAccount {
                 Button("修改账号或密码", action: changeAccount).font(.subheadline).disabled(busy)
@@ -134,7 +153,7 @@ struct VerificationStep: View {
         .alert("获取验证码", isPresented: $showingHelp) {
             Button("好", role: .cancel) { }
         } message: {
-            Text("在受信任的 iPhone、iPad 或 Mac 上允许登录后会显示验证码；也可以在该设备的「设置 › Apple 账户 › 登录与安全 › 获取验证码」中获取。")
+            Text("验证码只会发到登录了这个 Apple 账户的 iPhone、iPad 或 Mac，不会发短信。\n1. 在那台设备上出现「Apple 账户登录请求」时点按「允许」。\n2. 没有出现时，可以在那台设备的「设置 › [你的姓名] › 登录与安全 › 获取验证码」中获取，同样可以用来验证。\n3. 仍然没有收到，点按「重新发送验证码」。频繁请求时 Apple 可能会暂时不发送，请稍候再试。\n\n获取免费应用时也需要验证，是因为 Apple 账户要求免费下载输入密码。可以在登录了该账户的设备上打开「设置 › 媒体与购买项目 › 密码设置」，关闭「免费下载」的「需要密码」（使用面容 ID 购买时没有这个选项）。")
         }
     }
 }
@@ -168,7 +187,7 @@ struct LoginView: View {
             VStack(spacing: 22) {
                 if verifying {
                     VerificationStep(account: email.trimmingCharacters(in: .whitespacesAndNewlines), code: $code,
-                                     busy: busy, issue: failure, submitTitle: "验证并登录", submit: submit,
+                                     busy: busy, issue: failure, submitTitle: "验证并登录", resend: resendCode, submit: submit,
                                      changeAccount: { verifying = false; code = ""; failure = nil; focus = .password })
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 } else {
@@ -230,6 +249,23 @@ struct LoginView: View {
         .onAppear { if email.isEmpty { focus = .email } else if password.isEmpty { focus = .password } }
     }
 
+    /// Signing in again without a code makes Apple send a new one.
+    private func resendCode() {
+        guard !busy else { return }
+        busy = true; failure = nil; code = ""
+        loginTask = Task {
+            defer { busy = false; loginTask = nil }
+            do {
+                try await apple.login(email: email, password: password, code: "", useCache: store.settings.useSignerCache)
+                // Signed in without a code this time.
+                password = ""; UX.success(); onSignedIn?(); dismiss()
+            } catch AppleLoginError.verificationRequired {
+                failure = nil
+            } catch is CancellationError {
+            } catch { failure = error.localizedDescription }
+        }
+    }
+
     private func submit() {
         guard canSubmit else { return }
         focus = nil; busy = true; failure = nil
@@ -252,6 +288,9 @@ struct LoginView: View {
 
 /// Re-verification of the current account (no password), same two-factor page.
 struct ExistingAccountVerificationView: View {
+    /// When Apple last signed in without a code here. Asked again soon after,
+    /// signing in silently evidently did not satisfy Apple: stop and ask for a code.
+    @MainActor private static var lastSilentSignIn: Date?
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var apple: AppleService
     @Environment(\.dismiss) private var dismiss
@@ -260,18 +299,47 @@ struct ExistingAccountVerificationView: View {
     @State private var code = ""
     @State private var busy = false
     @State private var issue: String?
+    @State private var sent = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VerificationStep(account: accountID, code: $code, busy: busy, issue: issue,
-                                 submitTitle: "验证并继续", submit: verify)
+                                 submitTitle: "验证并继续", sent: sent, resend: requestCode, submit: verify)
                     .frame(maxWidth: 460).padding(24).frame(maxWidth: .infinity)
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.disabled(busy) }
+            }
+            .task { requestCode() }
+        }
+    }
+
+    /// Makes Apple send the code this page asks for. If Apple signs in without
+    /// one, the action that needed verification simply continues.
+    private func requestCode() {
+        guard !busy else { return }
+        busy = true; issue = nil; sent = false
+        Task {
+            defer { busy = false }
+            do {
+                if try await apple.requestVerificationCode(expectedID: accountID, useCache: store.settings.useSignerCache) {
+                    sent = true
+                } else if let last = Self.lastSilentSignIn, Date().timeIntervalSince(last) < 60 {
+                    // Signed in, yet the store still wants verification: only a code helps.
+                    Self.lastSilentSignIn = nil
+                    sent = true
+                    issue = "Apple 仍要求验证此账号。请在登录了该账户的设备上打开「设置 › [你的姓名] › 登录与安全 › 获取验证码」，输入显示的验证码。"
+                } else {
+                    Self.lastSilentSignIn = Date()
+                    UX.success(); onVerified(); dismiss()
+                }
+            } catch is CancellationError {
+                issue = "请求已取消，可以点按「重新发送验证码」"; sent = true
+            } catch {
+                issue = error.localizedDescription; sent = true
             }
         }
     }

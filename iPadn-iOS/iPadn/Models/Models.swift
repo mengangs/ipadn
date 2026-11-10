@@ -262,17 +262,23 @@ struct ToolSettings: Codable, Equatable {
     var automaticInstallation = true
     var localInstallation = true
     var localInstallHost = ManifestBuilder.defaultLocalHost
+    /// Install through the system installer over a loopback VPN and a pairing
+    /// file, keeping the App Store purchase record. Takes precedence when on.
+    var nativeInstallation = false
     var versionSources: [VersionSource] = [
         VersionSource(name: "Timbrd", urlTemplate: "https://api.timbrd.com/apple/app-version/index.php?id={id}", containerKey: "", reverse: true),
-        VersionSource(name: "Bilin", urlTemplate: "https://apis.bilin.eu.org/history/{id}", containerKey: "data", reverse: false)
+        VersionSource(name: "Bilin", urlTemplate: "https://apis.bilin.eu.org/history/{id}", containerKey: "data", reverse: false),
+        VersionSource.iosDump
     ]
+    /// 2 once the iosdump source was offered to lists saved before it existed.
+    var versionSourcesSchema = 2
 
     init() { }
     private enum CodingKeys: String, CodingKey {
         case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
         case useSignerCache, appearance, plistServer, versionSources, localInstallation, localInstallHost
         case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency, appUpdateCheck
-        case appearanceSchema, compatibleDownloadMode
+        case appearanceSchema, compatibleDownloadMode, nativeInstallation, versionSourcesSchema
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -301,7 +307,14 @@ struct ToolSettings: Codable, Equatable {
         localInstallation = try values.decodeIfPresent(Bool.self, forKey: .localInstallation) ?? plistServer.isEmpty
         localInstallHost = ManifestBuilder.migratedLocalHost(try values.decodeIfPresent(String.self, forKey: .localInstallHost) ?? localInstallHost)
         automaticInstallation = try values.decodeIfPresent(Bool.self, forKey: .automaticInstallation) ?? automaticInstallation
+        nativeInstallation = try values.decodeIfPresent(Bool.self, forKey: .nativeInstallation) ?? nativeInstallation
         versionSources = try values.decodeIfPresent([VersionSource].self, forKey: .versionSources) ?? versionSources
+        // Lists saved before iosdump was a default get it once; removing it later sticks.
+        if (try values.decodeIfPresent(Int.self, forKey: .versionSourcesSchema) ?? 1) < 2,
+           !versionSources.contains(where: { $0.url(for: "1")?.host == VersionSource.iosDump.url(for: "1")?.host }) {
+            versionSources.append(VersionSource.iosDump)
+        }
+        versionSourcesSchema = 2
     }
 }
 
@@ -312,6 +325,20 @@ struct VersionSource: Codable, Identifiable, Equatable {
     var containerKey: String
     var reverse: Bool
     var enabled = true
+
+    static let iosDump = VersionSource(name: "iosdump", urlTemplate: "https://iosdump.apdoilaan.work/history/{appId}", containerKey: "data", reverse: false)
+    /// Placeholders for the App ID; both spellings are in use.
+    static let placeholders = ["{id}", "{appId}", "{appid}", "{APPID}"]
+    var hasPlaceholder: Bool { Self.placeholders.contains { urlTemplate.contains($0) } }
+    /// The request URL for `appID`, or nil when the template is not a usable https address.
+    func url(for appID: String) -> URL? {
+        guard hasPlaceholder else { return nil }
+        let filled = Self.placeholders.reduce(urlTemplate.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            $0.replacingOccurrences(of: $1, with: appID)
+        }
+        guard let url = URL(string: filled), url.scheme == "https", url.host != nil else { return nil }
+        return url
+    }
 }
 
 enum SearchQuery: Equatable {

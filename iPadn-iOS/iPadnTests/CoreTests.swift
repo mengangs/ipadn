@@ -788,9 +788,45 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(settings.notifications)
         XCTAssertEqual(settings.maxConcurrentDownloads, 6)
         XCTAssertEqual(settings.maxQueuedDownloads, 1)
-        XCTAssertEqual(settings.versionSources.count, 2)
+        XCTAssertEqual(settings.versionSources.map(\.name), ["Timbrd", "Bilin", "iosdump"])
         XCTAssertEqual(try JSONDecoder().decode(ToolSettings.self, from: JSONEncoder().encode(settings)), settings)
         XCTAssertEqual(DownloadJob(app: StoreApp(id: "1", name: "Test"), downloaded: -1, expected: 100).progress, 0)
+    }
+
+    func testAppleCookiesAreMergedByNameAndExpiredOnesDropped() throws {
+        let url = URL(string: "https://buy.itunes.apple.com/")!
+        func cookie(_ name: String, _ value: String, expires: Date? = nil) throws -> HTTPCookie {
+            var properties: [HTTPCookiePropertyKey: Any] = [.name: name, .value: value, .domain: ".apple.com", .path: "/", .originURL: url]
+            if let expires { properties[.expires] = expires }
+            return try XCTUnwrap(HTTPCookie(properties: properties))
+        }
+        let now = Date()
+        let merged = try AppleService.mergedCookie("mz_at0=old; itspod=7; wosid=a", with: [
+            cookie("mz_at0", "new"), cookie("wosid", "x", expires: now.addingTimeInterval(-60)), cookie("hsaccnt", "1")
+        ], now: now)
+        XCTAssertEqual(merged, "mz_at0=new; itspod=7; hsaccnt=1")
+        XCTAssertEqual(AppleService.mergedCookie("a=1", with: [], now: now), "a=1")
+        // Values containing "=" survive a round trip.
+        XCTAssertEqual(AppleService.mergedCookie("tok=ab==; b=2", with: [], now: now), "tok=ab==; b=2")
+    }
+
+    func testVersionSourceTemplatesAcceptBothPlaceholdersAndOnlyHTTPS() {
+        XCTAssertEqual(VersionSource.iosDump.url(for: "414478124")?.absoluteString, "https://iosdump.apdoilaan.work/history/414478124")
+        let legacy = VersionSource(name: "a", urlTemplate: "https://example.com/v?id={id}", containerKey: "", reverse: true)
+        XCTAssertEqual(legacy.url(for: "7")?.absoluteString, "https://example.com/v?id=7")
+        XCTAssertNil(VersionSource(name: "b", urlTemplate: "https://example.com/history", containerKey: "", reverse: false).url(for: "7"))
+        XCTAssertNil(VersionSource(name: "c", urlTemplate: "http://example.com/{appId}", containerKey: "", reverse: false).url(for: "7"))
+    }
+
+    func testIosdumpIsOfferedOnceToSavedSourceLists() throws {
+        let saved = Data(#"{"versionSources":[{"id":"6F0C2B1E-0000-4000-8000-000000000001","name":"Mine","urlTemplate":"https://example.com/{id}","containerKey":"data","reverse":false,"enabled":true}]}"#.utf8)
+        let migrated = try JSONDecoder().decode(ToolSettings.self, from: saved)
+        XCTAssertEqual(migrated.versionSources.map(\.name), ["Mine", "iosdump"])
+        // Removing it afterwards is respected.
+        var removed = migrated
+        removed.versionSources.removeAll { $0.name == "iosdump" }
+        let reloaded = try JSONDecoder().decode(ToolSettings.self, from: JSONEncoder().encode(removed))
+        XCTAssertEqual(reloaded.versionSources.map(\.name), ["Mine"])
     }
 
     func testAppearanceFollowsSystemByDefaultAndReplacesTheSavedDarkDefault() throws {
@@ -1049,6 +1085,35 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(signer.isPresented)
         do { _ = try await signer.kbsync(guid: "invalid", dsid: "0", useCache: false); XCTFail("Invalid identity accepted") }
         catch { XCTAssertFalse(signer.isPresented) }
+    }
+
+    @MainActor
+    func testUserActionsRunBeforeQueuedBackgroundSigning() async throws {
+        let signer = SAPSigner()
+        _ = try await signer.execute(title: "准备", script: "return 'ready';", arguments: [:])
+        // Holds the runtime until cancelled.
+        let blocker = Task { @MainActor in
+            try await signer.execute(title: "占用", script: "reportStage(2); return await new Promise(() => {});", arguments: [:], timeoutSeconds: 60)
+        }
+        for _ in 0..<900 where signer.stageIndex != 2 { try await Task.sleep(nanoseconds: 50_000_000) }
+        var order: [String] = []
+        let background = Task { @MainActor in
+            _ = try await signer.execute(title: "后台", script: "return 'b';", arguments: [:])
+            order.append("background")
+        }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let user = Task { @MainActor in
+            _ = try await SAPSigner.$userInitiated.withValue(true) {
+                try await signer.execute(title: "用户", script: "return 'u';", arguments: [:])
+            }
+            order.append("user")
+        }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        signer.cancel()
+        _ = try? await blocker.value
+        try await user.value
+        try await background.value
+        XCTAssertEqual(order, ["user", "background"])
     }
 
     @MainActor

@@ -7,6 +7,45 @@
 
 ---
 
+## 2026-11-11 iPadn 1.9.0（build 25）汇总
+
+用户已授权：审查后提交、CI 编译测试通过后发布 1.9.0。本节为最新状态，下方原生安装小节为过程记录。
+
+- 原生安装（详见下节）；iOS 27 起本机配对：`OnDevicePairing.swift` + Rust `pairing.rs`（idevice `PairableHost`），Swift 用 `NetService` 广播 `_remotepairing-pairable-host._tcp`。配对期间以静音音频（mixWithOthers，`UIBackgroundModes` 增加 `audio`）保持后台，仅配对时启用；实时活动扩展 `iPadnLiveActivity` 显示步骤与配对码，图标为内嵌的应用图标。真机（iOS 27.0.1）本机配对、导入、检查连接、OneDrive 原生安装与覆盖均由用户确认通过。
+- 验证码：Apple 只在「密码登录且不带验证码」时推送验证码。`ExistingAccountVerificationView` 打开时先调用 `requestVerificationCode` 触发推送；Apple 直接放行则自动继续；60 秒内再次放行仍被要求验证时停止自动继续、改为提示手动获取验证码，避免循环。新增重新发送；`ToolStore.requestVerification` 供下载列表、已购批量、Mac 包统一弹出验证。真机未遇到 Apple 要求验证的场景，未实测。
+- 会话 Cookie：store 响应的 Set-Cookie 按名合并（`AppleService.mergedCookie`），内存中立即生效，钥匙串最多每分钟写一次，退到后台时保存。目的是减少反复要求验证，效果未实测。
+- 下载：#34（100% 后重下）根因为 #32 的 -3000 兜底每个任务都先走后台下载；现首次启动用 Apple `success.html`（68 字节）探测后台下载，失败即记住（按版本+安装路径），之后直接应用内下载。真机探测成功路径已在 nsurlsessiond 日志中确认；失败路径未复现。
+- 签名组件：轮询改为队列，`SAPSigner.userInitiated`（TaskLocal）标记的用户操作优先；空闲保留 90 秒改为 5 分钟；详情页打开时预热。新增排队顺序单元测试（CI 运行）。
+- 版本来源：默认新增 iosdump（`{appId}`，与 `{id}` 均支持），老用户列表仅补一次（`versionSourcesSchema`）；设置中「检测全部来源」用微信（414478124）探测。
+- 界面：暂停任务详情显示实时已下载与总大小；账号行分隔线（inset 68）；开发者应用横排按卡片圆角裁剪。
+- 未处理：issue #33 英文本地化。
+
+## 2026-11-11 原生安装（过程记录）
+
+用户报告三个问题：iPadn 手机内安装的应用 App Store 显示云朵且不能更新；爱思显示“共享正版”；不能覆盖 App Store 已装版本。三者同一根因，已在真机（iPhone 15 Pro，iOS 27.0.1）取证：
+
+- 清单安装（`itms-services`）后系统记录只剩带 `enterpriseInstallURL` 的精简元数据，没有 `itemId`、`softwareVersionExternalIdentifier` 和账号购买信息。
+- 清单安装覆盖商店应用时，`appstored` 在下载前拒绝：`ASDErrorDomain 855 "Must uninstall existing app"`。清单字段无法绕过。
+- 同一个 IPA 走 `installation_proxy`（Install / Upgrade）保留完整记录，App Store 显示 Open，覆盖升级不要求卸载，数据保留。只传 `CFBundleIdentifier` 即可，系统自己读取包内的 `iTunesMetadata.plist` 和 SINF。
+
+已实现（用户已确认方案）：
+
+- `iPadn-iOS/NativeInstall/`：Rust 封装库，依赖 `idevice` 0.1.68（纯 Rust 加密后端），导出 `iPadnNativeInstall` / `Lookup` / `Cancel` / `Free`。流程为远程配对校验、TLS-PSK 隧道、RSD、AFC 分块上传、Install 或 Upgrade。只校验配对，不会发起新的配对。
+- `iPadn/Services/NativeInstaller.swift`：`dlsym` 解析符号（与 Mac PKG 组件同一模式），配对文件保存在 Application Support，Bonjour 发现 `_remotepairing._tcp` 端口，默认 49152，设备地址 `10.7.0.1`。
+- 安装设置新增「原生安装」，默认关闭；安装页显示连接、传输、系统安装三段进度。没有链接该库的构建不显示这个选项。
+- 构建：`scripts/build_native_install.sh`、`build_unsigned_ipa.sh`（`IPADN_NATIVE_LDFLAGS`，`IPADN_REQUIRE_NATIVE=1`）、`verify_ipa.py`、CI 增加 Rust 步骤。本地 xtool 在根目录 `Package.swift` 用绝对路径 `-force_load`。
+- 测试：`iPadnTests/NativeInstallerTests.swift`（5 项，尚未在 CI 运行）。
+
+验证状态：
+
+- 通过：电脑端探针全新安装、3 次覆盖升级；经 iOS 17+ 隧道的升级；Rust 库在电脑上经 Wi-Fi 用远程配对文件完成查询和覆盖升级（270 MB 约 45 秒）；应用链接该库后真机可启动，原生安装设置页显示正常。
+- 通过（2026-11-11 00:40 前后，用户在真机操作）：自动导入配对文件、LocalDevVPN 下「检查连接」、OneDrive 原生安装与再次覆盖安装，均无报错；App Store 显示已安装。电脑端回读记录：`itemId` 477537958、`softwareVersionExternalIdentifier` 894270367、购买信息存在、无 `enterpriseInstallURL`。
+- 文件选择器在 iPadn 自己的「文件」目录中点选无反应，原因未查明；已改为优先自动读取 iPadn 文件夹中的配对文件，选择器作为后备并放宽文件类型。
+- **未验证**：对清单安装的应用（如 `com.bilibili.inter`）做原生覆盖能否修复记录；爱思中的分类显示；有新版本时 App Store 的实际更新；CI 的 Xcode 构建与新增单元测试。
+- 已知限制：LocalDevVPN 与其他代理或 VPN 不能同时开启；配对文件需在电脑上生成（`idevice_pair`，或本机临时工具 `.build/native-pair/native-pair.exe`）。
+
+真机当前状态：装的是本地 xtool 调试构建（非 CI 正式包，不含 Mac PKG 组件）；OneDrive 26.1.4 为测试应用；配对文件已在应用内导入（Application Support），「文件」目录中的副本导入后被删除；原生安装已选为当前安装方式。测试机是用户日常手机，可能正在使用，操作屏幕前先确认前台应用。
+
 ## 2026-11-10 本地修复与验证进度（优先于下文的原始待办）
 
 本轮用户已批准 UI/UX、流畅性和稳定性优化，以及提交推送与 CI 验证。随后用户发来 X / Swiftgram 与新版对比截图，明确连接真机并授权调试；以最新授权为准。禁止安装支付宝。

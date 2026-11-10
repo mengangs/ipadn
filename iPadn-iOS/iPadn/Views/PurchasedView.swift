@@ -72,7 +72,9 @@ struct PurchasedView: View {
         guard !apps.isEmpty, batchProgress == nil else { return }
         batchProgress = (0, apps.count)
         Task {
-            let result = await store.startDownloads(apps) { done in batchProgress = (done, apps.count) }
+            let result = await SAPSigner.$userInitiated.withValue(true) {
+                await store.startDownloads(apps) { done in batchProgress = (done, apps.count) }
+            }
             batchProgress = nil
             if result.added > 0 {
                 selection.removeAll(); selecting = false

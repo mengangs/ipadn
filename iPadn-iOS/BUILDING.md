@@ -1,6 +1,6 @@
 # 自行编译 iPadn
 
-iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad。当前源码版本为 1.8.5（build 24）。
+iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad。当前源码版本为 1.9.0（build 25）。
 
 ## GitHub 云编译（无需本地 Mac）
 
@@ -8,7 +8,7 @@ iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad
 
 日常构建执行完整 `iPadnTests`（含安装、认证、签名组件和布局测试）。界面交互测试 `iPadnUITests` 可在手动运行时同时勾选 `run_tests` 和 `run_ui_tests` 执行。
 
-也支持推送与项目版本一致的新标签（例如 `v1.8.5`）触发编译、单元测试和 Release 发布；标签与 IPA 版本不一致时拒绝发布。安装包在检查与测试全部通过后才发布。
+也支持推送与项目版本一致的新标签（例如 `v1.9.0`）触发编译、单元测试和 Release 发布；标签与 IPA 版本不一致时拒绝发布。安装包在检查与测试全部通过后才发布。
 
 下文的 Mac 和 Xcode 要求仅适用于自行在本地编译。
 
@@ -19,6 +19,7 @@ Windows + WSL 使用 xtool 真机调试时，构建后须先在仓库根目录�
 - 一台装有 Xcode 26 的 Mac
 - Python 3
 - Go 1.26：用于编译 Mac 安装包处理组件。不编译这个组件也能构建应用，只是不能下载需要处理的 Mac 安装包。
+- Rust（stable）及 `aarch64-apple-ios` 目标：用于编译原生安装组件。不编译这个组件也能构建应用，只是安装方式里没有「原生安装」。
 
 ## 构建未签名 IPA
 
@@ -30,6 +31,14 @@ bash scripts/build_unsigned_ipa.sh
 
 输出为 `build/iPadn-unsigned.ipa`。脚本会先校验并打包验证组件，再尝试编译 Mac 安装包处理组件；没有安装 Go 时会跳过该组件。设置 `IPADN_REQUIRE_MACPKG=1` 可要求必须包含它。
 
+原生安装组件由 `scripts/build_native_install.sh` 编译为 `build/native/libipadn_native.a`，没有安装 Rust 时会跳过。设置 `IPADN_REQUIRE_NATIVE=1` 可要求必须包含它。该组件是纯 Rust 实现，不依赖 Apple SDK，可以在 macOS 或 Linux 上交叉编译；Windows + WSL 的 xtool 本地构建在根目录 `Package.swift` 中用链接参数引入同一个静态库。
+
+`NativeInstall/examples/cli.rs` 可以在与设备同一局域网的电脑上运行同一套代码，用于在不编译应用的情况下检查配对文件和安装流程：
+
+```bash
+cargo run --release --example cli -- lookup <配对文件> <设备地址> <端口> <Bundle ID>
+```
+
 用 Xcode 打开 `iPadn.xcodeproj`，选择共享 scheme `iPadn`，即可运行和调试。
 
 ## 修改工程
@@ -40,6 +49,10 @@ bash scripts/build_unsigned_ipa.sh
 python3 scripts/generate_project.py
 python3 scripts/verify_project.py
 ```
+
+工程包含应用扩展 `iPadnLiveActivity`，用于在锁屏和灵动岛显示本机配对的步骤与配对码，由同一脚本生成并嵌入应用。`PairingActivityAttributes` 在应用（`iPadn/Services`）和扩展中各有一份，ActivityKit 按类型名匹配，两份的字段必须保持一致。
+
+`tools/native_install/` 是独立的电脑端对照工具，用于通过 USB 验证原生安装协议，不参与应用构建；它有单独的离线测试工作流 `native-install-probe.yml`。
 
 ## 测试
 
@@ -63,7 +76,7 @@ GitHub Actions 会对每个 PR 和 `main` 分支执行设备编译、IPA 检查�
 
 手动运行工作流并勾选 `run_tests` 与 `publish_release`，会在全部检查通过后发布 GitHub Release，发布说明取自仓库根目录的 `RELEASE_NOTES.md`。已存在的同名 Release 不会被覆盖；标签触发发布时使用该标签对应的源码。
 
-发布前手动运行应开启 `run_tests`、`run_ui_tests`。用户最新已授权测试通过后发布 1.8.5；只能发布完整检查通过的同一提交产物，核对源码、SHA-256、IPA 校验和测试摘要。
+发布前手动运行应开启 `run_tests`、`run_ui_tests`。用户已授权测试通过后发布 1.9.0；只能发布完整检查通过的同一提交产物，核对源码、SHA-256、IPA 校验和测试摘要。
 
 `ui_test_scope` 默认为 `full`，执行全部 UI 用例。局部修改提示时可选 `notices`：仍执行全部单元测试，只复跑提示尺寸/边缘点击/最大字号确认和删除撤销两项 UI 回归，不删除或放宽任何测试；该范围不能触发自动发布。发布记录应注明实际验证范围，不能把局部回归说成最新提交的全量 UI 通过。
 

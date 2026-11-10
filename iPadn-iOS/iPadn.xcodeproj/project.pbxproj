@@ -249,6 +249,26 @@
 			isa = PBXBuildFile;
 			fileRef = 2726A9922C1E2B19E7C8BE3B;
 		};
+		5B91EEA0EE37ED3FB808AFEF = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/NativeInstaller.swift";
+			sourceTree = "<group>";
+		};
+		E3EC285CE756D3DAC630593D = {
+			isa = PBXBuildFile;
+			fileRef = 5B91EEA0EE37ED3FB808AFEF;
+		};
+		2B3184F85E6B0547A9BD3729 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/OnDevicePairing.swift";
+			sourceTree = "<group>";
+		};
+		6C76F185666D0A3F556D344F = {
+			isa = PBXBuildFile;
+			fileRef = 2B3184F85E6B0547A9BD3729;
+		};
 		8EF4977EC0C2C9F1B0803640 = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -278,6 +298,16 @@
 		947A4B9739DE11F25F172D4C = {
 			isa = PBXBuildFile;
 			fileRef = DE2B00F9D1374F49D8D7B778;
+		};
+		BD7B9C3FE2E498A370E73F90 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/PairingActivityAttributes.swift";
+			sourceTree = "<group>";
+		};
+		4224CFC96649DC5892361532 = {
+			isa = PBXBuildFile;
+			fileRef = BD7B9C3FE2E498A370E73F90;
 		};
 		7A217757AC93BE1C1F3A2658 = {
 			isa = PBXFileReference;
@@ -855,6 +885,16 @@
 			isa = PBXBuildFile;
 			fileRef = C893DFB88667291E462080FF;
 		};
+		0839A19DD44ED152FEDC3CB6 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = NativeInstallerTests.swift;
+			sourceTree = "<group>";
+		};
+		8CC8D5809371F6681292BD8F = {
+			isa = PBXBuildFile;
+			fileRef = 0839A19DD44ED152FEDC3CB6;
+		};
 		94420EBB8D5817F4BAE9011D = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -937,9 +977,12 @@
 				CBFA0D7D5F1BFB873CBCDA92,
 				525FB927D6E0158442EEE80C,
 				2726A9922C1E2B19E7C8BE3B,
+				5B91EEA0EE37ED3FB808AFEF,
+				2B3184F85E6B0547A9BD3729,
 				8EF4977EC0C2C9F1B0803640,
 				6FD3FF480779FC13F78B2062,
 				DE2B00F9D1374F49D8D7B778,
+				BD7B9C3FE2E498A370E73F90,
 				7A217757AC93BE1C1F3A2658,
 				20DF3E39BC0667C304A58585,
 				C4E202139941DE609BFBB95D,
@@ -1005,6 +1048,7 @@
 				DF17B7F31CB119020ABB3383,
 				FE8B3E8758EB5D71A776EF48,
 				C893DFB88667291E462080FF,
+				0839A19DD44ED152FEDC3CB6,
 				94420EBB8D5817F4BAE9011D,
 				5A16626D8F838F65AD30E1C1,
 				43B20E5B39E4494D4F6661D0,
@@ -1019,6 +1063,7 @@
 				DEF93E8F8AC229A0D98BBEFA,
 				970FB190220EDCE2E3BBCD1A,
 				4ED35644D2543696A1034554,
+				87F88906E1FE65AD72091384,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -1030,6 +1075,7 @@
 				3A1926085471FC5F24CD7859,
 				4EDC8BFAFC6BD936B849F38C,
 				E6EFEE88595978CBA23F4B6F,
+				39E53A5B4D47BF25EC27D946,
 			);
 			sourceTree = "<group>";
 		};
@@ -1060,9 +1106,12 @@
 				2C7449DA5EF8F6D67C792A4E,
 				D3D7F9AE0A76859E6F98809B,
 				7AEFD1B8A51F47BDE8F047AD,
+				E3EC285CE756D3DAC630593D,
+				6C76F185666D0A3F556D344F,
 				4D79E74E9CA15CF0827993E9,
 				5FDDCE29B86AB47F87041EDD,
 				947A4B9739DE11F25F172D4C,
+				4224CFC96649DC5892361532,
 				26DD24F92003FD87260C4945,
 				79C9C7B781E2036A0BD109DC,
 				4290A7A571B139F6D5141896,
@@ -1166,6 +1215,7 @@
 				9CD55C88894B030A66E10BFC,
 				350D3A300250E672882AB320,
 				F7855E1B1CA17D39AF64B21B,
+				8CC8D5809371F6681292BD8F,
 				87ACBECE32FC2ECA6FF9CA60,
 				9EF5340217398D630611606B,
 				6474B699E7D3303EDAF747F3,
@@ -1256,8 +1306,8 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 				INFOPLIST_FILE = "iPadn/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
-				MARKETING_VERSION = 1.8.5;
-				CURRENT_PROJECT_VERSION = 24;
+				MARKETING_VERSION = 1.9.0;
+				CURRENT_PROJECT_VERSION = 25;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -1270,9 +1320,11 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				IPADN_MACPKG_LDFLAGS = "";
+				IPADN_NATIVE_LDFLAGS = "";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"$(IPADN_MACPKG_LDFLAGS)",
+					"$(IPADN_NATIVE_LDFLAGS)",
 				);
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
@@ -1291,8 +1343,8 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 				INFOPLIST_FILE = "iPadn/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
-				MARKETING_VERSION = 1.8.5;
-				CURRENT_PROJECT_VERSION = 24;
+				MARKETING_VERSION = 1.9.0;
+				CURRENT_PROJECT_VERSION = 25;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -1305,9 +1357,11 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				IPADN_MACPKG_LDFLAGS = "";
+				IPADN_NATIVE_LDFLAGS = "";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"$(IPADN_MACPKG_LDFLAGS)",
+					"$(IPADN_NATIVE_LDFLAGS)",
 				);
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 			};
@@ -1394,10 +1448,12 @@
 				0D25A9A11793BE91427A3D7D,
 				609A52E5B24E5BB109D44D04,
 				DBBFC30291D55CDD50B10B32,
+				6D1D40D9616D7E90F1E634C7,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				5F2AABE8DFB1638A4A4E9731,
 			);
 			name = iPadn;
 			packageProductDependencies = (
@@ -1527,6 +1583,175 @@
 			productReference = 4ED35644D2543696A1034554;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		87F88906E1FE65AD72091384 = {
+			isa = PBXFileReference;
+			explicitFileType = "wrapper.app-extension";
+			includeInIndex = 0;
+			path = iPadnLiveActivity.appex;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		B9B6E775C9E3807FECDDBF17 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = AppMark.swift;
+			sourceTree = "<group>";
+		};
+		DFBC772F97669146C26EDECB = {
+			isa = PBXBuildFile;
+			fileRef = B9B6E775C9E3807FECDDBF17;
+		};
+		22BBF0B88BEA14A3FDE85551 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = PairingActivityAttributes.swift;
+			sourceTree = "<group>";
+		};
+		C7ABAF1B8A596D9B74056CBE = {
+			isa = PBXBuildFile;
+			fileRef = 22BBF0B88BEA14A3FDE85551;
+		};
+		A6453BEED269FDBE2052F83D = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = PairingLiveActivity.swift;
+			sourceTree = "<group>";
+		};
+		286B99F3F2D6620776189450 = {
+			isa = PBXBuildFile;
+			fileRef = A6453BEED269FDBE2052F83D;
+		};
+		947188B458A1FB28E930E1FF = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.xml;
+			path = Info.plist;
+			sourceTree = "<group>";
+		};
+		39E53A5B4D47BF25EC27D946 = {
+			isa = PBXGroup;
+			children = (
+				B9B6E775C9E3807FECDDBF17,
+				22BBF0B88BEA14A3FDE85551,
+				A6453BEED269FDBE2052F83D,
+				947188B458A1FB28E930E1FF,
+			);
+			path = iPadnLiveActivity;
+			sourceTree = "<group>";
+		};
+		ABAB1DAEFEE463CAF5CC7A31 = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DFBC772F97669146C26EDECB,
+				C7ABAF1B8A596D9B74056CBE,
+				286B99F3F2D6620776189450,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4162F030F80DA64AC10BE48A = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = app.local.iPadn.LiveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				INFOPLIST_FILE = "iPadnLiveActivity/Info.plist";
+				GENERATE_INFOPLIST_FILE = NO;
+				MARKETING_VERSION = 1.9.0;
+				CURRENT_PROJECT_VERSION = 25;
+				SKIP_INSTALL = YES;
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				ONLY_ACTIVE_ARCH = YES;
+				ENABLE_TESTABILITY = YES;
+			};
+			name = Debug;
+		};
+		602C8E4536EEF68969E0EA47 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = app.local.iPadn.LiveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				INFOPLIST_FILE = "iPadnLiveActivity/Info.plist";
+				GENERATE_INFOPLIST_FILE = NO;
+				MARKETING_VERSION = 1.9.0;
+				CURRENT_PROJECT_VERSION = 25;
+				SKIP_INSTALL = YES;
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		A6E42B98CB6A30B792DCE7C7 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4162F030F80DA64AC10BE48A,
+				602C8E4536EEF68969E0EA47,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E56D0D10E7FBD5A0251B398D = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A6E42B98CB6A30B792DCE7C7;
+			buildPhases = (
+				ABAB1DAEFEE463CAF5CC7A31,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = iPadnLiveActivity;
+			productName = iPadnLiveActivity;
+			productReference = 87F88906E1FE65AD72091384;
+			productType = "com.apple.product-type.app-extension";
+		};
+		6D1DE3AB287622A07B902120 = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 985959785319747668373CC6;
+			proxyType = 1;
+			remoteGlobalIDString = E56D0D10E7FBD5A0251B398D;
+			remoteInfo = iPadnLiveActivity;
+		};
+		5F2AABE8DFB1638A4A4E9731 = {
+			isa = PBXTargetDependency;
+			target = E56D0D10E7FBD5A0251B398D;
+			targetProxy = 6D1DE3AB287622A07B902120;
+		};
+		29C296BFB12C7EC437BC3604 = {
+			isa = PBXBuildFile;
+			fileRef = 87F88906E1FE65AD72091384;
+			settings = {
+				ATTRIBUTES = (
+					RemoveHeadersOnCopy,
+				);
+			};
+		};
+		6D1D40D9616D7E90F1E634C7 = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				29C296BFB12C7EC437BC3604,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		985959785319747668373CC6 = {
 			isa = PBXProject;
 			attributes = {
@@ -1559,6 +1784,7 @@
 				28842F0FBEF7D211F304ACBC,
 				BD64E34F3B89E990E8D455E3,
 				52A966A000CFCE4A907042FB,
+				E56D0D10E7FBD5A0251B398D,
 			);
 			packageReferences = (
 				9BC77B6C9BFAFB5749CF4757,

@@ -222,7 +222,7 @@ struct DownloadsView: View {
                         Section { AppRow(app: packageDisplayApp(job)); TaskStatusPill(status: job.status) }
                         Section("任务信息") {
                             LabeledContent("添加时间", value: job.createdAt.formatted(date: .abbreviated, time: .shortened))
-                            if job.status != .completed { LabeledContent("已下载", value: job.downloaded.byteLabel) }
+                            TaskSizeRows(job: job, progress: manager.progress(for: job.id))
                             if let account = job.account { LabeledContent("Apple 账号", value: account) }
                         }
                         if let error = job.error { Section("未完成原因") { Text(error).font(.subheadline) } }
@@ -328,7 +328,13 @@ struct DownloadsView: View {
     }
     private func perform(_ operation: @escaping () async throws -> Void) {
         guard !actionBusy else { return }; actionBusy = true
-        Task { defer { actionBusy = false }; do { try await operation() } catch is CancellationError { } catch { store.errorMessage = error.localizedDescription } }
+        Task {
+            defer { actionBusy = false }
+            do { try await SAPSigner.$userInitiated.withValue(true) { try await operation() } }
+            catch is CancellationError { }
+            catch AppleLoginError.verificationRequired { store.requestVerification { perform(operation) } }
+            catch { store.errorMessage = error.localizedDescription }
+        }
     }
 }
 
@@ -526,5 +532,25 @@ private struct PackagePlatformRow: View {
                     (try? PackageService.platformSummary(url)) ?? "未知"
                 }.value
             }
+    }
+}
+
+/// Size rows of a task's details. Running and paused tasks read the live
+/// byte counter, which the stored task only catches up with on save.
+private struct TaskSizeRows: View {
+    let job: DownloadJob
+    @ObservedObject var progress: DownloadProgressState
+    var body: some View {
+        let current = progress.applying(to: job)
+        let total = current.expected > 0 ? current.expected : current.app.size
+        if current.status == .completed {
+            if total > 0 { LabeledContent("大小", value: total.byteLabel) }
+        } else {
+            LabeledContent("已下载", value: total > 0 && current.downloaded > 0
+                           ? "\(current.downloaded.byteLabel)（\(Int((Double(current.downloaded) / Double(total) * 100).rounded(.down)))%）"
+                           : current.downloaded.byteLabel)
+                .accessibilityIdentifier("download.detail.downloaded")
+            if total > 0 { LabeledContent("大小", value: total.byteLabel) }
+        }
     }
 }

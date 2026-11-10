@@ -380,10 +380,13 @@ private struct RevealDeleteModifier: ViewModifier {
     let id: String
     let enabled: Bool
     let grouping: RevealRowGrouping
+    /// Leading inset of the hairline under a grouped row; nil draws none.
+    let separatorInset: CGFloat?
     let title: String
     let style: RevealActionStyle
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     @ScaledMetric(relativeTo: .caption) private var actionSize: CGFloat = 52
     @ScaledMetric(relativeTo: .subheadline) private var compactHeight: CGFloat = 36
     @StateObject private var driver = RevealDriver()
@@ -444,6 +447,12 @@ private struct RevealDeleteModifier: ViewModifier {
                     // The same reference spring rounds and detaches only the
                     // row being dragged; the remaining group stays intact.
                     cardShape(rounding: 0).fill(Color(.secondarySystemGroupedBackground))
+                        .overlay(alignment: .bottom) {
+                            if let separatorInset {
+                                Rectangle().fill(Color(.separator)).frame(height: 1 / displayScale)
+                                    .padding(.leading, separatorInset)
+                            }
+                        }
                         .opacity(1 - driver.rounding)
                 }
             }
@@ -495,8 +504,8 @@ extension View {
                 RevealCoordinator.shared.active = nil
             }
     }
-    func revealDelete(id: String, enabled: Bool = true, grouping: RevealRowGrouping = .standalone, style: RevealActionStyle = .round, title: String = "删除", action: @escaping () -> Void) -> some View {
-        modifier(RevealDeleteModifier(id: id, enabled: enabled, grouping: grouping, title: title, style: style, action: action))
+    func revealDelete(id: String, enabled: Bool = true, grouping: RevealRowGrouping = .standalone, separatorInset: CGFloat? = nil, style: RevealActionStyle = .round, title: String = "删除", action: @escaping () -> Void) -> some View {
+        modifier(RevealDeleteModifier(id: id, enabled: enabled, grouping: grouping, separatorInset: grouping == .standalone ? nil : separatorInset, title: title, style: style, action: action))
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)

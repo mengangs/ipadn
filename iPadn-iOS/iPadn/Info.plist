@@ -64,11 +64,14 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
+		<string>audio</string>
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>app.local.iPadn.update-check</string>
 	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleIcons</key>
@@ -253,6 +256,11 @@
 		</dict>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>通过本机回环地址加载签名资源和提供安装包文件。</string>
+	<string>通过本机回环地址加载签名资源和提供安装包文件，并查找本机的安装服务。</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_remotepairing._tcp</string>
+		<string>_remotepairing-pairable-host._tcp</string>
+	</array>
 </dict>
 </plist>

@@ -85,6 +85,19 @@ final class ToolStore: ObservableObject {
     private var watchRecheck = false
     private var officialVersionCache: [String: (date: Date, versions: [AppVersion])] = [:]
     @Published var infoMessage: String?
+    /// Apple wants the active account verified before an action can go on.
+    /// RootView shows the code page; `retry` runs once it is verified.
+    struct VerificationRequest: Identifiable {
+        let id = UUID()
+        let accountID: String
+        let retry: (@MainActor () -> Void)?
+    }
+    @Published var verificationRequest: VerificationRequest?
+    /// Opens the code page for the active account, then runs `retry`.
+    func requestVerification(retry: (@MainActor () -> Void)? = nil) {
+        guard let id = apple.activeID else { errorMessage = "请先在「账号」中登录 Apple 账号"; return }
+        verificationRequest = VerificationRequest(accountID: id, retry: retry)
+    }
     #if DEBUG
     private var visualPreview = false
     #endif
@@ -634,8 +647,9 @@ final class ToolStore: ObservableObject {
     }
 
     func startDownload(app: StoreApp, versionID: String?) async throws {
-        var asset = try await apple.asset(appID: app.id, versionID: versionID,
-                                          store: settings.store, useCache: settings.useSignerCache)
+        var asset = try await SAPSigner.$userInitiated.withValue(true) {
+            try await apple.asset(appID: app.id, versionID: versionID, store: settings.store, useCache: settings.useSignerCache)
+        }
         // Apple DownloadDispatch often omits artwork even when the store
         // listing showed it. Do not lose that listing before enqueuing.
         if asset.app.iconURL == nil { asset.app.iconURL = app.iconURL }
@@ -856,8 +870,20 @@ final class ToolStore: ObservableObject {
                     try downloads.enqueue(asset)
                 }
                 added += 1
+            } catch AppleLoginError.verificationRequired {
+                // Verify, then carry on with this app and the rest.
+                let remaining = Array(apps[index...])
+                requestVerification { [weak self] in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        let result = await self.startDownloads(remaining) { _ in }
+                        if result.added > 0 { self.infoMessage = "已添加 \(result.added) 个下载任务" }
+                        if !result.failures.isEmpty { self.errorMessage = result.failures.joined(separator: "\n") }
+                    }
+                }
+                break
             } catch let error where error is AppleAuthError || error is AppleLoginError {
-                failures.append("请到「账号」中重新验证 Apple 账号后再试。")
+                failures.append("Apple 账号登录已失效，请在「账号」中重新登录后再试。")
                 break
             } catch {
                 let message = error.localizedDescription
@@ -991,7 +1017,8 @@ final class ToolStore: ObservableObject {
             "Jobs: \(downloads.jobs.count)", "Concurrent limit: \(settings.maxConcurrentDownloads)",
             "Version sources: \(settings.versionSources.filter(\.enabled).count)",
             "Task states: " + downloads.jobs.map { "\($0.id.uuidString.prefix(8)): \($0.status.rawValue)" }.joined(separator: ", "),
-            "Installation: " + (settings.automaticInstallation ? "one-tap" : settings.localInstallation ? "local certificate" : "proxy"),
+            "Installation: " + (settings.nativeInstallation ? "native" : settings.automaticInstallation ? "one-tap" : settings.localInstallation ? "local certificate" : "proxy"),
+            "Native installer: " + (NativeInstaller.isAvailable ? "linked" : "not linked") + ", pairing file: " + (NativeInstaller.hasPairingFile ? "yes" : "no"),
             "Runs inside LiveContainer: " + (InstallLog.insideLiveContainer ? "yes" : "no"),
             "Proxy or VPN on: " + (LocalHostRecord.proxyOrVPNActive ? "yes" : "no"),
             "iOS " + UIDevice.current.systemVersion,
