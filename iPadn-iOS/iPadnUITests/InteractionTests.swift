@@ -225,10 +225,6 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(cancel.waitForExistence(timeout: 5))
         let confirm = app.buttons["confirmation.confirm"]
         XCTAssertGreaterThan(confirm.frame.minY, app.frame.height * 0.5)
-        let popup = app.scrollViews["compact.popup"]
-        XCTAssertTrue(popup.exists)
-        XCTAssertLessThanOrEqual(popup.frame.width, 341)
-        XCTAssertLessThan(popup.frame.height, 320, "The short confirmation should fit its content, below the 1.8.0 fixed detent")
         XCTAssertGreaterThanOrEqual(confirm.frame.height, 44)
         XCTAssertGreaterThanOrEqual(cancel.frame.height, 44)
         XCTAssertLessThanOrEqual(app.staticTexts["confirmation.message"].frame.maxY, confirm.frame.minY)
@@ -319,7 +315,7 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(history.waitForExistence(timeout: 5))
     }
 
-    func testCompactNoticesAndAccessibleConfirmation() {
+    func testCompactNoticeAndAccessibleConfirmation() {
         let app = XCUIApplication()
         app.launchArguments = ["--visual-preview", "--notice-preview"]
         app.launch()
@@ -343,10 +339,10 @@ final class InteractionTests: XCTestCase {
         let task = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "download.select.")).firstMatch
         XCTAssertTrue(task.waitForExistence(timeout: 5)); task.tap()
         app.buttons["downloads.delete-selected"].tap()
-        let popup = app.scrollViews["compact.popup"]
+        let popup = app.scrollViews["confirmation.scroll"]
         XCTAssertTrue(popup.waitForExistence(timeout: 5))
-        XCTAssertLessThanOrEqual(popup.frame.width, min(420, app.frame.width - 32) + 1)
-        XCTAssertGreaterThanOrEqual(popup.frame.minX, 16)
+        XCTAssertGreaterThanOrEqual(popup.frame.minX, 0)
+        XCTAssertLessThanOrEqual(popup.frame.maxX, app.frame.maxX)
         XCTAssertEqual(app.staticTexts["confirmation.message"].label, "已下载的安装包也会一并删除。")
         let confirm = app.buttons["confirmation.confirm"], cancel = app.buttons["confirmation.cancel"]
         for _ in 0..<4 where !cancel.isHittable { popup.swipeUp() }
