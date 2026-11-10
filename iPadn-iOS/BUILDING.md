@@ -67,6 +67,8 @@ GitHub Actions 会对每个 PR 和 `main` 分支执行设备编译、IPA 检查�
 
 `ui_test_scope` 默认为 `full`，执行全部 UI 用例。局部修改提示时可选 `notices`：仍执行全部单元测试，只复跑提示尺寸/边缘点击/最大字号确认和删除撤销两项 UI 回归，不删除或放宽任何测试；该范围不能触发自动发布。发布记录应注明实际验证范围，不能把局部回归说成最新提交的全量 UI 通过。
 
+Windows 手动发布说明必须从 UTF-8 文件生成并通过 `gh release ... --notes-file` 上传。不要把包含中文的 PowerShell here-string 通过默认原生管道传给 Python：Windows PowerShell 的 `$OutputEncoding` 可能为 ASCII，中文会在 Python 接收前变成问号，`python -X utf8` 无法恢复。发布后必须从 GitHub API 回读正文，规范化换行后与本地 UTF-8 文件逐字对比，并检查问号乱码及替换字符；附件校验通过不能代替文案核验。
+
 ## 扩展
 
 - **历史版本来源**：接口返回包含 `external_identifier` 与 `bundle_version` 字段的列表即可，可在应用设置中添加。
