@@ -9,6 +9,7 @@ struct SettingsView: View {
     @StateObject private var icons = AppIconService()
     @State private var iconIssue: String?
     @State private var addingSource = false
+    @State private var editingSourceID: UUID?
     @State private var share: SharedFile?
     @State private var resetSettings = false
     @State private var clearCache = false
@@ -103,7 +104,7 @@ struct SettingsView: View {
             }
             ForEach($store.settings.versionSources) { $source in
                 Section {
-                    NavigationLink { VersionSourceEditor(source: $source) } label: {
+                    Button { editingSourceID = source.id } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(source.name)
@@ -111,8 +112,10 @@ struct SettingsView: View {
                             }
                             Spacer()
                             Text(source.enabled ? "已启用" : "已停用").font(.caption).foregroundStyle(.secondary)
+                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                         }
                     }
+                    .accessibilityIdentifier("settings.source." + source.name)
                     .revealDelete(id: "source." + source.id.uuidString, title: "移除") {
                         let id = source.id
                         withAnimation { store.settings.versionSources.removeAll { $0.id == id } }
@@ -197,6 +200,11 @@ struct SettingsView: View {
             Button("知道了", role: .cancel) { iconIssue = nil }
         } message: { Text(iconIssue ?? "") }
         .sheet(isPresented: $addingSource) { AddVersionSourceView() }
+        .navigationDestination(item: $editingSourceID) { id in
+            if let index = store.settings.versionSources.firstIndex(where: { $0.id == id }) {
+                VersionSourceEditor(source: $store.settings.versionSources[index])
+            }
+        }
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
         .actionConfirmation(isPresented: $resetSettings, title: "恢复默认设置？", message: "账号、已下载的安装包和已购记录不受影响。", confirmTitle: "恢复默认设置") { store.settings = ToolSettings() }
         .actionConfirmation(isPresented: $clearCache, title: "清除历史版本缓存？", confirmTitle: "清除缓存") {

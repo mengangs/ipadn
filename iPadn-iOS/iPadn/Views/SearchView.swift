@@ -9,6 +9,7 @@ struct SearchView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmClear = false
     @State private var getting: StoreApp?
+    @State private var viewingFavorite: StoreApp?
     @State private var headerAway = false
     private static let regions = [("CN", "中国大陆"), ("US", "美国"), ("HK", "香港"), ("TW", "台湾"), ("JP", "日本"), ("GB", "英国"), ("SG", "新加坡"), ("CA", "加拿大"), ("AU", "澳大利亚"), ("KR", "韩国"), ("DE", "德国"), ("FR", "法国")]
     var body: some View {
@@ -63,6 +64,7 @@ struct SearchView: View {
         .toolPage()
         .rootTabBar("搜索", headerScrolledAway: headerAway)
         .navigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
+        .navigationDestination(item: $viewingFavorite) { app in AppDetailView(app: app) }
         .actionConfirmation(isPresented: $confirmClear, title: "清除最近搜索？", confirmTitle: "清除") { withAnimation { store.clearHistory() } }
         .task { await store.loadNameCatalog() }
         .task { await store.checkWatched() }
@@ -111,7 +113,14 @@ struct SearchView: View {
         if !store.favorites.isEmpty {
             Section {
                 ForEach(store.favorites) { app in
-                    NavigationLink { AppDetailView(app: app) } label: { WatchRow(app: app) }
+                    Button { viewingFavorite = app } label: {
+                        HStack {
+                            WatchRow(app: app)
+                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                        }.contentShape(Rectangle())
+                    }
+                        .buttonStyle(RevealRowButtonStyle())
+                        .accessibilityIdentifier("favorite." + app.id)
                         .revealDelete(id: "favorite." + app.id, title: "取消关注") { withAnimation { store.toggleFavorite(app) } }
                 }
             } header: {

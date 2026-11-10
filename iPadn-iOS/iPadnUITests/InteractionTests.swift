@@ -252,6 +252,16 @@ final class InteractionTests: XCTestCase {
         expectation(for: closed, evaluatedWith: app.buttons["删除"].firstMatch)
         waitForExpectations(timeout: 5)
         XCTAssertTrue(history.exists)
+        let favorite = app.buttons["favorite.preview-1"]
+        XCTAssertTrue(favorite.waitForExistence(timeout: 5))
+        revealActions(on: favorite)
+        XCTAssertTrue(app.buttons["取消关注"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["detail.get"].exists, "Swiping a favorite must not navigate")
+        favorite.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        expectation(for: closed, evaluatedWith: app.buttons["取消关注"].firstMatch)
+        waitForExpectations(timeout: 5)
+        favorite.tap()
+        XCTAssertTrue(app.buttons["detail.get"].waitForExistence(timeout: 10))
         app.terminate()
         app.launchArguments = ["--visual-preview", "--accounts"]
         app.launch()
@@ -264,6 +274,12 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["confirmation.cancel"].waitForExistence(timeout: 5))
         app.buttons["confirmation.cancel"].tap()
         XCTAssertTrue(account.waitForExistence(timeout: 5))
+        app.buttons["accounts.settings"].tap()
+        let source = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "settings.source.")).firstMatch
+        for _ in 0..<8 where !source.isHittable { app.swipeUp() }
+        XCTAssertTrue(source.waitForExistence(timeout: 5))
+        source.tap()
+        XCTAssertTrue(app.textFields["来源名称"].waitForExistence(timeout: 5))
         app.terminate()
         app.launchArguments = ["--visual-preview", "--downloads"]
         app.launch()
