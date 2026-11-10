@@ -14,6 +14,8 @@ iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad
 
 ## 准备
 
+Windows + WSL 使用 xtool 真机调试时，构建后须先在仓库根目录运行 `python scripts/xtool_postbuild.py xtool/iPadn.ipa`，再签名安装。该脚本修正 xtool 误写的 Mach-O SDK 标记，保留最低 iOS 17 支持；漏掉这一步会触发系统旧界面兼容模式，导致 TabBar 外观变化。云端 Xcode 构建无需这一步。
+
 - 一台装有 Xcode 26 的 Mac
 - Python 3
 - Go 1.26：用于编译 Mac 安装包处理组件。不编译这个组件也能构建应用，只是不能下载需要处理的 Mac 安装包。

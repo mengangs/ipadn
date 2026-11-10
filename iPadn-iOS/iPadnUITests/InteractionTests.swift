@@ -245,6 +245,13 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(history.waitForExistence(timeout: 10)); revealActions(on: history)
         XCTAssertTrue(app.buttons["删除"].firstMatch.waitForExistence(timeout: 5))
         attach("11-history-swipe", app: app)
+        // Tapping the displaced card closes its actions without submitting
+        // the history query; the row must remain and the operation disappear.
+        history.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let closed = NSPredicate(format: "exists == false")
+        expectation(for: closed, evaluatedWith: app.buttons["删除"].firstMatch)
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(history.exists)
         app.terminate()
         app.launchArguments = ["--visual-preview", "--accounts"]
         app.launch()

@@ -94,8 +94,9 @@ struct SearchView: View {
                             Spacer()
                         }.frame(minHeight: 36).contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier("history.\(item.id)")
-                    .revealDelete(id: "history." + item.id) { withAnimation { store.removeHistory(item.term) } }
+                    .revealDelete(id: "history." + item.id, style: .compact) { withAnimation { store.removeHistory(item.term) } }
                 } header: {
                     if item.id == store.searchHistory.first?.id {
                         HStack {

@@ -1191,10 +1191,12 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(MacPackageDecryptor.currentJob)
         // The cancellation is consumed: the next run of the same job proceeds
         // (and fails here only because the simulator has no bridge).
-        do {
-            try await MacPackageDecryptor.process(job: job, hardwareID: "AABBCCDDEEFF", dpInfo: Data([1]), from: source, to: output)
-        } catch { XCTAssertFalse(error is CancellationError) }
-        XCTAssertNil(MacPackageDecryptor.currentJob)
+        for _ in 0..<20 {
+            do {
+                try await MacPackageDecryptor.process(job: job, hardwareID: "AABBCCDDEEFF", dpInfo: Data([1]), from: source, to: output)
+            } catch { XCTAssertFalse(error is CancellationError) }
+            XCTAssertNil(MacPackageDecryptor.currentJob)
+        }
     }
 
     func testDMAPFirstIntegerStopsAtFirstMatchOnSlices() throws {

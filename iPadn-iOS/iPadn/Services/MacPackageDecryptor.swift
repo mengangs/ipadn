@@ -109,10 +109,12 @@ enum MacPackageDecryptor {
                 if !skip { current = job; finishCurrent = { once.finish($0) } }
                 lock.unlock()
                 if skip { once.finish(CancellationError()); return }
-                defer { lock.lock(); current = nil; finishCurrent = nil; cancelled.remove(job); lock.unlock() }
                 var result: Error?
                 do { try decrypt(hardwareID: hardwareID, dpInfo: dpInfo, from: source, to: destination) }
                 catch { result = error }
+                // Publish idle before waking the caller. A resumed task may
+                // immediately inspect currentJob or enqueue its next package.
+                lock.lock(); current = nil; finishCurrent = nil; cancelled.remove(job); lock.unlock()
                 // A cancelled caller has already moved on: discard any output.
                 if !once.finish(result) { try? FileManager.default.removeItem(at: destination) }
             }
