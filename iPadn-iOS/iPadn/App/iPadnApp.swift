@@ -22,6 +22,7 @@ enum AppContainer {
             if ProcessInfo.processInfo.arguments.contains("--accounts") { store.prepareAccountPreview(); store.tab = 3 }
             if ProcessInfo.processInfo.arguments.contains("--purchased") { store.prepareAccountPreview(); store.tab = 2 }
             if ProcessInfo.processInfo.arguments.contains("--archive") { store.prepareArchivePreview() }
+            if ProcessInfo.processInfo.arguments.contains("--notice-preview") { store.infoMessage = "已复制到剪贴板" }
             return store
         }
         #endif
@@ -97,7 +98,7 @@ private struct PreviewScreen: View {
             else if args.contains("--detail"), let app = store.favorites.first { NavigationStack { AppDetailView(app: app) } }
             else { RootView() }
         }
-        .environment(\.dynamicTypeSize, args.contains("--large-text") ? .accessibility2 : .large)
+        .environment(\.dynamicTypeSize, args.contains("--largest-text") ? .accessibility5 : args.contains("--large-text") ? .accessibility2 : .large)
     }
 }
 #endif

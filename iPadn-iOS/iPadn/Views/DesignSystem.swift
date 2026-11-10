@@ -22,13 +22,14 @@ enum UX {
 
 /// Full-width primary action (App Store sign-in "继续" style).
 struct PrimaryButtonStyle: ButtonStyle {
+    var compact = false
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.semibold))
             .foregroundStyle(configuration.role == .destructive ? Color.white : UX.onAccent)
-            .padding(.horizontal, 16).padding(.vertical, 14)
+            .padding(.horizontal, 16).padding(.vertical, compact ? 10 : 14)
             .background((configuration.role == .destructive ? Color.red : UX.buttonTint).opacity(configuration.isPressed ? 0.8 : 1),
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .opacity(enabled ? 1 : 0.35)

@@ -178,32 +178,30 @@ struct DownloadsView: View {
         .onChange(of: editMode) { _, mode in if !mode.isEditing { selection.removeAll() } }
         .onChange(of: filter) { _, _ in selection.removeAll() }
         .onChange(of: term) { _, _ in selection.removeAll() }
-        .sheet(isPresented: $showingActions, onDismiss: {
+        .compactPopup(isPresented: $showingActions, preferredWidth: 280, onDismiss: {
             let action = nextAction; nextAction = nil
             switch action {
             case .file: importing = true
             case .link: addLink = true
             case nil: break
             }
-        }) {
+        }) { dismiss in
             VStack(alignment: .leading, spacing: 12) {
                 Text("添加下载").font(.title3.weight(.semibold)).padding(.bottom, 6)
-                Button { nextAction = .file; showingActions = false } label: {
+                Button { dismiss(then: { nextAction = .file }) } label: {
                     Label("导入 IPA", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }.buttonStyle(.plain).accessibilityIdentifier("downloads.import")
-                Button { nextAction = .link; showingActions = false } label: {
+                Button { dismiss(then: { nextAction = .link }) } label: {
                     Label("通过链接下载", systemImage: "link").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }.buttonStyle(.plain)
                 if manager.jobs.contains(where: { [.running, .queued, .paused].contains($0.status) }) {
                     Divider()
-                    Button("暂停全部", systemImage: "pause.circle") { manager.pauseAll(); showingActions = false; store.infoMessage = "已暂停下载" }
+                    Button("暂停全部", systemImage: "pause.circle") { dismiss(then: { manager.pauseAll(); store.infoMessage = "已暂停下载" }) }
                         .disabled(!manager.jobs.contains { [.running, .queued].contains($0.status) }).frame(minHeight: 44)
-                    Button("继续全部", systemImage: "play.circle") { manager.resumeAll(); showingActions = false }
+                    Button("继续全部", systemImage: "play.circle") { dismiss(then: { manager.resumeAll() }) }
                         .disabled(!manager.jobs.contains { $0.status == .paused }).frame(minHeight: 44)
                 }
-            }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
-                .presentationDetents([.height(manager.jobs.contains { [.running, .queued, .paused].contains($0.status) } ? 360 : 240), .large])
-                .presentationDragIndicator(.visible).presentationCornerRadius(28)
+            }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
         }
         .sheet(isPresented: $importing, onDismiss: importPickedFiles) {
             PackageDocumentPicker { result in

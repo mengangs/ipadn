@@ -139,6 +139,10 @@ private struct RevealGestureAttachment: UIViewRepresentable {
         }
         func install() {
             guard let anchor, anchor.window != nil else { detach(); return }
+            if let host, anchor.isDescendant(of: host) {
+                updateEnabledState()
+                return
+            }
             var candidate: UIView? = anchor.superview
             var cell: UIView?
             var scroll: UIScrollView?
@@ -157,6 +161,9 @@ private struct RevealGestureAttachment: UIViewRepresentable {
                 print("Reveal host: \(type(of: target)); bounds: \(anchor.bounds)")
                 #endif
             }
+            updateEnabledState()
+        }
+        private func updateEnabledState() {
             if recognizer.isEnabled != parent.enabled { recognizer.isEnabled = parent.enabled }
             let canClose = parent.enabled && abs(parent.offset) > 1
             if closeTap.isEnabled != canClose { closeTap.isEnabled = canClose }
@@ -216,7 +223,14 @@ private final class RevealCoordinator: ObservableObject {
 /// motion model supplies resistance, velocity transfer and interruptible springs.
 @MainActor
 private final class RevealDriver: NSObject, ObservableObject {
-    @Published private(set) var offset: CGFloat = 0
+    private struct Presentation: Equatable {
+        var offset: CGFloat = 0
+        var scale: CGFloat = 0
+        var opacity: Double = 0
+        var actionWidth: CGFloat = 52
+        var rounding: CGFloat = 0
+    }
+    @Published private var presentation = Presentation()
     @Published private(set) var blocksPress = false
     private var pressReset: Task<Void, Never>?
     private var motion = ItemListRevealMotion()
@@ -225,18 +239,29 @@ private final class RevealDriver: NSObject, ObservableObject {
     private var lastTime: CFTimeInterval = 0
     private var reduced = false
     private var feedback: UISelectionFeedbackGenerator?
+    #if DEBUG
+    private let measuresFrames = ProcessInfo.processInfo.arguments.contains("--reveal-metrics")
+    private var frameCallbacks = 0
+    private var presentations = 0
+    private var delayedFrames = 0
+    private var worstInterval: Double = 0
+    #endif
     @MainActor private final class Target: NSObject {
         weak var owner: RevealDriver?
         @objc func tick(_ link: CADisplayLink) { owner?.tick(link) }
     }
     private let target = Target()
     var dragging: Bool { motion.state == .dragging }
-    var actionScale: CGFloat { CGFloat(motion.buttonGeometry.first?.scale ?? 0) }
-    var actionOpacity: Double { motion.buttonGeometry.first?.opacity ?? 0 }
-    var actionWidth: CGFloat { CGFloat(motion.buttonGeometry.first?.width ?? 56) }
-    var rounding: CGFloat { min(1, max(0, CGFloat(motion.surface.value))) }
+    var offset: CGFloat { presentation.offset }
+    var actionScale: CGFloat { presentation.scale }
+    var actionOpacity: Double { presentation.opacity }
+    var actionWidth: CGFloat { presentation.actionWidth }
+    var rounding: CGFloat { presentation.rounding }
 
     func begin(width: CGFloat, direction: CGFloat, reduced: Bool, actionWidth: CGFloat) {
+        #if DEBUG
+        frameCallbacks = 0; presentations = 0; delayedFrames = 0; worstInterval = 0
+        #endif
         pressReset?.cancel(); blocksPress = true
         self.direction = direction; self.reduced = reduced
         var parameters = ItemListRevealMotionParameters()
@@ -252,17 +277,17 @@ private final class RevealDriver: NSObject, ObservableObject {
         motion.change(translation: Double(translation * direction), velocity: Double(velocity * direction),
                       distanceFromCommitEdge: Double(distanceFromEdge), reduceMotion: reduced)
         if armed != motion.isArmed { feedback?.selectionChanged(); feedback?.prepare() }
-        render(); animate()
+        schedulePresentation()
     }
     func end(translation: CGFloat, velocity: CGFloat) -> Bool {
         let commit = motion.end(translation: Double(translation * direction), velocity: Double(velocity * direction), cancelled: false, animated: !reduced)
-        feedback = nil; render(); animate(); releasePress()
+        feedback = nil; schedulePresentation(); releasePress()
         return commit
     }
     func close(immediately: Bool = false) {
         motion.settle(to: 0, velocity: 0, animated: !immediately && !reduced)
-        feedback = nil; render()
-        if immediately || reduced { stop() } else { animate() }
+        feedback = nil
+        if immediately || reduced { render(); stop() } else { schedulePresentation() }
         if immediately { pressReset?.cancel(); blocksPress = false } else { releasePress() }
     }
     private func releasePress() {
@@ -273,22 +298,53 @@ private final class RevealDriver: NSObject, ObservableObject {
             self?.blocksPress = false
         }
     }
-    private func render() { offset = CGFloat(max(0, motion.body.value)) * direction }
+    private func render() {
+        let geometry = motion.buttonGeometry.first
+        let next = Presentation(offset: CGFloat(max(0, motion.body.value)) * direction,
+                                scale: CGFloat(geometry?.scale ?? 0), opacity: geometry?.opacity ?? 0,
+                                actionWidth: CGFloat(geometry?.width ?? 52),
+                                rounding: min(1, max(0, CGFloat(motion.surface.value))))
+        guard next != presentation else { return }
+        #if DEBUG
+        if measuresFrames { presentations += 1 }
+        #endif
+        presentation = next
+    }
+    private func schedulePresentation() {
+        // Touch callbacks only update the model. Publish the latest complete
+        // frame once at the display boundary, rather than twice per refresh.
+        if reduced || (!dragging && motion.isAtRest) { render(); stop() }
+        else { animate() }
+    }
     private func animate() {
-        guard !reduced, !motion.isAtRest, displayLink == nil else { return }
+        guard !reduced, (dragging || !motion.isAtRest), displayLink == nil else { return }
         target.owner = self; lastTime = 0
         let link = CADisplayLink(target: target, selector: #selector(Target.tick(_:)))
         let maximum = Float(UIScreen.main.maximumFramesPerSecond)
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: maximum, preferred: maximum)
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: min(80, maximum), maximum: maximum, preferred: maximum)
         link.add(to: .main, forMode: .common); displayLink = link
     }
     private func tick(_ link: CADisplayLink) {
         let dt = lastTime == 0 ? link.targetTimestamp - link.timestamp : link.timestamp - lastTime
+        #if DEBUG
+        if measuresFrames {
+            frameCallbacks += 1
+            worstInterval = max(worstInterval, dt)
+            if dt > (link.targetTimestamp - link.timestamp) * 1.5 { delayedFrames += 1 }
+        }
+        #endif
         lastTime = link.timestamp
         motion.advance(by: min(0.05, max(0, dt))); render()
-        if motion.isAtRest { stop() }
+        if !dragging && motion.isAtRest { stop() }
     }
-    private func stop() { displayLink?.invalidate(); displayLink = nil; lastTime = 0 }
+    private func stop() {
+        #if DEBUG
+        if measuresFrames && displayLink != nil && !dragging && frameCallbacks > 0 {
+            print("Reveal metrics: callbacks=\(frameCallbacks), presentations=\(presentations), delayed=\(delayedFrames), worst-ms=\(worstInterval * 1000)")
+        }
+        #endif
+        displayLink?.invalidate(); displayLink = nil; lastTime = 0
+    }
     deinit { displayLink?.invalidate(); pressReset?.cancel() }
 }
 
@@ -354,7 +410,6 @@ private struct RevealDeleteModifier: ViewModifier {
             .padding(.horizontal, 20).padding(.vertical, 12)
             .frame(maxWidth: .infinity, minHeight: style == .compact ? compactHeight * (60.0 / 36) : actionSize * (76.0 / 52), alignment: .leading)
             .background(Color(.secondarySystemGroupedBackground), in: cardShape(rounding: driver.rounding))
-            .clipShape(cardShape(rounding: driver.rounding))
             .offset(x: driver.offset)
             .overlay(alignment: driver.offset >= 0 ? .leading : .trailing) {
                 if abs(driver.offset) > 1 {
@@ -418,7 +473,9 @@ private struct RevealDeleteModifier: ViewModifier {
                     }
                 }
             }
-            .onChange(of: coordinator.active) { _, active in if active != id { driver.close() } }
+            .onChange(of: coordinator.active) { _, active in
+                if active != id { driver.close(immediately: UIApplication.shared.applicationState != .active) }
+            }
             .onChange(of: enabled) { _, enabled in if !enabled { driver.close(immediately: true) } }
             .onChange(of: reduceMotion) { _, _ in driver.close(immediately: true) }
             .onDisappear { driver.close(immediately: true) }

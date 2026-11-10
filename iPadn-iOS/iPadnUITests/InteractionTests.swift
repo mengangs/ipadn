@@ -225,6 +225,13 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(cancel.waitForExistence(timeout: 5))
         let confirm = app.buttons["confirmation.confirm"]
         XCTAssertGreaterThan(confirm.frame.minY, app.frame.height * 0.5)
+        let popup = app.scrollViews["compact.popup"]
+        XCTAssertTrue(popup.exists)
+        XCTAssertLessThanOrEqual(popup.frame.width, 341)
+        XCTAssertLessThan(popup.frame.height, 320, "The short confirmation should fit its content, below the 1.8.0 fixed detent")
+        XCTAssertGreaterThanOrEqual(confirm.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(cancel.frame.height, 44)
+        XCTAssertLessThanOrEqual(app.staticTexts["confirmation.message"].frame.maxY, confirm.frame.minY)
         attach("12-delete-confirmation", app: app)
         cancel.tap()
         XCTAssertTrue(row.waitForExistence(timeout: 5))
@@ -310,6 +317,47 @@ final class InteractionTests: XCTestCase {
         XCTAssertFalse(history.exists)
         undo.tap()
         XCTAssertTrue(history.waitForExistence(timeout: 5))
+    }
+
+    func testCompactNoticesAndAccessibleConfirmation() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--visual-preview", "--notice-preview"]
+        app.launch()
+        let notice = app.buttons["notice.banner"]
+        XCTAssertTrue(notice.waitForExistence(timeout: 10))
+        XCTAssertGreaterThanOrEqual(notice.frame.height, 44)
+        XCTAssertLessThanOrEqual(notice.frame.height, 48)
+        XCTAssertLessThanOrEqual(notice.frame.width, 320)
+        attach("23-compact-notice", app: app)
+        notice.tap()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: notice)
+        waitForExpectations(timeout: 5)
+        app.terminate()
+
+        // The largest supported Dynamic Type size must wrap and scroll,
+        // while both destructive and cancel controls stay reachable.
+        app.launchArguments = ["--visual-preview", "--downloads", "--largest-text", "--dark"]
+        app.launch()
+        let edit = app.buttons["downloads.edit"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 10)); edit.tap()
+        let task = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "download.select.")).firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: 5)); task.tap()
+        app.buttons["downloads.delete-selected"].tap()
+        let popup = app.scrollViews["compact.popup"]
+        XCTAssertTrue(popup.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(popup.frame.width, min(420, app.frame.width - 32) + 1)
+        XCTAssertGreaterThanOrEqual(popup.frame.minX, 16)
+        XCTAssertEqual(app.staticTexts["confirmation.message"].label, "已下载的安装包也会一并删除。")
+        let confirm = app.buttons["confirmation.confirm"], cancel = app.buttons["confirmation.cancel"]
+        for _ in 0..<4 where !cancel.isHittable { popup.swipeUp() }
+        XCTAssertTrue(confirm.isHittable)
+        XCTAssertTrue(cancel.isHittable)
+        XCTAssertGreaterThanOrEqual(confirm.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(cancel.frame.height, 44)
+        XCTAssertLessThanOrEqual(confirm.frame.maxY, cancel.frame.minY)
+        attach("24-accessible-confirmation", app: app)
+        cancel.tap()
+        XCTAssertTrue(app.staticTexts["已选 1 项"].waitForExistence(timeout: 5), "Cancel must preserve the selected task")
     }
 
     func testLargeDownloadListsLaunchAndScroll() {

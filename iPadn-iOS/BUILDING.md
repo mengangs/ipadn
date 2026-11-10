@@ -48,6 +48,10 @@ python3 scripts/verify_project.py
 
 用 `--visual-preview` 参数启动时会使用演示数据和独立的存储空间，不会读写真实的账号或下载记录。Release 构建不包含演示数据。
 
+调试预览可叠加 `--largest-text`（最大辅助字号）、`--dark`、`--notice-preview`（保留可点按关闭的示例提示，供尺寸检查）及 `--reveal-metrics`。后者只在侧滑结束时记录显示回调间隔和界面状态提交次数，不在每帧输出日志；它不能代表 GPU 实际呈现帧率。比较时使用同一设备、同样的前台手势，排除退到后台或截图干扰的采样。
+
+Windows/WSL 的 xtool 本地包签名前仍需执行根目录本地工具 `scripts/xtool_postbuild.py`，修正 SDK 标记，并确保 `Config/xtool/Info.plist` 中 `CADisableMinimumFrameDurationOnPhone=true`，与生产 `iPadn/Info.plist` 一致。否则调试包可能进入旧界面兼容模式或限制高刷新率；Xcode/CI 包直接使用生产配置。
+
 ## 持续集成
 
 GitHub Actions 会对每个 PR 和 `main` 分支执行设备编译、IPA 检查和模拟器测试，并上传以下产物（界面效果以真机检查为准）：
@@ -58,6 +62,8 @@ GitHub Actions 会对每个 PR 和 `main` 分支执行设备编译、IPA 检查�
 | `iPadn-build-diagnostics` | 构建日志与测试结果 |
 
 手动运行工作流并勾选 `run_tests` 与 `publish_release`，会在全部检查通过后发布 GitHub Release，发布说明取自仓库根目录的 `RELEASE_NOTES.md`。已存在的同名 Release 不会被覆盖；标签触发发布时使用该标签对应的源码。
+
+当前 1.8.5 仅验证，用户明确要求暂不发布；手动运行应开启 `run_tests`、`run_ui_tests` 并保持 `publish_release=false`。
 
 ## 扩展
 

@@ -193,24 +193,34 @@ struct RootView: View {
         // AppDetailView's fixed download CTA or the tab bar.
         .overlay(alignment: .top) {
             if let message = store.undoNotice?.message ?? store.infoMessage {
+                Group {
+                    if store.undoNotice != nil {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                         Text(message).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
-                        if store.undoNotice != nil {
                             Button("撤销") { withAnimation(UX.motion(reduceMotion)) { store.undoLastAction() } }
                                 .font(.subheadline.weight(.semibold)).frame(minWidth: 44, minHeight: 44)
                                 .accessibilityIdentifier("notice.undo")
-                        } else {
-                            Button { store.infoMessage = nil } label: { Image(systemName: "xmark").frame(width: 32, height: 44) }
-                                .accessibilityLabel("关闭提示")
-                        }
                     }
-                    .padding(.horizontal, 18).padding(.vertical, 11)
-                    .background(.regularMaterial, in: Capsule())
-                    .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+                    .padding(.horizontal, 14)
+                    } else {
+                        // Match 1.8.0: the whole compact notice dismisses on tap.
+                        Button { store.infoMessage = nil } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                Text(message).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }.padding(.horizontal, 18).padding(.vertical, 11).frame(minHeight: 44)
+                        }
+                        .accessibilityLabel(message).accessibilityHint("点按关闭提示")
+                    }
+                }
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
                 .buttonStyle(.plain)
-                .frame(maxWidth: 420)
+                .accessibilityIdentifier("notice.banner")
+                .frame(maxWidth: 320)
                 .padding(.horizontal, 24)
                 // The top of the root tab container includes the navigation bar.
                 // On compact-height devices show the banner nearer the top.
@@ -219,8 +229,8 @@ struct RootView: View {
                 .zIndex(1)
             }
         }
-        .animation(UX.motion(reduceMotion), value: store.infoMessage)
-        .animation(UX.motion(reduceMotion), value: store.undoNotice?.id)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.infoMessage)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.undoNotice?.id)
         .task(id: store.undoNotice?.id) {
             guard let notice = store.undoNotice else { return }
             UIAccessibility.post(notification: .announcement, argument: notice.message + "，可以撤销")
@@ -230,6 +240,10 @@ struct RootView: View {
         .task(id: store.infoMessage) {
             guard let message = store.infoMessage else { return }
             UIAccessibility.post(notification: .announcement, argument: message)
+            #if DEBUG
+            // Deterministic geometry checks without changing real notice timing.
+            if LocalResources.isPreview && ProcessInfo.processInfo.arguments.contains("--notice-preview") { return }
+            #endif
             do { try await Task.sleep(nanoseconds: 3_500_000_000) } catch { return }
             if store.infoMessage == message { store.infoMessage = nil }
         }
