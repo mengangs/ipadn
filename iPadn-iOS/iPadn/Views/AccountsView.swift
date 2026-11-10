@@ -65,7 +65,8 @@ struct AccountsView: View {
                         .accessibilityHint(account.id == apple.activeID ? "当前下载账号" : "切换到此账号")
                         .accessibilityIdentifier("account." + account.id)
                         .disabled(store.accountRemoving != nil)
-                        .revealDelete(id: "account." + account.id, enabled: store.accountRemoving == nil, title: "移除") { deleting = account }
+                        .revealDelete(id: "account." + account.id, enabled: store.accountRemoving == nil,
+                                      grouping: account.id == apple.accounts.first?.id ? .first : .middle, title: "移除") { deleting = account }
                     }
                     NavigationLink { LoginView() } label: { Label("添加账号", systemImage: "plus") }
                 } header: { Text("账号") } footer: { Text("点按切换下载账号，侧滑移除。") }

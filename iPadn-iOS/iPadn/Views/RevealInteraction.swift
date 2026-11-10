@@ -234,6 +234,7 @@ private final class RevealDriver: NSObject, ObservableObject {
     var actionScale: CGFloat { CGFloat(motion.buttonGeometry.first?.scale ?? 0) }
     var actionOpacity: Double { motion.buttonGeometry.first?.opacity ?? 0 }
     var actionWidth: CGFloat { CGFloat(motion.buttonGeometry.first?.width ?? 56) }
+    var rounding: CGFloat { min(1, max(0, CGFloat(motion.surface.value))) }
 
     func begin(width: CGFloat, direction: CGFloat, reduced: Bool, actionWidth: CGFloat) {
         pressReset?.cancel(); blocksPress = true
@@ -292,6 +293,7 @@ private final class RevealDriver: NSObject, ObservableObject {
 }
 
 enum RevealActionStyle { case compact, round }
+enum RevealRowGrouping { case standalone, first, middle }
 
 private struct RevealSuppressesPressKey: EnvironmentKey {
     static let defaultValue = false
@@ -321,6 +323,7 @@ struct RevealRowButtonStyle: ButtonStyle {
 private struct RevealDeleteModifier: ViewModifier {
     let id: String
     let enabled: Bool
+    let grouping: RevealRowGrouping
     let title: String
     let style: RevealActionStyle
     let action: () -> Void
@@ -333,6 +336,13 @@ private struct RevealDeleteModifier: ViewModifier {
     @State private var direction: CGFloat = 1
     @State private var lastVisibleY: CGFloat?
 
+    private func cardShape(rounding: CGFloat) -> UnevenRoundedRectangle {
+        let top: CGFloat = grouping == .middle ? 24 * rounding : 24
+        let bottom: CGFloat = grouping == .standalone ? 24 : 24 * rounding
+        return UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: bottom,
+                                      bottomTrailingRadius: bottom, topTrailingRadius: top, style: .continuous)
+    }
+
     func body(content: Content) -> some View {
         let isActive = coordinator.active == id
         return content
@@ -343,8 +353,8 @@ private struct RevealDeleteModifier: ViewModifier {
             .disabled(driver.blocksPress || abs(driver.offset) > 1)
             .padding(.horizontal, 20).padding(.vertical, 12)
             .frame(maxWidth: .infinity, minHeight: style == .compact ? compactHeight * (60.0 / 36) : actionSize * (76.0 / 52), alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .background(Color(.secondarySystemGroupedBackground), in: cardShape(rounding: driver.rounding))
+            .clipShape(cardShape(rounding: driver.rounding))
             .offset(x: driver.offset)
             .overlay(alignment: driver.offset >= 0 ? .leading : .trailing) {
                 if abs(driver.offset) > 1 {
@@ -373,6 +383,15 @@ private struct RevealDeleteModifier: ViewModifier {
             }
             .clipped()
             .padding(.vertical, 2)
+            .background {
+                if grouping != .standalone {
+                    // Join the resting accounts to the native Add Account row.
+                    // The same reference spring rounds and detaches only the
+                    // row being dragged; the remaining group stays intact.
+                    cardShape(rounding: 0).fill(Color(.secondarySystemGroupedBackground))
+                        .opacity(1 - driver.rounding)
+                }
+            }
             .contentShape(Rectangle())
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .onGeometryChange(for: CGFloat?.self) { geometry in
@@ -419,8 +438,8 @@ extension View {
                 RevealCoordinator.shared.active = nil
             }
     }
-    func revealDelete(id: String, enabled: Bool = true, style: RevealActionStyle = .round, title: String = "删除", action: @escaping () -> Void) -> some View {
-        modifier(RevealDeleteModifier(id: id, enabled: enabled, title: title, style: style, action: action))
+    func revealDelete(id: String, enabled: Bool = true, grouping: RevealRowGrouping = .standalone, style: RevealActionStyle = .round, title: String = "删除", action: @escaping () -> Void) -> some View {
+        modifier(RevealDeleteModifier(id: id, enabled: enabled, grouping: grouping, title: title, style: style, action: action))
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)

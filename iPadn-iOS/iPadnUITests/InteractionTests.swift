@@ -252,7 +252,7 @@ final class InteractionTests: XCTestCase {
         expectation(for: closed, evaluatedWith: app.buttons["删除"].firstMatch)
         waitForExpectations(timeout: 5)
         XCTAssertTrue(history.exists)
-        let favorite = app.buttons["favorite.preview-1"]
+        let favorite = app.buttons["favorite.preview-app"]
         XCTAssertTrue(favorite.waitForExistence(timeout: 5))
         revealActions(on: favorite)
         XCTAssertTrue(app.buttons["取消关注"].firstMatch.waitForExistence(timeout: 5))
