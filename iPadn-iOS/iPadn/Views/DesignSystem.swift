@@ -49,14 +49,16 @@ struct TintedSwitchToggleStyle: ToggleStyle {
 struct CapsuleButtonStyle: ButtonStyle {
     var filled = false
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.revealSuppressesPress) private var suppressesPress
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .environment(\.isEnabled, enabled || suppressesPress)
             .font(.subheadline.weight(.bold))
             .lineLimit(1)
             .foregroundStyle(filled ? UX.onAccent : UX.tint)
             .padding(.horizontal, 16).frame(minWidth: 74, minHeight: 30)
             .background(filled ? AnyShapeStyle(UX.tint) : AnyShapeStyle(Color(.tertiarySystemFill)), in: Capsule())
-            .opacity(configuration.isPressed ? 0.6 : enabled ? 1 : 0.4)
+            .opacity(configuration.isPressed && !suppressesPress ? 0.6 : enabled || suppressesPress ? 1 : 0.4)
             .contentShape(Capsule())
     }
 }

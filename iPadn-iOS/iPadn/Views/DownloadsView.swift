@@ -429,11 +429,11 @@ struct DownloadTaskRow: View {
         switch job.status {
         case .running:
             Button(action: primary) { ProgressRing(progress: job.expected > 0 ? job.progress : nil, symbol: "pause.fill") }
-                .buttonStyle(.borderless)
+                .buttonStyle(RevealRowButtonStyle())
                 .accessibilityLabel("暂停").accessibilityValue("\(Int(job.progress * 100))%")
         case .queued:
             Button(action: primary) { ProgressRing(progress: nil) }
-                .buttonStyle(.borderless).accessibilityLabel("等待下载，点按暂停")
+                .buttonStyle(RevealRowButtonStyle()).accessibilityLabel("等待下载，点按暂停")
         case .processing where manager.cancelling.contains(job.id):
             ProgressView().frame(width: 44, height: 44)
                 .accessibilityLabel("正在取消")
@@ -461,7 +461,7 @@ struct DownloadTaskRow: View {
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(RevealRowButtonStyle())
                     .accessibilityLabel("分享")
                     .accessibilityIdentifier("download.export." + job.app.id)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -472,7 +472,7 @@ struct DownloadTaskRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Button(action: inspecting) { appHeading }.buttonStyle(.plain)
+                Button(action: inspecting) { appHeading }.buttonStyle(RevealRowButtonStyle())
                 trailingControl
                     .id(controlKey)
                     .transition(.statusSwap)
@@ -493,7 +493,7 @@ struct DownloadTaskRow: View {
                         .font(.caption.weight(.semibold)).foregroundStyle(UX.tint).lineLimit(1)
                         .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading).contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(RevealRowButtonStyle())
                 .transition(.opacity)
                 .accessibilityLabel("下载新版本 \(update.version)")
                 .accessibilityIdentifier("download.update." + job.app.id)

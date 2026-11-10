@@ -61,7 +61,7 @@ struct AccountsView: View {
                                 }
                             }.contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(RevealRowButtonStyle())
                         .accessibilityHint(account.id == apple.activeID ? "当前下载账号" : "切换到此账号")
                         .accessibilityIdentifier("account." + account.id)
                         .disabled(store.accountRemoving != nil)

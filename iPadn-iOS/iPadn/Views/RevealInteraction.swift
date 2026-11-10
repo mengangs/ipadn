@@ -293,6 +293,31 @@ private final class RevealDriver: NSObject, ObservableObject {
 
 enum RevealActionStyle { case compact, round }
 
+private struct RevealSuppressesPressKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Interaction is temporarily cancelled by a reveal, not unavailable.
+    var revealSuppressesPress: Bool {
+        get { self[RevealSuppressesPressKey.self] }
+        set { self[RevealSuppressesPressKey.self] = newValue }
+    }
+}
+
+/// Keep the normal row appearance while its original control is cancelled.
+/// The Button itself remains disabled; only its noninteractive label renders
+/// with the normal enabled appearance. Genuine disabled states still fade.
+struct RevealRowButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.revealSuppressesPress) private var suppressesPress
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .environment(\.isEnabled, enabled || suppressesPress)
+            .opacity(enabled || suppressesPress ? (configuration.isPressed && !suppressesPress ? 0.6 : 1) : 0.4)
+    }
+}
+
 private struct RevealDeleteModifier: ViewModifier {
     let id: String
     let enabled: Bool
@@ -311,6 +336,8 @@ private struct RevealDeleteModifier: ViewModifier {
     func body(content: Content) -> some View {
         let isActive = coordinator.active == id
         return content
+            .buttonStyle(RevealRowButtonStyle())
+            .environment(\.revealSuppressesPress, driver.blocksPress || abs(driver.offset) > 1)
             // Disabling the original control cancels an in-flight SwiftUI
             // press; hit-testing alone still submits that press on touch-up.
             .disabled(driver.blocksPress || abs(driver.offset) > 1)
