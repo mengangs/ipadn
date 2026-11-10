@@ -40,6 +40,7 @@ struct ActionConfirmationView: View {
 
 private struct ActionConfirmationModifier: ViewModifier {
     @Binding var isPresented: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
     let title: String
     let message: String
     let confirmTitle: String
@@ -48,6 +49,9 @@ private struct ActionConfirmationModifier: ViewModifier {
     func body(content: Content) -> some View {
         content.sheet(isPresented: $isPresented) {
             ActionConfirmationView(title: title, message: message, confirmTitle: confirmTitle, destructive: destructive, action: action)
+                // A presented sheet can reset the parent's SwiftUI override.
+                // Keep its text size aligned with the page that opened it.
+                .environment(\.dynamicTypeSize, typeSize)
         }
     }
 }

@@ -214,12 +214,12 @@ struct RootView: View {
                             }.padding(.horizontal, 18).padding(.vertical, 11).frame(minHeight: 44)
                         }
                         .accessibilityLabel(message).accessibilityHint("点按关闭提示")
+                        .accessibilityIdentifier("notice.banner")
                     }
                 }
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
                 .buttonStyle(.plain)
-                .accessibilityIdentifier("notice.banner")
                 .frame(maxWidth: 320)
                 .padding(.horizontal, 24)
                 // The top of the root tab container includes the navigation bar.

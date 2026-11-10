@@ -63,7 +63,7 @@ GitHub Actions 会对每个 PR 和 `main` 分支执行设备编译、IPA 检查�
 
 手动运行工作流并勾选 `run_tests` 与 `publish_release`，会在全部检查通过后发布 GitHub Release，发布说明取自仓库根目录的 `RELEASE_NOTES.md`。已存在的同名 Release 不会被覆盖；标签触发发布时使用该标签对应的源码。
 
-当前 1.8.5 仅验证，用户明确要求暂不发布；手动运行应开启 `run_tests`、`run_ui_tests` 并保持 `publish_release=false`。
+发布前手动运行应开启 `run_tests`、`run_ui_tests`。用户最新已授权测试通过后发布 1.8.5；只能发布完整检查通过的同一提交产物，核对源码、SHA-256、IPA 校验和测试摘要。
 
 ## 扩展
 
