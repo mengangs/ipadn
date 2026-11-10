@@ -258,8 +258,7 @@ struct DownloadsView: View {
             Button("取消", role: .cancel) { }
         } message: { Text("输入 IPA 安装包的下载链接。") }
         .actionConfirmation(isPresented: $confirmingDelete, title: "删除 \(pendingDelete.count) 项任务？", message: "已下载的安装包也会一并删除。", confirmTitle: "删除任务与文件") {
-            // Delete what can be deleted; one task that just started processing
-            // must not keep the others.
+            // Recheck task states before the durable batch commit.
             let ids = pendingDelete
             pendingDelete.removeAll()
             perform {

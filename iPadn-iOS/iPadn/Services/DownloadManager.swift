@@ -435,7 +435,7 @@ final class DownloadManager: NSObject, ObservableObject {
         let removed = Set(targets.map(\.id))
         guard !removed.isEmpty else { return 0 }
         removingIDs = removed
-        defer { removingIDs.removeAll(); schedule() }
+        defer { removingIDs.removeAll(); persist(); schedule(); finishBackgroundIfReady() }
         let next = currentJobs.filter { !removed.contains($0.id) }, save = saveJobs
         let files = targets.compactMap { job in fileURL(job).map { (job.id, $0) } }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -469,17 +469,18 @@ final class DownloadManager: NSObject, ObservableObject {
             progressPublishedAt.removeValue(forKey: id); fallbackForegroundIDs.remove(id)
             catalogArtworkAttempted.remove(id)
         }
-        updateBackgroundTask(); persist()
+        updateBackgroundTask()
         return removed.count
     }
 
     /// Crash between moving a package aside and committing jobs must never
     /// make a retained package disappear. A committed removal has no job left.
-    nonisolated static func recoverRemovals(_ jobs: [DownloadJob]) throws {
+    nonisolated static func recoverRemovals(_ jobs: [DownloadJob], support: URL = LocalResources.support,
+                                           packages: URL = LocalResources.packages) throws {
         let fm = FileManager.default
-        let root = LocalResources.packages.resolvingSymlinksInPath().standardizedFileURL
+        let root = packages.resolvingSymlinksInPath().standardizedFileURL
         let retained = Dictionary(jobs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let files = (try? fm.contentsOfDirectory(at: LocalResources.support, includingPropertiesForKeys: [.isRegularFileKey])) ?? []
+        let files = (try? fm.contentsOfDirectory(at: support, includingPropertiesForKeys: [.isRegularFileKey])) ?? []
         for aside in files where aside.lastPathComponent.hasSuffix(".removing.ipa") {
             let prefix = String(aside.lastPathComponent.dropLast(".removing.ipa".count))
             guard let id = UUID(uuidString: prefix),

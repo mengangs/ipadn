@@ -89,6 +89,8 @@ final class ToolStore: ObservableObject {
     private var visualPreview = false
     #endif
     private var searchTask: Task<Void, Never>?
+    private var localSearchTask: Task<Void, Never>?
+    private var localSearchID = UUID()
     private var searchID = UUID()
     private var ownedByAccount: [String: [OwnedApp]] = [:]
     private var subscriptions = Set<AnyCancellable>()
@@ -143,7 +145,10 @@ final class ToolStore: ObservableObject {
             return snapshot
         }.value
         #if DEBUG
-        if visualPreview { cacheLoading = false; return }
+        if visualPreview {
+            nameCatalog = snapshot.names; cacheLoading = false
+            updateLocalResults(); return
+        }
         #endif
         favorites = snapshot.favorites; watch = snapshot.watch; ownedByAccount = snapshot.owned
         appCatalog = snapshot.catalog; nameCatalog = snapshot.names
@@ -270,12 +275,21 @@ final class ToolStore: ObservableObject {
     }
 
     private func updateLocalResults(for input: String? = nil) {
+        localSearchTask?.cancel()
+        let request = UUID(); localSearchID = request
         guard case .keyword(let term)? = try? SearchQuery.parse(input ?? lastSearchTerm) else { return }
+        let context = settings.store, queryID = searchID, directory = nameCatalog
         let known = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app) + (appCatalog[settings.store.platform.rawValue] ?? [])
-        let saved = AppSearchIndex.search(term, apps: known)
-        let directory = AppNameCatalog.search(term, platform: settings.store.platform, entries: nameCatalog)
-        let remoteIDs = Set(results.map(\.id))
-        localResults = AppSearchIndex.unique(saved + directory).filter { !remoteIDs.contains($0.id) }
+        localSearchTask = Task {
+            let candidates = await Task.detached(priority: .userInitiated) {
+                let saved = AppSearchIndex.search(term, apps: known)
+                let named = AppNameCatalog.search(term, platform: context.platform, entries: directory)
+                return AppSearchIndex.unique(saved + named)
+            }.value
+            guard !Task.isCancelled, localSearchID == request, searchID == queryID, settings.store == context else { return }
+            let remoteIDs = Set(results.map(\.id))
+            localResults = candidates.filter { !remoteIDs.contains($0.id) }
+        }
     }
 
     func loadNameCatalog() async {
@@ -330,7 +344,7 @@ final class ToolStore: ObservableObject {
         await refreshOwned()
     }
 
-    func cancelSearch() { searchTask?.cancel(); searchID = UUID(); searching = false; hasSearched = !results.isEmpty || !localResults.isEmpty; searchError = nil }
+    func cancelSearch() { searchTask?.cancel(); localSearchTask?.cancel(); searchID = UUID(); searching = false; hasSearched = !results.isEmpty || !localResults.isEmpty; searchError = nil }
     func clearSearch() { cancelSearch(); searchText = ""; results = []; localResults = []; hasSearched = false; lastSearchTerm = "" }
     func isFavorite(_ app: StoreApp) -> Bool { favorites.contains { $0.id == app.id } }
     func toggleFavorite(_ app: StoreApp) {
@@ -356,6 +370,7 @@ final class ToolStore: ObservableObject {
                 UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
             }
         } else {
+            let previousRecords = watch.filter { $0.value.id == app.id }
             watch = watch.filter { $0.value.id != app.id }
             persistWatch()
             undoNotice = UndoNotice(message: "已取消关注 \(app.name)") { [weak self] in
@@ -366,7 +381,12 @@ final class ToolStore: ObservableObject {
                     guard !self.isFavorite(app) else { return }
                     var restored = self.favorites
                     restored.insert(app, at: min(previousIndex, restored.count))
-                    do { try await self.saveCache(restored, filename: "favorites.json"); self.favorites = restored; self.updateLocalResults() }
+                    do {
+                        try await self.saveCache(restored, filename: "favorites.json")
+                        self.favorites = restored
+                        self.watch.merge(previousRecords) { current, _ in current }
+                        self.persistWatch(); self.updateLocalResults()
+                    }
                     catch { self.errorMessage = error.localizedDescription }
                 }
             }
@@ -459,7 +479,8 @@ final class ToolStore: ObservableObject {
                 refreshed[index] = updated
             }
         }
-        watch = records
+        let followed = Set(favorites.map(\.id))
+        watch = records.filter { followed.contains($0.value.id) }
         watchChecked = (Date(), keys)
         persistWatch()
         if refreshed != favorites {

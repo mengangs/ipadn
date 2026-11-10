@@ -295,7 +295,11 @@ final class InteractionTests: XCTestCase {
             app.launch()
             XCTAssertTrue(app.buttons["downloads.edit"].waitForExistence(timeout: 15))
             print("PERF downloads rows=\(count) launch-to-controls=\(Date().timeIntervalSince(started))s")
-            app.swipeUp(); app.swipeDown()
+            let first = app.descendants(matching: .any)["download.task.stress-0.paused"].firstMatch
+            XCTAssertTrue(first.waitForExistence(timeout: 5))
+            app.swipeUp()
+            XCTAssertFalse(first.isHittable, "The list must actually scroll, not just accept the gesture")
+            app.swipeDown()
             XCTAssertTrue(app.buttons["downloads.edit"].exists)
             attach("stress-\(count)", app: app)
             app.terminate()

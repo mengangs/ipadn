@@ -135,6 +135,22 @@ jobs:
           print('Executed tests:', result['passedTests'], 'passed;', result['skippedTests'], 'skipped')
           PY
 
+      - name: Export simulator screenshots
+        if: always()
+        run: |
+          if [ -d build/TestResults.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/test-attachments
+          fi
+
+      - name: Upload simulator screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iPadn-test-screenshots
+          path: iPadn-iOS/build/test-attachments
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload test summary
         if: success() && (github.event_name != 'workflow_dispatch' || inputs.run_tests)
         uses: actions/upload-artifact@v4

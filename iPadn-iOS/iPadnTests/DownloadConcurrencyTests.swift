@@ -3,6 +3,24 @@ import Combine
 @testable import iPadn
 
 final class DownloadConcurrencyTests: XCTestCase {
+    func testInterruptedRemovalRestoresOnlyUncommittedPackages() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let packages = root.appendingPathComponent("Packages")
+        try FileManager.default.createDirectory(at: packages, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let job = DownloadJob(app: StoreApp(id: "1", name: "Test"), status: .completed, localFilename: "sample.ipa")
+        let aside = root.appendingPathComponent("\(job.id.uuidString).removing.ipa")
+        try Data([1, 2, 3]).write(to: aside)
+        try DownloadManager.recoverRemovals([job], support: root, packages: packages)
+        let restored = packages.appendingPathComponent("sample.ipa")
+        XCTAssertEqual(try Data(contentsOf: restored), Data([1, 2, 3]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: aside.path))
+        try Data([4]).write(to: aside)
+        try DownloadManager.recoverRemovals([job], support: root, packages: packages)
+        XCTAssertEqual(try Data(contentsOf: restored), Data([1, 2, 3]), "Recovery must not overwrite an existing package")
+        try DownloadManager.recoverRemovals([], support: root, packages: packages)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: aside.path))
+    }
     @MainActor
     func testSessionLocalIdentifiersCannotUpdateAnotherTransfersProgress() async throws {
         let a = URLSession(configuration: .ephemeral), b = URLSession(configuration: .ephemeral)

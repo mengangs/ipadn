@@ -86,12 +86,15 @@ private struct RevealDeleteModifier: ViewModifier {
     @State private var rejected = false
     @State private var previousSample: (time: Date, x: CGFloat)?
     @State private var velocity: CGFloat = 0
+    @State private var gestureOrigin: CGFloat = 0
     @GestureState private var touching = false
+    @State private var lastVisibleY: CGFloat?
 
     func body(content: Content) -> some View {
-        content
+        let isActive = coordinator.active == id
+        return content
             .offset(x: driver.offset)
-            .background(alignment: driver.offset >= 0 ? .leading : .trailing) {
+            .overlay(alignment: driver.offset >= 0 ? .leading : .trailing) {
                 if abs(driver.offset) > 1 {
                     Button(role: .destructive, action: commit) {
                         Label(title, systemImage: "trash").labelStyle(.iconOnly)
@@ -103,7 +106,14 @@ private struct RevealDeleteModifier: ViewModifier {
                 }
             }
             .clipped()
+            .contentShape(Rectangle())
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            .onGeometryChange(for: CGFloat?.self) { geometry in
+                isActive ? geometry.frame(in: .global).minY : nil
+            } action: { y in
+                if let y, let previous = lastVisibleY, abs(y - previous) > 1 { coordinator.active = nil }
+                lastVisibleY = y
+            }
             .simultaneousGesture(DragGesture(minimumDistance: 25)
                 .updating($touching) { _, touching, _ in touching = true }
                 .onChanged { value in
@@ -113,6 +123,9 @@ private struct RevealDeleteModifier: ViewModifier {
                         // Leave the leading-edge interactive navigation gesture alone.
                         if value.startLocation.x < 20 && value.translation.width > 0 { rejected = true; return }
                         direction = driver.offset == 0 ? (value.translation.width > 0 ? 1 : -1) : (driver.offset > 0 ? 1 : -1)
+                        // Match Telegram's 25-point recognition hysteresis:
+                        // do not jump the row by the recognition distance.
+                        gestureOrigin = value.translation.width < 0 ? -25 : 25
                         coordinator.active = id
                         driver.begin(width: width, direction: direction, reduced: reduceMotion)
                     }
@@ -122,13 +135,13 @@ private struct RevealDeleteModifier: ViewModifier {
                         if dt > 0 { velocity = (value.translation.width - previousSample.x) / dt }
                     }
                     previousSample = (now, value.translation.width)
-                    driver.change(translation: value.translation.width, velocity: velocity,
+                    driver.change(translation: value.translation.width - gestureOrigin, velocity: velocity,
                                   distanceFromEdge: direction > 0 ? width - value.location.x : value.location.x)
                 }
                 .onEnded { value in
                     defer { rejected = false; previousSample = nil; velocity = 0 }
                     guard driver.dragging else { return }
-                    if driver.end(translation: value.translation.width, velocity: velocity) { commit() }
+                    if driver.end(translation: value.translation.width - gestureOrigin, velocity: velocity) { commit() }
                 }, including: enabled ? .all : .none)
             .onChange(of: coordinator.active) { _, active in if active != id { driver.close() } }
             .onChange(of: enabled) { _, enabled in if !enabled { driver.close(immediately: true) } }
@@ -149,11 +162,8 @@ private struct RevealDeleteModifier: ViewModifier {
 }
 
 extension View {
-    func dismissRevealsOnTap() -> some View {
-        simultaneousGesture(TapGesture().onEnded { RevealCoordinator.shared.active = nil })
-            .simultaneousGesture(DragGesture(minimumDistance: 10).onChanged { value in
-                if abs(value.translation.height) > abs(value.translation.width) { RevealCoordinator.shared.active = nil }
-            })
+    func dismissRevealsWhenTabChanges(_ tab: Int) -> some View {
+        onChange(of: tab) { _, _ in RevealCoordinator.shared.active = nil }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
                 RevealCoordinator.shared.active = nil
             }

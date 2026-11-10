@@ -236,7 +236,7 @@ struct RootView: View {
         .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("知道了", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
-        .dismissRevealsOnTap()
+        .dismissRevealsWhenTabChanges(store.tab)
         .transaction { transaction in
             if reduceMotion { transaction.animation = nil; transaction.disablesAnimations = true }
         }
