@@ -256,12 +256,14 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(favorite.waitForExistence(timeout: 5))
         revealActions(on: favorite)
         XCTAssertTrue(app.buttons["取消关注"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["detail.get"].exists, "Swiping a favorite must not navigate")
+        XCTAssertFalse(app.buttons["app.copy-id"].exists, "Swiping a favorite must not navigate")
         favorite.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         expectation(for: closed, evaluatedWith: app.buttons["取消关注"].firstMatch)
         waitForExpectations(timeout: 5)
         favorite.tap()
-        XCTAssertTrue(app.buttons["detail.get"].waitForExistence(timeout: 10))
+        // The preview starts signed out, so the primary control is Login,
+        // not detail.get. Copy ID is present in either authentication state.
+        XCTAssertTrue(app.buttons["app.copy-id"].waitForExistence(timeout: 10))
         app.terminate()
         app.launchArguments = ["--visual-preview", "--accounts"]
         app.launch()
