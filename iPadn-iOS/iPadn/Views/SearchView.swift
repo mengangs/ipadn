@@ -6,6 +6,7 @@ import SwiftUI
 struct SearchView: View {
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var apple: AppleService
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmClear = false
     @State private var getting: StoreApp?
     @State private var headerAway = false
@@ -57,6 +58,8 @@ struct SearchView: View {
                 suggestions
             }
         }
+        .animation(UX.motion(reduceMotion), value: store.searchHistory.map(\.id))
+        .animation(UX.motion(reduceMotion), value: store.favorites.map(\.id))
         .toolPage()
         .rootTabBar("搜索", headerScrolledAway: headerAway)
         .navigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
@@ -92,12 +95,7 @@ struct SearchView: View {
                         }.frame(minHeight: 36).contentShape(Rectangle())
                     }
                     .accessibilityIdentifier("history.\(item.id)")
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) { withAnimation { store.removeHistory(item.term) } } label: { Label("删除", systemImage: "trash") }
-                    }
-                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                        Button(role: .destructive) { withAnimation { store.removeHistory(item.term) } } label: { Label("删除", systemImage: "trash") }
-                    }
+                    .revealDelete(id: "history." + item.id) { withAnimation { store.removeHistory(item.term) } }
                 } header: {
                     if item.id == store.searchHistory.first?.id {
                         HStack {
@@ -113,9 +111,7 @@ struct SearchView: View {
             Section {
                 ForEach(store.favorites) { app in
                     NavigationLink { AppDetailView(app: app) } label: { WatchRow(app: app) }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button("取消关注", systemImage: "bell.slash") { withAnimation { store.toggleFavorite(app) } }.tint(.gray)
-                        }
+                        .revealDelete(id: "favorite." + app.id, title: "取消关注") { withAnimation { store.toggleFavorite(app) } }
                 }
             } header: {
                 HStack {

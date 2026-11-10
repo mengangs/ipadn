@@ -216,7 +216,7 @@ final class InteractionTests: XCTestCase {
         menu.tap(); app.buttons["download.filter.全部"].tap()
         let row = app.descendants(matching: .any)["download.task.preview-2.paused"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
-        row.swipeLeft()
+        revealActions(on: row)
         let delete = app.buttons["删除"].firstMatch
         XCTAssertTrue(delete.waitForExistence(timeout: 5))
         attach("10-download-swipe", app: app)
@@ -228,9 +228,9 @@ final class InteractionTests: XCTestCase {
         attach("12-delete-confirmation", app: app)
         cancel.tap()
         XCTAssertTrue(row.waitForExistence(timeout: 5))
-        row.swipeLeft(); delete.tap()
+        revealActions(on: row); delete.tap()
         XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
-        let notice = app.buttons["已删除任务"]
+        let notice = app.staticTexts["已删除 1 项任务与文件"]
         XCTAssertTrue(notice.waitForExistence(timeout: 5))
         XCTAssertLessThan(notice.frame.midY, app.frame.midY, "操作提示应该位于上方，不遮挡底部操作")
         attach("14-task-toast", app: app)
@@ -242,14 +242,14 @@ final class InteractionTests: XCTestCase {
         app.launchArguments = ["--visual-preview"]
         app.launch()
         let history = app.buttons["history.效率工具"]
-        XCTAssertTrue(history.waitForExistence(timeout: 10)); history.swipeLeft()
+        XCTAssertTrue(history.waitForExistence(timeout: 10)); revealActions(on: history)
         XCTAssertTrue(app.buttons["删除"].firstMatch.waitForExistence(timeout: 5))
         attach("11-history-swipe", app: app)
         app.terminate()
         app.launchArguments = ["--visual-preview", "--accounts"]
         app.launch()
         let account = app.buttons["account.demo@example.com"]
-        XCTAssertTrue(account.waitForExistence(timeout: 10)); account.swipeLeft()
+        XCTAssertTrue(account.waitForExistence(timeout: 10)); revealActions(on: account)
         let remove = app.buttons["移除"].firstMatch
         XCTAssertTrue(remove.waitForExistence(timeout: 5))
         attach("13-account-swipe", app: app)
@@ -272,6 +272,43 @@ final class InteractionTests: XCTestCase {
         pickerCancel.tap()
         XCTAssertTrue(add.waitForExistence(timeout: 5))
     }
+    func testHistoryDeletionCanBeUndone() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--visual-preview"]
+        app.launch()
+        let history = app.buttons["history.效率工具"]
+        XCTAssertTrue(history.waitForExistence(timeout: 10))
+        revealActions(on: history)
+        app.buttons["删除"].firstMatch.tap()
+        let undo = app.buttons["notice.undo"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 5))
+        XCTAssertFalse(history.exists)
+        undo.tap()
+        XCTAssertTrue(history.waitForExistence(timeout: 5))
+    }
+
+    func testLargeDownloadListsLaunchAndScroll() {
+        let app = XCUIApplication()
+        for count in [100, 500, 1000] {
+            app.launchArguments = ["--visual-preview", "--downloads", "--stress-records=\(count)"]
+            let started = Date()
+            app.launch()
+            XCTAssertTrue(app.buttons["downloads.edit"].waitForExistence(timeout: 15))
+            print("PERF downloads rows=\(count) launch-to-controls=\(Date().timeIntervalSince(started))s")
+            app.swipeUp(); app.swipeDown()
+            XCTAssertTrue(app.buttons["downloads.edit"].exists)
+            attach("stress-\(count)", app: app)
+            app.terminate()
+        }
+    }
+
+    private func revealActions(on element: XCUIElement) {
+        // A partial swipe deliberately tests the revealed button separately
+        // from the full-swipe commit threshold.
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: element.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.5)))
+    }
+
     private func attach(_ name: String, app: XCUIApplication) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)

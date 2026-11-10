@@ -5,11 +5,13 @@ import SwiftUI
 struct StorageView: View {
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var manager: DownloadManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var sizes: [UUID: Int64] = [:]
     @State private var available: Int64?
     @State private var measuring = true
     @State private var confirmingCleanup = false
     @State private var pendingDelete: DownloadJob?
+    @State private var deleting = false
 
     private var completed: [DownloadJob] { manager.jobs.filter { $0.status == .completed && manager.fileURL($0) != nil } }
     /// Finished downloads of an app that also has a newer finished download
@@ -61,18 +63,16 @@ struct StorageView: View {
                             Spacer(minLength: 8)
                             Text(sizes[job.id].map(\.byteLabel) ?? "…").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                         }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) { pendingDelete = job } label: { Label("删除", systemImage: "trash") }
-                        }
-                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                            Button(role: .destructive) { pendingDelete = job } label: { Label("删除", systemImage: "trash") }
-                        }
+                        .revealDelete(id: "storage." + job.id.uuidString, enabled: !deleting) { pendingDelete = job }
                     }
                 }
             } else if !measuring {
                 Section { Text("还没有下载的安装包。").font(.subheadline).foregroundStyle(.secondary) }
             }
         }
+        .animation(UX.motion(reduceMotion), value: completed.map(\.id))
+        .disabled(deleting)
+        .overlay { if deleting { ProgressView("正在删除…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
         .toolPage().navigationTitle("存储空间").navigationBarTitleDisplayMode(.inline)
         .task(id: completed.map(\.id)) { await measure(completed) }
         .refreshable { await measure(self.completed) }
@@ -104,11 +104,14 @@ struct StorageView: View {
 
     private func remove(_ jobs: [DownloadJob]) {
         let freed = total(jobs)
-        var failure: Error?
-        for job in jobs {
-            do { try manager.remove(job.id) } catch { failure = failure ?? error }
+        guard !deleting else { return }
+        deleting = true
+        Task {
+            defer { deleting = false }
+            do {
+                _ = try await manager.removeBatch(Set(jobs.map(\.id)))
+                store.infoMessage = "已释放 \(freed.byteLabel)"
+            } catch { store.errorMessage = error.localizedDescription }
         }
-        if let failure { store.errorMessage = failure.localizedDescription }
-        else { store.infoMessage = "已释放 \(freed.byteLabel)" }
     }
 }

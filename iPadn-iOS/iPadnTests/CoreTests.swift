@@ -1077,6 +1077,35 @@ final class CoreTests: XCTestCase {
     }
 
     @MainActor
+    func testSignerRetriesStaleRuntimeAfterReleasingOperation() async throws {
+        let signer = SAPSigner()
+        defer { signer.clearCache() }
+        let warm = try await signer.execute(title: "准备", script: "window.staleRuntime = true; return 'ready';", arguments: [:])
+        XCTAssertEqual(warm, "ready")
+        let retried = try await signer.execute(title: "重试", script: "if (window.staleRuntime) throw new Error('stale runtime'); return 'fresh';", arguments: [:])
+        XCTAssertEqual(retried, "fresh")
+        XCTAssertFalse(signer.isPresented)
+        XCTAssertNil(signer.webView)
+        let next = try await signer.execute(title: "再次复用", script: "return 'ready';", arguments: [:])
+        XCTAssertEqual(next, "ready")
+    }
+
+    @MainActor
+    func testSignerWarmTimeoutDoesNotRetryOrLoseTerminalError() async throws {
+        let signer = SAPSigner()
+        defer { signer.clearCache() }
+        _ = try await signer.execute(title: "准备", script: "return 'ready';", arguments: [:])
+        do {
+            _ = try await signer.execute(title: "测试", script: "return await new Promise(() => {});", arguments: [:], timeoutSeconds: 1)
+            XCTFail("Timed-out operation returned success")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("已停止")) }
+        XCTAssertFalse(signer.isPresented)
+        XCTAssertNil(signer.webView)
+        let recovered = try await signer.execute(title: "恢复", script: "return 'ready';", arguments: [:])
+        XCTAssertEqual(recovered, "ready")
+    }
+
+    @MainActor
     func testSignerTimeoutResumesPendingJavaScript() async {
         let signer = SAPSigner()
         do {
@@ -1128,6 +1157,7 @@ final class CoreTests: XCTestCase {
         let metadata = URLComponents(string: "https://localhost/?" + decoded)!
         XCTAssertEqual(metadata.queryItems?.first(where: { $0.name == "name" })?.value, app.name)
         XCTAssertEqual(metadata.queryItems?.first(where: { $0.name == "fileName" })?.value, "1234-应用_1.0.ipa")
+        XCTAssertEqual(metadata.queryItems?.first(where: { $0.name == "displayVersion" })?.value, app.version)
         XCTAssertThrowsError(try ManifestBuilder.installURL(app: app, filename: "a.ipa", plistServer: "http://example.com/manifest"))
     }
 
@@ -1334,6 +1364,7 @@ final class CoreTests: XCTestCase {
                 "Payload/Multi.app/SC_Info/Manifest.plist": try HTTPClient.encodePlist(manifest),
                 "Payload/Multi.app/SC_Info/Multi.v1.supp": Data([9]),
                 "Payload/Multi.app/PlugIns/Widget.appex/SC_Info/Widget.v1.supp": Data([8]),
+                "Payload/Multi.app/_CodeSignature/CodeResources": Data([7, 6, 5]),
                 "iTunesMetadata.plist": try HTTPClient.encodePlist(["itemId": "2"])
             ]
             for (path, data) in files {
@@ -1359,6 +1390,7 @@ final class CoreTests: XCTestCase {
         XCTAssertNotNil(archive["Payload/Multi.app/PlugIns/Widget.appex/SC_Info/Widget.sinf"])
         XCTAssertNotNil(archive["Payload/Multi.app/SC_Info/Multi.v1.supp"])
         XCTAssertNotNil(archive["Payload/Multi.app/PlugIns/Widget.appex/SC_Info/Widget.v1.supp"])
+        XCTAssertNotNil(archive["Payload/Multi.app/_CodeSignature/CodeResources"])
 
         var mainPayload = Data()
         _ = try archive.extract(archive["Payload/Multi.app/SC_Info/Multi.sinf"]!, consumer: { mainPayload.append($0) })
@@ -1367,6 +1399,37 @@ final class CoreTests: XCTestCase {
         var widgetPayload = Data()
         _ = try archive.extract(archive["Payload/Multi.app/PlugIns/Widget.appex/SC_Info/Widget.sinf"]!, consumer: { widgetPayload.append($0) })
         XCTAssertEqual(widgetPayload, Data([3, 4]))
+
+        var supplemental = Data(), codeResources = Data()
+        _ = try archive.extract(archive["Payload/Multi.app/PlugIns/Widget.appex/SC_Info/Widget.v1.supp"]!, consumer: { supplemental.append($0) })
+        _ = try archive.extract(archive["Payload/Multi.app/_CodeSignature/CodeResources"]!, consumer: { codeResources.append($0) })
+        XCTAssertEqual(supplemental, Data([8]))
+        XCTAssertEqual(codeResources, Data([7, 6, 5]))
+    }
+
+    func testMultiComponentSinfsKeepServerOrderAndRequireExactSafePaths() throws {
+        let serverRecords: [[String: Any]] = [
+            ["id": 900, "sinf": Data([1])],
+            ["id": 2, "sinf": Data([2]).base64EncodedString()]
+        ]
+        let sinfs = try AppleService.mobileSinfs(serverRecords)
+        XCTAssertEqual(sinfs, [Data([1]), Data([2])], "opaque ids must not reorder positional SINF records")
+        let targets = try PackageService.sinfTargets(
+            paths: ["SC_Info/Main.sinf", "PlugIns/Widget.appex/SC_Info/Widget.sinf"],
+            sinfs: sinfs, bundleFolder: "Multi.app")
+        XCTAssertEqual(targets.map(\.path), [
+            "Payload/Multi.app/SC_Info/Main.sinf",
+            "Payload/Multi.app/PlugIns/Widget.appex/SC_Info/Widget.sinf"
+        ])
+        XCTAssertEqual(targets.map(\.data), sinfs)
+        XCTAssertThrowsError(try PackageService.sinfTargets(
+            paths: ["SC_Info/Main.sinf", "PlugIns/Widget.appex/SC_Info/Widget.sinf"],
+            sinfs: [Data([1])], bundleFolder: "Multi.app"))
+        XCTAssertThrowsError(try PackageService.sinfTargets(
+            paths: ["../escape.sinf"], sinfs: [Data([1])], bundleFolder: "Multi.app"))
+        XCTAssertThrowsError(try AppleService.mobileSinfs([
+            ["id": 1, "sinf": Data([1])], ["id": 2, "dpInfo": Data([2])]
+        ]))
     }
 
     func testPurchaseMetadataRecordsPurchaserLikeAppStore() throws {

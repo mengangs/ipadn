@@ -186,10 +186,18 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
         saveRecord(StoreProofRecord(identifier: Self.randomStoreIdentifier(), files: [:]), for: normalized)
     }
 
+    private enum RuntimeRetry: Error { case coldStart }
+
     func execute(title: String, script: String, arguments: [String: Any], timeoutSeconds: UInt64 = 180, reuseRuntime: Bool = true) async throws -> String {
         do {
             return try await executeAttempt(title: title, script: script, arguments: arguments, timeoutSeconds: timeoutSeconds, reuseRuntime: reuseRuntime)
         } catch {
+            // executeAttempt's defer must release the operation before a retry
+            // can acquire it. Retrying inside that attempt deadlocks on itself.
+            try Task.checkCancellation()
+            if error is RuntimeRetry {
+                return try await executeAttempt(title: title, script: script, arguments: arguments, timeoutSeconds: timeoutSeconds, reuseRuntime: false)
+            }
             let ns = error as NSError
             if ns.domain == NSURLErrorDomain && (ns.code == NSURLErrorCannotConnectToHost || ns.code == NSURLErrorNetworkConnectionLost) {
                 InstallLog.shared.add("SAPSigner loopback error (\(ns.code)), resetting server and retrying")
@@ -263,9 +271,12 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
                     }
                 }
             } catch {
+                // Preserve explicit cancellation and timeout errors; neither is
+                // evidence of a stale cached WebKit runtime.
+                try checkActive(id)
                 if warm {
                     discardIdleRuntime()
-                    return try await executeAttempt(title: title, script: script, arguments: arguments, timeoutSeconds: timeoutSeconds, reuseRuntime: false)
+                    throw RuntimeRetry.coldStart
                 }
                 throw ToolError.message("验证未完成，请检查网络后重试")
             }

@@ -6,6 +6,7 @@ struct DownloadsView: View {
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var manager: DownloadManager
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var filter: DownloadFilter = .all
     @State private var term = ""
     @State private var importing = false
@@ -83,16 +84,8 @@ struct DownloadsView: View {
                         }
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            if !editMode.isEditing && job.status != .processing && job.status != .pausing {
-                                Button(role: .destructive) { askDelete([job.id]) } label: { Label("删除", systemImage: "trash") }
-                            }
-                        }
-                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                            if !editMode.isEditing && job.status != .processing && job.status != .pausing {
-                                Button(role: .destructive) { askDelete([job.id]) } label: { Label("删除", systemImage: "trash") }
-                            }
-                        }
+                        .revealDelete(id: "download." + job.id.uuidString,
+                                      enabled: !editMode.isEditing && !actionBusy && job.status != .processing && job.status != .pausing) { askDelete([job.id]) }
                         .contextMenu {
                             if !editMode.isEditing {
                                 if let latest = updates[job.id] {
@@ -142,6 +135,7 @@ struct DownloadsView: View {
             await store.checkForUpdates()
         }
         .refreshable { await store.checkForUpdates(force: true) }
+        .animation(UX.motion(reduceMotion), value: manager.jobs.map(\.id))
         .toolPage().navigationTitle("下载").navigationBarTitleDisplayMode(.large)
         .environment(\.editMode, $editMode)
         .toolbar {
@@ -266,13 +260,14 @@ struct DownloadsView: View {
         .actionConfirmation(isPresented: $confirmingDelete, title: "删除 \(pendingDelete.count) 项任务？", message: "已下载的安装包也会一并删除。", confirmTitle: "删除任务与文件") {
             // Delete what can be deleted; one task that just started processing
             // must not keep the others.
-            var failure: Error?
-            for id in pendingDelete {
-                do { try manager.remove(id); selection.remove(id) } catch { failure = failure ?? error }
-            }
+            let ids = pendingDelete
             pendingDelete.removeAll()
-            if manager.jobs.isEmpty { editMode = .inactive }
-            if let failure { store.errorMessage = failure.localizedDescription } else { store.infoMessage = "已删除任务" }
+            perform {
+                let count = try await manager.removeBatch(ids)
+                selection.subtract(ids)
+                if manager.jobs.isEmpty { editMode = .inactive }
+                store.infoMessage = "已删除 \(count) 项任务与文件"
+            }
         }
         .sheet(item: $installing) { job in
             PackageInstallationView(job: job).environmentObject(store).environmentObject(manager)
@@ -280,7 +275,7 @@ struct DownloadsView: View {
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
     }
     private func taskContent(_ job: DownloadJob, update: StoreApp?, editing: Bool = false) -> some View {
-        DownloadTaskRow(job: job, update: update, kept: store.keepsVersion(job), editing: editing, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
+        DownloadTaskRow(snapshot: job, progress: manager.progress(for: job.id), update: update, kept: store.keepsVersion(job), editing: editing, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
             if let file = manager.fileURL(job) { share = SharedFile(url: file) }
         }, updating: { downloadUpdate(job) })
     }
@@ -340,7 +335,9 @@ struct DownloadsView: View {
 
 struct DownloadTaskRow: View {
     @EnvironmentObject private var manager: DownloadManager
-    let job: DownloadJob
+    let snapshot: DownloadJob
+    @ObservedObject var progress: DownloadProgressState
+    private var job: DownloadJob { progress.applying(to: snapshot) }
     /// The store's newer version of this app, when there is one.
     var update: StoreApp? = nil
     /// Kept at this version: no update reminders.

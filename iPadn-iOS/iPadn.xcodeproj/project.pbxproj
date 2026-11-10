@@ -19,6 +19,16 @@
 			path = iPadnTests.xctest;
 			sourceTree = BUILT_PRODUCTS_DIR;
 		};
+		5D8D68F1FED8399BDA1BAE05 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/iPadnApp.swift";
+			sourceTree = "<group>";
+		};
+		28794B21362D7DD58544D5B3 = {
+			isa = PBXBuildFile;
+			fileRef = 5D8D68F1FED8399BDA1BAE05;
+		};
 		E5897D35708E9120B8647A2F = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -38,16 +48,6 @@
 		8EE231649195F263F52CE685 = {
 			isa = PBXBuildFile;
 			fileRef = E62D865FB463397117968832;
-		};
-		5D8D68F1FED8399BDA1BAE05 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "App/iPadnApp.swift";
-			sourceTree = "<group>";
-		};
-		28794B21362D7DD58544D5B3 = {
-			isa = PBXBuildFile;
-			fileRef = 5D8D68F1FED8399BDA1BAE05;
 		};
 		D5827E778FA6FF7F69E8755C = {
 			isa = PBXFileReference;
@@ -99,26 +99,6 @@
 			isa = PBXBuildFile;
 			fileRef = 25B34768D06848A231914199;
 		};
-		77BE20F05C95CF0C3CDD1102 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "Services/AppReleaseFeed.swift";
-			sourceTree = "<group>";
-		};
-		DF17CC0ED5E25791D522742C = {
-			isa = PBXBuildFile;
-			fileRef = 77BE20F05C95CF0C3CDD1102;
-		};
-		135F5A5E3C8029531EAFCC61 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "Services/AppUpdateService.swift";
-			sourceTree = "<group>";
-		};
-		D049070A4AAA6DF92E0DC832 = {
-			isa = PBXBuildFile;
-			fileRef = 135F5A5E3C8029531EAFCC61;
-		};
 		85BBD237A09E32D159E7886F = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -148,6 +128,26 @@
 		E0631520F368539F2C0854C8 = {
 			isa = PBXBuildFile;
 			fileRef = 0BD07ACE3BF45E1B7AA5D034;
+		};
+		77BE20F05C95CF0C3CDD1102 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/AppReleaseFeed.swift";
+			sourceTree = "<group>";
+		};
+		DF17CC0ED5E25791D522742C = {
+			isa = PBXBuildFile;
+			fileRef = 77BE20F05C95CF0C3CDD1102;
+		};
+		135F5A5E3C8029531EAFCC61 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/AppUpdateService.swift";
+			sourceTree = "<group>";
+		};
+		D049070A4AAA6DF92E0DC832 = {
+			isa = PBXBuildFile;
+			fileRef = 135F5A5E3C8029531EAFCC61;
 		};
 		03223D703FED7749D0182600 = {
 			isa = PBXFileReference;
@@ -458,6 +458,26 @@
 		4081F8E081F38E620E4F6F53 = {
 			isa = PBXBuildFile;
 			fileRef = 1E9502E0C8542CA2BF94D23E;
+		};
+		9E24C84D88E9AA778F93D199 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/RevealInteraction.swift";
+			sourceTree = "<group>";
+		};
+		E1275941D01F6982E2AF1681 = {
+			isa = PBXBuildFile;
+			fileRef = 9E24C84D88E9AA778F93D199;
+		};
+		5855D908740EF91B6AD49289 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/RevealMotion.swift";
+			sourceTree = "<group>";
+		};
+		989AF76AFBA368A06E7CCB98 = {
+			isa = PBXBuildFile;
+			fileRef = 5855D908740EF91B6AD49289;
 		};
 		875F86E325615E997D89246A = {
 			isa = PBXFileReference;
@@ -815,6 +835,16 @@
 			isa = PBXBuildFile;
 			fileRef = DF17B7F31CB119020ABB3383;
 		};
+		FE8B3E8758EB5D71A776EF48 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = DownloadConcurrencyTests.swift;
+			sourceTree = "<group>";
+		};
+		350D3A300250E672882AB320 = {
+			isa = PBXBuildFile;
+			fileRef = FE8B3E8758EB5D71A776EF48;
+		};
 		C893DFB88667291E462080FF = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -824,6 +854,16 @@
 		F7855E1B1CA17D39AF64B21B = {
 			isa = PBXBuildFile;
 			fileRef = C893DFB88667291E462080FF;
+		};
+		94420EBB8D5817F4BAE9011D = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = RevealMotionTests.swift;
+			sourceTree = "<group>";
+		};
+		87ACBECE32FC2ECA6FF9CA60 = {
+			isa = PBXBuildFile;
+			fileRef = 94420EBB8D5817F4BAE9011D;
 		};
 		5A16626D8F838F65AD30E1C1 = {
 			isa = PBXFileReference;
@@ -874,19 +914,19 @@
 		A5660BF89DD2D657048780AB = {
 			isa = PBXGroup;
 			children = (
+				5D8D68F1FED8399BDA1BAE05,
 				E5897D35708E9120B8647A2F,
 				E62D865FB463397117968832,
-				5D8D68F1FED8399BDA1BAE05,
 				D5827E778FA6FF7F69E8755C,
 				B36989F5E7EBF5AEEA7A2637,
 				9C74C66866F0A2483D0A8371,
 				97B77CBFB5B60DE50E8659BA,
 				25B34768D06848A231914199,
-				77BE20F05C95CF0C3CDD1102,
-				135F5A5E3C8029531EAFCC61,
 				85BBD237A09E32D159E7886F,
 				7E60346E3184636F15C36607,
 				0BD07ACE3BF45E1B7AA5D034,
+				77BE20F05C95CF0C3CDD1102,
+				135F5A5E3C8029531EAFCC61,
 				03223D703FED7749D0182600,
 				F8027934C71C79D0C4556300,
 				BCDB149703DDF289FBA19140,
@@ -918,6 +958,8 @@
 				912A19F2CDAA1C7162E0CF16,
 				017DA2AF8D5CEEE8F76D714D,
 				1E9502E0C8542CA2BF94D23E,
+				9E24C84D88E9AA778F93D199,
+				5855D908740EF91B6AD49289,
 				875F86E325615E997D89246A,
 				AC7ABAF3BAFCCF834C35D127,
 				B8B5827DB7B30C5EF9E4CE8E,
@@ -961,7 +1003,9 @@
 			children = (
 				265919398CD78910A79343EB,
 				DF17B7F31CB119020ABB3383,
+				FE8B3E8758EB5D71A776EF48,
 				C893DFB88667291E462080FF,
+				94420EBB8D5817F4BAE9011D,
 				5A16626D8F838F65AD30E1C1,
 				43B20E5B39E4494D4F6661D0,
 				B0563010449BDC3A2DFEF8A0,
@@ -993,19 +1037,19 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				28794B21362D7DD58544D5B3,
 				41112957FFC8DF4DD3F48FE2,
 				8EE231649195F263F52CE685,
-				28794B21362D7DD58544D5B3,
 				7097832CBF79ADFF210E5E91,
 				B67510DB40F0F44420FD5F44,
 				43E25ABCD2BA73E3BFD8EDE0,
 				1C018FC21201DC15AA0DD851,
 				FEB0446825228C21245EA3F7,
-				DF17CC0ED5E25791D522742C,
-				D049070A4AAA6DF92E0DC832,
 				C65BFB920B096427B3107DAB,
 				149794F5729071AD82D12787,
 				E0631520F368539F2C0854C8,
+				DF17CC0ED5E25791D522742C,
+				D049070A4AAA6DF92E0DC832,
 				D9FE40E25730AE6E6B295708,
 				7C04EA5E4EC7AB7D31EE0AE7,
 				BF33CC061A259701E2392CC4,
@@ -1037,6 +1081,8 @@
 				B6B13027E2F2F9F9EC6A34E5,
 				751DC79A4A1F6A9B06991073,
 				4081F8E081F38E620E4F6F53,
+				E1275941D01F6982E2AF1681,
+				989AF76AFBA368A06E7CCB98,
 				9B02A284355960077990E605,
 				2838CB8E3BB731C0C58ADEBF,
 				E68DE723119F75E73EA2FB8A,
@@ -1118,7 +1164,9 @@
 			files = (
 				96345D4CE313B1979D8456ED,
 				9CD55C88894B030A66E10BFC,
+				350D3A300250E672882AB320,
 				F7855E1B1CA17D39AF64B21B,
+				87ACBECE32FC2ECA6FF9CA60,
 				9EF5340217398D630611606B,
 				6474B699E7D3303EDAF747F3,
 			);

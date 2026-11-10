@@ -1,12 +1,14 @@
 # 自行编译 iPadn
 
-iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad。当前版本为 1.8.0（build 22）。
+iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad。当前源码版本为 1.8.1（build 23）。
 
 ## GitHub 云编译（无需本地 Mac）
 
 日常构建和发布使用 GitHub Actions 的 macOS runner，不需要本地 Mac。推送到 `main` 或提交 PR 后会自动编译和测试；也可以在 Actions 中手动运行 **Build iPadn**，勾选 `run_tests` 和 `publish_release` 发布新版。
 
-也支持推送与项目版本一致的新标签（例如 `v1.7.5`）触发编译、完整测试和 Release 发布；标签与 IPA 版本不一致时拒绝发布。安装包在检查与测试全部通过后才发布。
+日常构建执行完整 `iPadnTests`（含安装、认证、签名组件和布局测试）。界面交互测试 `iPadnUITests` 可在手动运行时同时勾选 `run_tests` 和 `run_ui_tests` 执行。
+
+也支持推送与项目版本一致的新标签（例如 `v1.8.1`）触发编译、单元测试和 Release 发布；标签与 IPA 版本不一致时拒绝发布。安装包在检查与测试全部通过后才发布。
 
 下文的 Mac 和 Xcode 要求仅适用于自行在本地编译。
 

@@ -337,19 +337,11 @@ final class AppleService: ObservableObject {
             version: plistString(metadata["bundleShortVersionString"]), iconURL: StoreService.icon(plistString(defaultArt?["url"])),
             size: (assetInfo?["file-size"] as? NSNumber)?.int64Value ?? 0,
             minimumOS: plistString(metadata["minimumOSVersion"] ?? metadata["minimumOsVersion"]), externalVersionID: externalID)
-        let rawSinfs = ((song["sinfs"] as? [[String: Any]]) ?? []).sorted { a, b in
-            let idA = (a["id"] as? NSNumber)?.intValue ?? Int(plistString(a["id"])) ?? 0
-            let idB = (b["id"] as? NSNumber)?.intValue ?? Int(plistString(b["id"])) ?? 0
-            return idA < idB
-        }
-        func extractBytes(_ value: Any?) -> Data? {
-            if let value = value as? Data { return value.isEmpty ? nil : value }
-            if let encoded = value as? String, let data = Data(base64Encoded: encoded, options: .ignoreUnknownCharacters), !data.isEmpty { return data }
-            return nil
-        }
-        let sinfs = rawSinfs.compactMap { extractBytes($0["sinf"]) }
-        let sinf = sinfs.first
-        guard let sinf = sinf, !sinf.isEmpty else { throw ToolError.message("此账号没有该应用的下载授权") }
+        // The server order is positional: SC_Info/Manifest.plist.SinfPaths
+        // uses the same order. Sorting by the opaque `id`, or compacting a
+        // missing item, assigns licenses to the wrong extension/framework.
+        let sinfs = try Self.mobileSinfs(song["sinfs"] as? [[String: Any]] ?? [])
+        let sinf = sinfs[0]
         let encodedMetadata: Data = try (try? PropertyListSerialization.data(fromPropertyList: metadata, format: .binary, options: 0))
             ?? HTTPClient.encodePlist(metadata)
         return DownloadAsset(app: app, url: url, sinf: sinf, sinfs: sinfs, metadata: encodedMetadata,
@@ -386,6 +378,28 @@ final class AppleService: ObservableObject {
     }
 
     static let noOfferMessage = "Apple 没有返回该版本的下载信息"
+
+    nonisolated static func mobileSinfs(_ records: [[String: Any]]) throws -> [Data] {
+        func bytes(_ value: Any?) -> Data? {
+            if let value = value as? Data { return value.isEmpty ? nil : value }
+            if let encoded = value as? String,
+               let data = Data(base64Encoded: encoded, options: .ignoreUnknownCharacters), !data.isEmpty {
+                return data
+            }
+            return nil
+        }
+        guard !records.isEmpty else { throw ToolError.message("此账号没有该应用的下载授权") }
+        var result: [Data] = []
+        result.reserveCapacity(records.count)
+        for record in records {
+            guard let data = bytes(record["sinf"]) else {
+                // Never shift later records into this record's path.
+                throw ToolError.message("应用的多组件下载授权不完整，请重新下载")
+            }
+            result.append(data)
+        }
+        return result
+    }
 
     /// The iTunesMetadata.plist Apple's own clients (iTunes, App Store) write.
     /// installd records the purchaser from `com.apple.iTunesStore.downloadInfo`;

@@ -897,6 +897,23 @@ private struct CardLabeledContentStyle: LabeledContentStyle {
 /// Screenshots already loaded by the strip, so the full-screen view opens
 /// on them at once.
 private enum ScreenshotCache {
+    private actor Requests {
+        var pending: [URL: Task<UIImage?, Never>] = [:]
+        func image(_ url: URL) async -> UIImage? {
+            if let image = cached(url) { return image }
+            if let task = pending[url] { return await task.value }
+            let task = Task.detached(priority: .utility) { () -> UIImage? in
+                guard let (data, _) = try? await URLSession.shared.data(from: url), let image = UIImage(data: data) else { return nil }
+                return await image.byPreparingForDisplay() ?? image
+            }
+            pending[url] = task
+            let image = await task.value
+            if let image { cache.setObject(image, forKey: url as NSURL, cost: IconCache.cost(of: image)) }
+            pending.removeValue(forKey: url)
+            return image
+        }
+    }
+    private static let requests = Requests()
     /// Decoded screenshots are large (up to 2000 px); keep a bounded amount.
     private static let cache: NSCache<NSURL, UIImage> = {
         let cache = NSCache<NSURL, UIImage>(); cache.totalCostLimit = 96 * 1024 * 1024; return cache
@@ -904,11 +921,7 @@ private enum ScreenshotCache {
     static func cached(_ url: URL) -> UIImage? { cache.object(forKey: url as NSURL) }
     static func image(_ url: URL) async -> UIImage? {
         if let image = cached(url) { return image }
-        guard let (data, _) = try? await URLSession.shared.data(from: url), let image = UIImage(data: data) else { return nil }
-        // Decoded now, off the main thread, so swiping through them stays smooth.
-        let ready = await image.byPreparingForDisplay() ?? image
-        cache.setObject(ready, forKey: url as NSURL, cost: IconCache.cost(of: ready))
-        return ready
+        return await requests.image(url)
     }
 }
 

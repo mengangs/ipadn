@@ -145,7 +145,7 @@ struct PurchasedView: View {
                     }
                 }
                 let visible = filtered
-                if store.ownedLoading && store.owned.isEmpty {
+                if (store.ownedLoading || store.cacheLoading) && store.owned.isEmpty {
                     Section {
                         HStack { ProgressView(); Text("正在同步购买记录…").font(.subheadline).foregroundStyle(.secondary) }
                         AppSkeleton(); AppSkeleton(); AppSkeleton()
@@ -194,7 +194,7 @@ struct PurchasedView: View {
                             .accessibilityIdentifier("purchased.select")
                         }
                     }
-                } else if !store.ownedLoading && store.ownedError == nil {
+                } else if !store.ownedLoading && !store.cacheLoading && store.ownedError == nil {
                     Section {
                         if delistedOnly && term.isEmpty && months == 0 {
                             EmptyState(title: "没有已下架的应用", message: "你获取过的应用都还在商店出售。", symbol: "checkmark.seal", actionTitle: "显示全部", action: { delistedOnly = false })

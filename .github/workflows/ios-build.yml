@@ -18,6 +18,11 @@ on:
         required: true
         default: false
         type: boolean
+      run_ui_tests:
+        description: Also run the slower iOS Simulator UI interaction tests
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -99,11 +104,17 @@ jobs:
           retention-days: 14
           compression-level: 0
 
-      - name: Run simulator unit tests
+      - name: Run simulator tests
         timeout-minutes: 30
         if: github.event_name != 'workflow_dispatch' || inputs.run_tests
+        env:
+          RUN_UI_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.run_ui_tests }}
         run: |
           set -o pipefail
+          test_targets=(-only-testing:iPadnTests)
+          if [ "$RUN_UI_TESTS" = "true" ]; then
+            test_targets+=(-only-testing:iPadnUITests)
+          fi
           killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
           xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
             -configuration Debug -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=latest" \
@@ -111,6 +122,7 @@ jobs:
             -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 \
             -destination-timeout 120 -derivedDataPath build/TestDerivedData \
             -resultBundlePath build/TestResults.xcresult \
+            "${test_targets[@]}" \
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \
             2>&1 | tee build/tests.log
           xcrun xcresulttool get test-results summary --path build/TestResults.xcresult --format json > build/test-summary.json

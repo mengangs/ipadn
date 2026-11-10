@@ -8,7 +8,13 @@ enum AppContainer {
         if ProcessInfo.processInfo.arguments.contains("--visual-preview") {
             let a = StoreApp(id: "preview-1", name: "像素日记", bundleID: "example.pixel", version: "3.2.1", category: "摄影与录像", size: 128_000_000)
             let b = StoreApp(id: "preview-2", name: "专注时刻", bundleID: "example.focus", version: "2.8", category: "效率", size: 48_000_000)
-            let jobs = [DownloadJob(app: a, status: .running, downloaded: 74_000_000, expected: 128_000_000), DownloadJob(app: b, status: .paused, downloaded: 12_000_000, expected: 48_000_000), DownloadJob(app: a, status: .completed), DownloadJob(app: b, status: .failed, error: "网络连接已中断，请检查网络后重试。")]
+            var jobs = [DownloadJob(app: a, status: .running, downloaded: 74_000_000, expected: 128_000_000), DownloadJob(app: b, status: .paused, downloaded: 12_000_000, expected: 48_000_000), DownloadJob(app: a, status: .completed), DownloadJob(app: b, status: .failed, error: "网络连接已中断，请检查网络后重试。")]
+            if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--stress-records=") }),
+               let count = Int(argument.dropFirst("--stress-records=".count)), [100, 500, 1000].contains(count) {
+                jobs = (0..<count).map { index in
+                    DownloadJob(app: StoreApp(id: "stress-\(index)", name: "测试安装包 \(index)", bundleID: "example.stress.\(index)", version: "1.0"), status: .paused)
+                }
+            }
             let store = ToolStore(downloadManager: DownloadManager(previewJobs: jobs))
             store.prepareVisualPreview()
             store.settings.appearance = ProcessInfo.processInfo.arguments.contains("--dark") ? "dark" : "light"

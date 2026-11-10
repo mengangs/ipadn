@@ -156,13 +156,6 @@ final class InstallationService: ObservableObject {
 }
 
 enum ManifestBuilder {
-    /// The version the install link announces. iOS only replaces an
-    /// installed app when the link names a newer version than the one it
-    /// last installed, so installing an older (or the same) package over it
-    /// would be refused. It grows with every install, so an app installed
-    /// this way can be replaced again. The package itself is installed as is
-    /// and the app's data is kept.
-    static var overwriteVersion: String { "99999.\(Int(Date().timeIntervalSince1970))" }
     /// The installer does not open install links whose host is an IP
     /// address or "localhost". These public names resolve to 127.0.0.1, so
     /// the link carries a real domain while the connection stays on this
@@ -252,7 +245,10 @@ enum ManifestBuilder {
         }
         return try PropertyListSerialization.data(fromPropertyList: ["items": [[
             "assets": assets,
-            "metadata": ["bundle-identifier": app.bundleID, "bundle-version": overwriteVersion,
+            // ManifestURL is an enterprise/web-distribution transport. Keep its
+            // documented metadata faithful to the package; private App Store
+            // metadata keys here are ignored and cannot change the install source.
+            "metadata": ["bundle-identifier": app.bundleID, "bundle-version": app.version,
                          "kind": "software", "title": app.name]
         ]]], format: .xml, options: 0)
     }
@@ -295,7 +291,7 @@ enum ManifestBuilder {
         }
         func encode(_ value: String) -> String { value.addingPercentEncoding(withAllowedCharacters: strictQuery) ?? "" }
         let query = [("bundleid", app.bundleID), ("name", app.name.isEmpty ? app.bundleID : app.name),
-                     ("version", overwriteVersion), ("fetchurl", packageURL.absoluteString)]
+                     ("version", app.version), ("fetchurl", packageURL.absoluteString)]
             .map { "\($0.0)=\(encode($0.1))" }.joined(separator: "&")
         guard let manifest = URL(string: manifestGenerator + "?" + query),
               let url = URL(string: "itms-services://?action=download-manifest&url=" + encode(manifest.absoluteString)) else {
@@ -326,7 +322,7 @@ enum ManifestBuilder {
         var metadata = URLComponents()
         metadata.queryItems = [
             URLQueryItem(name: "name", value: app.name), URLQueryItem(name: "bundleId", value: app.bundleID),
-            URLQueryItem(name: "displayVersion", value: overwriteVersion), URLQueryItem(name: "fileName", value: filename)
+            URLQueryItem(name: "displayVersion", value: app.version), URLQueryItem(name: "fileName", value: filename)
         ]
         // Preserve the original service contract: the entire metadata query is URL-encoded once.
         let query = metadata.percentEncodedQuery ?? ""

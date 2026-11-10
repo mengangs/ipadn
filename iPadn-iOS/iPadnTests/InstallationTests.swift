@@ -12,8 +12,7 @@ final class InstallationTests: XCTestCase {
         let metadata = try XCTUnwrap(items.first?["metadata"] as? [String: String])
         XCTAssertEqual(metadata["title"], app.name)
         XCTAssertEqual(metadata["bundle-identifier"], app.bundleID)
-        // Announced as newer than anything installed, so an older package can replace it.
-        XCTAssertTrue(metadata["bundle-version"]?.hasPrefix("99999.") == true)
+        XCTAssertEqual(metadata["bundle-version"], app.version)
         let assets = try XCTUnwrap(items.first?["assets"] as? [[String: String]])
         XCTAssertEqual(assets.first?["url"], package.absoluteString)
         let installer = try ManifestBuilder.systemURL(manifestURL: package)
@@ -69,7 +68,7 @@ final class InstallationTests: XCTestCase {
         XCTAssertEqual(inner.first(where: { $0.name == "fetchurl" })?.value, package.absoluteString)
         XCTAssertEqual(inner.first(where: { $0.name == "name" })?.value, app.name)
         XCTAssertEqual(inner.first(where: { $0.name == "bundleid" })?.value, "test.app")
-        XCTAssertTrue(inner.first(where: { $0.name == "version" })?.value?.hasPrefix("99999.") == true)
+        XCTAssertEqual(inner.first(where: { $0.name == "version" })?.value, app.version)
         XCTAssertThrowsError(try ManifestBuilder.externalInstallURL(
             app: StoreApp(id: "2", name: "x"), packageURL: package))
     }

@@ -4,6 +4,7 @@ import SwiftUI
 struct AccountsView: View {
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var apple: AppleService
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var deleting: AppleAccount?
     @State private var signingOut = false
     @State private var headerAway = false
@@ -63,8 +64,8 @@ struct AccountsView: View {
                         .buttonStyle(.plain)
                         .accessibilityHint(account.id == apple.activeID ? "当前下载账号" : "切换到此账号")
                         .accessibilityIdentifier("account." + account.id)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) { Button("移除", role: .destructive) { deleting = account } }
-                        .swipeActions(edge: .leading, allowsFullSwipe: true) { Button("移除", role: .destructive) { deleting = account } }
+                        .disabled(store.accountRemoving != nil)
+                        .revealDelete(id: "account." + account.id, enabled: store.accountRemoving == nil, title: "移除") { deleting = account }
                     }
                     NavigationLink { LoginView() } label: { Label("添加账号", systemImage: "plus") }
                 } header: { Text("账号") } footer: { Text("点按切换下载账号，侧滑移除。") }
@@ -79,11 +80,15 @@ struct AccountsView: View {
                 Section { Button("退出登录", role: .destructive) { signingOut = true }.frame(maxWidth: .infinity) }
             }
         }
+        .animation(UX.motion(reduceMotion), value: apple.accounts.map(\.id))
+        .overlay { if store.accountRemoving != nil { ProgressView("正在移除账号…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
         .toolPage().rootTabBar("账号", headerScrolledAway: headerAway)
         .actionConfirmation(isPresented: $signingOut, title: "退出当前账号？", message: "账号仍会保留，可随时切换回来。", confirmTitle: "退出登录") { apple.select(nil) }
-        .actionConfirmation(isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), title: "移除账号？", message: "已下载的安装包会保留。", confirmTitle: "移除账号") {
+        .actionConfirmation(isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), title: "移除账号？", message: (deleting?.id ?? "") + (deleting?.id == apple.activeID ? "\n这是当前下载账号，移除后将退出登录。" : "") + "\n已下载的安装包会保留。", confirmTitle: "移除账号") {
             guard let id = deleting?.id else { return }
-            do { try store.deleteAccount(id); store.infoMessage = "已移除账号" } catch { store.errorMessage = error.localizedDescription }
+            Task {
+                do { try await store.deleteAccount(id); store.infoMessage = "已移除账号" } catch { store.errorMessage = error.localizedDescription }
+            }
             deleting = nil
         }
     }

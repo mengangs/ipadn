@@ -4,6 +4,9 @@ import UIKit
 // Visual language modeled on the App Store with the iPadn monochrome accent:
 // grouped backgrounds, capsule action buttons, ring progress, large titles.
 enum UX {
+    static func motion(_ reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.9)
+    }
     static let tint = Color.accentColor
     static let buttonTint = Color.accentColor
     static let onAccent = Color(uiColor: .systemBackground)
@@ -20,16 +23,17 @@ enum UX {
 /// Full-width primary action (App Store sign-in "继续" style).
 struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.semibold))
-            .foregroundStyle(UX.onAccent)
+            .foregroundStyle(configuration.role == .destructive ? Color.white : UX.onAccent)
             .padding(.horizontal, 16).padding(.vertical, 14)
-            .background(UX.buttonTint.opacity(configuration.isPressed ? 0.8 : 1),
+            .background((configuration.role == .destructive ? Color.red : UX.buttonTint).opacity(configuration.isPressed ? 0.8 : 1),
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .opacity(enabled ? 1 : 0.35)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.snappy(duration: 0.15), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.15), value: configuration.isPressed)
     }
 }
 typealias MonochromeButtonStyle = PrimaryButtonStyle

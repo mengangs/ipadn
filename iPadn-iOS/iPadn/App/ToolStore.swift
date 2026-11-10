@@ -10,6 +10,12 @@ struct SearchHistoryItem: Codable, Identifiable {
     var lastUsed: Date
 }
 
+struct UndoNotice: Identifiable {
+    let id = UUID()
+    let message: String
+    let restore: () -> Void
+}
+
 @MainActor
 final class ToolStore: ObservableObject {
     let signer = SAPSigner()
@@ -39,8 +45,24 @@ final class ToolStore: ObservableObject {
     @Published private(set) var ownedError: String?
     @Published private(set) var results: [StoreApp] = []
     @Published private(set) var localResults: [StoreApp] = []
-    private var appCatalog = LocalResources.load([String: [StoreApp]].self, filename: "app-catalog.json") ?? [:]
-    private var nameCatalog = (LocalResources.load([AppNameEntry].self, filename: AppNameCatalog.cacheFile) ?? []) + AppNameCatalog.bundled()
+    private var appCatalog: [String: [StoreApp]] = [:]
+    private var nameCatalog: [AppNameEntry] = []
+    @Published private(set) var cacheLoading = true
+    @Published var undoNotice: UndoNotice?
+    private var cacheLoadTask: Task<Void, Never>?
+    private let cacheWrites = DispatchQueue(label: "iPadn.catalog-writes", qos: .utility)
+    private var resultsContext: StoreContext?
+    private var favoriteTask: Task<Void, Never>?
+    @Published private(set) var accountRemoving: String?
+
+    private func saveCache<T: Encodable>(_ value: T, filename: String) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            cacheWrites.async {
+                do { try LocalResources.save(value, filename: filename); continuation.resume() }
+                catch { continuation.resume(throwing: error) }
+            }
+        }
+    }
     private var catalogRequested = false
     private var ownedAutoAttempted = Set<String>()
     @Published private(set) var searching = false
@@ -78,11 +100,6 @@ final class ToolStore: ObservableObject {
         if let data = LocalResources.defaults.data(forKey: LocalResources.settings),
            let saved = try? JSONDecoder().decode(ToolSettings.self, from: data) { settings = saved }
         else { settings = ToolSettings() }
-        do { favorites = try LocalResources.loadChecked([StoreApp].self, filename: "favorites.json") ?? [] }
-        catch { favoritesStorageError = "关注列表读取失败；已保留原文件。"; errorMessage = favoritesStorageError }
-        watch = (try? LocalResources.loadChecked([String: WatchRecord].self, filename: "watch.json")) ?? [:]
-        do { ownedByAccount = try LocalResources.loadChecked([String: [OwnedApp]].self, filename: LocalResources.ownedFilename) ?? [:] }
-        catch { ownedStorageError = "已购缓存读取失败；已保留原文件，不能覆盖其他账号记录。"; errorMessage = ownedStorageError }
         if let data = LocalResources.defaults.data(forKey: LocalResources.searchHistory) {
             searchHistory = (try? JSONDecoder().decode([SearchHistoryItem].self, from: data)) ?? []
         }
@@ -101,6 +118,40 @@ final class ToolStore: ObservableObject {
         apple.$activeID.dropFirst().removeDuplicates().sink { [weak self] id in
             Task { @MainActor in self?.accountChanged(to: id) }
         }.store(in: &subscriptions)
+        cacheLoadTask = Task { await loadCachedState() }
+    }
+
+    private func loadCachedState() async {
+        struct Snapshot {
+            var favorites: [StoreApp] = []
+            var watch: [String: WatchRecord] = [:]
+            var owned: [String: [OwnedApp]] = [:]
+            var catalog: [String: [StoreApp]] = [:]
+            var names: [AppNameEntry] = []
+            var favoritesError: String?
+            var ownedError: String?
+        }
+        let snapshot = await Task.detached(priority: .userInitiated) {
+            var snapshot = Snapshot()
+            do { snapshot.favorites = try LocalResources.loadChecked([StoreApp].self, filename: "favorites.json") ?? [] }
+            catch { snapshot.favoritesError = "关注列表读取失败；已保留原文件。" }
+            do { snapshot.owned = try LocalResources.loadChecked([String: [OwnedApp]].self, filename: LocalResources.ownedFilename) ?? [:] }
+            catch { snapshot.ownedError = "已购缓存读取失败；已保留原文件，不能覆盖其他账号记录。" }
+            snapshot.watch = LocalResources.load([String: WatchRecord].self, filename: "watch.json") ?? [:]
+            snapshot.catalog = LocalResources.load([String: [StoreApp]].self, filename: "app-catalog.json") ?? [:]
+            snapshot.names = (LocalResources.load([AppNameEntry].self, filename: AppNameCatalog.cacheFile) ?? []) + AppNameCatalog.bundled()
+            return snapshot
+        }.value
+        #if DEBUG
+        if visualPreview { cacheLoading = false; return }
+        #endif
+        favorites = snapshot.favorites; watch = snapshot.watch; ownedByAccount = snapshot.owned
+        appCatalog = snapshot.catalog; nameCatalog = snapshot.names
+        favoritesStorageError = snapshot.favoritesError; ownedStorageError = snapshot.ownedError
+        if let issue = snapshot.favoritesError ?? snapshot.ownedError { errorMessage = issue }
+        owned = apple.activeID.flatMap { ownedByAccount[$0] } ?? []
+        cacheLoading = false
+        updateLocalResults()
     }
 
     func search(_ text: String? = nil) {
@@ -108,10 +159,20 @@ final class ToolStore: ObservableObject {
         let input = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !input.isEmpty else { clearSearch(); return }
         searchTask?.cancel()
+        if cacheLoading {
+            searching = true
+            searchTask = Task {
+                await cacheLoadTask?.value
+                guard !Task.isCancelled else { return }
+                search(input)
+            }
+            return
+        }
         let id = UUID(); searchID = id
         let context = settings.store
         let limit = settings.searchLimit
-        results = []
+        if input != lastSearchTerm || resultsContext != context { results = [] }
+        resultsContext = context
         localResults = []
         updateLocalResults(for: input)
         searching = true; hasSearched = true; searchError = nil; lastSearchTerm = input
@@ -146,7 +207,8 @@ final class ToolStore: ObservableObject {
                 // Cache real listings only, without the long descriptions (kept small for quick saves).
                 let listed = apps.filter { $0.delisted != true }.map { app -> StoreApp in var app = app; app.description = ""; return app }
                 appCatalog[key] = Array(AppSearchIndex.unique(listed + (appCatalog[key] ?? [])).prefix(1000))
-                try? LocalResources.save(appCatalog, filename: "app-catalog.json")
+                let snapshot = appCatalog
+                cacheWrites.async { try? LocalResources.save(snapshot, filename: "app-catalog.json") }
                 remember(input)
                 // The results are in: missing artwork fills in quietly.
                 searching = false
@@ -217,6 +279,7 @@ final class ToolStore: ObservableObject {
     }
 
     func loadNameCatalog() async {
+        await cacheLoadTask?.value
         guard !catalogRequested else { return }
         catalogRequested = true
         #if DEBUG
@@ -226,7 +289,7 @@ final class ToolStore: ObservableObject {
             let entries = try await AppNameCatalog.updated()
             try Task.checkCancellation()
             nameCatalog = entries + AppNameCatalog.bundled()
-            try? LocalResources.save(entries, filename: AppNameCatalog.cacheFile)
+            cacheWrites.async { try? LocalResources.save(entries, filename: AppNameCatalog.cacheFile) }
             updateLocalResults()
         } catch { } // Bundled and cached names remain searchable without a connection.
     }
@@ -258,6 +321,7 @@ final class ToolStore: ObservableObject {
     }
 
     func ensureOwnedLoaded() async {
+        await cacheLoadTask?.value
         #if DEBUG
         if visualPreview { return }
         #endif
@@ -270,11 +334,20 @@ final class ToolStore: ObservableObject {
     func clearSearch() { cancelSearch(); searchText = ""; results = []; localResults = []; hasSearched = false; lastSearchTerm = "" }
     func isFavorite(_ app: StoreApp) -> Bool { favorites.contains { $0.id == app.id } }
     func toggleFavorite(_ app: StoreApp) {
+        let previous = favoriteTask
+        favoriteTask = Task {
+            await previous?.value
+            await changeFavorite(app)
+        }
+    }
+    private func changeFavorite(_ app: StoreApp) async {
+        guard !cacheLoading else { infoMessage = "正在载入本地记录，请稍后重试"; return }
         guard favoritesStorageError == nil else { errorMessage = favoritesStorageError; return }
         var next = favorites
         let following = !next.contains(where: { $0.id == app.id })
+        let previousIndex = next.firstIndex { $0.id == app.id } ?? 0
         if following { next.insert(app, at: 0) } else { next.removeAll { $0.id == app.id } }
-        do { try LocalResources.save(next, filename: "favorites.json"); favorites = next; updateLocalResults() }
+        do { try await saveCache(next, filename: "favorites.json"); favorites = next; updateLocalResults() }
         catch { errorMessage = "关注保存失败：" + error.localizedDescription; return }
         if following {
             // Start the record now, so price changes count from this moment.
@@ -285,6 +358,18 @@ final class ToolStore: ObservableObject {
         } else {
             watch = watch.filter { $0.value.id != app.id }
             persistWatch()
+            undoNotice = UndoNotice(message: "已取消关注 \(app.name)") { [weak self] in
+                guard let self, !self.isFavorite(app) else { return }
+                let previous = self.favoriteTask
+                self.favoriteTask = Task {
+                    await previous?.value
+                    guard !self.isFavorite(app) else { return }
+                    var restored = self.favorites
+                    restored.insert(app, at: min(previousIndex, restored.count))
+                    do { try await self.saveCache(restored, filename: "favorites.json"); self.favorites = restored; self.updateLocalResults() }
+                    catch { self.errorMessage = error.localizedDescription }
+                }
+            }
         }
     }
 
@@ -303,6 +388,7 @@ final class ToolStore: ObservableObject {
     /// changed. Returns the changes worth a notification.
     @discardableResult
     func checkWatched(force: Bool = false) async -> [WatchEvent] {
+        await cacheLoadTask?.value
         #if DEBUG
         if visualPreview { return [] }
         #endif
@@ -376,7 +462,16 @@ final class ToolStore: ObservableObject {
         watch = records
         watchChecked = (Date(), keys)
         persistWatch()
-        if refreshed != favorites, (try? LocalResources.save(refreshed, filename: "favorites.json")) != nil { favorites = refreshed }
+        if refreshed != favorites {
+            let metadata = Dictionary(refreshed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let previous = favoriteTask
+            favoriteTask = Task {
+                await previous?.value
+                let next = self.favorites.map { metadata[$0.id] ?? $0 }
+                do { try await self.saveCache(next, filename: "favorites.json"); self.favorites = next }
+                catch { self.errorMessage = "关注保存失败：" + error.localizedDescription }
+            }
+        }
         if watchRecheck {
             watchRecheck = false
             Task { await self.checkWatched(force: true) }
@@ -385,7 +480,8 @@ final class ToolStore: ObservableObject {
     }
 
     private func persistWatch() {
-        try? LocalResources.save(watch, filename: "watch.json")
+        let snapshot = watch
+        cacheWrites.async { try? LocalResources.save(snapshot, filename: "watch.json") }
     }
 
     /// One notification for the changes a background check found.
@@ -411,8 +507,29 @@ final class ToolStore: ObservableObject {
         } else { searchHistory.insert(SearchHistoryItem(term: term, count: 1, lastUsed: Date()), at: 0) }
         searchHistory = Array(searchHistory.prefix(50)); persistHistory()
     }
-    func removeHistory(_ term: String) { searchHistory.removeAll { $0.term == term }; persistHistory() }
-    func clearHistory() { searchHistory.removeAll(); persistHistory() }
+    func removeHistory(_ term: String) {
+        guard let index = searchHistory.firstIndex(where: { $0.term == term }) else { return }
+        let item = searchHistory.remove(at: index); persistHistory()
+        undoNotice = UndoNotice(message: "已删除搜索记录") { [weak self] in
+            guard let self, !self.searchHistory.contains(where: { $0.term == term }) else { return }
+            self.searchHistory.insert(item, at: min(index, self.searchHistory.count))
+            self.searchHistory = Array(self.searchHistory.prefix(50)); self.persistHistory()
+        }
+    }
+    func clearHistory() {
+        let previous = searchHistory
+        searchHistory.removeAll(); persistHistory()
+        undoNotice = UndoNotice(message: "已清除最近搜索") { [weak self] in
+            guard let self else { return }
+            let current = Set(self.searchHistory.map(\.term))
+            self.searchHistory = Array((self.searchHistory + previous.filter { !current.contains($0.term) }).prefix(50))
+            self.persistHistory()
+        }
+    }
+    func undoLastAction() {
+        let notice = undoNotice; undoNotice = nil
+        notice?.restore()
+    }
     private func persistHistory() {
         if let data = try? JSONEncoder().encode(searchHistory) { LocalResources.defaults.set(data, forKey: LocalResources.searchHistory) }
     }
@@ -747,6 +864,8 @@ final class ToolStore: ObservableObject {
     }
 
     func refreshOwned() async {
+        await cacheLoadTask?.value
+        guard accountRemoving == nil else { return }
         guard !ownedLoading, let id = apple.activeID else {
             if apple.activeID == nil { errorMessage = "请先在账号页登录" }
             return
@@ -761,7 +880,7 @@ final class ToolStore: ObservableObject {
         }
         do {
             let apps = try await apple.ownedApps(useCache: settings.useSignerCache)
-            guard apple.activeID == id else { return }
+            guard apple.activeID == id, accountRemoving == nil else { return }
             ownedError = nil
             let cached = Dictionary(owned.map { ($0.id, $0.iconURL) }, uniquingKeysWith: { first, _ in first })
             owned = apps.map { app in
@@ -771,7 +890,8 @@ final class ToolStore: ObservableObject {
             }
             guard ownedStorageError == nil else { ownedError = ownedStorageError; return }
             var next = ownedByAccount; next[id] = owned
-            try LocalResources.save(next, filename: LocalResources.ownedFilename)
+            try await saveCache(next, filename: LocalResources.ownedFilename)
+            guard accountRemoving == nil else { return }
             ownedByAccount = next
             updateLocalResults()
             ownedRevision = UUID()
@@ -782,7 +902,7 @@ final class ToolStore: ObservableObject {
         #if DEBUG
         if visualPreview { return }
         #endif
-        guard let account = apple.activeID, ownedStorageError == nil else { return }
+        guard let account = apple.activeID, ownedStorageError == nil, accountRemoving == nil else { return }
         let context = settings.store
         var artworkContext = context
         // Purchased iPhone/iPad apps are independent of the search platform picker.
@@ -798,7 +918,7 @@ final class ToolStore: ObservableObject {
                 let batch = Array(ids[offset..<min(offset + 20, ids.count)])
                 let urls = try await StoreService.artwork(batch, store: artworkContext, accountCountry: accountCountry)
                 try Task.checkCancellation()
-                guard apple.activeID == account, settings.store == context, ownedRevision == revision else { return }
+                guard apple.activeID == account, settings.store == context, ownedRevision == revision, accountRemoving == nil else { return }
                 ownedArtworkAttempted.formUnion(batch)
                 if !urls.isEmpty {
                     // Apply the batch in one update so the list re-renders once.
@@ -806,7 +926,7 @@ final class ToolStore: ObservableObject {
                     for index in updated.indices { if let url = urls[updated[index].id] { updated[index].iconURL = url } }
                     owned = updated
                     ownedByAccount[account] = owned
-                    try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
+                    try await saveCache(ownedByAccount, filename: LocalResources.ownedFilename)
                 }
                 // Keep the public lookup service below its documented request budget.
                 if offset + 20 < ids.count { try await Task.sleep(nanoseconds: 3_100_000_000) }
@@ -814,13 +934,17 @@ final class ToolStore: ObservableObject {
         }
     }
 
-    func deleteAccount(_ id: String) throws {
+    func deleteAccount(_ id: String) async throws {
+        guard !cacheLoading else { throw ToolError.message("正在载入本地记录，请稍后重试") }
+        guard accountRemoving == nil else { throw ToolError.message("正在移除账号，请稍后重试") }
         guard ownedStorageError == nil else { throw ToolError.message(ownedStorageError!) }
+        accountRemoving = id
+        defer { accountRemoving = nil }
         var next = ownedByAccount; next.removeValue(forKey: id)
-        try LocalResources.save(next, filename: LocalResources.ownedFilename)
+        try await saveCache(next, filename: LocalResources.ownedFilename)
         do { try apple.remove(id) }
         catch {
-            try LocalResources.save(ownedByAccount, filename: LocalResources.ownedFilename)
+            try await saveCache(ownedByAccount, filename: LocalResources.ownedFilename)
             throw error
         }
         ownedByAccount = next
@@ -874,6 +998,7 @@ extension ToolStore {
     }
     func prepareVisualPreview() {
         visualPreview = true
+        cacheLoading = false
         results = []; hasSearched = false; searchText = ""
         favorites = [StoreApp(id: "preview-app", name: "像素日记", bundleID: "example.pixel", version: "3.2", category: "摄影与录像", size: 128_000_000)]
         let day: TimeInterval = 86400

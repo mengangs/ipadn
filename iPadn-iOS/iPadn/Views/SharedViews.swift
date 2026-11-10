@@ -46,6 +46,26 @@ struct AppIcon: View {
 /// view, or the same app on the next page, shows its icon at once instead of
 /// a placeholder while it loads again.
 enum IconCache {
+    private actor Requests {
+        var pending: [String: Task<UIImage?, Never>] = [:]
+        func load(_ url: URL, side: CGFloat) async -> UIImage? {
+            let key = "\(Int(side))|\(url.absoluteString)"
+            if let task = pending[key] { return await task.value }
+            let task = Task.detached(priority: .utility) { () -> UIImage? in
+                let data: Data?
+                if url.isFileURL { data = try? Data(contentsOf: url) }
+                else { data = try? await URLSession.shared.data(from: url).0 }
+                guard let data, let image = UIImage(data: data) else { return nil }
+                return await image.byPreparingThumbnail(ofSize: CGSize(width: side, height: side)) ?? image
+            }
+            pending[key] = task
+            let image = await task.value
+            if let image { cache.setObject(image, forKey: key as NSString, cost: cost(of: image)) }
+            pending.removeValue(forKey: key)
+            return image
+        }
+    }
+    private static let requests = Requests()
     /// Bounded by memory, not count: hundreds of list icons fit.
     private static let cache: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>(); cache.totalCostLimit = 80 * 1024 * 1024; return cache
@@ -59,16 +79,7 @@ enum IconCache {
     static func cached(_ url: URL, size: CGFloat) -> UIImage? { cache.object(forKey: key(url, size)) }
     static func load(_ url: URL, size: CGFloat) async -> UIImage? {
         if let image = cached(url, size: size) { return image }
-        let data: Data?
-        if url.isFileURL { data = await Task.detached(priority: .utility) { try? Data(contentsOf: url) }.value }
-        else { data = try? await URLSession.shared.data(from: url).0 }
-        guard let data, let image = UIImage(data: data) else { return nil }
-        // Scaled and decoded now, off the main thread, so drawing it doesn't
-        // stall scrolling and a 1024 px icon doesn't sit in memory for a row.
-        let side = pixels(for: size)
-        let ready = await image.byPreparingThumbnail(ofSize: CGSize(width: side, height: side)) ?? image
-        cache.setObject(ready, forKey: key(url, size), cost: cost(of: ready))
-        return ready
+        return await requests.load(url, side: pixels(for: size))
     }
 }
 
@@ -130,6 +141,7 @@ struct RootView: View {
     @EnvironmentObject private var downloads: DownloadManager
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let destinations = [("搜索", "magnifyingglass"), ("下载", "arrow.down.circle.fill"), ("已购", "bag.fill"), ("账号", "person.crop.circle.fill")]
     var body: some View {
         Group {
@@ -180,20 +192,24 @@ struct RootView: View {
         // Global success notices belong above the page, never on top of
         // AppDetailView's fixed download CTA or the tab bar.
         .overlay(alignment: .top) {
-            if let message = store.infoMessage {
-                Button { store.infoMessage = nil } label: {
+            if let message = store.undoNotice?.message ?? store.infoMessage {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                         Text(message).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
+                        if store.undoNotice != nil {
+                            Button("撤销") { withAnimation(UX.motion(reduceMotion)) { store.undoLastAction() } }
+                                .font(.subheadline.weight(.semibold)).frame(minWidth: 44, minHeight: 44)
+                                .accessibilityIdentifier("notice.undo")
+                        } else {
+                            Button { store.infoMessage = nil } label: { Image(systemName: "xmark").frame(width: 32, height: 44) }
+                                .accessibilityLabel("关闭提示")
+                        }
                     }
                     .padding(.horizontal, 18).padding(.vertical, 11)
                     .background(.regularMaterial, in: Capsule())
                     .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
-                }
                 .buttonStyle(.plain)
-                .accessibilityLabel(message)
-                .accessibilityHint("点按关闭提示")
                 .frame(maxWidth: 420)
                 .padding(.horizontal, 24)
                 // The top of the root tab container includes the navigation bar.
@@ -203,7 +219,14 @@ struct RootView: View {
                 .zIndex(1)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: store.infoMessage)
+        .animation(UX.motion(reduceMotion), value: store.infoMessage)
+        .animation(UX.motion(reduceMotion), value: store.undoNotice?.id)
+        .task(id: store.undoNotice?.id) {
+            guard let notice = store.undoNotice else { return }
+            UIAccessibility.post(notification: .announcement, argument: notice.message + "，可以撤销")
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            if store.undoNotice?.id == notice.id { store.undoNotice = nil }
+        }
         .task(id: store.infoMessage) {
             guard let message = store.infoMessage else { return }
             UIAccessibility.post(notification: .announcement, argument: message)
@@ -213,6 +236,10 @@ struct RootView: View {
         .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("知道了", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
+        .dismissRevealsOnTap()
+        .transaction { transaction in
+            if reduceMotion { transaction.animation = nil; transaction.disablesAnimations = true }
+        }
     }
     @ViewBuilder private func page(_ index: Int) -> some View {
         switch index {

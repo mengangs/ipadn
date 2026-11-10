@@ -21,4 +21,8 @@ Apple 的 StoreAgent 等运行文件不包含在仓库或 IPA 中，由应用在
 
 使用 Swift Package Manager 固定解析 ZIPFoundation 0.9.19。作者及许可证见组件原始 [LICENSE](https://github.com/weichsel/ZIPFoundation/blob/0.9.19/LICENSE)，打包和再分发时应保留相应声明。
 
+## Telegram iOS 列表运动模型
+
+`iPadn/Views/RevealMotion.swift` 改编自 Telegram contributors 的 [ItemListRevealMotion.swift](https://github.com/TelegramMessenger/Telegram-iOS/blob/24638bc69bd083981b178dd1e7f921eebbf7fc46/submodules/ItemListUI/Sources/ItemListRevealMotion.swift)，固定提交 `24638bc69bd083981b178dd1e7f921eebbf7fc46`，GPL-2.0-or-later。保留其阻尼、弹簧、速度衔接与操作阈值模型。SwiftUI 宿主适配位于 `RevealInteraction.swift`，不依赖 Telegram 的网络、账号或显示框架。[Telegram 官方许可说明](https://telegram.org/apps#source-code)。
+
 本仓库不包含 Apple 账号凭据、验证码、签名证书或私钥。

@@ -94,15 +94,15 @@ enum PackageService {
                 let parts = entry.path.split(separator: "/")
                 return parts.count == 4 && parts[0] == "Payload" && parts[1].hasSuffix(".app") &&
                     parts[2] == "SC_Info" && parts[3] == "Manifest.plist"
-            }), let manifestData = try? readPlist(manifestEntry, archive: archive),
-               let sinfPaths = manifestData["SinfPaths"] as? [String], !sinfPaths.isEmpty {
+            }) {
+                let manifestData = try readPlist(manifestEntry, archive: archive)
+                guard let sinfPaths = manifestData["SinfPaths"] as? [String], !sinfPaths.isEmpty else {
+                    throw ToolError.message("安装包的多组件授权清单无效")
+                }
                 let parts = manifestEntry.path.split(separator: "/")
                 let bundleFolder = String(parts[1])
-                for (index, relPath) in sinfPaths.enumerated() {
-                    let targetSinf = index < allSinfs.count ? allSinfs[index] : sinf
-                    let cleanRelPath = relPath.hasPrefix("/") ? String(relPath.dropFirst()) : relPath
-                    let fullPath = "Payload/\(bundleFolder)/\(cleanRelPath)"
-                    try replace(fullPath, data: targetSinf, archive: archive)
+                for target in try sinfTargets(paths: sinfPaths, sinfs: allSinfs, bundleFolder: bundleFolder) {
+                    try replace(target.path, data: target.data, archive: archive)
                 }
                 sinfReplicated = true
             }
@@ -161,16 +161,26 @@ enum PackageService {
         let destination = LocalResources.packages.appendingPathComponent(filename)
         // A retry or identifier collision must not delete an existing user package.
         try? FileManager.default.createDirectory(at: LocalResources.packages, withIntermediateDirectories: true)
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try? FileManager.default.removeItem(at: destination)
-        }
-        do {
-            try FileManager.default.moveItem(at: working, to: destination)
-        } catch {
-            try FileManager.default.copyItem(at: working, to: destination)
-            try? FileManager.default.removeItem(at: working)
-        }
+        try FileManager.default.moveItem(at: working, to: destination)
         return (filename, app)
+    }
+
+    static func sinfTargets(paths: [String], sinfs: [Data], bundleFolder: String) throws -> [(path: String, data: Data)] {
+        guard !paths.isEmpty, paths.count == sinfs.count else {
+            throw ToolError.message("应用的多组件授权数量与安装包不匹配，请重新下载")
+        }
+        var seen = Set<String>()
+        return try zip(paths, sinfs).map { pair in
+            let (relative, data) = pair
+            guard !relative.hasPrefix("/"), relative.hasSuffix(".sinf"), isSafeArchivePath(relative) else {
+                throw ToolError.message("安装包中的授权路径无效")
+            }
+            let fullPath = "Payload/\(bundleFolder)/\(relative)"
+            guard isSafeArchivePath(fullPath), seen.insert(fullPath).inserted else {
+                throw ToolError.message("安装包中的授权路径无效")
+            }
+            return (fullPath, data)
+        }
     }
 
     private static func replace(_ path: String, data: Data, archive: Archive) throws {

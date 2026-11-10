@@ -3,8 +3,28 @@ import Combine
 import UserNotifications
 import UIKit
 
+/// Progress has its own publisher: a byte counter must not invalidate every list.
+@MainActor
+final class DownloadProgressState: ObservableObject {
+    @Published var bytes: (written: Int64, expected: Int64)?
+    func applying(to job: DownloadJob) -> DownloadJob {
+        guard let bytes, [.running, .pausing, .paused].contains(job.status) else { return job }
+        var result = job
+        result.downloaded = bytes.written; result.expected = bytes.expected
+        return result
+    }
+}
+
 @MainActor
 final class DownloadManager: NSObject, ObservableObject {
+    private final class DeliveryGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        func begin() { lock.lock(); count += 1; lock.unlock() }
+        func end() { lock.lock(); count -= 1; lock.unlock() }
+        var isEmpty: Bool { lock.lock(); defer { lock.unlock() }; return count == 0 }
+    }
+    nonisolated private let deliveries = DeliveryGate()
     static var sessionID: String {
         (Bundle.main.bundleIdentifier ?? "app.local.iPadn") + ".background.downloads"
     }
@@ -19,6 +39,21 @@ final class DownloadManager: NSObject, ObservableObject {
     @Published private(set) var cancelling: Set<UUID> = []
     var backgroundCompletion: (() -> Void)?
     private var tasks: [UUID: URLSessionDownloadTask] = [:]
+    private var rowProgress: [UUID: DownloadProgressState] = [:]
+    @Published private(set) var removingIDs = Set<UUID>()
+    private var loadingJobs = false
+    private var startupTask: Task<Void, Never>?
+    func progress(for id: UUID) -> DownloadProgressState {
+        if let progress = rowProgress[id] { return progress }
+        let progress = DownloadProgressState(); rowProgress[id] = progress
+        return progress
+    }
+    private var currentJobs: [DownloadJob] { jobs.map { rowProgress[$0.id]?.applying(to: $0) ?? $0 } }
+    private func accepts(_ task: URLSessionTask, id: UUID, restoredDelivery: Bool = false) -> Bool {
+        guard !removingIDs.contains(id) else { return false }
+        if let current = tasks[id] { return current === task }
+        return restoring || restoredDelivery
+    }
     private var restoring = true
     private var maxConcurrent = 3
     private var maxQueued = 10
@@ -84,28 +119,35 @@ final class DownloadManager: NSObject, ObservableObject {
     }
 
     #if DEBUG
-    init(previewJobs: [DownloadJob], saveJobs: @escaping ([DownloadJob]) throws -> Void = { _ in }) {
+    init(previewJobs: [DownloadJob], activeTasks: [UUID: URLSessionDownloadTask] = [:], saveJobs: @escaping ([DownloadJob]) throws -> Void = { _ in }) {
         super.init()
         jobs = previewJobs
         self.saveJobs = saveJobs
         // Screenshots never create a URLSession or start real transfers.
-        restoring = true
+        tasks = activeTasks
+        restoring = activeTasks.isEmpty
     }
     #endif
 
     override init() {
         super.init()
-        let file = LocalResources.support.appendingPathComponent(LocalResources.jobsFilename)
-        if FileManager.default.fileExists(atPath: file.path) {
-            do { jobs = try JSONDecoder().decode([DownloadJob].self, from: Data(contentsOf: file)) }
-            catch { storageError = "任务文件读取失败；已保留原文件，请先导出诊断再处理。\n" + error.localizedDescription }
-        }
+        loadingJobs = true
         // Write the latest progress to disk before the app can be suspended.
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
                                                object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.persist(wait: true) }
         }
-        Task { await restore() }
+        startupTask = Task {
+            do {
+                jobs = try await Task.detached(priority: .userInitiated) {
+                    let saved = try LocalResources.loadChecked([DownloadJob].self, filename: LocalResources.jobsFilename) ?? []
+                    try Self.recoverRemovals(saved)
+                    return saved
+                }.value
+            } catch { storageError = "任务文件读取失败；已保留原文件，请先导出诊断再处理。\n" + error.localizedDescription }
+            loadingJobs = false
+            await restore()
+        }
     }
 
     func configure(_ settings: ToolSettings) {
@@ -267,7 +309,7 @@ final class DownloadManager: NSObject, ObservableObject {
     }
 
     private func schedule() {
-        guard !restoring, storageError == nil else { return }
+        guard !restoring, storageError == nil, removingIDs.isEmpty else { return }
         let running = jobs.filter { $0.status == .running || $0.status == .pausing }.count
         let count = max(0, maxConcurrent - running)
         for job in jobs.filter({ $0.status == .queued }).prefix(count) { start(job.id) }
@@ -286,6 +328,7 @@ final class DownloadManager: NSObject, ObservableObject {
         }
         task.taskDescription = id.uuidString
         tasks[id] = task
+        rowProgress.removeValue(forKey: id)
         transferMetrics.removeValue(forKey: id)
         progressPublishedAt.removeValue(forKey: id)
         jobs[index].status = .running; jobs[index].error = nil
@@ -300,7 +343,7 @@ final class DownloadManager: NSObject, ObservableObject {
         task.cancel(byProducingResumeData: { data in
             Task { @MainActor in
                 guard let index = self.jobs.firstIndex(where: { $0.id == id }), self.jobs[index].status == .pausing,
-                      self.tasks[id]?.taskIdentifier == task.taskIdentifier else { return }
+                      self.tasks[id] === task else { return }
                 if let data = data { try? data.write(to: LocalResources.resumeURL(id), options: .atomic) }
                 self.tasks.removeValue(forKey: id)
                 self.updateBackgroundTask()
@@ -354,6 +397,7 @@ final class DownloadManager: NSObject, ObservableObject {
             throw error
         }
         tasks.removeValue(forKey: id)?.cancel()
+        rowProgress.removeValue(forKey: id)
         fallbackForegroundIDs.remove(id)
         updateBackgroundTask()
         progressPublishedAt.removeValue(forKey: id)
@@ -366,6 +410,87 @@ final class DownloadManager: NSObject, ObservableObject {
         MacPackageSecrets.delete(id)
         catalogArtworkAttempted.remove(id)
         schedule()
+    }
+
+    /// One durable commit for a batch. Pause live transfers first; move packages
+    /// aside and roll them back if the task-list write fails. Disk work is serial
+    /// with earlier progress saves, and never runs on the main actor.
+    func removeBatch(_ ids: Set<UUID>) async throws -> Int {
+        guard removingIDs.isEmpty, !loadingJobs else { throw ToolError.message("正在保存任务，请稍后重试") }
+        guard storageError == nil else { throw ToolError.message(storageError!) }
+        let selected = jobs.filter { ids.contains($0.id) }
+        guard !selected.contains(where: { $0.status == .processing || $0.status == .pausing }) else {
+            throw ToolError.message("请等待当前文件处理或暂停完成后再删除")
+        }
+        for job in selected where job.status == .running { pause(job.id) }
+        let deadline = Date().addingTimeInterval(15)
+        while jobs.contains(where: { ids.contains($0.id) && $0.status == .pausing }) {
+            guard Date() < deadline else { throw ToolError.message("暂停下载尚未完成，请稍后重试删除") }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try Task.checkCancellation()
+        guard removingIDs.isEmpty else { throw ToolError.message("正在删除任务，请稍后重试") }
+        let targets = jobs.filter { ids.contains($0.id) }
+        guard !targets.contains(where: { $0.status == .processing }) else { throw ToolError.message("任务正在处理，请稍后重试") }
+        let removed = Set(targets.map(\.id))
+        guard !removed.isEmpty else { return 0 }
+        removingIDs = removed
+        defer { removingIDs.removeAll(); schedule() }
+        let next = currentJobs.filter { !removed.contains($0.id) }, save = saveJobs
+        let files = targets.compactMap { job in fileURL(job).map { (job.id, $0) } }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            persistQueue.async {
+                var moved: [(URL, URL)] = []
+                do {
+                    for (id, file) in files {
+                        let aside = LocalResources.support.appendingPathComponent("\(id.uuidString).removing.ipa")
+                        try FileManager.default.moveItem(at: file, to: aside)
+                        moved.append((aside, file))
+                    }
+                    try save(next)
+                } catch {
+                    for (aside, file) in moved.reversed() { try? FileManager.default.moveItem(at: aside, to: file) }
+                    continuation.resume(throwing: error); return
+                }
+                for (aside, _) in moved { try? FileManager.default.removeItem(at: aside) }
+                for id in removed {
+                    for url in [LocalResources.resumeURL(id), LocalResources.stagingURL(id), PackageIconService.cacheURL(id), Self.decryptedURL(id)] {
+                        try? FileManager.default.removeItem(at: url)
+                    }
+                    MacPackageSecrets.delete(id)
+                }
+                continuation.resume()
+            }
+        }
+        jobs.removeAll { removed.contains($0.id) }
+        for id in removed {
+            tasks.removeValue(forKey: id)?.cancel()
+            rowProgress.removeValue(forKey: id); transferMetrics.removeValue(forKey: id)
+            progressPublishedAt.removeValue(forKey: id); fallbackForegroundIDs.remove(id)
+            catalogArtworkAttempted.remove(id)
+        }
+        updateBackgroundTask(); persist()
+        return removed.count
+    }
+
+    /// Crash between moving a package aside and committing jobs must never
+    /// make a retained package disappear. A committed removal has no job left.
+    nonisolated static func recoverRemovals(_ jobs: [DownloadJob]) throws {
+        let fm = FileManager.default
+        let root = LocalResources.packages.resolvingSymlinksInPath().standardizedFileURL
+        let retained = Dictionary(jobs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let files = (try? fm.contentsOfDirectory(at: LocalResources.support, includingPropertiesForKeys: [.isRegularFileKey])) ?? []
+        for aside in files where aside.lastPathComponent.hasSuffix(".removing.ipa") {
+            let prefix = String(aside.lastPathComponent.dropLast(".removing.ipa".count))
+            guard let id = UUID(uuidString: prefix),
+                  (try? aside.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
+            if let job = retained[id] {
+                guard let name = job.localFilename, !name.contains("/"), !name.contains("\\"), name != ".", name != ".." else { continue }
+                let destination = root.appendingPathComponent(name).standardizedFileURL
+                guard destination.deletingLastPathComponent() == root else { continue }
+                if !fm.fileExists(atPath: destination.path) { try fm.moveItem(at: aside, to: destination) }
+            } else { try? fm.removeItem(at: aside) }
+        }
     }
 
     nonisolated static func decryptedURL(_ id: UUID) -> URL {
@@ -584,14 +709,16 @@ final class DownloadManager: NSObject, ObservableObject {
 
     private func discoverLocalFiles() {
         guard storageError == nil else { return }
-        let known = Set(jobs.compactMap(\.localFilename))
-        let files = (try? FileManager.default.contentsOfDirectory(at: LocalResources.packages, includingPropertiesForKeys: nil)) ?? []
-        for file in files where file.pathExtension.lowercased() == "ipa" && !known.contains(file.lastPathComponent) {
-            guard LocalResources.packageURL(file.lastPathComponent) != nil else { continue }
-            Task {
+        Task {
+            let files = await Task.detached(priority: .utility) {
+                ((try? FileManager.default.contentsOfDirectory(at: LocalResources.packages, includingPropertiesForKeys: nil)) ?? [])
+                    .filter { $0.pathExtension.lowercased() == "ipa" && LocalResources.packageURL($0.lastPathComponent) != nil }
+            }.value
+            for file in files {
+                guard !self.jobs.contains(where: { $0.localFilename == file.lastPathComponent }) else { continue }
                 do {
-                    let app = try await Task.detached { try PackageService.inspect(file) }.value
-                    guard !self.jobs.contains(where: { $0.localFilename == file.lastPathComponent }) else { return }
+                    let app = try await Task.detached(priority: .utility) { try PackageService.inspect(file) }.value
+                    guard !self.jobs.contains(where: { $0.localFilename == file.lastPathComponent }) else { continue }
                     self.jobs.append(DownloadJob(app: app, status: .completed, downloaded: app.size, expected: app.size, localFilename: file.lastPathComponent))
                     self.persist()
                 } catch { self.discoveryWarning = "本地 IPA 无法读取，已保留原文件；其他任务可继续使用：\(file.lastPathComponent)\n\(error.localizedDescription)" }
@@ -614,10 +741,10 @@ final class DownloadManager: NSObject, ObservableObject {
     /// the app is about to be suspended).
     private func persist(wait: Bool = false) {
         // storageError means the saved list could not be read; never overwrite it.
-        guard storageError == nil else { return }
-        let snapshot = jobs, save = saveJobs
+        guard storageError == nil, !loadingJobs, removingIDs.isEmpty else { return }
+        let snapshot = currentJobs, save = saveJobs
         lastSave = Date()
-        let write = {
+        let write: @Sendable () -> Void = { [weak self] in
             let failed: Bool
             do { try save(snapshot); failed = false } catch { failed = true }
             Task { @MainActor [weak self] in
@@ -629,6 +756,8 @@ final class DownloadManager: NSObject, ObservableObject {
         if wait { persistQueue.sync(execute: write) } else { persistQueue.async(execute: write) }
     }
     private func saveNewJobs(_ next: [DownloadJob]) throws {
+        guard !loadingJobs, removingIDs.isEmpty else { throw ToolError.message("正在保存任务，请稍后重试") }
+        let next = next.map { rowProgress[$0.id]?.applying(to: $0) ?? $0 }
         // Commit the file before publishing a newly enqueued/imported/retried
         // task; on the same queue, after any earlier pending save.
         try persistQueue.sync { try saveJobs(next) }
@@ -644,7 +773,7 @@ final class DownloadManager: NSObject, ObservableObject {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
     private func finishBackgroundIfReady() {
-        guard processingIDs.isEmpty else { return }
+        guard !restoring, deliveries.isEmpty, processingIDs.isEmpty, removingIDs.isEmpty else { return }
         guard let completion = backgroundCompletion else { return }
         backgroundCompletion = nil
         // The app may be suspended right after this: finish pending saves first.
@@ -725,7 +854,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
         guard let value = downloadTask.taskDescription, let id = UUID(uuidString: value) else { return }
         Task { @MainActor in
             guard let index = self.jobs.firstIndex(where: { $0.id == id }), self.jobs[index].status == .running,
-                  self.tasks[id]?.taskIdentifier == downloadTask.taskIdentifier else { return }
+                  self.accepts(downloadTask, id: id) else { return }
             let now = ProcessInfo.processInfo.systemUptime
             let finished = totalBytesExpectedToWrite > 0 && totalBytesWritten >= totalBytesExpectedToWrite
             guard finished || now - (self.progressPublishedAt[id] ?? 0) >= 0.25 else { return }
@@ -734,10 +863,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
                 metric.record(bytes: totalBytesWritten, at: now)
                 self.transferMetrics[id] = metric
             } else { self.transferMetrics[id] = TransferMetrics(bytes: totalBytesWritten, sampledAt: now) }
-            var job = self.jobs[index]
-            job.downloaded = totalBytesWritten
-            job.expected = max(0, totalBytesExpectedToWrite)
-            self.jobs[index] = job
+            self.progress(for: id).bytes = (totalBytesWritten, max(0, totalBytesExpectedToWrite))
             // Resume data, not this count, is what a restart relies on.
             if Date().timeIntervalSince(self.lastSave) > 5 { self.persist() }
         }
@@ -745,8 +871,9 @@ extension DownloadManager: URLSessionDownloadDelegate {
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         guard let value = downloadTask.taskDescription, let id = UUID(uuidString: value) else { return }
+        deliveries.begin()
         LocalResources.ensureDirectoriesExist()
-        let received = LocalResources.support.appendingPathComponent("\(id.uuidString)-\(downloadTask.taskIdentifier).received")
+        let received = LocalResources.support.appendingPathComponent("\(id.uuidString)-\(UUID().uuidString).received")
         do {
             guard let response = downloadTask.response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
                 throw ToolError.message("下载失败（\((downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0)），请重试")
@@ -762,16 +889,18 @@ extension DownloadManager: URLSessionDownloadDelegate {
                 try? FileManager.default.removeItem(at: location)
             }
             Task { @MainActor in
+                let restoredDelivery = (self.loadingJobs || self.restoring) && session.configuration.identifier == Self.sessionID
+                await self.startupTask?.value
                 defer {
                     try? FileManager.default.removeItem(at: received)
                     self.updateBackgroundTask()
+                    self.deliveries.end(); self.finishBackgroundIfReady()
                 }
                 // A transfer can finish while the app is not running; after a
                 // relaunch the job may already read paused or queued with no task.
                 guard let index = self.jobs.firstIndex(where: { $0.id == id }),
                       [.running, .pausing, .paused, .queued].contains(self.jobs[index].status),
-                      self.tasks[id] == nil || self.tasks[id]?.taskIdentifier == downloadTask.taskIdentifier
-                        || self.restoring else { return }
+                      self.accepts(downloadTask, id: id, restoredDelivery: restoredDelivery) else { return }
                 do {
                     let destination = LocalResources.stagingURL(id)
                     try? FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -790,8 +919,10 @@ extension DownloadManager: URLSessionDownloadDelegate {
         } catch {
             try? FileManager.default.removeItem(at: received)
             Task { @MainActor in
+                defer { self.deliveries.end(); self.finishBackgroundIfReady() }
+                await self.startupTask?.value
                 self.updateBackgroundTask()
-                guard self.tasks[id]?.taskIdentifier == downloadTask.taskIdentifier || self.restoring else { return }
+                guard self.accepts(downloadTask, id: id) else { return }
                 self.fail(id, error: error)
             }
         }
@@ -801,9 +932,10 @@ extension DownloadManager: URLSessionDownloadDelegate {
         guard let error = error as NSError?, let value = task.taskDescription, let id = UUID(uuidString: value) else { return }
         let resume = error.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
         Task { @MainActor in
+            let restoredDelivery = (self.loadingJobs || self.restoring) && session.configuration.identifier == Self.sessionID
+            await self.startupTask?.value
             guard let job = self.jobs.first(where: { $0.id == id }), job.status != .completed && job.status != .processing else { return }
-            guard self.tasks[id] == nil || self.tasks[id]?.taskIdentifier == task.taskIdentifier
-                    || self.restoring else { return }
+            guard self.accepts(task, id: id, restoredDelivery: restoredDelivery) else { return }
 
             // Automatic fallback: if background nsurlsessiond failed to create file (-3000), retry in foreground process
             if error.domain == NSURLErrorDomain, error.code == NSURLErrorCannotCreateFile {
@@ -844,6 +976,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
 
     nonisolated func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         Task { @MainActor in
+            await self.startupTask?.value
             self.finishBackgroundIfReady()
         }
     }
