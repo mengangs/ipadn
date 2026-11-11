@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 import UserNotifications
 
 struct SettingsView: View {
@@ -14,6 +15,8 @@ struct SettingsView: View {
     @State private var sourceChecks: [UUID: SourceCheckState] = [:]
     @State private var share: SharedFile?
     @State private var resetSettings = false
+    @State private var importingBackup = false
+    @State private var pendingBackup: Data?
     @State private var clearCache = false
     /// The appearance the home screen icon has: fixed by the icon theme, or the
     /// system's (not iPadn's own appearance setting) when following the system.
@@ -52,6 +55,8 @@ struct SettingsView: View {
                     .onChange(of: store.settings.watchNotifications) { _, on in
                         if on { UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in } }
                     }
+                Toggle("目标价提醒", isOn: $store.settings.targetPrices)
+                    .accessibilityIdentifier("settings.target-prices")
             } header: { Text("关注") } footer: {
                 Text("关注的应用有新版本、降价、限免或下架时通知你。后台检查的时间由系统决定，打开 iPadn 时也会检查。")
             }
@@ -167,6 +172,16 @@ struct SettingsView: View {
                 Text(store.settings.proMode ? "可以在下载任务详情中浏览安装包内容，并查看账号令牌和设备标识。"
                      : "打开后可以浏览安装包内容、查看账号令牌和修改设备标识。")
             }
+            Section {
+                Button("导出设置与关注") {
+                    do { share = SharedFile(url: try store.exportBackup()) } catch { store.errorMessage = error.localizedDescription }
+                }
+                .accessibilityIdentifier("settings.export-backup")
+                Button("导入设置与关注") { importingBackup = true }
+                    .accessibilityIdentifier("settings.import-backup")
+            } header: { Text("备份") } footer: {
+                Text("包含设置、版本来源、关注的应用及价格记录和最近搜索，不包含账号和已下载的安装包。换签名方式或换设备前导出，之后导入即可恢复。")
+            }
             Section("维护") {
                 NavigationLink { StorageView() } label: { Label("存储空间", systemImage: "internaldrive") }
                     .accessibilityIdentifier("settings.storage")
@@ -225,6 +240,22 @@ struct SettingsView: View {
             Button("知道了", role: .cancel) { iconIssue = nil }
         } message: { Text(iconIssue ?? "") }
         .sheet(isPresented: $addingSource) { AddVersionSourceView() }
+        .fileImporter(isPresented: $importingBackup, allowedContentTypes: [.json, .data]) { result in
+            guard case .success(let url) = result else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let data = try Data(contentsOf: url)
+                _ = try AppBackup.decode(data)
+                pendingBackup = data
+            } catch { store.errorMessage = error.localizedDescription }
+        }
+        .actionConfirmation(isPresented: Binding(get: { pendingBackup != nil }, set: { if !$0 { pendingBackup = nil } }),
+                            title: "导入这个备份？", message: "当前设置会被备份中的设置替换，关注的应用会合并。账号和已下载的安装包不受影响。",
+                            confirmTitle: "导入", destructive: false) {
+            guard let data = pendingBackup else { return }
+            Task { do { try await store.importBackup(data) } catch { store.errorMessage = error.localizedDescription } }
+        }
         .navigationDestination(item: $editingSourceID) { id in
             if let index = store.settings.versionSources.firstIndex(where: { $0.id == id }) {
                 VersionSourceEditor(source: $store.settings.versionSources[index])

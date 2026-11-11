@@ -874,6 +874,29 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(HTTPStatusError(code: 401).localizedDescription.contains("sign in again"))
     }
 
+    func testBackupRoundTripsAndMergesFollowedApps() throws {
+        var settings = ToolSettings()
+        settings.searchLimit = 50; settings.baseCurrency = "USD"
+        let a = StoreApp(id: "1", name: "A"), b = StoreApp(id: "2", name: "B"), c = StoreApp(id: "3", name: "C")
+        var record = WatchRecord(id: "1", country: "US", started: Date(timeIntervalSince1970: 1_700_000_000), checked: Date(timeIntervalSince1970: 1_700_000_100))
+        record.price = 4.99; record.currency = "USD"; record.target = 2.99
+        let backup = AppBackup(settings: settings, favorites: [a, b], watch: [record.key: record],
+                               keptVersions: ["0|1": "1.2"], searchHistory: [SearchHistoryItem(term: "notes", count: 2, lastUsed: Date(timeIntervalSince1970: 1_700_000_000))])
+        let data = try backup.encoded()
+        let text = String(decoding: data, as: UTF8.self)
+        for secret in ["password", "passwordToken", "cookie", "dsid"] { XCTAssertFalse(text.contains(secret), secret) }
+        let restored = try AppBackup.decode(data)
+        XCTAssertEqual(restored.settings, settings)
+        XCTAssertEqual(restored.favorites.map(\.id), ["1", "2"])
+        XCTAssertEqual(restored.watch[record.key]?.target, 2.99)
+        XCTAssertEqual(restored.keptVersions, ["0|1": "1.2"])
+        XCTAssertEqual(AppBackup.merged([a, b], with: [b, c]).map(\.id), ["1", "2", "3"])
+        XCTAssertThrowsError(try AppBackup.decode(Data("{}".utf8)))
+        XCTAssertThrowsError(try AppBackup.decode(Data("not json".utf8)))
+        var future = backup; future.format = AppBackup.currentFormat + 1
+        XCTAssertThrowsError(try AppBackup.decode(try future.encoded()))
+    }
+
     func testRegionLocalesFindTheirScript() {
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh_CN")), "免费")
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh-Hans_CN")), "免费")
