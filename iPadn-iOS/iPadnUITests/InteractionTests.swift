@@ -11,6 +11,13 @@ final class InteractionTests: XCTestCase {
         return app
     }
 
+    /// Settings are grouped into pages; opens one from the first screen.
+    private func openSettingsPage(_ name: String, in app: XCUIApplication) {
+        let link = app.buttons["settings.page." + name]
+        XCTAssertTrue(link.waitForExistence(timeout: 10))
+        link.tap()
+    }
+
     func testAppIDIsAlignedWithVersionInDetailHeader() {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail"]
@@ -97,6 +104,7 @@ final class InteractionTests: XCTestCase {
         let settings = app.buttons["accounts.settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 15))
         settings.tap()
+        openSettingsPage("appearance", in: app)
         let flat = app.buttons["settings.icon.flat"]
         let dimensional = app.buttons["settings.icon.dimensional"]
         if !flat.isHittable { app.swipeUp() }
@@ -161,6 +169,7 @@ final class InteractionTests: XCTestCase {
         app.launch()
         let settings = app.buttons["accounts.settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10)); settings.tap()
+        openSettingsPage("appearance", in: app)
         let dimensional = app.buttons["settings.icon.dimensional"]
         let flat = app.buttons["settings.icon.flat"]
         if !flat.isHittable { app.swipeUp() }
@@ -290,6 +299,7 @@ final class InteractionTests: XCTestCase {
         app.buttons["confirmation.cancel"].tap()
         XCTAssertTrue(account.waitForExistence(timeout: 5))
         app.buttons["accounts.settings"].tap()
+        openSettingsPage("sources", in: app)
         let source = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "settings.source.")).firstMatch
         for _ in 0..<8 where !source.isHittable { app.swipeUp() }
         XCTAssertTrue(source.waitForExistence(timeout: 5))

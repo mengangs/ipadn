@@ -4,6 +4,22 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 struct SettingsView: View {
+    /// Settings are grouped into pages, like the system's Settings app, so
+    /// the first screen stays short.
+    enum Page {
+        case root, downloads, follow, appearance, sources, maintenance
+        var title: LocalizedStringKey {
+            switch self {
+            case .root: return "设置"
+            case .downloads: return "下载"
+            case .follow: return "关注"
+            case .appearance: return "外观与图标"
+            case .sources: return "历史版本来源"
+            case .maintenance: return "备份与维护"
+            }
+        }
+    }
+    var page = Page.root
     @EnvironmentObject private var store: ToolStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
@@ -27,8 +43,24 @@ struct SettingsView: View {
         case .automatic: return UIScreen.main.traitCollection.userInterfaceStyle == .dark ? .dark : .light
         }
     }
+    private func pageLink(_ page: Page, _ symbol: String, _ identifier: String) -> some View {
+        NavigationLink { SettingsView(page: page) } label: { Label(page.title, systemImage: symbol) }
+            .accessibilityIdentifier(identifier)
+    }
     var body: some View {
         Form {
+            if page == .root {
+            Section {
+                pageLink(.downloads, "arrow.down.circle", "settings.page.downloads")
+                pageLink(.follow, "bell", "settings.page.follow")
+                pageLink(.appearance, "paintbrush", "settings.page.appearance")
+                pageLink(.sources, "clock.arrow.circlepath", "settings.page.sources")
+                NavigationLink { InstallationSettingsView() } label: { Label("安装设置", systemImage: "arrow.down.app") }
+                    .accessibilityIdentifier("settings.installation")
+                pageLink(.maintenance, "wrench.and.screwdriver", "settings.page.maintenance")
+            }
+            }
+            if page == .downloads {
             Section {
                 Stepper("同时下载：\(store.settings.maxConcurrentDownloads)", value: $store.settings.maxConcurrentDownloads, in: 1...6)
                 Stepper("等待任务上限：\(store.settings.maxQueuedDownloads)", value: $store.settings.maxQueuedDownloads, in: 1...100)
@@ -44,12 +76,17 @@ struct SettingsView: View {
             } header: {
                 Text("下载")
             } footer: {
-                if store.downloads.backgroundDownloadsUnavailable && !store.settings.compatibleDownloadMode {
-                    Text("当前签名下系统后台下载无法保存文件，已自动改用应用内下载，下载时请保持 iPadn 在前台。更换签名后可以点按「重新尝试后台下载」。")
-                } else {
-                    Text("如在企业证书重签或特定环境下遇到“无法创建文件”报错，请开启兼容下载模式（使用应用前台直接下载，下载时请保持应用在前台）。")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("关闭「新版本提醒」后，下载页不再显示新版本提示，也不发送通知。")
+                    if store.downloads.backgroundDownloadsUnavailable && !store.settings.compatibleDownloadMode {
+                        Text("当前签名下系统后台下载无法保存文件，已自动改用应用内下载，下载时请保持 iPadn 在前台。更换签名后可以点按「重新尝试后台下载」。")
+                    } else {
+                        Text("如在企业证书重签或特定环境下遇到“无法创建文件”报错，请开启兼容下载模式（使用应用前台直接下载，下载时请保持应用在前台）。")
+                    }
                 }
             }
+            }
+            if page == .follow {
             Section {
                 Toggle("关注应用提醒", isOn: $store.settings.watchNotifications)
                     .onChange(of: store.settings.watchNotifications) { _, on in
@@ -60,6 +97,8 @@ struct SettingsView: View {
             } header: { Text("关注") } footer: {
                 Text("关注的应用有新版本、降价、限免或下架时通知你。后台检查的时间由系统决定，打开 iPadn 时也会检查。")
             }
+            }
+            if page == .appearance {
             Section("搜索与外观") {
                 Picker("搜索结果数量", selection: $store.settings.searchLimit) {
                     ForEach([10, 30, 50, 100, 200], id: \.self) { Text("\($0)").tag($0) }
@@ -116,6 +155,8 @@ struct SettingsView: View {
                     Text("默认使用深色图标。「跟随系统」会随主屏幕的浅色、深色和着色外观切换（iOS 18 及更新版本），也可以固定使用浅色图标。")
                 }
             }
+            }
+            if page == .sources {
             ForEach($store.settings.versionSources) { $source in
                 Section {
                     Button { editingSourceID = source.id } label: {
@@ -151,16 +192,16 @@ struct SettingsView: View {
             } footer: {
                 Text("用于查询应用的历史版本。检测会用微信的版本记录逐个请求每个来源，显示是否可用、返回的版本数和耗时。")
             }
+            }
+            if page == .downloads {
             Section {
                 Toggle("加快重复下载", isOn: $store.settings.useSignerCache)
                 Button("清除缓存") { store.signer.clearCache(); store.infoMessage = AppText.text("已清除缓存") }
             } header: { Text("性能") } footer: {
                 Text("缓存仅在本次运行期间保留。")
             }
-            Section {
-                NavigationLink { InstallationSettingsView() } label: { Label("安装设置", systemImage: "arrow.down.app") }
-                    .accessibilityIdentifier("settings.installation")
             }
+            if page == .root {
             Section {
                 Toggle("专业模式", isOn: $store.settings.proMode.animation())
                     .accessibilityIdentifier("settings.pro-mode")
@@ -172,6 +213,8 @@ struct SettingsView: View {
                 Text(store.settings.proMode ? "可以在下载任务详情中浏览安装包内容，并查看账号令牌和设备标识。"
                      : "打开后可以浏览安装包内容、查看账号令牌和修改设备标识。")
             }
+            }
+            if page == .maintenance {
             Section {
                 Button("导出设置与关注") {
                     do { share = SharedFile(url: try store.exportBackup()) } catch { store.errorMessage = error.localizedDescription }
@@ -193,6 +236,8 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings.copy-diagnostics")
                 Button("恢复默认设置", role: .destructive) { resetSettings = true }
             }
+            }
+            if page == .root {
             Section {
                 // The icon as chosen in 应用图标, in the appearance it currently shows.
                 Image(icons.selected.preview).resizable().scaledToFit().frame(width: 64, height: 64)
@@ -233,8 +278,9 @@ struct SettingsView: View {
                 NavigationLink { SupportView() } label: { SupportRow() }
                     .accessibilityIdentifier("settings.support")
             }
+            }
         }
-        .toolPage().navigationTitle("设置").navigationBarTitleDisplayMode(.inline)
+        .toolPage().navigationTitle(page.title).navigationBarTitleDisplayMode(.inline)
         .onChange(of: scenePhase) { _, phase in if phase == .active { icons.refresh() } }
         .alert("图标未更改", isPresented: Binding(get: { iconIssue != nil }, set: { if !$0 { iconIssue = nil } })) {
             Button("知道了", role: .cancel) { iconIssue = nil }
