@@ -42,6 +42,8 @@ struct WatchRecord: Codable, Equatable {
     /// The most notable change of the latest check that found one.
     var change: WatchChange?
     var changed: Date?
+    /// Only notify about a price drop once the price is at or below this.
+    var target: Double?
 
     var key: String { Self.key(id: id, country: country) }
     static func key(id: String, country: String) -> String { id + "|" + country.uppercased() }
@@ -75,7 +77,7 @@ enum WatchService {
                 let currency = listing.currency ?? next.currency
                 if !next.currency.isEmpty, currency != next.currency {
                     // The storefront changed currency: earlier prices no longer compare.
-                    next.history = []; next.price = nil
+                    next.history = []; next.price = nil; next.target = nil
                 }
                 if let old = next.price, !same(old, price) {
                     changes.append(price == 0 ? .free(from: old) : price < old ? .priceDrop(from: old, to: price)
@@ -99,6 +101,13 @@ enum WatchService {
     }
 
     private static func same(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 0.000_1 }
+
+    /// Whether a change is worth a notification given the record's target
+    /// price: with a target, a drop that stays above it is not.
+    static func notifies(_ change: WatchChange, target: Double?) -> Bool {
+        guard let target, case .priceDrop(_, let price) = change else { return true }
+        return price <= target + 0.000_1
+    }
 
     /// "免费" for zero, else the amount in its currency ("¥18", "$2.99").
     /// Words follow the interface language; `locale` only shapes the number.

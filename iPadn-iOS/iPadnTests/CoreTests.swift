@@ -106,6 +106,17 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(WatchService.format(18, currency: "CNY", locale: Locale(identifier: "zh_CN")).contains("18"))
         XCTAssertTrue(WatchService.format(2.99, currency: "USD", locale: Locale(identifier: "zh_CN")).contains("2.99"))
         XCTAssertNil(WatchService.message(.priceRise(from: 1, to: 2), currency: "CNY"))
+        // A target price silences drops that stay above it; free always counts.
+        XCTAssertTrue(WatchService.notifies(.priceDrop(from: 30, to: 18), target: nil))
+        XCTAssertFalse(WatchService.notifies(.priceDrop(from: 30, to: 18), target: 12))
+        XCTAssertTrue(WatchService.notifies(.priceDrop(from: 30, to: 12), target: 12))
+        XCTAssertTrue(WatchService.notifies(.free(from: 30), target: 12))
+        XCTAssertTrue(WatchService.notifies(.newVersion("2.0"), target: 12))
+        var targeted = WatchRecord(id: "9", country: "CN", started: start, checked: start)
+        targeted.price = 30; targeted.currency = "CNY"; targeted.target = 12
+        XCTAssertEqual(WatchService.update(targeted, id: "9", country: "CN", listing: listing("1.0", 25, "CNY"), now: start + 60).record.target, 12)
+        XCTAssertNil(WatchService.update(targeted, id: "9", country: "CN", listing: listing("1.0", 3, "USD"), now: start + 60).record.target,
+                     "a new currency makes the old target meaningless")
         XCTAssertEqual(WatchService.message(.newVersion("2.0"), currency: "CNY", locale: Locale(identifier: "zh_CN")), "有新版本 2.0")
         let raw: [String: Any] = ["trackId": 5, "trackName": "P", "price": 4.99, "currency": "USD", "formattedPrice": "$4.99"]
         XCTAssertEqual(StoreService.mapLookup(raw).priceValue, 4.99)
