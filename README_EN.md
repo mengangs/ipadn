@@ -68,6 +68,16 @@ The interface follows the App Store's design. Appearance follows the system and 
 
 > iPadn isn't on the App Store. Releases are unsigned, so you need to sign them yourself.
 
+### Add the source to your signing tool
+
+SideStore, AltStore, Feather and other tools that support AltStore sources can add the address below. You can then install iPadn from the tool and update it there when a new version is out, without downloading the package by hand.
+
+```
+https://raw.githubusercontent.com/mengangs/ipadn/main/altstore-source.json
+```
+
+The source is updated automatically after every release and only lists packages from this repository's Releases.
+
 ## Downloading an app
 
 1. In **Search**, enter an app name, App ID or App Store link.

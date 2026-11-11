@@ -68,6 +68,16 @@
 
 > iPadn 不在 App Store 上架，发布的安装包未签名，需要自行签名。
 
+### 在签名工具中添加源
+
+SideStore、AltStore、Feather 等支持 AltStore 源的签名工具，可以添加下面的地址。添加后在工具里就能安装 iPadn，有新版本时也能直接在工具里更新，不用再手动下载安装包。
+
+```
+https://raw.githubusercontent.com/mengangs/ipadn/main/altstore-source.json
+```
+
+源文件在每次发布后自动更新，只列出本仓库 Releases 中的安装包。
+
 ## 下载一个应用
 
 1. 在 **搜索** 中输入应用名称、App ID 或 App Store 链接。
