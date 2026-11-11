@@ -7,6 +7,14 @@
 
 ---
 
+## 2026-11-11 iPadn 1.9.2（build 27）
+
+- **已发布**：2026-11-11 19:19（UTC+8）[iPadn v1.9.2](https://github.com/mengangs/ipadn/releases/tag/v1.9.2)，Latest，标签指向 `c03e2f2f`（PR #39、#40 合并；内容与 CI run 43005857736 测试的提交 `1ec2decd` 完全相同）。IPA SHA-256 `b9b183b3eeb61dde6f4b901e7d381c4e3021a02bf6b1f84300e007721c95e3d9`，与校验文件、build-info 一致；发布正文以 `RELEASE_NOTES.md` 开头逐字一致；136 项单元测试 + 11 项 UI 测试通过。正式包已装到 iPhone 15 Pro，版本 1.9.2（27）。
+- **内容**：#36 后台下载文件无读取权限时自动改用应用内下载（`DownloadManager.isPermissionError`、`fallBackToForeground`）；更新后图标主题显示（`AppIconService.rememberedAlternate`）；「设置 › 支持 iPadn」（`SupportView.swift`，爱发电 + USDT BEP20 `0x5f0cff7587b9fc305f9fa626135789bd5100818e`，地址已与用户币安截图逐字及二维码核对）；诊断信息记录最近失败请求（`RequestFailureLog`，仅元数据）、「复制诊断信息」、401 提示重新登录。
+- **README**：支持区（徽章、USDT 二维码 `docs/images/usdt-bep20.png`、`.github/FUNDING.yml`）；去掉 Stars 徽章和趋势图；补充 iOS 27 以下配对为何需要电脑。GitHub 仓库简介已中英双语。
+- **issue**：#33 已回复并关闭（邀请校对翻译）；#36 已回复修复并关闭。
+- **待办**：LiveContainer + 美区账号下载 401，等用户用 1.9.2 的「复制诊断信息」反馈后定位。下一步新功能：TestFlight 已加入测试的 App（新会话，提示词 `.build/testflight-session-prompt.md`，先审计）。iOS 15/16 兼容已评估，用户决定暂不做。
+
 ## 2026-11-11 iPadn 1.9.1（build 26）多语言版本
 
 用户已授权：第二批语言加阿拉伯语、真机测试、合并 PR、发布 1.9.1、更新 README 截图与 GitHub 简介。本节为最新状态。
