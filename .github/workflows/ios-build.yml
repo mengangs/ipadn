@@ -271,3 +271,23 @@ jobs:
           gh release create "$RELEASE_TAG" "$RELEASE_ASSET" "$RELEASE_ASSET.sha256" release/build-info.json \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "iPadn $RELEASE_TAG" \
             --notes-file release/notes.md --latest
+      - name: Update the AltStore source
+        # Signing tools read altstore-source.json from main to offer the update.
+        # A failure here must not undo a published release.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          git fetch --depth 1 origin main
+          git checkout -B main origin/main
+          python3 iPadn-iOS/scripts/generate_altstore_source.py
+          if git diff --quiet -- altstore-source.json; then
+            echo "altstore-source.json is already current"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add altstore-source.json
+            git commit -m "Update AltStore source for $RELEASE_TAG [skip ci]"
+            git push origin main
+          fi
