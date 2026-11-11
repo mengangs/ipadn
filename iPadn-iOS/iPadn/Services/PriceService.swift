@@ -19,13 +19,23 @@ enum StoreRegions {
     """.split(separator: " ").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
     static let defaultComparison = ["CN", "HK", "US", "JP", "KR", "TR", "NG"]
 
-    static func name(_ code: String) -> String { names[code] ?? code }
-    private static let names: [String: String] = {
-        let locale = Locale(identifier: "zh_CN")
-        return Dictionary(uniqueKeysWithValues: codes.map { ($0, locale.localizedString(forRegionCode: $0) ?? $0) })
-    }()
-    /// All storefronts in the order of their Chinese names.
-    static let byName: [String] = codes.sorted { name($0).localizedStandardCompare(name($1)) == .orderedAscending }
+    /// A storefront's name in the interface language, cached per language.
+    static func name(_ code: String, locale: Locale = AppText.locale) -> String { names(locale)[code] ?? code }
+    /// All storefronts in the order of their names in the interface language.
+    static func byName(_ locale: Locale = AppText.locale) -> [String] {
+        codes.sorted { name($0, locale: locale).localizedStandardCompare(name($1, locale: locale)) == .orderedAscending }
+    }
+    private static func names(_ locale: Locale) -> [String: String] {
+        let key = locale.identifier
+        return cachedNames.withLock { cache in
+            if let done = cache[key] { return done }
+            let localizer = Locale(identifier: key)
+            let done = Dictionary(uniqueKeysWithValues: codes.map { ($0, localizer.localizedString(forRegionCode: $0) ?? $0) })
+            cache[key] = done
+            return done
+        }
+    }
+    private static let cachedNames = NSLockedValue([String: [String: String]]())
     static func flag(_ code: String) -> String {
         code.uppercased().unicodeScalars.compactMap { UnicodeScalar(127_397 + $0.value) }.map(String.init).joined()
     }
@@ -249,12 +259,10 @@ enum InAppPriceService {
         guard !language.lowercased().hasPrefix("en") else { return [:] }
         let key = appID + "|" + language
         if let cached = nameCache[key], Date().timeIntervalSince(cached.date) < 3600 { return cached.names }
-        // The storefront of the language's region first (CN for zh-Hans-CN),
-        // then the other storefronts that were read.
+        // Storefronts that list names in the language first, then the other
+        // storefronts that were read.
         var candidates: [String] = []
-        let tagRegion = Locale(identifier: language).region?.identifier.uppercased()
-        let fallbackRegion: String? = language.hasPrefix("zh-Hans") ? "CN" : language.hasPrefix("zh-Hant") ? "TW" : nil
-        for code in [tagRegion, fallbackRegion, Locale.current.region?.identifier.uppercased()].compactMap({ $0 }) + english.keys.sorted()
+        for code in nameRegions(language: language) + [Locale.current.region?.identifier.uppercased()].compactMap({ $0 }) + english.keys.sorted()
         where !candidates.contains(code) && english[code]?.isEmpty == false {
             candidates.append(code)
         }
@@ -270,6 +278,30 @@ enum InAppPriceService {
         return [:]
     }
     @MainActor private static var nameCache: [String: (date: Date, names: [String: String])] = [:]
+
+    /// Storefronts whose pages are written in a language, first the one in
+    /// the language tag's region when it is one of them (PT for pt-PT), then
+    /// the language's main storefront (JP for ja, even on a ja-CN device).
+    static func nameRegions(language: String) -> [String] {
+        let tag = language.lowercased()
+        let tagRegion = Locale(identifier: language).region?.identifier.uppercased()
+        let native: [String]
+        switch tag {
+        case _ where tag.hasPrefix("zh-hans"): native = ["CN"]
+        case _ where tag.hasPrefix("zh-hant"), _ where tag.hasPrefix("zh-hk"), _ where tag.hasPrefix("zh-tw"): native = ["TW", "HK", "MO"]
+        case _ where tag.hasPrefix("ja"): native = ["JP"]
+        case _ where tag.hasPrefix("ko"): native = ["KR"]
+        case _ where tag.hasPrefix("ru"): native = ["RU", "BY", "KZ"]
+        case _ where tag.hasPrefix("es"): native = ["ES", "MX", "AR", "CO", "CL", "PE"]
+        case _ where tag.hasPrefix("fr"): native = ["FR", "CA", "BE", "CH"]
+        case _ where tag.hasPrefix("de"): native = ["DE", "AT", "CH"]
+        case _ where tag.hasPrefix("pt"): native = ["BR", "PT"]
+        case _ where tag.hasPrefix("ar"): native = ["SA", "AE", "EG", "KW", "QA", "JO", "MA"]
+        default: return [tagRegion].compactMap { $0 }
+        }
+        if let tagRegion, native.contains(tagRegion) { return [tagRegion] + native.filter { $0 != tagRegion } }
+        return native
+    }
 
     /// One storefront lists its purchases in the same order and at the same
     /// prices in every language, so its two lists pair up item by item. Any

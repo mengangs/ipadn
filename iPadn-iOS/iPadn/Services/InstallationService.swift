@@ -57,12 +57,12 @@ final class InstallationService: ObservableObject {
     func localInstallURL(job: DownloadJob, file: URL, host: String, icon: URL? = nil) async throws -> URL {
         let host = try ManifestBuilder.localHost(host)
         guard let certificate = try InstallationCertificate.load() else {
-            throw ToolError.message("请先在安装方式中创建证书")
+            throw ToolError.message(AppText.text("请先在安装方式中创建证书"))
         }
         do { try await certificate.validateAsync(host: host) }
         catch InstallationCertificate.CheckFailure.outdated where (try? InstallationCertificate.localProfile()) != nil {
             // Made by an earlier iPadn that didn't cover this address.
-            throw ToolError.message("证书需要更新。请在「安装设置」中重新创建证书，并安装、信任新的描述文件。")
+            throw ToolError.message(AppText.text("证书需要更新。请在「安装设置」中重新创建证书，并安装、信任新的描述文件。"))
         }
         // The server listens on 127.0.0.1; any other answer (no network, or a
         // proxy app that answers DNS itself) means the system can't reach it.
@@ -88,7 +88,7 @@ final class InstallationService: ObservableObject {
             InstallLog.shared.add("no loopback answer behind the proxy; trying \(found ?? host)")
         }
         guard let reachable = found else {
-            throw ToolError.message("当前网络下无法连接本机安装服务，请检查网络后重试，或改用一键安装。")
+            throw ToolError.message(AppText.text("当前网络下无法连接本机安装服务，请检查网络后重试，或改用一键安装。"))
         }
         let server = LoopbackServer(identity: certificate.identity, certificates: certificate.certificates, publicHost: reachable)
         try await server.start()
@@ -127,7 +127,7 @@ final class InstallationService: ObservableObject {
     /// Safari when the install prompt doesn't appear from iPadn itself.
     func browserPage(installURL: URL, app: StoreApp) throws -> URL {
         guard let server = installServer, server.baseURL != nil else {
-            throw ToolError.message("安装服务未就绪，请重试")
+            throw ToolError.message(AppText.text("安装服务未就绪，请重试"))
         }
         let page = Data(ManifestBuilder.browserPage(installURL: installURL, name: app.name.isEmpty ? app.bundleID : app.name).utf8)
         let url = try server.register(data: page, contentType: "text/html; charset=utf-8")
@@ -229,14 +229,14 @@ enum ManifestBuilder {
         guard !host.isEmpty, host.utf8.count <= 253, !host.contains(".."),
               host.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-") }),
               !host.hasPrefix("-"), !host.hasSuffix("-") else {
-            throw ToolError.message("请填写有效的服务器地址")
+            throw ToolError.message(AppText.text("请填写有效的服务器地址"))
         }
         return host
     }
     static func manifest(app: StoreApp, packageURL: URL, images: (small: URL, large: URL)? = nil) throws -> Data {
         guard !app.bundleID.isEmpty, !app.version.isEmpty, packageURL.scheme == "https",
               packageURL.host != nil, packageURL.user == nil, packageURL.password == nil else {
-            throw ToolError.message("无法生成安装链接")
+            throw ToolError.message(AppText.text("无法生成安装链接"))
         }
         var assets = [["kind": "software-package", "url": packageURL.absoluteString]]
         if let images {
@@ -263,16 +263,17 @@ enum ManifestBuilder {
                 .replacingOccurrences(of: "'", with: "&#39;")
         }
         let link = escape(installURL.absoluteString), title = escape(name)
+        let language = AppText.locale.language.languageCode?.identifier ?? "en"
         return """
-        <!doctype html><html lang="zh-Hans"><head><meta charset="utf-8">
+        <!doctype html><html lang="\(language)"><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
-        <meta http-equiv="refresh" content="0;url=\(link)"><title>安装 \(title)</title>
+        <meta http-equiv="refresh" content="0;url=\(link)"><title>\(escape(AppText.text("安装 \(title)")))</title>
         <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:-apple-system,system-ui;background:#f2f2f7;color:#000}
         main{text-align:center;padding:24px;max-width:420px}p{color:#6e6e73;line-height:1.5}
         a{display:inline-block;margin-top:12px;padding:12px 40px;border-radius:999px;background:#007aff;color:#fff;font-weight:600;text-decoration:none}
         @media(prefers-color-scheme:dark){body{background:#000;color:#fff}p{color:#98989d}}</style></head>
-        <body><main><h2>\(title)</h2><p>如果没有出现安装提示，请点按下方按钮。确认安装后请回到 iPadn，等待安装完成。</p>
-        <a href="\(link)">安装</a></main></body></html>
+        <body><main><h2>\(title)</h2><p>\(escape(AppText.text("如果没有出现安装提示，请点按下方按钮。确认安装后请回到 iPadn，等待安装完成。")))</p>
+        <a href="\(link)">\(escape(AppText.text("安装")))</a></main></body></html>
         """
     }
 
@@ -283,11 +284,11 @@ enum ManifestBuilder {
 
     static func externalInstallURL(app: StoreApp, packageURL: URL) throws -> URL {
         guard !app.bundleID.isEmpty, !app.version.isEmpty else {
-            throw ToolError.message("安装包信息不完整，无法安装")
+            throw ToolError.message(AppText.text("安装包信息不完整，无法安装"))
         }
         guard let scheme = packageURL.scheme, ["http", "https"].contains(scheme),
               packageURL.host != nil, packageURL.user == nil, packageURL.password == nil else {
-            throw ToolError.message("无法生成安装链接")
+            throw ToolError.message(AppText.text("无法生成安装链接"))
         }
         func encode(_ value: String) -> String { value.addingPercentEncoding(withAllowedCharacters: strictQuery) ?? "" }
         let query = [("bundleid", app.bundleID), ("name", app.name.isEmpty ? app.bundleID : app.name),
@@ -295,29 +296,29 @@ enum ManifestBuilder {
             .map { "\($0.0)=\(encode($0.1))" }.joined(separator: "&")
         guard let manifest = URL(string: manifestGenerator + "?" + query),
               let url = URL(string: "itms-services://?action=download-manifest&url=" + encode(manifest.absoluteString)) else {
-            throw ToolError.message("无法生成安装链接")
+            throw ToolError.message(AppText.text("无法生成安装链接"))
         }
         return url
     }
 
     static func systemURL(manifestURL: URL) throws -> URL {
         guard manifestURL.scheme == "https", manifestURL.host != nil, manifestURL.user == nil, manifestURL.password == nil else {
-            throw ToolError.message("清单服务地址需以 https 开头")
+            throw ToolError.message(AppText.text("清单服务地址需以 https 开头"))
         }
         var installer = URLComponents()
         installer.scheme = "itms-services"; installer.host = ""
         installer.queryItems = [URLQueryItem(name: "action", value: "download-manifest"), URLQueryItem(name: "url", value: manifestURL.absoluteString)]
-        guard let url = installer.url else { throw ToolError.message("无法生成安装链接") }
+        guard let url = installer.url else { throw ToolError.message(AppText.text("无法生成安装链接")) }
         return url
     }
 
     static func installURL(app: StoreApp, filename: String, plistServer: String) throws -> URL {
         guard !app.bundleID.isEmpty, !app.version.isEmpty else {
-            throw ToolError.message("安装包信息不完整，无法安装")
+            throw ToolError.message(AppText.text("安装包信息不完整，无法安装"))
         }
         guard let remote = URLComponents(string: plistServer.trimmingCharacters(in: .whitespacesAndNewlines)),
               remote.scheme == "https", remote.host != nil, remote.user == nil, remote.password == nil, remote.query == nil, remote.fragment == nil else {
-            throw ToolError.message("请先在安装方式中填写清单服务地址")
+            throw ToolError.message(AppText.text("请先在安装方式中填写清单服务地址"))
         }
         var metadata = URLComponents()
         metadata.queryItems = [
@@ -333,7 +334,7 @@ enum ManifestBuilder {
         installer.scheme = "itms-services"
         installer.host = ""
         installer.queryItems = [URLQueryItem(name: "action", value: "download-manifest"), URLQueryItem(name: "url", value: manifest)]
-        guard let url = installer.url else { throw ToolError.message("无法生成安装链接") }
+        guard let url = installer.url else { throw ToolError.message(AppText.text("无法生成安装链接")) }
         return url
     }
 

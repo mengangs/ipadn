@@ -6,9 +6,11 @@ enum AppContainer {
     static let shared: ToolStore = {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--visual-preview") {
-            let a = StoreApp(id: "preview-1", name: "像素日记", bundleID: "example.pixel", version: "3.2.1", category: "摄影与录像", size: 128_000_000)
-            let b = StoreApp(id: "preview-2", name: "专注时刻", bundleID: "example.focus", version: "2.8", category: "效率", size: 48_000_000)
-            var jobs = [DownloadJob(app: a, status: .running, downloaded: 74_000_000, expected: 128_000_000), DownloadJob(app: b, status: .paused, downloaded: 12_000_000, expected: 48_000_000), DownloadJob(app: a, status: .completed), DownloadJob(app: b, status: .failed, error: "网络连接已中断，请检查网络后重试。")]
+            let apps = PreviewData.apps
+            var jobs = [DownloadJob(app: apps[0], status: .running, downloaded: 131_000_000, expected: apps[0].size),
+                        DownloadJob(app: apps[1], status: .paused, downloaded: 96_000_000, expected: apps[1].size),
+                        DownloadJob(app: apps[2], status: .completed),
+                        DownloadJob(app: apps[3], status: .failed, error: AppText.text("网络连接暂时不可用，请检查网络后重试。"))]
             if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--stress-records=") }),
                let count = Int(argument.dropFirst("--stress-records=".count)), [100, 500, 1000].contains(count) {
                 jobs = (0..<count).map { index in
@@ -91,6 +93,31 @@ struct iPadnApp: App {
 }
 
 #if DEBUG
+/// Public App Store apps used as screenshot data, so previews show real
+/// names and icons without any account's own records.
+enum PreviewData {
+    static func icon(_ path: String) -> URL? {
+        URL(string: "https://is1-ssl.mzstatic.com/image/thumb/" + path + "/512x512bb.jpg")
+    }
+    static let apps = [
+        StoreApp(id: "preview-1", name: "Netflix", bundleID: "com.netflix.Netflix", version: "26.5.0",
+                 iconURL: icon("Purple221/v4/32/c6/6a/32c66aca-fb60-4d0e-46fb-8e861d280d6a/AppIcon-0-0-1x_U007epad-0-1-0-sRGB-0-85-220.png"),
+                 category: "娱乐", size: 209_844_224),
+        StoreApp(id: "preview-2", name: "Spotify", bundleID: "com.spotify.client", version: "9.1.98",
+                 iconURL: icon("Purple211/v4/d5/ca/fa/d5cafa8a-079b-f708-4704-6cc55a8fb160/AppIcon-0-0-1x_U007epad-0-1-0-0-85-220.png"),
+                 category: "音乐", size: 329_352_192),
+        StoreApp(id: "1232780281", name: "Notion", bundleID: "notion.id", version: "1.7.353",
+                 iconURL: icon("Purple211/v4/4a/fa/7a/4afa7a74-b27e-17db-4293-50450fc8423c/AppIconProd-0-0-1x_U007epad-0-0-0-1-0-0-85-220.png"),
+                 category: "效率", size: 537_577_472),
+        StoreApp(id: "1446075923", name: "Disney+", bundleID: "com.disney.disneyplus", version: "5.21.0",
+                 iconURL: icon("Purple221/v4/d7/b3/67/d7b36785-baf0-d87b-7868-ea2170bc4ea6/AppIcon-0-0-1x_U007emarketing-0-8-0-0-0-85-220.png"),
+                 category: "娱乐", size: 325_474_304),
+    ]
+    /// The followed app; UI tests find it by this identifier.
+    static var favorite: StoreApp { var app = apps[0]; app.id = "preview-app"; return app }
+    static var chinese: Bool { Locale.preferredLanguages.first?.hasPrefix("zh") == true }
+}
+
 private struct PreviewScreen: View {
     @EnvironmentObject private var store: ToolStore
     private let args = ProcessInfo.processInfo.arguments
@@ -98,6 +125,7 @@ private struct PreviewScreen: View {
         Group {
             if args.contains("--login") { NavigationStack { LoginView() } }
             else if args.contains("--detail"), let app = store.favorites.first { NavigationStack { AppDetailView(app: app) } }
+            else if args.contains("--installation") { NavigationStack { InstallationSettingsView() } }
             else { RootView() }
         }
         .environment(\.dynamicTypeSize, args.contains("--largest-text") ? .accessibility5 : args.contains("--large-text") ? .accessibility2 : .large)

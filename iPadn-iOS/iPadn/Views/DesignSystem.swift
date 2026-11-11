@@ -55,6 +55,8 @@ struct CapsuleButtonStyle: ButtonStyle {
             .environment(\.isEnabled, enabled || suppressesPress)
             .font(.subheadline.weight(.bold))
             .lineLimit(1)
+            // Capsule labels ("Download", "Get") must never be clipped.
+            .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(filled ? UX.onAccent : UX.tint)
             .padding(.horizontal, 16).frame(minWidth: 74, minHeight: 30)
             .background(filled ? AnyShapeStyle(UX.tint) : AnyShapeStyle(Color(.tertiarySystemFill)), in: Capsule())
@@ -66,13 +68,15 @@ struct CapsuleButtonStyle: ButtonStyle {
 /// Capsule action inside a navigable List row. A Button there would be
 /// swallowed by the row's link, so it uses a high-priority tap instead.
 struct RowCapsule: View {
-    let title: String
+    let title: LocalizedStringKey
     var filled = false
     var enabled = true
     let action: () -> Void
     var body: some View {
         Text(title)
             .font(.subheadline.weight(.bold)).lineLimit(1)
+            // Capsule labels ("Download", "Get") must never be clipped.
+            .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(filled ? UX.onAccent : UX.tint)
             .padding(.horizontal, 16).frame(minWidth: 74, minHeight: 30)
             .background(filled ? AnyShapeStyle(UX.tint) : AnyShapeStyle(Color(.tertiarySystemFill)), in: Capsule())
@@ -120,10 +124,10 @@ struct BrandMark: View {
 }
 
 struct EmptyState: View {
-    let title: String
-    let message: String
+    let title: LocalizedStringKey
+    let message: LocalizedStringKey
     let symbol: String
-    var actionTitle: String? = nil
+    var actionTitle: LocalizedStringKey? = nil
     var action: (() -> Void)? = nil
     var body: some View {
         VStack(spacing: 10) {
@@ -140,6 +144,7 @@ struct EmptyState: View {
 }
 
 struct InlineIssue: View {
+    /// Already in its final language: service errors and store state arrive as text.
     let message: String
     var retry: (() -> Void)? = nil
     var body: some View {
@@ -157,7 +162,7 @@ struct InlineIssue: View {
 /// full-width pill that searches from the keyboard's Search key.
 struct SearchInput: View {
     @Binding var text: String
-    var placeholder: String
+    var placeholder: LocalizedStringKey
     var capsule = false
     var submit: (() -> Void)? = nil
     var clear: (() -> Void)? = nil
@@ -211,7 +216,7 @@ struct RefreshButton: View {
 /// visible (hiding it made the page jump when popping back from a pushed
 /// page); it shows the small title only once the header has scrolled away.
 struct RootTabBar: ViewModifier {
-    let title: String
+    let title: LocalizedStringKey
     let headerScrolledAway: Bool
     func body(content: Content) -> some View {
         content
@@ -242,7 +247,7 @@ extension View {
             withAnimation(.easeIn(duration: 0.15)) { shown.wrappedValue = true }
         }
     }
-    func rootTabBar(_ title: String, headerScrolledAway: Bool) -> some View {
+    func rootTabBar(_ title: LocalizedStringKey, headerScrolledAway: Bool) -> some View {
         modifier(RootTabBar(title: title, headerScrolledAway: headerScrolledAway))
     }
     /// Reports whether this view has scrolled up under the navigation bar.
@@ -256,7 +261,7 @@ extension View {
 /// App Store root-tab header: large title with the trailing control (the
 /// account avatar) on the same line, instead of a separate toolbar row.
 struct PageHeader<Trailing: View>: View {
-    let title: String
+    let title: LocalizedStringKey
     @ViewBuilder var trailing: Trailing
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -268,7 +273,7 @@ struct PageHeader<Trailing: View>: View {
     }
 }
 extension PageHeader where Trailing == EmptyView {
-    init(title: String) { self.init(title: title) { EmptyView() } }
+    init(title: LocalizedStringKey) { self.init(title: title) { EmptyView() } }
 }
 
 struct TaskStatusPill: View {
@@ -296,7 +301,7 @@ struct TaskStatusPill: View {
 
 /// Small outlined capsule for platform and state tags (iOS, 已下架…).
 struct TagBadge: View {
-    let text: String
+    let text: LocalizedStringKey
     var tint: Color = .secondary
     var body: some View {
         Text(text)
@@ -327,7 +332,8 @@ struct AppSkeleton: View {
 
 /// One cell of the App Store product page's horizontal info strip.
 struct InfoStripItem: View {
-    let caption: String
+    let caption: LocalizedStringKey
+    /// Store data (version, size, category): already in its final language.
     let value: String
     var detail: String? = nil
     var symbol: String? = nil

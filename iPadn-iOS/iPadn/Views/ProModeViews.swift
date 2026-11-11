@@ -62,14 +62,14 @@ struct CredentialsView: View {
         }
     }
     private func save(_ value: String) {
-        do { try apple.setGUID(value); store.infoMessage = "已修改设备标识" }
+        do { try apple.setGUID(value); store.infoMessage = AppText.text("已修改设备标识") }
         catch { store.errorMessage = error.localizedDescription }
     }
     private func copy(_ value: String, secret: Bool) {
         var options: [UIPasteboard.OptionsKey: Any] = [.localOnly: true]
         if secret { options[.expirationDate] = Date().addingTimeInterval(120) }
         UIPasteboard.general.setItems([[UTType.plainText.identifier: value]], options: options)
-        store.infoMessage = "已拷贝"
+        store.infoMessage = AppText.text("已拷贝")
     }
 }
 
@@ -113,7 +113,7 @@ enum PackageContents {
     static func extract(_ path: String, from file: URL) throws -> URL {
         let archive = try Archive(url: file, accessMode: .read)
         guard PackageService.isSafeArchivePath(path), let entry = archive[path], entry.type == .file else {
-            throw ToolError.message("找不到这个文件")
+            throw ToolError.message(AppText.text("找不到这个文件"))
         }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("PackageContents", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -122,7 +122,7 @@ enum PackageContents {
         let checksum = try archive.extract(entry, to: destination)
         guard checksum == entry.checksum else {
             try? FileManager.default.removeItem(at: folder)
-            throw ToolError.message("安装包已损坏，请重新下载")
+            throw ToolError.message(AppText.text("安装包已损坏，请重新下载"))
         }
         return destination
     }
@@ -137,7 +137,7 @@ struct PackageContentsView: View {
     @State private var items: [PackageItem]?
     @State private var failure: String?
     @State private var query = ""
-    private var title: String { folder.isEmpty ? "安装包内容" : (folder as NSString).lastPathComponent }
+    private var title: String { folder.isEmpty ? AppText.text("安装包内容") : (folder as NSString).lastPathComponent }
     var body: some View {
         let all = items ?? preloaded
         List {
@@ -176,7 +176,7 @@ struct PackageContentsView: View {
             guard items == nil, preloaded == nil else { return }
             let url = file
             do { items = try await Task.detached(priority: .userInitiated) { try PackageContents.items(url) }.value }
-            catch { failure = "无法读取安装包内容。" }
+            catch { failure = AppText.text("无法读取安装包内容。") }
         }
     }
     static func symbol(_ name: String) -> String {
@@ -261,7 +261,7 @@ private struct PackageFileView: View {
     nonisolated static func shortened(_ text: String) -> String {
         let limit = 20_000
         guard text.count > limit else { return text }
-        return String(text.prefix(limit)) + "\n\n…（仅显示前 \(limit) 个字符，完整内容请提取后查看）"
+        return String(text.prefix(limit)) + AppText.text("\n\n…（仅显示前 \(limit) 个字符，完整内容请提取后查看）")
     }
     /// Text as is; property lists (often binary) as XML.
     nonisolated static func readable(_ data: Data) -> String? {

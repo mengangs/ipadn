@@ -15,15 +15,15 @@ enum LocalInstallationIdentityFactory {
             let root: [String: Any] = [
                 "PayloadType": "com.apple.security.root", "PayloadVersion": 1,
                 "PayloadIdentifier": "app.local.iPadn.installation.root." + identifier.uuidString,
-                "PayloadUUID": identifier.uuidString, "PayloadDisplayName": "iPadn 本机安装 CA",
-                "PayloadDescription": "仅用于信任此设备上 iPadn 创建的安装服务器。",
+                "PayloadUUID": identifier.uuidString, "PayloadDisplayName": AppText.text("iPadn 本机安装 CA"),
+                "PayloadDescription": AppText.text("仅用于信任此设备上 iPadn 创建的安装服务器。"),
                 "PayloadCertificateFileName": "iPadn-local-root.cer", "PayloadContent": rootCertificate
             ]
             return try PropertyListSerialization.data(fromPropertyList: [
                 "PayloadType": "Configuration", "PayloadVersion": 1,
                 "PayloadIdentifier": "app.local.iPadn.installation." + identifier.uuidString,
-                "PayloadUUID": UUID().uuidString, "PayloadDisplayName": "iPadn 本机安装证书",
-                "PayloadDescription": "由此设备上的 iPadn 创建。安装后在设置中为该 CA 启用完全信任，才能使用本机 HTTPS 安装。",
+                "PayloadUUID": UUID().uuidString, "PayloadDisplayName": AppText.text("iPadn 本机安装证书"),
+                "PayloadDescription": AppText.text("由此设备上的 iPadn 创建。安装后在设置中为该 CA 启用完全信任，才能使用本机 HTTPS 安装。"),
                 "PayloadContent": [root]
             ], format: .xml, options: 0)
         }
@@ -53,7 +53,7 @@ enum LocalInstallationIdentityFactory {
     /// (pbeWithSHAAnd3-KeyTripleDES-CBC; iOS 26 ignores unencrypted keyBags)
     /// and the certificates in plain cert bags, leaf first.
     static func pkcs12(privateKeyInfo keyInfo: Data, certificates: [Data], password: String) throws -> Data {
-        guard let leaf = certificates.first else { throw ToolError.message("证书链为空") }
+        guard let leaf = certificates.first else { throw ToolError.message(AppText.text("证书链为空")) }
         let keyID = Data(Insecure.SHA1.hash(data: leaf))
         let attributes = DER.value(0x31, DER.sequence([DER.oid("1.2.840.113549.1.9.21"), DER.value(0x31, DER.value(0x04, keyID))]))
         let keySalt = try random(8), keyIterations = 2048
@@ -86,25 +86,25 @@ enum LocalInstallationIdentityFactory {
         var error: Unmanaged<CFError>?
         guard let key = SecKeyCreateRandomKey([kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
             kSecAttrKeySizeInBits as String: 2048] as CFDictionary, &error) else {
-            throw ToolError.message("无法创建本机安装密钥：\(error?.takeRetainedValue().localizedDescription ?? "系统错误")")
+            throw ToolError.message(AppText.text("无法创建本机安装密钥：\(error?.takeRetainedValue().localizedDescription ?? AppText.text("系统错误"))"))
         }
         return key
     }
     private static func externalBytes(_ key: SecKey) throws -> Data {
         var error: Unmanaged<CFError>?
         guard let data = SecKeyCopyExternalRepresentation(key, &error) as Data? else {
-            throw ToolError.message("无法编码本机安装密钥")
+            throw ToolError.message(AppText.text("无法编码本机安装密钥"))
         }
         return data
     }
     private static func publicBytes(_ key: SecKey) throws -> Data {
-        guard let publicKey = SecKeyCopyPublicKey(key) else { throw ToolError.message("无法读取安装公钥") }
+        guard let publicKey = SecKeyCopyPublicKey(key) else { throw ToolError.message(AppText.text("无法读取安装公钥")) }
         return try externalBytes(publicKey)
     }
     private static func random(_ count: Int) throws -> Data {
         var data = Data(count: count)
         let status = data.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!) }
-        guard status == errSecSuccess else { throw ToolError.message("系统随机数生成失败") }
+        guard status == errSecSuccess else { throw ToolError.message(AppText.text("系统随机数生成失败")) }
         return data
     }
     private static let rsaAlgorithm = DER.sequence([DER.oid("1.2.840.113549.1.1.1"), DER.value(0x05, Data())])
@@ -140,7 +140,7 @@ enum LocalInstallationIdentityFactory {
             DER.sequence([rsaAlgorithm, DER.value(0x03, Data([0]) + publicKey)]), DER.value(0xa3, DER.sequence(extensions))])
         var error: Unmanaged<CFError>?
         guard let signature = SecKeyCreateSignature(signingKey, .rsaSignatureMessagePKCS1v15SHA256, tbs as CFData, &error) as Data? else {
-            throw ToolError.message("无法签发本机安装证书")
+            throw ToolError.message(AppText.text("无法签发本机安装证书"))
         }
         return DER.sequence([tbs, signatureAlgorithm, DER.value(0x03, Data([0]) + signature)])
     }
@@ -194,7 +194,7 @@ enum LocalInstallationIdentityFactory {
                 }
             }
         }
-        guard status == CCCryptorStatus(kCCSuccess) else { throw ToolError.message("无法加密本机安装密钥") }
+        guard status == CCCryptorStatus(kCCSuccess) else { throw ToolError.message(AppText.text("无法加密本机安装密钥")) }
         return Data(output.prefix(written))
     }
 }

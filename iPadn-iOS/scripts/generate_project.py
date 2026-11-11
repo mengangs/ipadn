@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate a standard, shared-scheme Xcode project without requiring XcodeGen."""
+import argparse
 import hashlib
 import json
 import plistlib
@@ -8,6 +9,16 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# `xcodebuild -exportLocalizations` refuses to run when the project's
+# development language differs from a string catalog's source language, so
+# extraction needs a throwaway project whose development language is Chinese.
+# The shipped project keeps English as its development language: devices in
+# languages the app doesn't ship then see English rather than Chinese.
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--development-language", default="en",
+                    help="Only for -exportLocalizations; regenerating without it restores en.")
+OPTIONS = parser.parse_args()
 objects = {}
 
 def uid(name):
@@ -37,7 +48,10 @@ for path in sorted((ROOT / "iPadn").rglob("*.swift")):
     app_files.append(reference)
     sources.append(add("Build/" + relative, "PBXBuildFile", fileRef=reference))
 resources = []
-for path, file_type in [("Resources/SAPRuntime", "folder"), ("Resources/Assets.xcassets", "folder.assetcatalog"), ("Resources/PrivacyInfo.xcprivacy", "text.xml"), ("Resources/app-name-directory.json", "text.json")]:
+# String catalogs hold every user-facing string. The source language stays
+# Chinese (the keys are the Chinese text); English is translated in the catalog.
+for path, file_type in [("Resources/SAPRuntime", "folder"), ("Resources/Assets.xcassets", "folder.assetcatalog"), ("Resources/PrivacyInfo.xcprivacy", "text.xml"), ("Resources/app-name-directory.json", "text.json"),
+                       ("Resources/Localizable.xcstrings", "text.json.xcstrings"), ("Resources/InfoPlist.xcstrings", "text.json.xcstrings"), ("Resources/AppShortcuts.xcstrings", "text.json.xcstrings")]:
     reference = add("File/" + path, "PBXFileReference", lastKnownFileType=file_type, path=path, sourceTree="<group>")
     app_files.append(reference)
     resources.append(add("Build/" + path, "PBXBuildFile", fileRef=reference))
@@ -91,7 +105,8 @@ base = {"IPHONEOS_DEPLOYMENT_TARGET": "17.0", "SDKROOT": "iphoneos", "SWIFT_VERS
 project_configs = configs("Project", base, {"SWIFT_COMPILATION_MODE": "wholemodule", "VALIDATE_PRODUCT": "YES"})
 app_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
                 "DEVELOPMENT_TEAM": "", "TARGETED_DEVICE_FAMILY": "1,2", "INFOPLIST_FILE": "iPadn/Info.plist",
-                "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": "1.9.0", "CURRENT_PROJECT_VERSION": "25",
+                "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": "1.9.1", "CURRENT_PROJECT_VERSION": "26",
+                "SWIFT_EMIT_LOC_STRINGS": "YES", "LOCALIZATION_PREFERS_STRING_CATALOGS": "YES",
                 "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
                 "ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS": "YES", "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME": "AccentColor",
                 "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks"],
@@ -138,6 +153,11 @@ for path in sorted((ROOT / "iPadnLiveActivity").glob("*.swift")):
     extension_files.append(reference)
     extension_sources.append(add("ExtensionBuild/" + path.name, "PBXBuildFile", fileRef=reference))
 extension_files.append(add("ExtensionInfoPlist", "PBXFileReference", lastKnownFileType="text.plist.xml", path="Info.plist", sourceTree="<group>"))
+# The extension runs in its own process and reads its own string catalog.
+extension_catalog = add("ExtensionFile/Localizable.xcstrings", "PBXFileReference", lastKnownFileType="text.json.xcstrings", path="Localizable.xcstrings", sourceTree="<group>")
+extension_files.append(extension_catalog)
+extension_resources = add("ExtensionResources", "PBXResourcesBuildPhase", buildActionMask="2147483647",
+                          files=[add("ExtensionBuild/Localizable.xcstrings", "PBXBuildFile", fileRef=extension_catalog)], runOnlyForDeploymentPostprocessing="0")
 objects[root_group]["children"].append(add("ExtensionGroup", "PBXGroup", children=extension_files, path="iPadnLiveActivity", sourceTree="<group>"))
 extension_phase = add("ExtensionSources", "PBXSourcesBuildPhase", buildActionMask="2147483647", files=extension_sources, runOnlyForDeploymentPostprocessing="0")
 extension_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn.LiveActivity", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
@@ -145,9 +165,10 @@ extension_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn.LiveActivity
                       "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": app_settings["MARKETING_VERSION"],
                       "CURRENT_PROJECT_VERSION": app_settings["CURRENT_PROJECT_VERSION"], "SKIP_INSTALL": "YES",
                       "APPLICATION_EXTENSION_API_ONLY": "YES",
+                      "SWIFT_EMIT_LOC_STRINGS": "YES", "LOCALIZATION_PREFERS_STRING_CATALOGS": "YES",
                       "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks"]}
 extension_configs = configs("Extension", extension_settings)
-add("ExtensionTarget", "PBXNativeTarget", buildConfigurationList=extension_configs, buildPhases=[extension_phase], buildRules=[], dependencies=[],
+add("ExtensionTarget", "PBXNativeTarget", buildConfigurationList=extension_configs, buildPhases=[extension_phase, extension_resources], buildRules=[], dependencies=[],
     name="iPadnLiveActivity", productName="iPadnLiveActivity", productReference=extension_product,
     productType="com.apple.product-type.app-extension")
 extension_proxy = add("ExtensionProxy", "PBXContainerItemProxy", containerPortal=uid("Project"), proxyType="1", remoteGlobalIDString=extension_id, remoteInfo="iPadnLiveActivity")
@@ -157,8 +178,10 @@ objects[app_id]["buildPhases"].append(add("EmbedExtensions", "PBXCopyFilesBuildP
     dstSubfolderSpec="13", files=[embed], name="Embed Foundation Extensions", runOnlyForDeploymentPostprocessing="0"))
 project_id = add("Project", "PBXProject", attributes={"BuildIndependentTargetsInParallel": "1", "LastUpgradeCheck": "1600",
     "TargetAttributes": {app_id: {"CreatedOnToolsVersion": "16.0"}, test_id: {"CreatedOnToolsVersion": "16.0", "TestTargetID": app_id}}},
-    buildConfigurationList=project_configs, compatibilityVersion="Xcode 14.0", developmentRegion="zh-Hans",
-    hasScannedForEncodings="0", knownRegions=["zh-Hans", "en", "Base"], mainGroup=root_group, productRefGroup=products,
+    # English is the fallback for devices whose language the app doesn't ship,
+    # while the Chinese source strings stay the keys of the string catalogs.
+    buildConfigurationList=project_configs, compatibilityVersion="Xcode 14.0", developmentRegion=OPTIONS.development_language,
+    hasScannedForEncodings="0", knownRegions=["zh-Hans", "en", "zh-Hant", "ja", "ko", "ru", "es", "fr", "de", "pt-BR", "ar", "Base"], mainGroup=root_group, productRefGroup=products,
     projectDirPath="", projectRoot="", targets=[app_id, test_id, ui_id, extension_id], packageReferences=[package])
 
 def render(value, indent=0):

@@ -7,17 +7,17 @@ struct HTTPByteRange: Equatable {
     let end: UInt64
     var count: UInt64 { end - start + 1 }
     static func parse(_ header: String, size: UInt64) throws -> HTTPByteRange {
-        guard size > 0, header.hasPrefix("bytes="), !header.contains(",") else { throw ToolError.message("无效的 Range 请求") }
+        guard size > 0, header.hasPrefix("bytes="), !header.contains(",") else { throw ToolError.message(AppText.text("无效的 Range 请求")) }
         let parts = header.dropFirst(6).split(separator: "-", omittingEmptySubsequences: false)
-        guard parts.count == 2 else { throw ToolError.message("无效的 Range 请求") }
+        guard parts.count == 2 else { throw ToolError.message(AppText.text("无效的 Range 请求")) }
         if parts[0].isEmpty {
-            guard let suffix = UInt64(parts[1]), suffix > 0 else { throw ToolError.message("无效的 Range 请求") }
+            guard let suffix = UInt64(parts[1]), suffix > 0 else { throw ToolError.message(AppText.text("无效的 Range 请求")) }
             return HTTPByteRange(start: size - min(size, suffix), end: size - 1)
         }
         guard let start = UInt64(parts[0]), start < size,
-              parts[1].isEmpty || UInt64(parts[1]) != nil else { throw ToolError.message("Range 超出文件范围") }
+              parts[1].isEmpty || UInt64(parts[1]) != nil else { throw ToolError.message(AppText.text("Range 超出文件范围")) }
         let end = parts[1].isEmpty ? size - 1 : min(UInt64(parts[1])!, size - 1)
-        guard end >= start else { throw ToolError.message("Range 超出文件范围") }
+        guard end >= start else { throw ToolError.message(AppText.text("Range 超出文件范围")) }
         return HTTPByteRange(start: start, end: end)
     }
 }
@@ -179,7 +179,7 @@ final class LoopbackServer: @unchecked Sendable {
                         let created = self.chain.count > 1
                             ? sec_identity_create_with_certificates(identity, self.chain as CFArray)
                             : sec_identity_create(identity)
-                        guard let localIdentity = created else { throw ToolError.message("无法加载安装服务证书") }
+                        guard let localIdentity = created else { throw ToolError.message(AppText.text("无法加载安装服务证书")) }
                         let tls = NWProtocolTLS.Options()
                         sec_protocol_options_set_local_identity(tls.securityProtocolOptions, localIdentity)
                         sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)
@@ -213,7 +213,7 @@ final class LoopbackServer: @unchecked Sendable {
                             InstallLog.shared.add((self.identity == nil ? "http" : "https") + " server closed")
                             self.lock.lock(); self.readyURL = nil; self.lock.unlock()
                             self.listener = nil
-                            self.finishStart(.failure(ToolError.message("安装已中断，请重试")))
+                            self.finishStart(.failure(ToolError.message(AppText.text("安装已中断，请重试"))))
                         case .waiting(let error):
                             // The port can't be bound right now: fail instead of
                             // leaving every caller of start() waiting forever.
@@ -270,7 +270,7 @@ final class LoopbackServer: @unchecked Sendable {
     deinit { listener?.cancel() }
 
     func register(_ url: URL) throws -> URL {
-        guard let baseURL = baseURL, url.isFileURL else { throw ToolError.message("安装服务未就绪，请重试") }
+        guard let baseURL = baseURL, url.isFileURL else { throw ToolError.message(AppText.text("安装服务未就绪，请重试")) }
         let key = UUID().uuidString
         lock.lock(); registeredFiles[key] = url
         if compatibilityMode { compatibilityFiles[url.lastPathComponent] = url }
@@ -279,7 +279,7 @@ final class LoopbackServer: @unchecked Sendable {
     }
 
     func register(data: Data, contentType: String) throws -> URL {
-        guard let baseURL else { throw ToolError.message("安装服务未就绪，请重试") }
+        guard let baseURL else { throw ToolError.message(AppText.text("安装服务未就绪，请重试")) }
         let key = UUID().uuidString
         lock.lock(); registeredData[key] = (data, contentType); lock.unlock()
         return baseURL.appendingPathComponent("data").appendingPathComponent(key)

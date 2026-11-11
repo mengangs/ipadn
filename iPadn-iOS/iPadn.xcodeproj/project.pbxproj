@@ -29,6 +29,16 @@
 			isa = PBXBuildFile;
 			fileRef = 5D8D68F1FED8399BDA1BAE05;
 		};
+		2E42BE3C9237CFD2F7298A38 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/Localization.swift";
+			sourceTree = "<group>";
+		};
+		4957CC925B3106081AD1F510 = {
+			isa = PBXBuildFile;
+			fileRef = 2E42BE3C9237CFD2F7298A38;
+		};
 		E5897D35708E9120B8647A2F = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -599,6 +609,36 @@
 			isa = PBXBuildFile;
 			fileRef = 1CDCE2D7B842ECAE64295E63;
 		};
+		03D6FDAD4474AB42F9FEA974 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.json.xcstrings;
+			path = "Resources/Localizable.xcstrings";
+			sourceTree = "<group>";
+		};
+		C264D09531E6FF7826C42F20 = {
+			isa = PBXBuildFile;
+			fileRef = 03D6FDAD4474AB42F9FEA974;
+		};
+		0DCDD6B6150838BA6D7A2C9C = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.json.xcstrings;
+			path = "Resources/InfoPlist.xcstrings";
+			sourceTree = "<group>";
+		};
+		205361543E379B7DFD2D6733 = {
+			isa = PBXBuildFile;
+			fileRef = 0DCDD6B6150838BA6D7A2C9C;
+		};
+		393950C9B69B23E630913278 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.json.xcstrings;
+			path = "Resources/AppShortcuts.xcstrings";
+			sourceTree = "<group>";
+		};
+		85310CBF180B460ABE6CA437 = {
+			isa = PBXBuildFile;
+			fileRef = 393950C9B69B23E630913278;
+		};
 		B16C09C8BC30D4CC7B42836D = {
 			isa = PBXFileReference;
 			lastKnownFileType = image.png;
@@ -955,6 +995,7 @@
 			isa = PBXGroup;
 			children = (
 				5D8D68F1FED8399BDA1BAE05,
+				2E42BE3C9237CFD2F7298A38,
 				E5897D35708E9120B8647A2F,
 				E62D865FB463397117968832,
 				D5827E778FA6FF7F69E8755C,
@@ -1012,6 +1053,9 @@
 				8FEB83A29956DE0B59952846,
 				8D670B021DC9E9A81AD94FB4,
 				1CDCE2D7B842ECAE64295E63,
+				03D6FDAD4474AB42F9FEA974,
+				0DCDD6B6150838BA6D7A2C9C,
+				393950C9B69B23E630913278,
 				B16C09C8BC30D4CC7B42836D,
 				07498F436E837AD5A8268353,
 				870DDB71219A07952B19FBC0,
@@ -1084,6 +1128,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				28794B21362D7DD58544D5B3,
+				4957CC925B3106081AD1F510,
 				41112957FFC8DF4DD3F48FE2,
 				8EE231649195F263F52CE685,
 				7097832CBF79ADFF210E5E91,
@@ -1148,6 +1193,9 @@
 				FE8AD461736E2C3E2C8BE36E,
 				FE7CC9734AD8010D74C8E69A,
 				B03D1A024E90C64DA4480E67,
+				C264D09531E6FF7826C42F20,
+				205361543E379B7DFD2D6733,
+				85310CBF180B460ABE6CA437,
 				5D0F67C75A14F5F9E05AFB4A,
 				C803CD311DF260E5BC8296F3,
 				060DF06315B22D1494FBA5C1,
@@ -1306,8 +1354,10 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 				INFOPLIST_FILE = "iPadn/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
-				MARKETING_VERSION = 1.9.0;
-				CURRENT_PROJECT_VERSION = 25;
+				MARKETING_VERSION = 1.9.1;
+				CURRENT_PROJECT_VERSION = 26;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -1343,8 +1393,10 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 				INFOPLIST_FILE = "iPadn/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
-				MARKETING_VERSION = 1.9.0;
-				CURRENT_PROJECT_VERSION = 25;
+				MARKETING_VERSION = 1.9.1;
+				CURRENT_PROJECT_VERSION = 26;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -1626,6 +1678,24 @@
 			path = Info.plist;
 			sourceTree = "<group>";
 		};
+		747698A3D65DB53772BB4CD9 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.json.xcstrings;
+			path = Localizable.xcstrings;
+			sourceTree = "<group>";
+		};
+		27F6B51C72614BFE5D34792A = {
+			isa = PBXBuildFile;
+			fileRef = 747698A3D65DB53772BB4CD9;
+		};
+		EED3A2B96866204B3B7B2916 = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				27F6B51C72614BFE5D34792A,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		39E53A5B4D47BF25EC27D946 = {
 			isa = PBXGroup;
 			children = (
@@ -1633,6 +1703,7 @@
 				22BBF0B88BEA14A3FDE85551,
 				A6453BEED269FDBE2052F83D,
 				947188B458A1FB28E930E1FF,
+				747698A3D65DB53772BB4CD9,
 			);
 			path = iPadnLiveActivity;
 			sourceTree = "<group>";
@@ -1657,10 +1728,12 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 				INFOPLIST_FILE = "iPadnLiveActivity/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
-				MARKETING_VERSION = 1.9.0;
-				CURRENT_PROJECT_VERSION = 25;
+				MARKETING_VERSION = 1.9.1;
+				CURRENT_PROJECT_VERSION = 26;
 				SKIP_INSTALL = YES;
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1683,10 +1756,12 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 				INFOPLIST_FILE = "iPadnLiveActivity/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
-				MARKETING_VERSION = 1.9.0;
-				CURRENT_PROJECT_VERSION = 25;
+				MARKETING_VERSION = 1.9.1;
+				CURRENT_PROJECT_VERSION = 26;
 				SKIP_INSTALL = YES;
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1710,6 +1785,7 @@
 			buildConfigurationList = A6E42B98CB6A30B792DCE7C7;
 			buildPhases = (
 				ABAB1DAEFEE463CAF5CC7A31,
+				EED3A2B96866204B3B7B2916,
 			);
 			buildRules = (
 			);
@@ -1769,11 +1845,20 @@
 			};
 			buildConfigurationList = 49B2A46CE88C43D97CE97256;
 			compatibilityVersion = "Xcode 14.0";
-			developmentRegion = "zh-Hans";
+			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				"zh-Hans",
 				en,
+				"zh-Hant",
+				ja,
+				ko,
+				ru,
+				es,
+				fr,
+				de,
+				"pt-BR",
+				ar,
 				Base,
 			);
 			mainGroup = 97A63A01E61FD439E8760B8E;

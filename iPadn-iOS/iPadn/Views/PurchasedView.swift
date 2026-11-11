@@ -28,8 +28,8 @@ struct PurchasedView: View {
         }
     }
     /// Download state per App ID: a newer store version first, then downloaded.
-    private var downloadBadges: [String: (text: String, tint: Color)] {
-        var badges: [String: (text: String, tint: Color)] = [:]
+    private var downloadBadges: [String: (text: LocalizedStringKey, tint: Color)] {
+        var badges: [String: (text: LocalizedStringKey, tint: Color)] = [:]
         // Purchases are iPhone and iPad apps; a Mac or Apple TV download under
         // a shared App ID is a different package.
         for job in manager.jobs where job.status == .completed && [AppPlatform.iOS, .iPadOS].contains(job.updatePlatform) {
@@ -53,16 +53,16 @@ struct PurchasedView: View {
     private func findDelisted() {
         Task {
             guard let count = await store.checkOwnedListings() else {
-                if !store.checkingListings { store.errorMessage = "暂时无法检查商店状态，请稍后重试。" }
+                if !store.checkingListings { store.errorMessage = AppText.text("暂时无法检查商店状态，请稍后重试。") }
                 return
             }
-            if count == 0 { store.infoMessage = "所有已购应用都还在售"; return }
+            if count == 0 { store.infoMessage = AppText.text("所有已购应用都还在售"); return }
             withAnimation { delistedOnly = true; term = ""; query = ""; months = 0 }
         }
     }
     private func export() {
         do { share = SharedFile(url: try store.exportOwned()) }
-        catch { store.errorMessage = "导出失败：" + error.localizedDescription }
+        catch { store.errorMessage = AppText.text("导出失败：\(error.localizedDescription)") }
     }
     /// Adds the selected apps one after another; the list order is kept.
     private func downloadSelected() {
@@ -78,7 +78,7 @@ struct PurchasedView: View {
             batchProgress = nil
             if result.added > 0 {
                 selection.removeAll(); selecting = false
-                store.infoMessage = "已添加 \(result.added) 个下载任务"
+                store.infoMessage = AppText.text("已添加 \(result.added) 个下载任务")
             }
             if !result.failures.isEmpty { store.errorMessage = result.failures.joined(separator: "\n") }
         }
@@ -137,7 +137,8 @@ struct PurchasedView: View {
                             Button {
                                 download(backups.map(\.storeApp))
                             } label: {
-                                Label(batchProgress.map { "正在添加 \($0.done)/\($0.total)" } ?? "全部备份（\(backups.count) 个）",
+                                Label(batchProgress.map { AppText.text("正在添加 \($0.done)/\($0.total)") }
+                                        ?? AppText.text("全部备份（\(backups.count) 个）"),
                                       systemImage: "square.and.arrow.down.on.square")
                                     .fontWeight(.semibold)
                             }
@@ -158,7 +159,7 @@ struct PurchasedView: View {
                     Section {
                         ForEach(visible) { app in
                             let subtitle = app.purchaseDate.map {
-                                "购于 \($0.formatted(.dateTime.year().month(.defaultDigits).day()))"
+                                AppText.text("购于 \($0.formatted(.dateTime.year().month(.defaultDigits).day()))")
                             }
                             if selecting {
                                 Button { toggle(app.id) } label: {
@@ -172,12 +173,20 @@ struct PurchasedView: View {
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel((selection.contains(app.id) ? "取消选择 " : "选择 ") + app.name)
+                                .accessibilityLabel(selection.contains(app.id) ? AppText.text("取消选择 \(app.name)") : AppText.text("选择 \(app.name)"))
                             } else {
                                 NavigationLink { AppDetailView(app: storeApp(app)) } label: {
                                     AppRow(app: storeApp(app), subtitle: subtitle, badge: badges[app.id]) {
-                                        RowCapsule(title: "下载") { getting = app.storeApp; UX.feedback() }
+                                        // The App Store's re-download glyph leaves room for the
+                                        // purchase date in longer languages.
+                                        Image(systemName: "icloud.and.arrow.down")
+                                            .font(.title3.weight(.medium)).foregroundStyle(UX.tint)
+                                            .frame(width: 34, height: 44).contentShape(Rectangle())
+                                            .highPriorityGesture(TapGesture().onEnded { getting = app.storeApp; UX.feedback() })
+                                            .accessibilityElement(children: .ignore)
+                                            .accessibilityAddTraits(.isButton)
                                             .accessibilityLabel("下载 \(app.name)")
+                                            .accessibilityAction { getting = app.storeApp; UX.feedback() }
                                     }
                                 }
                             }

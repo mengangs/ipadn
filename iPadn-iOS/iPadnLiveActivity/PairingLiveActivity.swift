@@ -12,20 +12,20 @@ struct iPadnLiveActivityBundle: WidgetBundle {
 private extension PairingActivityAttributes.ContentState {
     var title: String {
         switch step {
-        case 1: return "打开「设置」"
-        case 2: return "正在配对"
-        case 3: return "输入配对码"
-        case 4: return "配对完成"
-        default: return "配对未完成"
+        case 1: return String(localized: "打开「设置」")
+        case 2: return String(localized: "正在配对")
+        case 3: return String(localized: "输入配对码")
+        case 4: return String(localized: "配对完成")
+        default: return String(localized: "配对未完成")
         }
     }
     func detail(host: String) -> String {
         switch step {
-        case 1: return "隐私与安全性 › 开发者模式 › 与 \(host) 配对"
-        case 2: return "设备已连接，正在生成配对码"
-        case 3: return "在「设置」中输入下面的配对码"
-        case 4: return "回到 \(host) 继续安装"
-        default: return message ?? "回到 \(host) 重试"
+        case 1: return String(localized: "隐私与安全性 › 开发者模式 › 与 \(host) 配对")
+        case 2: return String(localized: "设备已连接，正在生成配对码")
+        case 3: return String(localized: "在「设置」中输入下面的配对码")
+        case 4: return String(localized: "回到 \(host) 继续安装")
+        default: return message ?? String(localized: "回到 \(host) 重试")
         }
     }
     var symbol: String {
@@ -125,7 +125,7 @@ struct PairingLiveActivity: Widget {
                 if let code = state.code, state.step == 3 {
                     CodeText(code: code, size: 15).foregroundStyle(state.tint)
                 } else {
-                    Text(state.step == 4 ? "完成" : "\(min(max(state.step, 1), 3))/3").font(.caption.weight(.semibold))
+                    Text(state.step == 4 ? String(localized: "完成") : "\(min(max(state.step, 1), 3))/3").font(.caption.weight(.semibold))
                 }
             } minimal: {
                 AppMarkView(size: 22)

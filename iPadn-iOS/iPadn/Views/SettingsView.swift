@@ -36,7 +36,7 @@ struct SettingsView: View {
                     }
                 Toggle("兼容下载模式", isOn: $store.settings.compatibleDownloadMode)
                 if store.downloads.backgroundDownloadsUnavailable && !store.settings.compatibleDownloadMode {
-                    Button("重新尝试后台下载") { store.downloads.retryBackgroundDownloads(); store.infoMessage = "下一个下载任务会重新尝试后台下载" }
+                    Button(AppText.text("重新尝试后台下载")) { store.downloads.retryBackgroundDownloads(); store.infoMessage = AppText.text("下一个下载任务会重新尝试后台下载") }
                 }
             } header: {
                 Text("下载")
@@ -122,7 +122,7 @@ struct SettingsView: View {
                             }
                             Spacer()
                             Text(source.enabled ? "已启用" : "已停用").font(.caption).foregroundStyle(.secondary)
-                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                            Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                         }
                     }
                     .accessibilityIdentifier("settings.source." + source.name)
@@ -148,7 +148,7 @@ struct SettingsView: View {
             }
             Section {
                 Toggle("加快重复下载", isOn: $store.settings.useSignerCache)
-                Button("清除缓存") { store.signer.clearCache(); store.infoMessage = "已清除缓存" }
+                Button("清除缓存") { store.signer.clearCache(); store.infoMessage = AppText.text("已清除缓存") }
             } header: { Text("性能") } footer: {
                 Text("缓存仅在本次运行期间保留。")
             }
@@ -195,8 +195,8 @@ struct SettingsView: View {
                 Button {
                     Task {
                         let reached = await store.checkAppUpdate(force: true)
-                        if !reached { store.errorMessage = "暂时无法检查更新，请稍后重试。" }
-                        else if store.appUpdate == nil { store.infoMessage = "已是最新版本" }
+                        if !reached { store.errorMessage = AppText.text("暂时无法检查更新，请稍后重试。") }
+                        else if store.appUpdate == nil { store.infoMessage = AppText.text("已是最新版本") }
                     }
                 } label: {
                     HStack {
@@ -227,7 +227,7 @@ struct SettingsView: View {
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
         .actionConfirmation(isPresented: $resetSettings, title: "恢复默认设置？", message: "账号、已下载的安装包和已购记录不受影响。", confirmTitle: "恢复默认设置") { store.settings = ToolSettings() }
         .actionConfirmation(isPresented: $clearCache, title: "清除历史版本缓存？", confirmTitle: "清除缓存") {
-            Task { do { try await store.versions.clearCache(); store.infoMessage = "已清除缓存" } catch { store.errorMessage = error.localizedDescription } }
+            Task { do { try await store.versions.clearCache(); store.infoMessage = AppText.text("已清除缓存") } catch { store.errorMessage = error.localizedDescription } }
         }
     }
 }
@@ -270,7 +270,7 @@ struct SourceCheckLabel: View {
                 Label("可用 · \(versions) 个版本 · \(String(format: "%.1f", seconds)) 秒", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             case .unavailable(let reason):
-                Label("不可用：" + reason, systemImage: "exclamationmark.triangle.fill")
+                Label("不可用：\(reason)", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange).lineLimit(2)
             }
         }
@@ -305,7 +305,7 @@ struct VersionSourceEditor: View {
 struct AddVersionSourceView: View {
     @EnvironmentObject private var store: ToolStore
     @Environment(\.dismiss) private var dismiss
-    @State private var source = VersionSource(name: "新来源", urlTemplate: "https://", containerKey: "data", reverse: false)
+    @State private var source = VersionSource(name: AppText.text("新来源"), urlTemplate: "https://", containerKey: "data", reverse: false)
     @State private var error: String?
     var body: some View {
         NavigationStack {
@@ -315,7 +315,7 @@ struct AddVersionSourceView: View {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("添加") {
                             guard !source.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                                  source.url(for: "123") != nil else { error = "请填写名称，以及包含 {id} 或 {appId} 的 https 接口地址"; return }
+                                  source.url(for: "123") != nil else { error = AppText.text("请填写名称，以及包含 {id} 或 {appId} 的 https 接口地址"); return }
                             store.settings.versionSources.append(source); dismiss()
                         }
                     }

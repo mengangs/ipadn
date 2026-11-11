@@ -88,15 +88,16 @@ struct AppRow<Accessory: View>: View {
     let app: StoreApp
     var subtitle: String? = nil
     /// A short state shown next to the size, e.g. 已下载.
-    var badge: (text: String, tint: Color)? = nil
+    var badge: (text: LocalizedStringKey, tint: Color)? = nil
     @ViewBuilder var accessory: () -> Accessory
     var body: some View {
         HStack(spacing: 14) {
             AppIcon(url: app.iconURL, size: 64)
             VStack(alignment: .leading, spacing: 3) {
                 Text(app.name.isEmpty ? app.bundleID : app.name).font(.body.weight(.medium)).lineLimit(2)
-                let detail = subtitle ?? [app.displayCategory, app.version.isEmpty ? "" : "v\(app.version)"]
-                    .filter { !$0.isEmpty }.joined(separator: " · ")
+                // The category gets its own line so a long name in another
+                // language doesn't push the version out of view.
+                let detail = subtitle ?? app.displayCategory
                 if !detail.isEmpty {
                     // Scrolls once in place when the row is too narrow, like download cards.
                     MarqueeText(text: detail).foregroundStyle(.secondary)
@@ -104,7 +105,9 @@ struct AppRow<Accessory: View>: View {
                 HStack(spacing: 6) {
                     if app.isDelisted { TagBadge(text: "已下架", tint: .orange) }
                     if let badge { TagBadge(text: badge.text, tint: badge.tint) }
-                    if app.size > 0 { Text(app.size.byteLabel).font(.caption).foregroundStyle(.tertiary) }
+                    let facts = [subtitle == nil && !app.version.isEmpty ? "v\(app.version)" : "", app.size > 0 ? app.size.byteLabel : ""]
+                        .filter { !$0.isEmpty }.joined(separator: " · ")
+                    if !facts.isEmpty { Text(facts).font(.caption).foregroundStyle(.tertiary).lineLimit(1) }
                 }
             }
             Spacer(minLength: 8)
@@ -114,7 +117,7 @@ struct AppRow<Accessory: View>: View {
     }
 }
 extension AppRow where Accessory == EmptyView {
-    init(app: StoreApp, subtitle: String? = nil, badge: (text: String, tint: Color)? = nil) {
+    init(app: StoreApp, subtitle: String? = nil, badge: (text: LocalizedStringKey, tint: Color)? = nil) {
         self.init(app: app, subtitle: subtitle, badge: badge) { EmptyView() }
     }
 }
@@ -142,7 +145,7 @@ struct RootView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private let destinations = [("搜索", "magnifyingglass"), ("下载", "arrow.down.circle.fill"), ("已购", "bag.fill"), ("账号", "person.crop.circle.fill")]
+    private let destinations: [(title: LocalizedStringKey, symbol: String)] = [("搜索", "magnifyingglass"), ("下载", "arrow.down.circle.fill"), ("已购", "bag.fill"), ("账号", "person.crop.circle.fill")]
     var body: some View {
         Group {
             if sizeClass == .regular {
@@ -150,7 +153,7 @@ struct RootView: View {
                     List(selection: Binding<Int?>(get: { store.tab }, set: { if let value = $0 { store.tab = value } })) {
                         Section {
                             ForEach(0..<destinations.count, id: \.self) { index in
-                                Label(destinations[index].0, systemImage: destinations[index].1).tag(index)
+                                Label(destinations[index].title, systemImage: destinations[index].symbol).tag(index)
                             }
                         }
 
@@ -242,7 +245,7 @@ struct RootView: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.undoNotice?.id)
         .task(id: store.undoNotice?.id) {
             guard let notice = store.undoNotice else { return }
-            UIAccessibility.post(notification: .announcement, argument: notice.message + "，可以撤销")
+            UIAccessibility.post(notification: .announcement, argument: AppText.text("\(notice.message)，可以撤销"))
             do { try await Task.sleep(for: .seconds(5)) } catch { return }
             if store.undoNotice?.id == notice.id { store.undoNotice = nil }
         }
@@ -253,7 +256,9 @@ struct RootView: View {
             // Deterministic geometry checks without changing real notice timing.
             if LocalResources.isPreview && ProcessInfo.processInfo.arguments.contains("--notice-preview") { return }
             #endif
-            do { try await Task.sleep(nanoseconds: 3_500_000_000) } catch { return }
+            // Longer notices (setup steps, other languages) stay up longer.
+            let seconds = min(8, max(3.5, Double(message.count) / 14))
+            do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
             if store.infoMessage == message { store.infoMessage = nil }
         }
         .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
@@ -274,3 +279,35 @@ struct RootView: View {
     }
 }
 
+/// The top notice inside a sheet, which covers RootView's own banner. The
+/// root still times the notice out and announces it; this only shows it.
+private struct SheetNotice: ViewModifier {
+    @EnvironmentObject private var store: ToolStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) {
+            if let message = store.infoMessage {
+                Button { store.infoMessage = nil } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text(message).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }.padding(.horizontal, 18).padding(.vertical, 11).frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+                .frame(maxWidth: 320)
+                .padding(.horizontal, 24).padding(.top, 8)
+                .accessibilityLabel(message).accessibilityHint("点按关闭提示")
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.infoMessage)
+    }
+}
+
+extension View {
+    /// Shows the app's top notice while this view is presented as a sheet.
+    func sheetNotice() -> some View { modifier(SheetNotice()) }
+}

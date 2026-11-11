@@ -16,7 +16,7 @@ enum InstallationCertificate {
             var trust: SecTrust?
             let policy = SecPolicyCreateSSL(true, host as CFString)
             guard SecTrustCreateWithCertificates(certificates as CFArray, policy, &trust) == errSecSuccess,
-                  let trust else { throw ToolError.message("无法检查安装证书") }
+                  let trust else { throw ToolError.message(AppText.text("无法检查安装证书")) }
             SecTrustSetNetworkFetchAllowed(trust, false)
             var error: CFError?
             guard SecTrustEvaluateWithError(trust, &error) else {
@@ -34,8 +34,8 @@ enum InstallationCertificate {
         case untrusted
         var errorDescription: String? {
             switch self {
-            case .outdated: return "安装证书已过期或不包含服务地址，请重新创建或导入证书。"
-            case .untrusted: return "安装证书还没有被信任。请在「设置 › 通用 › 关于本机 › 证书信任设置」中开启对应 CA 的信任。"
+            case .outdated: return AppText.text("安装证书已过期或不包含服务地址，请重新创建或导入证书。")
+            case .untrusted: return AppText.text("安装证书还没有被信任。请在「设置 › 通用 › 关于本机 › 证书信任设置」中开启对应 CA 的信任。")
             }
         }
     }
@@ -45,20 +45,20 @@ enum InstallationCertificate {
          kSecAttrAccount as String: "local-tls"]
     }
     static func importPKCS12(_ data: Data, password: String) throws -> Identity {
-        guard data.count <= 2 * 1024 * 1024 else { throw ToolError.message("证书文件超过 2 MB") }
+        guard data.count <= 2 * 1024 * 1024 else { throw ToolError.message(AppText.text("证书文件超过 2 MB")) }
         var result: CFArray?
         let status = SecPKCS12Import(data as CFData, [kSecImportExportPassphrase as String: password] as CFDictionary, &result)
         guard status == errSecSuccess, let items = result as? [[String: Any]], let item = items.first,
               let value = item[kSecImportItemIdentity as String], CFGetTypeID(value as CFTypeRef) == SecIdentityGetTypeID() else {
-            throw ToolError.message("无法导入证书，请检查密码是否正确")
+            throw ToolError.message(AppText.text("无法导入证书，请检查密码是否正确"))
         }
         let identity = value as! SecIdentity
         var certificate: SecCertificate?
         guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess, let certificate else {
-            throw ToolError.message("证书无效")
+            throw ToolError.message(AppText.text("证书无效"))
         }
         let chain = item[kSecImportItemCertChain as String] as? [SecCertificate] ?? [certificate]
-        return Identity(identity: identity, certificates: chain, name: SecCertificateCopySubjectSummary(certificate) as String? ?? "本地安装证书")
+        return Identity(identity: identity, certificates: chain, name: SecCertificateCopySubjectSummary(certificate) as String? ?? AppText.text("本地安装证书"))
     }
     #if DEBUG
     // Visual preview / UI tests run unsigned, where the simulator keychain
@@ -73,7 +73,7 @@ enum InstallationCertificate {
         var result: CFTypeRef?
         let status = SecItemCopyMatching(request as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess, let data = result as? Data else { throw ToolError.message("无法读取安装证书（\(status)），请解锁设备后重试") }
+        guard status == errSecSuccess, let data = result as? Data else { throw ToolError.message(AppText.text("无法读取安装证书（\(status)），请解锁设备后重试")) }
         return try JSONDecoder().decode(Stored.self, from: data)
     }
     static func load() throws -> Identity? {
@@ -96,7 +96,7 @@ enum InstallationCertificate {
         if status == errSecItemNotFound {
             var item = query; attributes.forEach { item[$0.key] = $0.value }
             let added = SecItemAdd(item as CFDictionary, nil)
-            guard added == errSecSuccess else { throw ToolError.message("无法保存安装证书（\(added)）") }
-        } else if status != errSecSuccess { throw ToolError.message("无法更新安装证书（\(status)）") }
+            guard added == errSecSuccess else { throw ToolError.message(AppText.text("无法保存安装证书（\(added)）")) }
+        } else if status != errSecSuccess { throw ToolError.message(AppText.text("无法更新安装证书（\(status)）")) }
     }
 }

@@ -5,6 +5,14 @@ import CryptoKit
 @testable import iPadn
 
 final class CoreTests: XCTestCase {
+    /// Assertions below check the Chinese copy: pin the language instead of
+    /// following whatever the simulator is set to. Set `locale:` on the
+    /// formatting calls whose numbers or currency symbols are asserted.
+    override func setUp() {
+        super.setUp()
+        AppText.locale = Locale(identifier: "zh-Hans")
+    }
+
     func testPackageCompletionCannotOverwriteSharedIdentifierPrefixAndHandlesLongNames() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -87,11 +95,18 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(WatchService.update(nil, id: "2", country: "CN", listing: nil, now: start).changes, [])
         XCTAssertNotNil(record.recentChange(now: start + 480))
         XCTAssertNil(record.recentChange(now: start + 8 * 86400))
-        XCTAssertEqual(WatchService.format(0, currency: "CNY"), "免费")
-        XCTAssertTrue(WatchService.format(18, currency: "CNY").contains("18"))
-        XCTAssertTrue(WatchService.format(2.99, currency: "USD").contains("2.99"))
+        let savedLanguage = AppText.locale
+        defer { AppText.locale = savedLanguage }
+        AppText.locale = Locale(identifier: "zh-Hans")
+        XCTAssertEqual(WatchService.format(0, currency: "CNY", locale: Locale(identifier: "zh_CN")), "免费")
+        // The word follows the interface language, not the region.
+        AppText.locale = Locale(identifier: "en")
+        XCTAssertEqual(WatchService.format(0, currency: "CNY", locale: Locale(identifier: "zh_CN")), "Free")
+        AppText.locale = Locale(identifier: "zh-Hans")
+        XCTAssertTrue(WatchService.format(18, currency: "CNY", locale: Locale(identifier: "zh_CN")).contains("18"))
+        XCTAssertTrue(WatchService.format(2.99, currency: "USD", locale: Locale(identifier: "zh_CN")).contains("2.99"))
         XCTAssertNil(WatchService.message(.priceRise(from: 1, to: 2), currency: "CNY"))
-        XCTAssertEqual(WatchService.message(.newVersion("2.0"), currency: "CNY"), "有新版本 2.0")
+        XCTAssertEqual(WatchService.message(.newVersion("2.0"), currency: "CNY", locale: Locale(identifier: "zh_CN")), "有新版本 2.0")
         let raw: [String: Any] = ["trackId": 5, "trackName": "P", "price": 4.99, "currency": "USD", "formattedPrice": "$4.99"]
         XCTAssertEqual(StoreService.mapLookup(raw).priceValue, 4.99)
         XCTAssertEqual(StoreService.mapLookup(raw).currency, "USD")
@@ -166,6 +181,13 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(InAppPriceService.nameMap(english: english, localized: chinese.reversed()), [:], "prices must line up")
         XCTAssertEqual(InAppPriceService.nameMap(english: english, localized: Array(chinese.prefix(1))), [:])
         XCTAssertEqual(InAppPriceService.nameMap(english: english, localized: english), [:], "an English page names nothing")
+        XCTAssertEqual(InAppPriceService.nameRegions(language: "zh-Hans-CN"), ["CN"])
+        XCTAssertEqual(InAppPriceService.nameRegions(language: "zh-Hant-HK").first, "HK")
+        XCTAssertEqual(InAppPriceService.nameRegions(language: "ja-CN").first, "JP", "a Japanese interface reads Japanese names, not the CN storefront's")
+        XCTAssertEqual(InAppPriceService.nameRegions(language: "pt-PT").first, "PT")
+        XCTAssertEqual(InAppPriceService.nameRegions(language: "pt-BR").first, "BR")
+        XCTAssertEqual(InAppPriceService.nameRegions(language: "ar-CN").first, "SA")
+        XCTAssertEqual(InAppPriceService.nameRegions(language: "it-IT"), ["IT"])
     }
 
     func testReleaseNotesReadFromVersionHistory() throws {
@@ -808,6 +830,31 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(AppleService.mergedCookie("a=1", with: [], now: now), "a=1")
         // Values containing "=" survive a round trip.
         XCTAssertEqual(AppleService.mergedCookie("tok=ab==; b=2", with: [], now: now), "tok=ab==; b=2")
+    }
+
+    func testRegionLocalesFindTheirScript() {
+        XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh_CN")), "免费")
+        XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh-Hans_CN")), "免费")
+        XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh_TW")), "免費")
+        XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh-Hant_HK")), "免費")
+        XCTAssertTrue(AppText.sameLanguageAndScript("pt-BR", Locale(identifier: "pt_PT")))
+        XCTAssertFalse(AppText.sameLanguageAndScript("zh-Hant", Locale(identifier: "zh_CN")))
+    }
+
+    func testGenreNamesFollowTheInterfaceLanguage() {
+        let saved = AppText.locale
+        defer { AppText.locale = saved }
+        AppText.locale = Locale(identifier: "zh-Hans")
+        XCTAssertEqual(StoreService.localizedGenre("Productivity"), "效率")
+        AppText.locale = Locale(identifier: "ja")
+        XCTAssertEqual(StoreService.localizedGenre("Productivity"), "仕事効率化")
+        AppText.locale = Locale(identifier: "ko")
+        XCTAssertEqual(StoreService.localizedGenre("Photo & Video"), "사진 및 비디오")
+        // English is Apple's own name; unknown genres pass through in every language.
+        AppText.locale = Locale(identifier: "en")
+        XCTAssertEqual(StoreService.localizedGenre("Productivity"), "Productivity")
+        AppText.locale = Locale(identifier: "ja")
+        XCTAssertEqual(StoreService.localizedGenre("Something New"), "Something New")
     }
 
     func testVersionSourceTemplatesAcceptBothPlaceholdersAndOnlyHTTPS() {

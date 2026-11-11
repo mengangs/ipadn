@@ -28,7 +28,7 @@ struct ImportIPAIntent: AppIntent {
         else {
             let name = PackageService.safeName(file.filename)
             guard ["ipa", "zip"].contains(URL(fileURLWithPath: name).pathExtension.lowercased()) else {
-                throw ToolError.message("仅支持 IPA 或 ZIP 文件")
+                throw ToolError.message(AppText.text("仅支持 IPA 或 ZIP 文件"))
             }
             let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "-" + name)
             defer { try? FileManager.default.removeItem(at: temporary) }

@@ -153,7 +153,7 @@ enum AppleAuthentication {
             switch storeMachineAction(raw: raw, response: response) {
             case .reset:
                 guard !didReset, state.isProvisioned else {
-                    throw ToolError.message("设备验证未完成，请稍后重试。")
+                    throw ToolError.message(AppText.text("设备验证未完成，请稍后重试。"))
                 }
                 didReset = true
                 resetProof()
@@ -161,18 +161,18 @@ enum AppleAuthentication {
                 state.isProvisioned = false
             case .provision(let challenge):
                 guard !didProvision else {
-                    throw ToolError.message("设备验证未完成，请稍后重试。")
+                    throw ToolError.message(AppText.text("设备验证未完成，请稍后重试。"))
                 }
                 didProvision = true
                 state.buffered = try await provisionProof(challenge)
                 state.isProvisioned = true
             case .invalidChallenge:
-                throw ToolError.message("设备验证未完成，请稍后重试。")
+                throw ToolError.message(AppText.text("设备验证未完成，请稍后重试。"))
             case nil:
                 return (raw, response)
             }
         }
-        throw ToolError.message("设备验证未完成，请稍后重试。")
+        throw ToolError.message(AppText.text("设备验证未完成，请稍后重试。"))
     }
 
     static func normalizedEndpoint(_ url: URL) -> URL? {
@@ -201,7 +201,7 @@ enum AppleAuthentication {
 
     enum ConfigurationError: String, LocalizedError {
         case missingEndpoint, invalidEndpoint
-        var errorDescription: String? { "Apple 登录配置中没有可用的登录地址，请稍后重试。" }
+        var errorDescription: String? { AppText.text("Apple 登录配置中没有可用的登录地址，请稍后重试。") }
     }
 
     @MainActor
@@ -256,7 +256,7 @@ enum AppleAuthentication {
         send: (URL, Data, [String: String]) async throws -> (Data, HTTPURLResponse),
         pause: () async throws -> Void = { try await Task.sleep(for: .seconds(1)) },
         report: (String) -> Void) async throws -> ([String: Any], HTTPURLResponse) {
-        guard isEndpoint(endpoint) else { throw ToolError.message("Apple 登录地址无效") }
+        guard isEndpoint(endpoint) else { throw ToolError.message(AppText.text("Apple 登录地址无效")) }
         // A transport retry keeps exactly the same signed payload, including attempt.
         // Never retry a decoded Apple credential error or a 2FA challenge.
         for attempt in 1...2 {
@@ -287,8 +287,8 @@ enum AppleAuthentication {
             if attempt == 1, response.statusCode == 200 || response.statusCode == 204 {
                 try await pause(); continue
             }
-            throw ToolError.message("Apple 未返回有效的登录数据，请稍后重试或切换网络。仍然失败可在设置中导出诊断信息。")
+            throw ToolError.message(AppText.text("Apple 未返回有效的登录数据，请稍后重试或切换网络。仍然失败可在设置中导出诊断信息。"))
         }
-        throw ToolError.message("Apple 登录暂时不可用，请稍后重试")
+        throw ToolError.message(AppText.text("Apple 登录暂时不可用，请稍后重试"))
     }
 }

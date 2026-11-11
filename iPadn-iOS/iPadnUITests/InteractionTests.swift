@@ -1,15 +1,25 @@
 import XCTest
 
 final class InteractionTests: XCTestCase {
-    func testAppIDIsAlignedWithVersionInDetailHeader() {
+    /// The assertions here read Chinese copy, so the app runs in Chinese even
+    /// when the simulator is set to another language. Each launch also replaces
+    /// the feature flags, so a relaunch doesn't inherit an earlier `--accounts`.
+    private static let languageArguments = ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+    private static func launchableApp() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--visual-preview", "--detail"]
+        app.launchArguments = languageArguments
+        return app
+    }
+
+    func testAppIDIsAlignedWithVersionInDetailHeader() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail"]
         app.launch()
         let copyID = app.buttons["app.copy-id"]
         let version = app.descendants(matching: .any)["app.version"].firstMatch
         XCTAssertTrue(copyID.waitForExistence(timeout: 10))
         XCTAssertTrue(version.waitForExistence(timeout: 5))
-        XCTAssertTrue(version.label.hasPrefix("v3.2"), version.label)
+        XCTAssertTrue(version.label.hasPrefix("v26.5"), version.label) // PreviewData.favorite
         XCTAssertGreaterThan(copyID.frame.minX, version.frame.maxX)
         XCTAssertEqual(copyID.frame.midY, version.frame.midY, accuracy: 12)
         copyID.tap()
@@ -17,8 +27,8 @@ final class InteractionTests: XCTestCase {
     }
 
     func testDownloadPlatformBadgeAlignsWithFileSize() {
-        let app = XCUIApplication()
-        app.launchArguments = ["--visual-preview", "--downloads"]
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads"]
         app.launch()
         let size = app.descendants(matching: .any)["download.size.preview-1"].firstMatch
         let icon = app.descendants(matching: .any)["download.platform.IPA"].firstMatch
@@ -31,8 +41,8 @@ final class InteractionTests: XCTestCase {
     }
 
     func testDownloadEditModeAllowsSelectingAndDeletingTasks() {
-        let app = XCUIApplication()
-        app.launchArguments = ["--visual-preview", "--downloads"]
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads"]
         app.launch()
         let edit = app.buttons["downloads.edit"]
         XCTAssertTrue(edit.waitForExistence(timeout: 10))
@@ -51,8 +61,8 @@ final class InteractionTests: XCTestCase {
     }
 
     func testCompletedActionsHaveEqualSizeAndOpenInstallationSettings() {
-        let app = XCUIApplication()
-        app.launchArguments = ["--visual-preview", "--downloads"]
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads"]
         app.launch()
         app.buttons["download.filter.menu"].tap()
         app.buttons["download.filter.已完成"].tap()
@@ -81,8 +91,8 @@ final class InteractionTests: XCTestCase {
         attach("20-local-certificate-created", app: app)
     }
     func testSystemActuallyChangesAlternateIconAndRestoresDefault() {
-        let app = XCUIApplication()
-        app.launchArguments = ["--visual-preview", "--accounts", "--system-icon-test"]
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--accounts", "--system-icon-test"]
         app.launch()
         let settings = app.buttons["accounts.settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 15))
@@ -146,8 +156,8 @@ final class InteractionTests: XCTestCase {
     }
 
     func testIconSelectionAndSearchSubmitControl() {
-        let app = XCUIApplication()
-        app.launchArguments = ["--visual-preview", "--accounts"]
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--accounts"]
         app.launch()
         let settings = app.buttons["accounts.settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10)); settings.tap()
@@ -186,7 +196,7 @@ final class InteractionTests: XCTestCase {
         print("ICON-DIAG restored dimensional selected=\(dimensional.isSelected) flat selected=\(flat.isSelected)")
         attach("16-icon-settings", app: app)
         app.terminate()
-        app.launchArguments = ["--visual-preview"]
+        app.launchArguments = Self.languageArguments + ["--visual-preview"]
         app.launch()
         // App Store search bar: a capsule field that searches from the
         // keyboard; the clear control appears once something is typed.
@@ -199,8 +209,8 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["切换或管理账号"].exists)
     }
     func testFiltersAndDeleteConfirmation() {
-        let app = XCUIApplication()
-        app.launchArguments = ["--visual-preview", "--downloads"]
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads"]
         app.launch()
         let menu = app.buttons["download.filter.menu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 10))
@@ -241,8 +251,8 @@ final class InteractionTests: XCTestCase {
     }
 
     func testHistoryAccountSwipeAndImportPicker() {
-        let app = XCUIApplication()
-        app.launchArguments = ["--visual-preview"]
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview"]
         app.launch()
         let history = app.buttons["history.效率工具"]
         XCTAssertTrue(history.waitForExistence(timeout: 10)); revealActions(on: history)
@@ -268,7 +278,7 @@ final class InteractionTests: XCTestCase {
         // not detail.get. Copy ID is present in either authentication state.
         XCTAssertTrue(app.buttons["app.copy-id"].waitForExistence(timeout: 10))
         app.terminate()
-        app.launchArguments = ["--visual-preview", "--accounts"]
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--accounts"]
         app.launch()
         let account = app.buttons["account.demo@example.com"]
         XCTAssertTrue(account.waitForExistence(timeout: 10)); revealActions(on: account)
@@ -286,7 +296,7 @@ final class InteractionTests: XCTestCase {
         source.tap()
         XCTAssertTrue(app.textFields["来源名称"].waitForExistence(timeout: 5))
         app.terminate()
-        app.launchArguments = ["--visual-preview", "--downloads"]
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads"]
         app.launch()
         let add = app.buttons["downloads.add"]
         XCTAssertTrue(add.waitForExistence(timeout: 10)); add.tap()
@@ -301,8 +311,8 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(add.waitForExistence(timeout: 5))
     }
     func testHistoryDeletionCanBeUndone() {
-        let app = XCUIApplication()
-        app.launchArguments = ["--visual-preview"]
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview"]
         app.launch()
         let history = app.buttons["history.效率工具"]
         XCTAssertTrue(history.waitForExistence(timeout: 10))
@@ -316,8 +326,8 @@ final class InteractionTests: XCTestCase {
     }
 
     func testCompactNoticeAndAccessibleConfirmation() {
-        let app = XCUIApplication()
-        app.launchArguments = ["--visual-preview", "--notice-preview"]
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--notice-preview"]
         app.launch()
         let notice = app.buttons["notice.banner"]
         XCTAssertTrue(notice.waitForExistence(timeout: 10))
@@ -333,7 +343,7 @@ final class InteractionTests: XCTestCase {
 
         // The largest supported Dynamic Type size must wrap and scroll,
         // while both destructive and cancel controls stay reachable.
-        app.launchArguments = ["--visual-preview", "--downloads", "--largest-text", "--dark"]
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--largest-text", "--dark"]
         app.launch()
         let edit = app.buttons["downloads.edit"]
         XCTAssertTrue(edit.waitForExistence(timeout: 10)); edit.tap()
@@ -358,9 +368,9 @@ final class InteractionTests: XCTestCase {
     }
 
     func testLargeDownloadListsLaunchAndScroll() {
-        let app = XCUIApplication()
+        let app = Self.launchableApp()
         for count in [100, 500, 1000] {
-            app.launchArguments = ["--visual-preview", "--downloads", "--stress-records=\(count)"]
+            app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--stress-records=\(count)"]
             let started = Date()
             app.launch()
             XCTAssertTrue(app.buttons["downloads.edit"].waitForExistence(timeout: 15))

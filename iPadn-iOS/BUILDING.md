@@ -1,6 +1,6 @@
 # 自行编译 iPadn
 
-iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad。当前源码版本为 1.9.0（build 25）。
+iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad。当前源码版本为 1.9.1（build 26）。
 
 ## GitHub 云编译（无需本地 Mac）
 
@@ -8,7 +8,7 @@ iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad
 
 日常构建执行完整 `iPadnTests`（含安装、认证、签名组件和布局测试）。界面交互测试 `iPadnUITests` 可在手动运行时同时勾选 `run_tests` 和 `run_ui_tests` 执行。
 
-也支持推送与项目版本一致的新标签（例如 `v1.9.0`）触发编译、单元测试和 Release 发布；标签与 IPA 版本不一致时拒绝发布。安装包在检查与测试全部通过后才发布。
+也支持推送与项目版本一致的新标签（例如 `v1.9.1`）触发编译、单元测试和 Release 发布；标签与 IPA 版本不一致时拒绝发布。安装包在检查与测试全部通过后才发布。
 
 下文的 Mac 和 Xcode 要求仅适用于自行在本地编译。
 
@@ -54,6 +54,49 @@ python3 scripts/verify_project.py
 
 `tools/native_install/` 是独立的电脑端对照工具，用于通过 USB 验证原生安装协议，不参与应用构建；它有单独的离线测试工作流 `native-install-probe.yml`。
 
+## 本地化
+
+界面提供简体中文、英文、繁体中文、日语和韩语。中文是字符串目录的源语言（键就是中文原文），其他语言写在同一个目录里：
+
+- `iPadn/Resources/Localizable.xcstrings`：界面与提示文字
+- `iPadn/Resources/InfoPlist.xcstrings`：网络权限说明、文稿类型名称
+- `iPadn/Resources/AppShortcuts.xcstrings`：快捷指令短语
+- `iPadnLiveActivity/Localizable.xcstrings`：实时活动（锁屏、灵动岛）里的配对步骤，扩展运行在独立进程，使用自己的目录
+
+繁体中文由简体用 OpenCC（台湾用语）转换后，再按 Apple 台湾的用词修正（如帐号、凭证、主画面、动态岛、取得验证码）；日语、韩语参照英文与中文翻译。三者都是机器辅助翻译，发布说明中注明欢迎纠错，母语者校对后可直接修改目录中的值。
+
+工程的开发语言是英文（`en`），这样未提供本地化的设备会显示英文而不是中文；源语言仍是 `zh-Hans`。每种语言都必须有值，否则该条会显示英文。
+
+**写法约定**
+
+- `Text("…")`、`Button("…")`、`Label("…")`、`Section("…")`、`.navigationTitle`、`.accessibilityLabel` 等参数是 `LocalizedStringKey`，字面量会自动本地化，不要再包一层。
+- 模型、服务和提示里组合出来的文字用 `AppText.text("…")`（`iPadn/App/Localization.swift`）。它按当前界面语言查找，测试可指定语言。
+- 不要拼接翻译片段（`AppText.text("A") + name`）；把整句写成一个键，用插值生成 `%@`／`%lld` 占位符。
+- 计数短语保留 `%lld`，英文在目录里加复数变化（`one`／`other`），中文只写 `other`。
+- 已是最终语言的字符串传给 `LocalizedStringKey` 参数时，它会被当作键再查一次；键不存在时原样显示，可以接受，但不要用这种方式处理含 `%` 的用户数据。
+- 不翻译：协议字段、SF Symbols、Bundle ID、商店返回的应用资料、以及作为数据保存的标记值（`DownloadStatus`／`DownloadFilter` 的 `rawValue`、`未在公开商店找到`、`未导入`、`未知版本`）。
+
+**新增或修改文字**
+
+在 Xcode 中编译一次后，新键会写入 `Localizable.xcstrings`；补上全部五种语言的值，然后运行 `python3 scripts/verify_project.py`。缺失任一语言、英文或韩文里残留汉字、译文的占位符（`%@`、`%lld`、`%%`、`${…}`）与原文不一致、复数键没有数字占位符，都会让它失败。日语、韩语和繁体中文的复数只写 `other`。
+
+比价时内购项目名称按系统语言读取对应地区商店的本地名称：简体中文读中国区，繁体中文读台湾区，日语读日本区，韩语读韩国区，英文直接使用英文名称。
+
+需要整体核对键集合时用导出（导出要求开发语言等于目录源语言）：
+
+```bash
+python3 scripts/generate_project.py --development-language zh-Hans
+xcodebuild -project iPadn.xcodeproj -scheme iPadn -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -exportLocalizations -localizationPath build/localizations -exportLanguage zh-Hans
+python3 scripts/generate_project.py   # 恢复开发语言 en
+```
+
+**测试与语言**
+
+单元测试在 `setUp` 中把 `AppText.locale` 固定为 `zh-Hans`，断言中文；涉及货币、数字的断言显式传 `locale:`。界面测试用 `-AppleLanguages (zh-Hans)` 启动应用，断言也是中文。英文界面需要手动在模拟器或真机上切换系统语言检查。
+
+英文 README 见仓库根目录的 `README_EN.md`。
+
 ## 测试
 
 - `iPadnTests`：单元测试与安装测试
@@ -76,7 +119,7 @@ GitHub Actions 会对每个 PR 和 `main` 分支执行设备编译、IPA 检查�
 
 手动运行工作流并勾选 `run_tests` 与 `publish_release`，会在全部检查通过后发布 GitHub Release，发布说明取自仓库根目录的 `RELEASE_NOTES.md`。已存在的同名 Release 不会被覆盖；标签触发发布时使用该标签对应的源码。
 
-发布前手动运行应开启 `run_tests`、`run_ui_tests`。用户已授权测试通过后发布 1.9.0；只能发布完整检查通过的同一提交产物，核对源码、SHA-256、IPA 校验和测试摘要。
+发布前手动运行应开启 `run_tests`、`run_ui_tests`。用户已授权测试通过后发布 1.9.1；只能发布完整检查通过的同一提交产物，核对源码、SHA-256、IPA 校验和测试摘要。
 
 `ui_test_scope` 默认为 `full`，执行全部 UI 用例。局部修改提示时可选 `notices`：仍执行全部单元测试，只复跑提示尺寸/边缘点击/最大字号确认和删除撤销两项 UI 回归，不删除或放宽任何测试；该范围不能触发自动发布。发布记录应注明实际验证范围，不能把局部回归说成最新提交的全量 UI 通过。
 

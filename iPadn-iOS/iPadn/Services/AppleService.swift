@@ -23,7 +23,7 @@ final class AppleService: ObservableObject {
     func setGUID(_ value: String) throws {
         let id = value.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard id.count == 12, id.allSatisfy({ $0.isASCII && $0.isHexDigit }) else {
-            throw ToolError.message("设备标识需要是 12 位十六进制字符（0–9、A–F）")
+            throw ToolError.message(AppText.text("设备标识需要是 12 位十六进制字符（0–9、A–F）"))
         }
         objectWillChange.send()
         LocalResources.defaults.set(id, forKey: LocalResources.guid)
@@ -51,17 +51,17 @@ final class AppleService: ObservableObject {
             do { accounts = try KeychainStore.load(); accountStorageError = nil }
             catch {
                 loginDiagnostic = "stage=account-storage; " + AppleAuthentication.errorCode(error)
-                throw ToolError.message("本机账号记录无法读取，原记录已保留。请在设置中导出诊断信息。")
+                throw ToolError.message(AppText.text("本机账号记录无法读取，原记录已保留。请在设置中导出诊断信息。"))
             }
         }
-        guard !loginInProgress else { throw ToolError.message("另一个账号正在登录，请稍后重试") }
+        guard !loginInProgress else { throw ToolError.message(AppText.text("另一个账号正在登录，请稍后重试")) }
         loginInProgress = true
         defer { loginInProgress = false }
         let initialAccount = activeID
         let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let code = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !email.isEmpty, !password.isEmpty else { throw ToolError.message("请填写 Apple 账号和密码") }
-        guard code.isEmpty || (code.count == 6 && code.allSatisfy({ $0.isASCII && $0.isNumber })) else { throw ToolError.message("请输入 6 位数字验证码") }
+        guard !email.isEmpty, !password.isEmpty else { throw ToolError.message(AppText.text("请填写 Apple 账号和密码")) }
+        guard code.isEmpty || (code.count == 6 && code.allSatisfy({ $0.isASCII && $0.isNumber })) else { throw ToolError.message(AppText.text("请输入 6 位数字验证码")) }
         var stage = "configuration"
         loginDiagnostic = "stage=configuration"
         let raw: [String: Any]
@@ -115,7 +115,7 @@ final class AppleService: ObservableObject {
                 loginDiagnostic = "stage=\(stage); " + AppleAuthentication.errorCode(error)
             }
             if stage == "configuration" {
-                throw ToolError.message("无法获取 Apple 登录配置，请检查网络后重试。仍然失败可在设置中导出诊断信息。")
+                throw ToolError.message(AppText.text("无法获取 Apple 登录配置，请检查网络后重试。仍然失败可在设置中导出诊断信息。"))
             }
             throw error
         }
@@ -149,10 +149,10 @@ final class AppleService: ObservableObject {
         let passwordToken = plistString(raw["passwordToken"])
         let id = reportedID.isEmpty && !resolvedDSID.isEmpty && !passwordToken.isEmpty ? email : reportedID
         guard !id.isEmpty else {
-            throw ToolError.message("Apple 未返回完整登录信息，请重试")
+            throw ToolError.message(AppText.text("Apple 未返回完整登录信息，请重试"))
         }
         guard !resolvedDSID.isEmpty, !passwordToken.isEmpty else {
-            throw ToolError.message("Apple 返回的登录凭据不完整，请重新登录")
+            throw ToolError.message(AppText.text("Apple 返回的登录凭据不完整，请重新登录"))
         }
         let address = info["address"] as? [String: Any] ?? [:]
         let name = [plistString(address["firstName"]), plistString(address["lastName"])].filter { !$0.isEmpty }.joined(separator: " ")
@@ -164,7 +164,7 @@ final class AppleService: ObservableObject {
                                    storeFront: StoreService.storefrontIdentifier(fullStore), fullStoreFront: fullStore)
         let updated = [account] + accounts.filter { $0.id != id }
         try Task.checkCancellation()
-        guard activeID == initialAccount else { throw ToolError.message("账号已切换，已停止保存本次登录") }
+        guard activeID == initialAccount else { throw ToolError.message(AppText.text("账号已切换，已停止保存本次登录")) }
         do { try KeychainStore.save(updated) }
         catch {
             loginDiagnostic += "; stage=account-save; " + AppleAuthentication.errorCode(error)
@@ -209,30 +209,30 @@ final class AppleService: ObservableObject {
 
     func verifyCurrentAccount(code: String, expectedID: String, useCache: Bool) async throws {
         guard let account = active, account.id == expectedID else {
-            throw ToolError.message("验证期间账号已改变，请重新选择下载账号")
+            throw ToolError.message(AppText.text("验证期间账号已改变，请重新选择下载账号"))
         }
         try await login(email: account.id, password: account.password, code: code, useCache: useCache)
     }
 
     func refresh(_ account: AppleAccount, useCache: Bool) async throws -> AppleAccount {
-        guard activeID == account.id else { throw ToolError.message("账号已切换，请重新执行操作") }
+        guard activeID == account.id else { throw ToolError.message(AppText.text("账号已切换，请重新执行操作")) }
         try await login(email: account.id, password: account.password, code: "", useCache: useCache)
-        guard let refreshed = active, refreshed.id == account.id else { throw ToolError.message("登录已过期，请重新登录") }
+        guard let refreshed = active, refreshed.id == account.id else { throw ToolError.message(AppText.text("登录已过期，请重新登录")) }
         return refreshed
     }
 
     func asset(appID: String, versionID: String?, store: StoreContext, useCache: Bool,
                allowLicenseAcquisition: Bool = true) async throws -> DownloadAsset {
         guard let identifier = UInt64(appID), identifier > 0,
-              appID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message("App ID 只能包含数字") }
+              appID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message(AppText.text("App ID 只能包含数字")) }
         if let versionID {
             guard let version = UInt64(versionID), version > 0,
-                  versionID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message("版本 ID 只能包含数字") }
+                  versionID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message(AppText.text("版本 ID 只能包含数字")) }
         }
         guard store.platform.supportsIPA else {
-            throw ToolError.message("Mac 应用请使用「获取 PKG」下载")
+            throw ToolError.message(AppText.text("Mac 应用请使用「获取 PKG」下载"))
         }
-        guard let account = active else { throw ToolError.message("请先登录 Apple 账号") }
+        guard let account = active else { throw ToolError.message(AppText.text("请先登录 Apple 账号")) }
         var targetVersion = versionID
         var tvListing: StoreApp?
         if store.platform == .tvOS {
@@ -276,7 +276,7 @@ final class AppleService: ObservableObject {
                    alternate.platform.isEmpty || tvPlatforms.contains(alternate.platform.lowercased()) {
                     asset = alternate
                 } else {
-                    throw ToolError.message("该应用没有可下载的 Apple TV 版本")
+                    throw ToolError.message(AppText.text("该应用没有可下载的 Apple TV 版本"))
                 }
             }
             // A missing platform field is not proof of tvOS compatibility.
@@ -287,7 +287,7 @@ final class AppleService: ObservableObject {
             if let icon = tvListing?.iconURL { asset.app.iconURL = icon }
         } else {
             guard reported.isEmpty || ["ios", "iphoneos", "ipad"].contains(reported) else {
-                throw ToolError.message("该应用没有所选平台的版本，请切换平台后重试")
+                throw ToolError.message(AppText.text("该应用没有所选平台的版本，请切换平台后重试"))
             }
             asset.platform = store.platform == .iPadOS ? "ipad" : "ios"
         }
@@ -297,7 +297,7 @@ final class AppleService: ObservableObject {
     private func fetchAsset(appID: String, versionID: String?, account: AppleAccount,
                             useCache: Bool, fallback: Bool, refreshed: Bool, purchased: Bool,
                              allowLicenseAcquisition: Bool) async throws -> DownloadAsset {
-        guard activeID == account.id else { throw ToolError.message("账号已切换，请重新执行下载") }
+        guard activeID == account.id else { throw ToolError.message(AppText.text("账号已切换，请重新执行下载")) }
         let root = fallback ? "https://downloaddispatch.itunes.apple.com/up/backgroundUpdateProduct" :
             "https://downloaddispatch.itunes.apple.com/WebObjects/DownloadDispatch.woa/wa/ent/download"
         var payload: [String: Any] = ["guid": guid, "salableAdamId": NSNumber(value: UInt64(appID) ?? 0), "serialNumber": "0"]
@@ -305,7 +305,7 @@ final class AppleService: ObservableObject {
             payload[fallback ? "appExtVrsId" : "externalVersionId"] = versionID
         }
         if !fallback {
-            guard !account.dsid.isEmpty else { throw ToolError.message("登录已过期，请重新登录") }
+            guard !account.dsid.isEmpty else { throw ToolError.message(AppText.text("登录已过期，请重新登录")) }
             let kbsync = try await signer.kbsync(guid: guid, dsid: account.dsid, useCache: useCache)
             // Node plist builder in the supplied source emits the returned Base64 as a string.
             payload["kbsync"] = kbsync
@@ -334,7 +334,7 @@ final class AppleService: ObservableObject {
             // A missing license does not mean the login session is expired. Refreshing
             // here always calls authenticate and can trigger an invisible 2FA prompt.
             // Acquire the free license using the current valid account first.
-            guard activeID == account.id else { throw ToolError.message("账号已切换，请重新执行下载") }
+            guard activeID == account.id else { throw ToolError.message(AppText.text("账号已切换，请重新执行下载")) }
             try await acquireFreeApp(appID, account: account, useCache: useCache)
             return try await fetchAsset(appID: appID, versionID: versionID, account: account,
                 useCache: useCache, fallback: fallback, refreshed: refreshed, purchased: true,
@@ -352,13 +352,13 @@ final class AppleService: ObservableObject {
             throw ToolError.message(Self.noOfferMessage)
         }
         guard let url = URL(string: plistString(song["URL"])), url.scheme == "https",
-              var metadata = song["metadata"] as? [String: Any] else { throw ToolError.message("暂时无法下载，请稍后重试") }
-        guard activeID == account.id else { throw ToolError.message("账号已切换，请重新执行下载") }
+              var metadata = song["metadata"] as? [String: Any] else { throw ToolError.message(AppText.text("暂时无法下载，请稍后重试")) }
+        guard activeID == account.id else { throw ToolError.message(AppText.text("账号已切换，请重新执行下载")) }
         metadata = Self.purchaseMetadata(metadata, account: account, appID: appID,
                                          purchaseDate: song["purchaseDate"] as? Date ?? Date())
         let externalID = plistString(metadata["softwareVersionExternalIdentifier"])
         if let requested = versionID, !externalID.isEmpty, externalID != requested {
-            throw ToolError.message("所选版本暂时无法下载，请换个版本重试")
+            throw ToolError.message(AppText.text("所选版本暂时无法下载，请换个版本重试"))
         }
         let artwork = song["artwork-urls"] as? [String: Any]
         let defaultArt = artwork?["default"] as? [String: Any]
@@ -386,7 +386,7 @@ final class AppleService: ObservableObject {
     func versionTicket(appID: String, versionID: String, useCache: Bool) async throws -> URL {
         guard let account = active, !account.dsid.isEmpty else { throw AppleAuthError.reauthenticationRequired }
         guard let app = UInt64(appID), app > 0, UInt64(versionID).map({ $0 > 0 }) == true else {
-            throw ToolError.message("版本 ID 只能包含数字")
+            throw ToolError.message(AppText.text("版本 ID 只能包含数字"))
         }
         let kbsync = try await signer.kbsync(guid: guid, dsid: account.dsid, useCache: useCache)
         let payload: [String: Any] = ["guid": guid, "salableAdamId": NSNumber(value: app), "serialNumber": "0",
@@ -403,12 +403,12 @@ final class AppleService: ObservableObject {
               let url = URL(string: plistString(song["URL"])), url.scheme == "https",
               let metadata = song["metadata"] as? [String: Any],
               [versionID, ""].contains(plistString(metadata["softwareVersionExternalIdentifier"])) else {
-            throw ToolError.message("Apple 没有返回该版本的信息")
+            throw ToolError.message(AppText.text("Apple 没有返回该版本的信息"))
         }
         return url
     }
 
-    static let noOfferMessage = "Apple 没有返回该版本的下载信息"
+    static var noOfferMessage: String { AppText.text("Apple 没有返回该版本的下载信息") }
 
     nonisolated static func mobileSinfs(_ records: [[String: Any]]) throws -> [Data] {
         func bytes(_ value: Any?) -> Data? {
@@ -419,13 +419,13 @@ final class AppleService: ObservableObject {
             }
             return nil
         }
-        guard !records.isEmpty else { throw ToolError.message("此账号没有该应用的下载授权") }
+        guard !records.isEmpty else { throw ToolError.message(AppText.text("此账号没有该应用的下载授权")) }
         var result: [Data] = []
         result.reserveCapacity(records.count)
         for record in records {
             guard let data = bytes(record["sinf"]) else {
                 // Never shift later records into this record's path.
-                throw ToolError.message("应用的多组件下载授权不完整，请重新下载")
+                throw ToolError.message(AppText.text("应用的多组件下载授权不完整，请重新下载"))
             }
             result.append(data)
         }
@@ -495,7 +495,7 @@ final class AppleService: ObservableObject {
         // The account already holds the license (ipatool): nothing to claim.
         if plistString(raw["failureType"]) == "5002" { return }
         if plistString(raw["customerMessage"]) == "Subscription Required" {
-            throw ToolError.message("此应用属于 Apple Arcade，需要此账号订阅 Apple Arcade 后才能下载。")
+            throw ToolError.message(AppText.text("此应用属于 Apple Arcade，需要此账号订阅 Apple Arcade 后才能下载。"))
         }
         if plistString(raw["failureType"]) == "2059" && !mac && !arcade {
             return try await acquireFreeApp(id, account: account, mac: mac, arcade: true, useCache: useCache)
@@ -505,7 +505,7 @@ final class AppleService: ObservableObject {
             throw AppleLoginError.verificationRequired
         }
         if let error = HTTPClient.appleFailure(raw) { throw error }
-        guard raw["jingleDocType"] != nil else { throw ToolError.message("未能获取免费应用许可，请先在 App Store 获取后重试") }
+        guard raw["jingleDocType"] != nil else { throw ToolError.message(AppText.text("未能获取免费应用许可，请先在 App Store 获取后重试")) }
     }
 
     // Official Apple Mac App Store authorization preflight.
@@ -517,16 +517,16 @@ final class AppleService: ObservableObject {
     /// unless `allowLicenseAcquisition` is false (version lists).
     func macPackageOffer(_ app: StoreApp, versionID requested: String? = nil, useCache: Bool,
                          allowLicenseAcquisition: Bool = true, licenseAcquired: Bool = false) async throws -> MacPackageOffer {
-        guard let account = active else { throw ToolError.message("请先登录 Apple 账号") }
+        guard let account = active else { throw ToolError.message(AppText.text("请先登录 Apple 账号")) }
         guard let appNumber = UInt64(app.id), appNumber > 0 else {
-            throw ToolError.message("请输入有效的 Mac 应用 ID")
+            throw ToolError.message(AppText.text("请输入有效的 Mac 应用 ID"))
         }
         let initialID = account.id
         guard let country = StoreService.country(forStorefront: account.storeFront) else {
-            throw ToolError.message("无法识别此账号的商店地区，请重新登录后重试")
+            throw ToolError.message(AppText.text("无法识别此账号的商店地区，请重新登录后重试"))
         }
         if let requested, UInt64(requested).map({ $0 > 0 }) != true {
-            throw ToolError.message("版本 ID 只能包含数字")
+            throw ToolError.message(AppText.text("版本 ID 只能包含数字"))
         }
         // nil when the app is delisted (no product page): the request then
         // omits externalVersionId and the response must still be macOS.
@@ -534,10 +534,10 @@ final class AppleService: ObservableObject {
         if let requested { versionID = requested }
         else { versionID = try await MacStoreOfferService.latestVersionID(appID: app.id, bundleID: app.bundleID, country: country) }
         try Task.checkCancellation()
-        guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
+        guard activeID == initialID else { throw ToolError.message(AppText.text("账号已切换，请重新获取 Mac 下载信息")) }
         let deviceID = guid
         guard let serial = MacPackageOffer.serialNumber(guid: deviceID) else {
-            throw ToolError.message("登录已过期，请重新登录")
+            throw ToolError.message(AppText.text("登录已过期，请重新登录"))
         }
         let sync = try await signer.kbsync(guid: deviceID, dsid: account.dsid, useCache: useCache)
         // Same ent/download request as ipatool's Mac path: the serial number is
@@ -558,13 +558,13 @@ final class AppleService: ObservableObject {
         let (raw, _) = try await storePlist(endpoint,
             body: HTTPClient.encodePlist(payload), headers: headers, guid: deviceID, useCache: useCache)
         try Task.checkCancellation()
-        guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
+        guard activeID == initialID else { throw ToolError.message(AppText.text("账号已切换，请重新获取 Mac 下载信息")) }
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
         if plistString(raw["failureType"]) == "9610" && !licenseAcquired {
             guard allowLicenseAcquisition else { throw AppleLicenseError.notOwned }
             try await acquireFreeApp(app.id, account: account, mac: true, useCache: useCache)
             try Task.checkCancellation()
-            guard activeID == initialID else { throw ToolError.message("账号已切换，请重新获取 Mac 下载信息") }
+            guard activeID == initialID else { throw ToolError.message(AppText.text("账号已切换，请重新获取 Mac 下载信息")) }
             return try await macPackageOffer(app, versionID: versionID, useCache: useCache,
                                              allowLicenseAcquisition: false, licenseAcquired: true)
         }
@@ -574,26 +574,26 @@ final class AppleService: ObservableObject {
             offer = try MacPackageOffer.validate(raw, appID: app.id,
                                                  bundleID: app.bundleID, versionID: versionID)
         } catch where versionID == nil {
-            throw ToolError.message("该应用已从商店下架，Apple 没有为此账号提供 Mac 版安装包（可能只购买过 iOS 版本，或该应用没有 Mac 版）。")
+            throw ToolError.message(AppText.text("该应用已从商店下架，Apple 没有为此账号提供 Mac 版安装包（可能只购买过 iOS 版本，或该应用没有 Mac 版）。"))
         }
         offer.hardwareID = deviceID
         return offer
     }
 
     func ownedApps(useCache: Bool) async throws -> [OwnedApp] {
-        guard let account = active else { throw ToolError.message("请先登录 Apple 账号") }
+        guard let account = active else { throw ToolError.message(AppText.text("请先登录 Apple 账号")) }
         let base = "https://pd.itunes.apple.com/WebObjects/MZPurchaseDaap.woa/purchase"
         let query = "('com.apple.itunes.extended\\-media\\-kind:131072')"
         let headers = purchaseHeaders(account)
         let (login, _) = try await HTTPClient.shared.request(URL(string: base + "/login")!, method: "POST", headers: headers, appleRedirects: true)
         try DMAP.validate(login)
-        guard let session = try DMAP.firstInteger(login, name: "mlid") else { throw ToolError.message("暂时无法同步购买记录，请稍后重试") }
+        guard let session = try DMAP.firstInteger(login, name: "mlid") else { throw ToolError.message(AppText.text("暂时无法同步购买记录，请稍后重试")) }
         let updateBody = Data("session-id=\(session)&revision-number=(null)&query=\(query)".utf8)
         var updateHeaders = headers
         updateHeaders["X-Apple-ActionSignature"] = try await signer.sign(updateBody, guid: guid, useCache: useCache)
         let (update, _) = try await HTTPClient.shared.request(URL(string: base + "/update")!, method: "POST", body: updateBody, headers: updateHeaders, appleRedirects: true)
         try DMAP.validate(update)
-        guard let revision = try DMAP.firstInteger(update, name: "musr") else { throw ToolError.message("暂时无法同步购买记录，请稍后重试") }
+        guard let revision = try DMAP.firstInteger(update, name: "musr") else { throw ToolError.message(AppText.text("暂时无法同步购买记录，请稍后重试")) }
         let payload = DMAP.uint32("mstc", UInt32(Date().timeIntervalSince1970)) + DMAP.uint32("mlid", session) +
             DMAP.tag("mikd", Data([2])) + DMAP.uint32("musr", revision) + DMAP.uint32("mder", 0) +
             DMAP.string("mque", query) + DMAP.tag("aetl")
@@ -601,7 +601,7 @@ final class AppleService: ObservableObject {
         var itemHeaders = purchaseHeaders(account)
         itemHeaders["Content-Type"] = "application/x-dmap-tagged"
         itemHeaders["X-Apple-ActionSignature"] = try await signer.sign(body, guid: guid, useCache: useCache)
-        guard activeID == account.id else { throw ToolError.message("账号已切换，请重新加载购买记录") }
+        guard activeID == account.id else { throw ToolError.message(AppText.text("账号已切换，请重新加载购买记录")) }
         let (items, _) = try await HTTPClient.shared.request(URL(string: base + "/databases/\(revision)/items")!,
             method: "POST", body: body, headers: itemHeaders, appleRedirects: true)
         // Large accounts return megabytes of tags: parse off the main thread.
@@ -763,7 +763,7 @@ struct MacPackageOffer {
         guard let songs = raw["songList"] as? [[String: Any]], songs.count == 1,
               let item = songs.first,
               let metadata = item["metadata"] as? [String: Any] else {
-            throw ToolError.message("此账号没有该应用 Mac 版的下载授权")
+            throw ToolError.message(AppText.text("此账号没有该应用 Mac 版的下载授权"))
         }
         let itemID = plistString(metadata["itemId"] ?? item["songId"])
         let actualVersionID = plistString(metadata["softwareVersionExternalIdentifier"])
@@ -777,12 +777,12 @@ struct MacPackageOffer {
               !actualBundleID.isEmpty,
               bundleID.isEmpty || actualBundleID == bundleID,
               platform == "macos", type == "mac-os-app" || type == "ios-app" || type.isEmpty else {
-            throw ToolError.message("该应用没有可下载的 Mac 版本")
+            throw ToolError.message(AppText.text("该应用没有可下载的 Mac 版本"))
         }
         guard let text = item["URL"] as? String,
               let url = URL(string: text), url.scheme?.lowercased() == "https",
               url.host != nil, url.user == nil, url.password == nil else {
-            throw ToolError.message("暂时无法下载 Mac 安装包，请稍后重试")
+            throw ToolError.message(AppText.text("暂时无法下载 Mac 安装包，请稍后重试"))
         }
         func bytes(_ value: Any?) -> Data? {
             if let value = value as? Data { return value.isEmpty ? nil : value }
@@ -792,12 +792,12 @@ struct MacPackageOffer {
         let sinfs = item["sinfs"] as? [[String: Any]] ?? []
         let dpInfos = sinfs.compactMap { bytes($0["dpInfo"]) }
         if let first = dpInfos.first, dpInfos.contains(where: { $0 != first }) {
-            throw ToolError.message("暂时无法下载 Mac 安装包，请稍后重试")
+            throw ToolError.message(AppText.text("暂时无法下载 Mac 安装包，请稍后重试"))
         }
         // An iOS-style sinf without dpInfo is evidence of a mobile package,
         // which contradicts the macOS metadata checked above (as in ipatool).
         guard !sinfs.contains(where: { bytes($0["sinf"]) != nil && bytes($0["dpInfo"]) == nil }) else {
-            throw ToolError.message("该应用没有可下载的 Mac 版本")
+            throw ToolError.message(AppText.text("该应用没有可下载的 Mac 版本"))
         }
         return MacPackageOffer(downloadURL: url, versionID: actualVersionID,
                                displayVersion: plistString(metadata["bundleShortVersionString"]),
@@ -810,7 +810,7 @@ struct MacPackageOffer {
 enum AppleLicenseError: LocalizedError {
     case notOwned
     var errorDescription: String? {
-        "此账号还没有获取这个应用。先获取一次，之后就能查看完整版本列表。"
+        AppText.text("此账号还没有获取这个应用。先获取一次，之后就能查看完整版本列表。")
     }
 }
 
@@ -820,7 +820,7 @@ enum AppleAuthError: LocalizedError {
         plistString(response["failureType"]) == "2002"
     }
     var errorDescription: String? {
-        "Apple 账号需要重新登录。请输入当前密码，并根据 Apple 的提示完成验证。"
+        AppText.text("Apple 账号需要重新登录。请输入当前密码，并根据 Apple 的提示完成验证。")
     }
 }
 
@@ -828,8 +828,8 @@ enum AppleLoginError: LocalizedError {
     case verificationRequired, verificationRejected
     var errorDescription: String? {
         switch self {
-        case .verificationRequired: return "请在受信任设备上允许登录，然后输入收到的 6 位验证码。"
-        case .verificationRejected: return "Apple 未接受本次验证。请检查账号密码，并输入最新的 6 位验证码后重试。"
+        case .verificationRequired: return AppText.text("请在受信任设备上允许登录，然后输入收到的 6 位验证码。")
+        case .verificationRejected: return AppText.text("Apple 未接受本次验证。请检查账号密码，并输入最新的 6 位验证码后重试。")
         }
     }
 }
@@ -870,12 +870,12 @@ enum AppleLoginResponse {
             return submittedCode ? AppleLoginError.verificationRejected : AppleLoginError.verificationRequired
         }
         if message.hasPrefix("AMD-Action") {
-            return ToolError.message("设备验证未完成，请稍后重试。")
+            return ToolError.message(AppText.text("设备验证未完成，请稍后重试。"))
         }
         if let info = response["accountInfo"] as? [String: Any], !plistString(info["appleId"]).isEmpty { return nil }
         if message.isEmpty, !plistString(response["passwordToken"]).isEmpty { return nil }
-        if message.hasPrefix("MZ") { return ToolError.message("Apple 暂时无法完成登录，请稍后重试。") }
-        return ToolError.message(message.isEmpty ? "Apple 未返回登录信息，请检查账号后重试。" : message)
+        if message.hasPrefix("MZ") { return ToolError.message(AppText.text("Apple 暂时无法完成登录，请稍后重试。")) }
+        return ToolError.message(message.isEmpty ? AppText.text("Apple 未返回登录信息，请检查账号后重试。") : message)
     }
 }
 
@@ -883,7 +883,7 @@ enum AppleLoginResponse {
 extension AppleService {
     func prepareAccountPreview() {
         accountStorageError = nil
-        accounts = [AppleAccount(id: "demo@example.com", name: "示例账号", password: "", cookie: "", dsid: "", passwordToken: "", storeFront: "", fullStoreFront: ""), AppleAccount(id: "second@example.com", name: "另一个账号", password: "", cookie: "", dsid: "", passwordToken: "", storeFront: "", fullStoreFront: "")]
+        accounts = [AppleAccount(id: "demo@example.com", name: PreviewData.chinese ? "示例账号" : "Alex Morgan", password: "", cookie: "", dsid: "", passwordToken: "", storeFront: "", fullStoreFront: ""), AppleAccount(id: "second@example.com", name: PreviewData.chinese ? "另一个账号" : "Sam Lee", password: "", cookie: "", dsid: "", passwordToken: "", storeFront: "", fullStoreFront: "")]
         activeID = accounts.first?.id
     }
 }

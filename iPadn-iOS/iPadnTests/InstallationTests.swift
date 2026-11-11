@@ -3,6 +3,14 @@ import Security
 @testable import iPadn
 
 final class InstallationTests: XCTestCase {
+    /// Assertions below check the Chinese copy: pin the language instead of
+    /// following whatever the simulator is set to. Set `locale:` on the
+    /// formatting calls whose numbers or currency symbols are asserted.
+    override func setUp() {
+        super.setUp()
+        AppText.locale = Locale(identifier: "zh-Hans")
+    }
+
     func testLocalManifestIsRealPlistAndPreservesURLAndUnicode() throws {
         let app = StoreApp(id: "1", name: "应用 & <测试>", bundleID: "test.app", version: "1.2")
         let package = URL(string: "https://127.0.0.1:4567/token/测试.ipa")!

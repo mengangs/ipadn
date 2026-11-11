@@ -26,17 +26,6 @@ enum WatchChange: Codable, Hashable {
         case .priceRise: return 0
         }
     }
-    /// A short tag for lists.
-    var tag: String {
-        switch self {
-        case .newVersion: return "新版本"
-        case .priceDrop: return "降价"
-        case .free: return "限免"
-        case .priceRise: return "涨价"
-        case .delisted: return "已下架"
-        case .relisted: return "重新上架"
-        }
-    }
 }
 
 /// What iPadn last saw of a followed app in one storefront.
@@ -112,15 +101,16 @@ enum WatchService {
     private static func same(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 0.000_1 }
 
     /// "免费" for zero, else the amount in its currency ("¥18", "$2.99").
-    static func format(_ price: Double, currency: String) -> String {
-        if price == 0 { return "免费" }
+    /// Words follow the interface language; `locale` only shapes the number.
+    static func format(_ price: Double, currency: String, locale: Locale = AppText.formattingLocale) -> String {
+        if price == 0 { return AppText.text("免费") }
         let whole = price.rounded() == price
         return formatters.withLock { cache in
-            let key = currency + (whole ? "|0" : "|2")
+            let key = locale.identifier + "|" + currency + (whole ? "|0" : "|2")
             let formatter = cache[key] ?? {
                 let formatter = NumberFormatter()
                 formatter.numberStyle = .currency
-                formatter.locale = Locale(identifier: "zh_CN")
+                formatter.locale = locale
                 if !currency.isEmpty { formatter.currencyCode = currency }
                 formatter.minimumFractionDigits = whole ? 0 : 2
                 formatter.maximumFractionDigits = 2
@@ -134,13 +124,14 @@ enum WatchService {
     private static let formatters = NSLockedValue([String: NumberFormatter]())
 
     /// A sentence for a notification, or nil when the change is not worth one.
-    static func message(_ change: WatchChange, currency: String) -> String? {
+    /// Written in the interface language; `locale` formats the amounts.
+    static func message(_ change: WatchChange, currency: String, locale: Locale = AppText.formattingLocale) -> String? {
         switch change {
-        case .newVersion(let version): return "有新版本 \(version)"
-        case .priceDrop(let from, let to): return "降价：\(format(from, currency: currency)) → \(format(to, currency: currency))"
-        case .free(let from): return "限免：原价 \(format(from, currency: currency))，现在免费"
-        case .delisted: return "已从 App Store 下架，获取过的账号仍可下载，建议尽快备份"
-        case .relisted: return "已重新上架"
+        case .newVersion(let version): return AppText.text("有新版本 \(version)")
+        case .priceDrop(let from, let to): return AppText.text("降价：\(format(from, currency: currency, locale: locale)) → \(format(to, currency: currency, locale: locale))")
+        case .free(let from): return AppText.text("限免：原价 \(format(from, currency: currency, locale: locale))，现在免费")
+        case .delisted: return AppText.text("已从 App Store 下架，获取过的账号仍可下载，建议尽快备份")
+        case .relisted: return AppText.text("已重新上架")
         case .priceRise: return nil
         }
     }
@@ -148,13 +139,15 @@ enum WatchService {
 
 enum PurchaseExport {
     /// One row per purchase: name, IDs, version, purchase date, store status, downloaded.
-    static func csv(_ apps: [OwnedApp], listed: [String: Bool], downloaded: Set<String>) -> String {
-        var rows = [["名称", "App ID", "Bundle ID", "版本", "购买日期", "商店状态", "已下载"]]
+    static func csv(_ apps: [OwnedApp], listed: [String: Bool], downloaded: Set<String>, locale: Locale = AppText.locale) -> String {
+        var rows = [[AppText.text("名称", in: locale), AppText.text("App ID", in: locale), AppText.text("Bundle ID", in: locale),
+                     AppText.text("版本", in: locale), AppText.text("购买日期", in: locale), AppText.text("商店状态", in: locale),
+                     AppText.text("已下载", in: locale)]]
         let date = Date.FormatStyle().year().month(.twoDigits).day(.twoDigits)
         for app in apps {
-            let status = listed[app.id].map { $0 ? "在售" : "已下架" } ?? "未检查"
+            let status = listed[app.id].map { $0 ? AppText.text("在售", in: locale) : AppText.text("已下架", in: locale) } ?? AppText.text("未检查", in: locale)
             rows.append([app.name, app.id, app.bundleID, app.version, app.purchaseDate.map { $0.formatted(date) } ?? "",
-                         status, downloaded.contains(app.id) ? "是" : "否"])
+                         status, downloaded.contains(app.id) ? AppText.text("是", in: locale) : AppText.text("否", in: locale)])
         }
         return rows.map { $0.map(field).joined(separator: ",") }.joined(separator: "\r\n") + "\r\n"
     }
