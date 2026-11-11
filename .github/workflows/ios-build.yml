@@ -101,7 +101,7 @@ jobs:
               'commit': os.environ['GITHUB_SHA'],
               'run': os.environ['GITHUB_RUN_ID'],
               'xcode': subprocess.check_output(['xcodebuild', '-version'], text=True).strip(),
-              'minimum_ios': '17.0',
+              'minimum_ios': info['MinimumOSVersion'],
               'signed': False,
               'note': 'Sign with your own tool before installing.'
           }, indent=2) + '\n')
