@@ -239,14 +239,25 @@ struct SettingsView: View {
             }
             if page == .root {
             Section {
-                // The icon as chosen in 应用图标, in the appearance it currently shows.
-                Image(icons.selected.preview).resizable().scaledToFit().frame(width: 64, height: 64)
-                    .clipShape(RoundedRectangle(cornerRadius: 64 * UX.iconCorner, style: .continuous))
-                    .environment(\.colorScheme, iconScheme)
-                    .accessibilityHidden(true)
-                Text("iPadn " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")).font(.headline)
-                Text("搜索、下载和管理你拥有许可的应用安装包，支持 iPhone、iPad、Apple TV 与 Mac。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                // One compact row: the icon as chosen in 应用图标 (in the appearance
+                // it currently shows), with the name, version and description beside it.
+                HStack(alignment: .center, spacing: 14) {
+                    Image(icons.selected.preview).resizable().scaledToFit().frame(width: 52, height: 52)
+                        .clipShape(RoundedRectangle(cornerRadius: 52 * UX.iconCorner, style: .continuous))
+                        .environment(\.colorScheme, iconScheme)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(verbatim: "iPadn").font(.headline)
+                            Text(verbatim: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        Text("搜索、下载和管理你拥有许可的应用安装包，支持 iPhone、iPad、Apple TV 与 Mac。")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.vertical, 2)
+                .accessibilityElement(children: .combine)
                 if let update = store.appUpdate {
                     NavigationLink { AppUpdateView(release: update) } label: {
                         Label("iPadn \(update.version) 可以更新", systemImage: "arrow.down.app.fill")
