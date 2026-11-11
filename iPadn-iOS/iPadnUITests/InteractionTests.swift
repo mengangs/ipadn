@@ -19,7 +19,7 @@ final class InteractionTests: XCTestCase {
         let version = app.descendants(matching: .any)["app.version"].firstMatch
         XCTAssertTrue(copyID.waitForExistence(timeout: 10))
         XCTAssertTrue(version.waitForExistence(timeout: 5))
-        XCTAssertTrue(version.label.hasPrefix("v3.2"), version.label)
+        XCTAssertTrue(version.label.hasPrefix("v26.5"), version.label) // PreviewData.favorite
         XCTAssertGreaterThan(copyID.frame.minX, version.frame.maxX)
         XCTAssertEqual(copyID.frame.midY, version.frame.midY, accuracy: 12)
         copyID.tap()
