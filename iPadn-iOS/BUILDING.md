@@ -1,6 +1,6 @@
 # 自行编译 iPadn
 
-iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad。当前源码版本为 1.9.1（build 26）。
+iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad。当前源码版本为 1.9.2（build 27）。
 
 ## GitHub 云编译（无需本地 Mac）
 
@@ -8,7 +8,7 @@ iPadn 是一个 SwiftUI 应用，最低支持 iOS 17，适用于 iPhone 和 iPad
 
 日常构建执行完整 `iPadnTests`（含安装、认证、签名组件和布局测试）。界面交互测试 `iPadnUITests` 可在手动运行时同时勾选 `run_tests` 和 `run_ui_tests` 执行。
 
-也支持推送与项目版本一致的新标签（例如 `v1.9.1`）触发编译、单元测试和 Release 发布；标签与 IPA 版本不一致时拒绝发布。安装包在检查与测试全部通过后才发布。
+也支持推送与项目版本一致的新标签（例如 `v1.9.2`）触发编译、单元测试和 Release 发布；标签与 IPA 版本不一致时拒绝发布。安装包在检查与测试全部通过后才发布。
 
 下文的 Mac 和 Xcode 要求仅适用于自行在本地编译。
 
@@ -119,7 +119,7 @@ GitHub Actions 会对每个 PR 和 `main` 分支执行设备编译、IPA 检查�
 
 手动运行工作流并勾选 `run_tests` 与 `publish_release`，会在全部检查通过后发布 GitHub Release，发布说明取自仓库根目录的 `RELEASE_NOTES.md`。已存在的同名 Release 不会被覆盖；标签触发发布时使用该标签对应的源码。
 
-发布前手动运行应开启 `run_tests`、`run_ui_tests`。用户已授权测试通过后发布 1.9.1；只能发布完整检查通过的同一提交产物，核对源码、SHA-256、IPA 校验和测试摘要。
+发布前手动运行应开启 `run_tests`、`run_ui_tests`。用户已授权测试通过后发布 1.9.2；只能发布完整检查通过的同一提交产物，核对源码、SHA-256、IPA 校验和测试摘要。
 
 `ui_test_scope` 默认为 `full`，执行全部 UI 用例。局部修改提示时可选 `notices`：仍执行全部单元测试，只复跑提示尺寸/边缘点击/最大字号确认和删除撤销两项 UI 回归，不删除或放宽任何测试；该范围不能触发自动发布。发布记录应注明实际验证范围，不能把局部回归说成最新提交的全量 UI 通过。
 

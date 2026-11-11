@@ -107,14 +107,43 @@ final class DownloadManager: NSObject, ObservableObject {
         task.taskDescription = Self.backgroundProbeDescription
         task.resume()
     }
-    /// The probe's outcome. Only a file-creation failure says anything; other
-    /// errors (offline, captive Wi-Fi) leave it to be tried on a later launch.
-    private func finishBackgroundProbe(error: NSError?) {
-        if let error {
+    /// The probe's outcome. Only a file-creation failure, or a file iPadn
+    /// can't read, says anything; other errors (offline, captive Wi-Fi) leave
+    /// it to be tried on a later launch.
+    private func finishBackgroundProbe(error: NSError?, unreadable: Bool = false) {
+        if unreadable {
+            markBackgroundUnavailable()
+        } else if let error {
             guard error.domain == NSURLErrorDomain, error.code == NSURLErrorCannotCreateFile else { return }
             markBackgroundUnavailable()
         }
         UserDefaults.standard.set(Self.currentBuild, forKey: Self.backgroundProbedKey)
+    }
+    /// The system service saved the file where iPadn may not read it (seen
+    /// with some re-signed builds): "you don't have permission to view it".
+    nonisolated static func isPermissionError(_ error: Error) -> Bool {
+        let error = error as NSError
+        if error.domain == NSCocoaErrorDomain, [NSFileReadNoPermissionError, NSFileWriteNoPermissionError].contains(error.code) { return true }
+        if error.domain == NSPOSIXErrorDomain, [Int(EACCES), Int(EPERM)].contains(error.code) { return true }
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? Error { return isPermissionError(underlying) }
+        return false
+    }
+    /// Downloads the job again inside the app, once, and keeps later
+    /// downloads there for this build.
+    private func fallBackToForeground(_ id: UUID) -> Bool {
+        guard !fallbackForegroundIDs.contains(id), let index = jobs.firstIndex(where: { $0.id == id }) else { return false }
+        fallbackForegroundIDs.insert(id)
+        markBackgroundUnavailable()
+        tasks.removeValue(forKey: id)
+        progressPublishedAt.removeValue(forKey: id)
+        updateBackgroundTask()
+        try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
+        jobs[index].status = .queued
+        jobs[index].downloaded = 0
+        jobs[index].error = nil
+        persist()
+        schedule()
+        return true
     }
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     private var lastSave = Date.distantPast
@@ -936,9 +965,11 @@ extension DownloadManager: URLSessionDownloadDelegate {
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         if downloadTask.taskDescription == Self.backgroundProbeDescription {
-            // Reaching here means the service could create the file.
+            // The service created the file; iPadn must also be able to read it.
+            var unreadable = false
+            do { _ = try Data(contentsOf: location) } catch { unreadable = Self.isPermissionError(error) }
             try? FileManager.default.removeItem(at: location)
-            Task { @MainActor in self.finishBackgroundProbe(error: nil); self.finishBackgroundIfReady() }
+            Task { @MainActor in self.finishBackgroundProbe(error: nil, unreadable: unreadable); self.finishBackgroundIfReady() }
             return
         }
         guard let value = downloadTask.taskDescription, let id = UUID(uuidString: value) else { return }
@@ -989,11 +1020,13 @@ extension DownloadManager: URLSessionDownloadDelegate {
             }
         } catch {
             try? FileManager.default.removeItem(at: received)
+            let unreadable = Self.isPermissionError(error)
             Task { @MainActor in
                 defer { self.deliveries.end(); self.finishBackgroundIfReady() }
                 await self.startupTask?.value
                 self.updateBackgroundTask()
                 guard self.accepts(downloadTask, id: id) else { return }
+                if unreadable, self.fallBackToForeground(id) { return }
                 self.fail(id, error: error)
             }
         }
@@ -1015,24 +1048,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
             guard self.accepts(task, id: id, restoredDelivery: restoredDelivery) else { return }
 
             // Automatic fallback: if background nsurlsessiond failed to create file (-3000), retry in foreground process
-            if error.domain == NSURLErrorDomain, error.code == NSURLErrorCannotCreateFile {
-                if !self.fallbackForegroundIDs.contains(id) {
-                    self.fallbackForegroundIDs.insert(id)
-                    self.markBackgroundUnavailable()
-                    self.tasks.removeValue(forKey: id)
-                    self.progressPublishedAt.removeValue(forKey: id)
-                    self.updateBackgroundTask()
-                    try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
-                    if let index = self.jobs.firstIndex(where: { $0.id == id }) {
-                        self.jobs[index].status = .queued
-                        self.jobs[index].downloaded = 0
-                        self.jobs[index].error = nil
-                        self.persist()
-                        self.schedule()
-                        return
-                    }
-                }
-            }
+            if error.domain == NSURLErrorDomain, error.code == NSURLErrorCannotCreateFile, self.fallBackToForeground(id) { return }
 
             // Save resume data first: it is what lets a cancelled transfer continue.
             if let resume = resume { try? resume.write(to: LocalResources.resumeURL(id), options: .atomic) }
