@@ -13,7 +13,7 @@
 - **内容**：#36 后台下载文件无读取权限时自动改用应用内下载（`DownloadManager.isPermissionError`、`fallBackToForeground`）；更新后图标主题显示（`AppIconService.rememberedAlternate`）；「设置 › 支持 iPadn」（`SupportView.swift`，爱发电 + USDT BEP20 `0x5f0cff7587b9fc305f9fa626135789bd5100818e`，地址已与用户币安截图逐字及二维码核对）；诊断信息记录最近失败请求（`RequestFailureLog`，仅元数据）、「复制诊断信息」、401 提示重新登录。
 - **README**：支持区（徽章、USDT 二维码 `docs/images/usdt-bep20.png`、`.github/FUNDING.yml`）；去掉 Stars 徽章和趋势图；补充 iOS 27 以下配对为何需要电脑。GitHub 仓库简介已中英双语。
 - **issue**：#33 已回复并关闭（邀请校对翻译）；#36 已回复修复并关闭。
-- **待办**：LiveContainer + 美区账号下载 401，等用户用 1.9.2 的「复制诊断信息」反馈后定位。下一步新功能：TestFlight 已加入测试的 App（新会话，提示词 `.build/testflight-session-prompt.md`，先审计）。iOS 15/16 兼容已评估，用户决定暂不做。
+- **待办**：LiveContainer + 美区账号下载 401，等用户用 1.9.2 的「复制诊断信息」反馈后定位。TestFlight 已加入测试的 App：另一会话真机验证 TestFlight 的 session/authenticate 不接受 iPadn 的商店凭据（401），用户决定不做。iOS 15/16 兼容已评估，用户决定暂不做。
 
 ## 2026-11-11 iPadn 1.9.1（build 26）多语言版本
 
