@@ -167,7 +167,7 @@ struct PurchasedView: View {
                                         Image(systemName: selection.contains(app.id) ? "checkmark.circle.fill" : "circle")
                                             .font(.title2)
                                             .foregroundStyle(selection.contains(app.id) ? Color.accentColor : Color.secondary)
-                                            .contentTransition(.symbolEffect(.replace))
+                                            .compatibleSymbolReplacement()
                                         AppRow(app: storeApp(app), subtitle: subtitle, badge: badges[app.id])
                                     }
                                     .contentShape(Rectangle())
@@ -196,7 +196,7 @@ struct PurchasedView: View {
                             Text("\(visible.count) 个项目")
                             Spacer()
                             Button(selecting ? "完成" : "选择") {
-                                withAnimation(.snappy) { selecting.toggle(); selection.removeAll() }
+                                withAnimation(.compatibleSnappy) { selecting.toggle(); selection.removeAll() }
                             }
                             .font(.body.weight(.semibold))
                             .textCase(nil)
@@ -222,7 +222,7 @@ struct PurchasedView: View {
         }
         .navigationDestination(isPresented: $showLogin) { LoginView() }
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
-        .navigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
+        .compatibleNavigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
         .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
         .toolPage()
         .rootTabBar("已购项目", headerScrolledAway: headerAway)
@@ -261,6 +261,6 @@ struct PurchasedView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .onChange(of: apple.activeID) { _, _ in selecting = false; selection.removeAll(); delistedOnly = false }
+        .compatibleOnChange(of: apple.activeID) { _ in selecting = false; selection.removeAll(); delistedOnly = false }
     }
 }

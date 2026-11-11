@@ -120,8 +120,8 @@ private struct TargetPriceRow: View {
                 .font(.footnote).foregroundStyle(.secondary)
         }
         .onAppear { text = Self.string(record.target) }
-        .onChange(of: record.key) { _, _ in text = Self.string(record.target) }
-        .onChange(of: focused) { _, editing in
+        .compatibleOnChange(of: record.key) { _ in text = Self.string(record.target) }
+        .compatibleOnChange(of: focused) { editing in
             guard !editing else { return }
             let value = Self.value(text)
             save(value)

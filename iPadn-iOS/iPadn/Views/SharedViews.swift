@@ -186,7 +186,7 @@ struct RootView: View {
             }
         }
         .preferredColorScheme(store.settings.appearance == "system" ? nil : store.settings.appearance == "dark" ? .dark : .light)
-        .sensoryFeedback(.selection, trigger: store.tab)
+        .compatibleSelectionFeedback(trigger: store.tab)
         .sheet(item: $store.verificationRequest) { request in
             ExistingAccountVerificationView(accountID: request.accountID) {
                 // Runs after the sheet has closed, so a retry can present again.
@@ -211,7 +211,7 @@ struct RootView: View {
                             .fixedSize(horizontal: false, vertical: true)
                             Button("撤销") { withAnimation(UX.motion(reduceMotion)) { store.undoLastAction() } }
                                 .font(.subheadline.weight(.semibold)).frame(minWidth: 44, minHeight: 44)
-                                .contentShape([.interaction, .accessibility], Rectangle())
+                                .compatibleInteractionShape(Rectangle())
                                 .accessibilityIdentifier("notice.undo")
                     }
                     .padding(.horizontal, 14)
@@ -224,7 +224,7 @@ struct RootView: View {
                                     .fixedSize(horizontal: false, vertical: true)
                             }.padding(.horizontal, 18).padding(.vertical, 11).frame(minHeight: 44)
                         }
-                        .contentShape([.interaction, .accessibility], RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .compatibleInteractionShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                         .accessibilityLabel(message).accessibilityHint("点按关闭提示")
                         .accessibilityIdentifier("notice.banner")
                     }

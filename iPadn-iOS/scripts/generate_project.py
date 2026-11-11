@@ -51,10 +51,29 @@ resources = []
 # String catalogs hold every user-facing string. The source language stays
 # Chinese (the keys are the Chinese text); English is translated in the catalog.
 for path, file_type in [("Resources/SAPRuntime", "folder"), ("Resources/Assets.xcassets", "folder.assetcatalog"), ("Resources/PrivacyInfo.xcprivacy", "text.xml"), ("Resources/app-name-directory.json", "text.json"),
-                       ("Resources/Localizable.xcstrings", "text.json.xcstrings"), ("Resources/InfoPlist.xcstrings", "text.json.xcstrings"), ("Resources/AppShortcuts.xcstrings", "text.json.xcstrings")]:
+                       ("Resources/Localizable.xcstrings", "text.json.xcstrings"), ("Resources/InfoPlist.xcstrings", "text.json.xcstrings")]:
     reference = add("File/" + path, "PBXFileReference", lastKnownFileType=file_type, path=path, sourceTree="<group>")
     app_files.append(reference)
     resources.append(add("Build/" + path, "PBXBuildFile", fileRef=reference))
+# Xcode requires .strings resources for App Shortcuts when targeting iOS 16.
+shortcut_catalog = json.loads((ROOT / "iPadn/Resources/AppShortcuts.xcstrings").read_text(encoding="utf-8"))["strings"]
+shortcut_languages = sorted(next(iter(shortcut_catalog.values()))["localizations"])
+shortcut_children = []
+for language in shortcut_languages:
+    path = f"Resources/{language}.lproj/AppShortcuts.strings"
+    lines = []
+    for key, entry in shortcut_catalog.items():
+        value = entry["localizations"][language]["stringUnit"]["value"]
+        lines.append(f"{json.dumps(key, ensure_ascii=False)} = {json.dumps(value, ensure_ascii=False)};")
+    strings_file = ROOT / "iPadn" / path
+    strings_file.parent.mkdir(parents=True, exist_ok=True)
+    strings_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    shortcut_children.append(add("File/" + path, "PBXFileReference", lastKnownFileType="text.plist.strings",
+                                 name=language, path=path, sourceTree="<group>"))
+shortcut_group = add("File/Resources/AppShortcuts.xcstrings", "PBXVariantGroup", children=shortcut_children,
+                     name="AppShortcuts.strings", sourceTree="<group>")
+app_files.append(shortcut_group)
+resources.append(add("Build/Resources/AppShortcuts.xcstrings", "PBXBuildFile", fileRef=shortcut_group))
 # The primary icon is the dark 立体 icon. AppIconAuto and AppIconFlat follow
 # the system appearance; the others are fixed light or dark. AppIconDark is
 # kept for installs that chose it before the primary icon became dark.
@@ -98,7 +117,7 @@ for path in sorted((ROOT / "iPadnTests/Fixtures").glob("*.p12")):
     objects[test_group]["children"].append(reference)
     test_resources.append(add("TestBuild/" + relative, "PBXBuildFile", fileRef=reference))
 tests_resources = add("TestsResources", "PBXResourcesBuildPhase", buildActionMask="2147483647", files=test_resources, runOnlyForDeploymentPostprocessing="0")
-base = {"IPHONEOS_DEPLOYMENT_TARGET": "17.0", "SDKROOT": "iphoneos", "SWIFT_VERSION": "5.0",
+base = {"IPHONEOS_DEPLOYMENT_TARGET": "16.0", "SDKROOT": "iphoneos", "SWIFT_VERSION": "5.0",
         "CLANG_ENABLE_MODULES": "YES", "CLANG_ENABLE_OBJC_ARC": "YES", "ENABLE_STRICT_OBJC_MSGSEND": "YES",
         "GCC_C_LANGUAGE_STANDARD": "gnu17", "CLANG_CXX_LANGUAGE_STANDARD": "gnu++20",
         "SWIFT_STRICT_CONCURRENCY": "targeted", "ENABLE_USER_SCRIPT_SANDBOXING": "YES"}
@@ -160,7 +179,7 @@ extension_resources = add("ExtensionResources", "PBXResourcesBuildPhase", buildA
                           files=[add("ExtensionBuild/Localizable.xcstrings", "PBXBuildFile", fileRef=extension_catalog)], runOnlyForDeploymentPostprocessing="0")
 objects[root_group]["children"].append(add("ExtensionGroup", "PBXGroup", children=extension_files, path="iPadnLiveActivity", sourceTree="<group>"))
 extension_phase = add("ExtensionSources", "PBXSourcesBuildPhase", buildActionMask="2147483647", files=extension_sources, runOnlyForDeploymentPostprocessing="0")
-extension_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn.LiveActivity", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
+extension_settings = {"IPHONEOS_DEPLOYMENT_TARGET": "17.0", "PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn.LiveActivity", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
                       "DEVELOPMENT_TEAM": "", "TARGETED_DEVICE_FAMILY": "1,2", "INFOPLIST_FILE": "iPadnLiveActivity/Info.plist",
                       "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": app_settings["MARKETING_VERSION"],
                       "CURRENT_PROJECT_VERSION": app_settings["CURRENT_PROJECT_VERSION"], "SKIP_INSTALL": "YES",

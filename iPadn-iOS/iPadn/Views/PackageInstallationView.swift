@@ -90,7 +90,7 @@ struct PackageInstallationView: View {
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.disabled(nativePhase != nil) } }
                 .interactiveDismissDisabled(nativePhase != nil)
                 .sheet(item: $sharedFile) { ShareSheet(items: [$0.url]) }
-                .onChange(of: scenePhase) { _, phase in if phase != .active { openingSystem = false } }
+                .compatibleOnChange(of: scenePhase) { phase in if phase != .active { openingSystem = false } }
                 .alert("安装未开始", isPresented: Binding(get: { issue != nil }, set: { if !$0 { issue = nil } })) {
                     Button("知道了", role: .cancel) { issue = nil }
                 } message: { Text(issue ?? "") }

@@ -64,8 +64,8 @@ struct SearchView: View {
         .animation(UX.motion(reduceMotion), value: store.favorites.map(\.id))
         .toolPage()
         .rootTabBar("搜索", headerScrolledAway: headerAway)
-        .navigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
-        .navigationDestination(item: $viewingFavorite) { app in AppDetailView(app: app) }
+        .compatibleNavigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
+        .compatibleNavigationDestination(item: $viewingFavorite) { app in AppDetailView(app: app) }
         .actionConfirmation(isPresented: $confirmClear, title: "清除最近搜索？", confirmTitle: "清除") { withAnimation { store.clearHistory() } }
         .task { await store.loadNameCatalog() }
         .task { await store.checkWatched() }

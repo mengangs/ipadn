@@ -9,7 +9,7 @@
 
 [![最新版本](https://img.shields.io/github/v/release/mengangs/ipadn?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
 [![下载量](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F&color=111111)](https://github.com/mengangs/ipadn/releases)
-![系统要求](https://img.shields.io/badge/iOS%20%2F%20iPadOS-17%2B-111111)
+![系统要求](https://img.shields.io/badge/iOS%20%2F%20iPadOS-16%2B-111111)
 [![许可证](https://img.shields.io/github/license/mengangs/ipadn?label=%E8%AE%B8%E5%8F%AF%E8%AF%81&color=111111)](LICENSE)
 
 **简体中文** · [English](README_EN.md)
@@ -60,7 +60,7 @@
 
 ## 开始使用
 
-> 需要 **iOS / iPadOS 17** 或更新版本。
+> 需要 **iOS / iPadOS 16** 或更新版本。
 
 1. 在 [Releases](https://github.com/mengangs/ipadn/releases/latest) 下载最新的 `iPadn-版本号-unsigned.ipa`。
 2. 用你常用的签名工具签名后安装到设备上。

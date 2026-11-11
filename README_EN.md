@@ -9,7 +9,7 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 [![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=downloads&color=111111)](https://github.com/mengangs/ipadn/releases)
-![Requires](https://img.shields.io/badge/iOS%20%2F%20iPadOS-17%2B-111111)
+![Requires](https://img.shields.io/badge/iOS%20%2F%20iPadOS-16%2B-111111)
 [![License](https://img.shields.io/github/license/mengangs/ipadn?label=license&color=111111)](LICENSE)
 
 [简体中文](README.md) · **English**
@@ -60,7 +60,7 @@ The interface follows the App Store's design. Appearance follows the system and 
 
 ## Getting started
 
-> Requires **iOS / iPadOS 17** or later.
+> Requires **iOS / iPadOS 16** or later.
 
 1. Download the latest `iPadn-<version>-unsigned.ipa` from [Releases](https://github.com/mengangs/ipadn/releases/latest).
 2. Sign it with your usual signing tool and install it on your device.
