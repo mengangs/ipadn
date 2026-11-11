@@ -1,11 +1,23 @@
 # iPadn 项目全面交接与问题排查文档 (HANDOVER.md)
 
-> **更新时间**：2026-11-10
+> **更新时间**：2026-11-11
 > **代码仓库**：`https://github.com/mengangs/ipadn.git` (`main` 分支)  
 > **本地工作区**：`D:\iOS-Dev\projects\ipadn` (映射到 WSL2: `/mnt/d/iOS-Dev/projects/ipadn`)  
 > **目标产品**：iOS 原生应用 `iPadn` (`app.local.iPadn`)
 
 ---
+
+## 2026-11-11 iPadn 1.9.1（build 26）多语言版本
+
+用户已授权：第二批语言加阿拉伯语、真机测试、合并 PR、发布 1.9.1、更新 README 截图与 GitHub 简介。本节为最新状态。
+
+- **已发布**：2026-11-11 15:01（UTC+8）[iPadn v1.9.1](https://github.com/mengangs/ipadn/releases/tag/v1.9.1)，Latest，非草稿/预发布，标签指向合并提交 `84a0110a`（PR #37 合并进 `main`，PR #35 随之显示为已合并）。IPA SHA-256 `1813195b0415916be4959da0e189b63b652b672c4b297b2b986fc29f17de582b`，与校验文件、附件 digest、build-info（commit `84a0110a`、run 42974832480）一致；发布正文以 `RELEASE_NOTES.md` 开头逐字一致，无乱码。安装包内 App 与实时活动扩展均含 11 个 lproj。
+- **测试**：完整 CI run 42972128807（提交 `26e8b90`）通过，单元测试 134 项、UI 测试 11 项，0 失败；之后只换了 README 截图。偶发失败 `testSignerCancelResumesPendingJavaScript`（WebKit 超时，与改动无关）出现过一次。正式安装包已在 iPhone 15 Pro（iOS 27.0.1）安装并启动，版本 1.9.1（26）。
+- **语言**：zh-Hans（源）、en（#35，kylefmohr）、zh-Hant、ja、ko、ru、es、fr、de、pt-BR、ar（从右到左）。除英文外为机器辅助翻译。本地辅助脚本在 `.build/native-pair/`（`build_catalogs2.py`、`t2_*.json`）。`verify_project.py` 要求 11 种语言且占位符一致。
+- **真机发现并修复**：阿拉伯语下左右滑动方向（`RevealInteraction` 按布局方向换算触点）；「免费」按地区取文案导致简体界面显示繁体「免費」、详情页显示英文「Free」（改按界面语言，`AppText` 按语言+文字匹配语言包，价格为 0 即视为免费）；内购名称优先读语言本国商店（`InAppPriceService.nameRegions`）；搜索结果分类单独一行；已购下载按钮改为云朵图标；安装方式分段改用短名称；安装设置结果改为顶部小提示，安装弹窗内也能显示；配对引导步骤此前未翻译。
+- **README**：中英文各 8 张真机截图（`docs/images/{zh,en}/`），由 `.build/native-pair/compose_shots.py` 合成；账号页用演示数据，详情页邮箱与头像已替换。调试启动参数 `--visual-preview` 使用公开应用（Netflix、Spotify、Notion、Disney+），`--installation` 直接打开安装设置（不在主界面内，看不到顶部提示）。
+- **GitHub**：仓库简介改为中英双语，添加 9 个主题标签，主页指向最新发布。
+- **待用户决定**：是否回复 issue #33 邀请提问者校对翻译（公开回复需用户同意）。
 
 ## 2026-11-11 iPadn 1.9.0（build 25）汇总
 
