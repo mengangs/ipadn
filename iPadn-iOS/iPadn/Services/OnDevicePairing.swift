@@ -32,7 +32,8 @@ final class OnDevicePairing: ObservableObject {
     static let serviceType = "_remotepairing-pairable-host._tcp."
 
     private var service: NetService?
-    private var activity: Activity<PairingActivityAttributes>?
+    // ActivityKit is unavailable on iOS 16.0. Access the handle only in guarded methods.
+    private var activity: Any?
     private let keepAlive = PairingKeepAlive()
     private var running = false
 
@@ -110,7 +111,7 @@ final class OnDevicePairing: ObservableObject {
     // MARK: Live Activity
 
     private func startActivity() {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard #available(iOS 16.2, *), ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         // A pairing left over from an earlier run is no longer true.
         for old in Activity<PairingActivityAttributes>.activities {
             Task { await old.end(nil, dismissalPolicy: .immediate) }
@@ -121,7 +122,7 @@ final class OnDevicePairing: ObservableObject {
     }
 
     private func update(step: Int, code: String? = nil) {
-        guard let activity else { return }
+        guard #available(iOS 16.2, *), let activity = activity as? Activity<PairingActivityAttributes> else { return }
         let state = PairingActivityAttributes.ContentState(step: step, code: code)
         // An alert expands the Dynamic Island when the code arrives.
         let alert = code.map { AlertConfiguration(title: "iPadn 配对码", body: "\($0)", sound: .default) }
@@ -129,7 +130,7 @@ final class OnDevicePairing: ObservableObject {
     }
 
     private func endActivity(step: Int?, message: String?) {
-        guard let activity else { return }
+        guard #available(iOS 16.2, *), let activity = activity as? Activity<PairingActivityAttributes> else { return }
         self.activity = nil
         Task {
             if let step {

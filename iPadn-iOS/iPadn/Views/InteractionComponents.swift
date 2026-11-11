@@ -14,12 +14,12 @@ struct ActionConfirmationView: View {
     var body: some View {
         Group {
             if typeSize.isAccessibilitySize {
-                ScrollView { confirmation }.scrollBounceBehavior(.basedOnSize)
+                ScrollView { confirmation }.compatibleScrollBounce()
                     .accessibilityIdentifier("confirmation.scroll")
             } else { confirmation }
         }
         .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.height(showsCancel ? 320 : 280), .large])
-        .presentationDragIndicator(.visible).presentationCornerRadius(28)
+        .presentationDragIndicator(.visible).compatiblePresentationCornerRadius(28)
     }
     private var confirmation: some View {
         VStack(alignment: .leading, spacing: 20) {

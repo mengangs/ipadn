@@ -119,7 +119,7 @@ struct SupportView: View {
                     .font(.system(size: 52, weight: .semibold))
                     .foregroundStyle(LinearGradient(colors: [Color(red: 1, green: 0.45, blue: 0.58), Color(red: 0.94, green: 0.2, blue: 0.36)],
                                                     startPoint: .top, endPoint: .bottom))
-                    .symbolEffect(.bounce, value: beat)
+                    .compatibleBounce(trigger: beat)
                     .onTapGesture { if !reduceMotion { beat += 1 } }
             }
             .frame(height: 130)

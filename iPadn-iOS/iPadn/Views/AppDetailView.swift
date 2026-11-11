@@ -163,14 +163,14 @@ struct AppDetailView: View {
                     .animation(.easeInOut(duration: 0.18), value: headerAway)
                     .accessibilityHidden(true)
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .compatibleTopBarTrailing) {
                 Button {
                     let following = !store.isFavorite(app)
                     store.toggleFavorite(app); UX.feedback()
                     if following { store.infoMessage = AppText.text("已关注，有新版本、降价或下架时会提醒你") }
                 } label: {
                     Image(systemName: store.isFavorite(app) ? "bell.fill" : "bell")
-                        .contentTransition(.symbolEffect(.replace))
+                        .compatibleSymbolReplacement()
                         .frame(minWidth: 44, minHeight: 44)
                 }
                 .accessibilityLabel(store.isFavorite(app) ? AppText.text("取消关注") : AppText.text("关注应用"))
@@ -421,7 +421,7 @@ struct AppDetailView: View {
             if !versions.isEmpty && matches.isEmpty { Text("没有匹配的版本。").font(.subheadline).foregroundStyle(.secondary) }
             if versionSearch.isEmpty && matches.count > 10 {
                 Button {
-                    withAnimation(.snappy) { showAllVersions.toggle() }
+                    withAnimation(.compatibleSnappy) { showAllVersions.toggle() }
                 } label: {
                     HStack {
                         Text(showAllVersions ? "收起" : "显示全部 \(matches.count) 个版本")
@@ -476,7 +476,7 @@ struct AppDetailView: View {
             }
             if let note, !note.text.isEmpty {
                 Button {
-                    withAnimation(.snappy) {
+                    withAnimation(.compatibleSnappy) {
                         if expanded { expandedNotes.remove(version.id) } else { expandedNotes.insert(version.id) }
                     }
                 } label: {
@@ -720,6 +720,7 @@ private struct ScreenshotStrip: View {
     /// portrait-looking link: once all are in, lay each one out by the real image.
     @State private var images: [URL: UIImage] = [:]
     @State private var failed = Set<URL>()
+    @State private var legacyWidth: CGFloat = 1
     private var ready: Bool { !screenshots.isEmpty && screenshots.allSatisfy { images[$0.url] != nil || failed.contains($0.url) } }
     private func aspect(_ shot: StoreService.Screenshot) -> Double {
         guard ready, let image = images[shot.url], image.size.height > 0 else { return shot.aspect }
@@ -737,33 +738,28 @@ private struct ScreenshotStrip: View {
                 HStack(spacing: 10) {
                     if placeholders {
                         ForEach(0..<3, id: \.self) { _ in
-                            ScreenshotTile(image: nil, failed: false, cornerRadius: placeholderAspect < 1 ? 22 : 14)
-                                .aspectRatio(placeholderAspect, contentMode: .fit)
-                                .containerRelativeFrame(.horizontal) { length, _ in
-                                    Self.tileWidth(length - margin * 2, aspect: placeholderAspect)
-                                }
+                            screenshotWidth(of: ScreenshotTile(image: nil, failed: false, cornerRadius: placeholderAspect < 1 ? 22 : 14)
+                                .aspectRatio(placeholderAspect, contentMode: .fit), aspect: placeholderAspect, margin: margin)
                         }
                     }
                     ForEach(screenshots) { shot in
                         let ratio = aspect(shot)
                         let portrait = ratio < 1
                         Button { open(shot) } label: {
-                            ScreenshotTile(image: ready ? images[shot.url] : nil, failed: failed.contains(shot.url),
+                            screenshotWidth(of: ScreenshotTile(image: ready ? images[shot.url] : nil, failed: failed.contains(shot.url),
                                            cornerRadius: portrait ? 22 : 14)
-                                .aspectRatio(ratio, contentMode: .fit)
-                                .containerRelativeFrame(.horizontal) { length, _ in
-                                    Self.tileWidth(length - margin * 2, aspect: ratio)
-                                }
+                                .aspectRatio(ratio, contentMode: .fit), aspect: ratio, margin: margin)
                         }
                         .buttonStyle(.plain)
                         .zoomSource(shot.id, in: zoom)
                         .accessibilityLabel("截图")
                     }
                 }
-                .scrollTargetLayout()
+                .compatibleScrollTargetLayout()
+                .legacyHorizontalPadding(margin)
             }
-            .contentMargins(.horizontal, margin, for: .scrollContent)
-            .scrollTargetBehavior(.viewAligned)
+            .compatibleHorizontalScrollMargins(margin)
+            .compatibleViewAlignedScrolling()
             .scrollDisabled(placeholders)
             HStack(spacing: 8) {
                 DeviceGlyph(platform: platform)
@@ -772,8 +768,19 @@ private struct ScreenshotStrip: View {
             .font(.footnote).foregroundStyle(.secondary)
             .padding(.horizontal, margin)
         }
+        .measureLegacyWidth($legacyWidth)
         .task(id: screenshots.map(\.url)) { await load() }
         .accessibilityIdentifier("detail.screenshots")
+    }
+
+    @ViewBuilder private func screenshotWidth(of content: some View, aspect: Double, margin: CGFloat) -> some View {
+        if #available(iOS 17, *) {
+            content.containerRelativeFrame(.horizontal) { length, _ in
+                Self.tileWidth(length - margin * 2, aspect: aspect)
+            }
+        } else {
+            content.frame(width: Self.tileWidth(legacyWidth - margin * 2, aspect: aspect))
+        }
     }
 
     /// Portrait: about two thirds of the card width, so the next one shows;
@@ -970,25 +977,41 @@ private struct ScreenshotViewer: View {
             // Each screenshot as large as fits, leaving room for the neighbours.
             let widths = screenshots.map { min(widest, height * aspect($0)) }
             let margin = max(24, (proxy.size.width - (widths.max() ?? widest)) / 2)
-            ScrollViewReader { reader in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(Array(zip(screenshots, widths)), id: \.0.id) { shot, width in
-                            let ratio = aspect(shot)
-                            ScreenshotTile(image: images[shot.url] ?? ScreenshotCache.cached(shot.url), failed: false,
-                                           cornerRadius: ratio < 1 ? 28 : 18)
-                                .frame(width: width, height: width / ratio)
-                                .frame(maxHeight: .infinity)
-                                .id(shot.id)
+            if #available(iOS 17, *) {
+                ScrollViewReader { reader in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(Array(zip(screenshots, widths)), id: \.0.id) { shot, width in
+                                let ratio = aspect(shot)
+                                ScreenshotTile(image: images[shot.url] ?? ScreenshotCache.cached(shot.url), failed: false,
+                                               cornerRadius: ratio < 1 ? 28 : 18)
+                                    .frame(width: width, height: width / ratio)
+                                    .frame(maxHeight: .infinity)
+                                    .id(shot.id)
+                            }
                         }
+                        .scrollTargetLayout()
                     }
-                    .scrollTargetLayout()
+                    .contentMargins(.horizontal, margin, for: .scrollContent)
+                    .scrollTargetBehavior(.viewAligned(limitBehavior: .always))
+                    .scrollPosition(id: $current)
+                    .padding(.top, 72).padding(.bottom, 24)
+                    .onAppear { reader.scrollTo(selection.id, anchor: .center) }
                 }
-                .contentMargins(.horizontal, margin, for: .scrollContent)
-                .scrollTargetBehavior(.viewAligned(limitBehavior: .always))
-                .scrollPosition(id: $current)
+            } else {
+                TabView(selection: $current) {
+                    ForEach(screenshots) { shot in
+                        let ratio = aspect(shot)
+                        let width = max(1, min(widest, height * ratio))
+                        ScreenshotTile(image: images[shot.url] ?? ScreenshotCache.cached(shot.url), failed: false,
+                                       cornerRadius: ratio < 1 ? 28 : 18)
+                            .frame(width: width, height: width / ratio)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .tag(Optional(shot.id))
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .automatic))
                 .padding(.top, 72).padding(.bottom, 24)
-                .onAppear { reader.scrollTo(selection.id, anchor: .center) }
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -1040,12 +1063,20 @@ private struct DeveloperAppsStrip: View {
                     .buttonStyle(.plain)
                 }
             }
-            .scrollTargetLayout()
+            .compatibleScrollTargetLayout()
+            .legacyHorizontalPadding(20)
             .padding(.vertical, 16)
         }
-        .contentMargins(.horizontal, 20, for: .scrollContent)
-        .scrollTargetBehavior(.viewAligned)
+        .compatibleHorizontalScrollMargins(20)
+        .compatibleViewAlignedScrolling()
         .clipShape(RoundedRectangle(cornerRadius: CardSection<EmptyView, EmptyView>.cornerRadius, style: .continuous))
         .accessibilityIdentifier("detail.developer-apps")
+    }
+}
+
+private extension View {
+    @ViewBuilder func measureLegacyWidth(_ width: Binding<CGFloat>) -> some View {
+        if #available(iOS 17, *) { self }
+        else { onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width.wrappedValue = $0 } }
     }
 }

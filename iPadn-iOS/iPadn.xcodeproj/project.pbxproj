@@ -639,10 +639,99 @@
 			isa = PBXBuildFile;
 			fileRef = 0DCDD6B6150838BA6D7A2C9C;
 		};
-		393950C9B69B23E630913278 = {
+		1008C8734C72CA3F7ABDB50E = {
 			isa = PBXFileReference;
-			lastKnownFileType = text.json.xcstrings;
-			path = "Resources/AppShortcuts.xcstrings";
+			lastKnownFileType = text.plist.strings;
+			name = "ar";
+			path = "Resources/ar.lproj/AppShortcuts.strings";
+			sourceTree = "<group>";
+		};
+		D675A232F8E930CE36F3A935 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.strings;
+			name = "de";
+			path = "Resources/de.lproj/AppShortcuts.strings";
+			sourceTree = "<group>";
+		};
+		08F36FD583DC2DE47EE40C82 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.strings;
+			name = "en";
+			path = "Resources/en.lproj/AppShortcuts.strings";
+			sourceTree = "<group>";
+		};
+		4D11255D3165AF7A2BFE22C4 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.strings;
+			name = "es";
+			path = "Resources/es.lproj/AppShortcuts.strings";
+			sourceTree = "<group>";
+		};
+		F439D47B640C245F56ED9298 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.strings;
+			name = "fr";
+			path = "Resources/fr.lproj/AppShortcuts.strings";
+			sourceTree = "<group>";
+		};
+		6A979F59C4890C9888369AE0 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.strings;
+			name = "ja";
+			path = "Resources/ja.lproj/AppShortcuts.strings";
+			sourceTree = "<group>";
+		};
+		4E442A6ACD9DC0D53A0BECEE = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.strings;
+			name = "ko";
+			path = "Resources/ko.lproj/AppShortcuts.strings";
+			sourceTree = "<group>";
+		};
+		5C872360A867DBDBEB149C34 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.strings;
+			name = "pt-BR";
+			path = "Resources/pt-BR.lproj/AppShortcuts.strings";
+			sourceTree = "<group>";
+		};
+		AB4176A4E80A75407BF8011D = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.strings;
+			name = "ru";
+			path = "Resources/ru.lproj/AppShortcuts.strings";
+			sourceTree = "<group>";
+		};
+		861B72437A7F21583C8DE378 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.strings;
+			name = "zh-Hans";
+			path = "Resources/zh-Hans.lproj/AppShortcuts.strings";
+			sourceTree = "<group>";
+		};
+		0C3B2944EF4B6836E423BCB3 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.plist.strings;
+			name = "zh-Hant";
+			path = "Resources/zh-Hant.lproj/AppShortcuts.strings";
+			sourceTree = "<group>";
+		};
+		393950C9B69B23E630913278 = {
+			isa = PBXVariantGroup;
+			children = (
+				1008C8734C72CA3F7ABDB50E,
+				D675A232F8E930CE36F3A935,
+				08F36FD583DC2DE47EE40C82,
+				4D11255D3165AF7A2BFE22C4,
+				F439D47B640C245F56ED9298,
+				6A979F59C4890C9888369AE0,
+				4E442A6ACD9DC0D53A0BECEE,
+				5C872360A867DBDBEB149C34,
+				AB4176A4E80A75407BF8011D,
+				861B72437A7F21583C8DE378,
+				0C3B2944EF4B6836E423BCB3,
+			);
+			name = AppShortcuts.strings;
 			sourceTree = "<group>";
 		};
 		85310CBF180B460ABE6CA437 = {
@@ -1311,7 +1400,7 @@
 		653F00C218B171A375DB131B = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				CLANG_ENABLE_MODULES = YES;
@@ -1331,7 +1420,7 @@
 		C6E4775ECDD79062F35351BF = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				CLANG_ENABLE_MODULES = YES;
@@ -1733,6 +1822,7 @@
 		4162F030F80DA64AC10BE48A = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.local.iPadn.LiveActivity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				CODE_SIGN_STYLE = Automatic;
@@ -1761,6 +1851,7 @@
 		602C8E4536EEF68969E0EA47 = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.local.iPadn.LiveActivity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				CODE_SIGN_STYLE = Automatic;

@@ -31,7 +31,7 @@ struct SettingsView: View {
                 Stepper("等待任务上限：\(store.settings.maxQueuedDownloads)", value: $store.settings.maxQueuedDownloads, in: 1...100)
                 Toggle("下载完成通知", isOn: $store.settings.notifications)
                 Toggle("新版本提醒", isOn: $store.settings.updateNotifications)
-                    .onChange(of: store.settings.updateNotifications) { _, on in
+                    .compatibleOnChange(of: store.settings.updateNotifications) { on in
                         if on { UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in } }
                     }
                 Toggle("兼容下载模式", isOn: $store.settings.compatibleDownloadMode)
@@ -49,7 +49,7 @@ struct SettingsView: View {
             }
             Section {
                 Toggle("关注应用提醒", isOn: $store.settings.watchNotifications)
-                    .onChange(of: store.settings.watchNotifications) { _, on in
+                    .compatibleOnChange(of: store.settings.watchNotifications) { on in
                         if on { UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in } }
                     }
             } header: { Text("关注") } footer: {
@@ -209,7 +209,7 @@ struct SettingsView: View {
                 }
                 .disabled(store.appUpdateChecking)
                 Toggle("自动检查更新", isOn: $store.settings.appUpdateCheck)
-                    .onChange(of: store.settings.appUpdateCheck) { _, on in
+                    .compatibleOnChange(of: store.settings.appUpdateCheck) { on in
                         if on { UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in } }
                     }
                 Link("项目与更新", destination: URL(string: "https://github.com/mengangs/ipadn")!)
@@ -220,12 +220,12 @@ struct SettingsView: View {
             }
         }
         .toolPage().navigationTitle("设置").navigationBarTitleDisplayMode(.inline)
-        .onChange(of: scenePhase) { _, phase in if phase == .active { icons.refresh() } }
+        .compatibleOnChange(of: scenePhase) { phase in if phase == .active { icons.refresh() } }
         .alert("图标未更改", isPresented: Binding(get: { iconIssue != nil }, set: { if !$0 { iconIssue = nil } })) {
             Button("知道了", role: .cancel) { iconIssue = nil }
         } message: { Text(iconIssue ?? "") }
         .sheet(isPresented: $addingSource) { AddVersionSourceView() }
-        .navigationDestination(item: $editingSourceID) { id in
+        .compatibleNavigationDestination(item: $editingSourceID) { id in
             if let index = store.settings.versionSources.firstIndex(where: { $0.id == id }) {
                 VersionSourceEditor(source: $store.settings.versionSources[index])
             }

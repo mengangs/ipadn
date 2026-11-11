@@ -202,7 +202,7 @@ struct LoginView: View {
                     credentials.transition(.move(edge: .leading).combined(with: .opacity))
                 }
             }
-            .animation(.snappy, value: verifying)
+            .animation(.compatibleSnappy, value: verifying)
             .frame(maxWidth: 460).padding(.horizontal, 24).padding(.vertical, 20)
             .frame(maxWidth: .infinity)
         }
@@ -211,7 +211,7 @@ struct LoginView: View {
         .navigationTitle("").navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(busy)
         .toolbar {
-            if busy { ToolbarItem(placement: .topBarTrailing) { Button("取消") { loginTask?.cancel() } } }
+            if busy { ToolbarItem(placement: .compatibleTopBarTrailing) { Button("取消") { loginTask?.cancel() } } }
         }
         .onDisappear { loginTask?.cancel() }
     }

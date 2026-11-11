@@ -165,8 +165,18 @@ for phase in objects.values():
     for child in phase.get("files", []):
         reference = objects.get(objects.get(child, {}).get("fileRef"), {})
         if reference.get("path"): resource_paths.add(reference["path"])
-for name in ["Localizable.xcstrings", "InfoPlist.xcstrings", "AppShortcuts.xcstrings"]:
+        if reference.get("isa") == "PBXVariantGroup" and reference.get("name") == "AppShortcuts.strings":
+            resource_paths.add("Resources/AppShortcuts.strings")
+for name in ["Localizable.xcstrings", "InfoPlist.xcstrings", "AppShortcuts.strings"]:
     check("Resources/" + name in resource_paths, name + " is not in the app's resources")
+for language in LANGUAGES:
+    shortcut_strings = ROOT / f"iPadn/Resources/{language}.lproj/AppShortcuts.strings"
+    expected_lines = []
+    for key, entry in catalogs.get("AppShortcuts", {}).get("strings", {}).items():
+        value = entry["localizations"][language]["stringUnit"]["value"]
+        expected_lines.append(f"{json.dumps(key, ensure_ascii=False)} = {json.dumps(value, ensure_ascii=False)};")
+    check(shortcut_strings.is_file() and shortcut_strings.read_text(encoding="utf-8").splitlines() == expected_lines,
+          "AppShortcuts.strings differs from the catalog for " + language)
 check("Localizable.xcstrings" in resource_paths, "The Live Activity catalog is not in the extension's resources")
 check(catalogs.get("InfoPlist", {}).get("strings", {}).get("NSLocalNetworkUsageDescription", {}).get("localizations", {}).get("en") is not None,
       "InfoPlist.xcstrings must translate NSLocalNetworkUsageDescription")

@@ -148,9 +148,9 @@ struct DownloadsView: View {
         .toolPage().navigationTitle("下载").navigationBarTitleDisplayMode(.large)
         .environment(\.editMode, $editMode)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarLeading) {
+            ToolbarItemGroup(placement: .compatibleTopBarLeading) {
                 Button(editMode.isEditing ? "完成" : "编辑") {
-                    withAnimation(.snappy(duration: 0.3)) { editMode = editMode.isEditing ? .inactive : .active }
+                    withAnimation(.compatibleSnappy(duration: 0.3)) { editMode = editMode.isEditing ? .inactive : .active }
                 }
                 .disabled(manager.jobs.isEmpty)
                 .accessibilityIdentifier("downloads.edit")
@@ -174,7 +174,7 @@ struct DownloadsView: View {
                     }.accessibilityLabel(AppText.text("筛选下载任务，当前\(filter.title)")).accessibilityIdentifier("download.filter.menu")
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .compatibleTopBarTrailing) {
                 Button { showingActions = true } label: { Image(systemName: "plus").frame(minWidth: 44, minHeight: 44) }
                     .disabled(actionBusy).accessibilityLabel("添加下载").accessibilityIdentifier("downloads.add")
             }
@@ -190,9 +190,9 @@ struct DownloadsView: View {
                 }.padding(18).background(.regularMaterial)
             }
         }
-        .onChange(of: editMode) { _, mode in if !mode.isEditing { selection.removeAll() } }
-        .onChange(of: filter) { _, _ in selection.removeAll() }
-        .onChange(of: term) { _, _ in selection.removeAll() }
+        .compatibleOnChange(of: editMode) { mode in if !mode.isEditing { selection.removeAll() } }
+        .compatibleOnChange(of: filter) { _ in selection.removeAll() }
+        .compatibleOnChange(of: term) { _ in selection.removeAll() }
         .sheet(isPresented: $showingActions, onDismiss: {
             let action = nextAction; nextAction = nil
             switch action {
@@ -218,7 +218,7 @@ struct DownloadsView: View {
                 }
             }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
                 .presentationDetents([.height(manager.jobs.contains { [.running, .queued, .paused].contains($0.status) } ? 360 : 240), .large])
-                .presentationDragIndicator(.visible).presentationCornerRadius(28)
+                .presentationDragIndicator(.visible).compatiblePresentationCornerRadius(28)
         }
         .sheet(isPresented: $importing, onDismiss: importPickedFiles) {
             PackageDocumentPicker { result in
@@ -540,7 +540,7 @@ struct DownloadTaskRow: View {
             }
         }
         .padding(.vertical, 8)
-        .animation(.snappy, value: controlKey)
+        .animation(.compatibleSnappy, value: controlKey)
         .animation(.easeOut(duration: 0.2), value: update?.version)
     }
 }
