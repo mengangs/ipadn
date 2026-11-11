@@ -122,7 +122,17 @@ struct DownloadsView: View {
                         }
                     } header: {
                         if job.id == visible.first?.id {
-                            Text(headerSummary(visible: visible, updates: updates))
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(headerSummary(visible: visible, updates: updates))
+                                Spacer()
+                                // One update has its own button on the row.
+                                if updates.count > 1, !editMode.isEditing {
+                                    Button("全部更新") { downloadAllUpdates() }
+                                        .font(.body.weight(.semibold)).textCase(nil).buttonStyle(.borderless)
+                                        .disabled(actionBusy)
+                                        .accessibilityIdentifier("downloads.update-all")
+                                }
+                            }
                         }
                     }
                 }
@@ -292,6 +302,11 @@ struct DownloadsView: View {
     private func downloadUpdate(_ job: DownloadJob) {
         UX.feedback()
         perform { try await store.downloadUpdate(of: job); filter = .all; term = "" }
+    }
+    private func downloadAllUpdates() {
+        let jobs = manager.jobs.filter { updateTargets[$0.id] != nil }
+        UX.feedback()
+        perform { try await store.downloadAllUpdates(of: jobs); filter = .all; term = "" }
     }
     private func toggleSelection(_ id: UUID) {
         if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }

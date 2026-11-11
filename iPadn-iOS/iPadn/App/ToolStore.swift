@@ -839,7 +839,45 @@ final class ToolStore: ObservableObject {
 
     /// Downloads the store's current version of a finished download.
     func downloadUpdate(of job: DownloadJob) async throws {
-        guard let key = job.updateKey, let platform = job.updatePlatform, let latest = availableUpdates[key] else { return }
+        guard try await enqueueUpdate(of: job) else { return }
+        infoMessage = AppText.text("已开始下载新版本")
+    }
+
+    /// Whether a download of this app is already on its way.
+    private func updateInProgress(_ key: String) -> Bool {
+        downloads.jobs.contains { $0.updateKey == key && [.queued, .running, .pausing, .paused, .processing].contains($0.status) }
+    }
+
+    /// Adds every available update to the queue. Sign-in and verification
+    /// problems stop the batch (they would repeat for every app) and are
+    /// thrown; the caller can verify and call again, and apps already added
+    /// are skipped then. Other problems are reported per app.
+    func downloadAllUpdates(of jobs: [DownloadJob]) async throws {
+        #if DEBUG
+        if visualPreview { infoMessage = AppText.text("已添加 \(jobs.count) 个下载任务"); return }
+        #endif
+        var added = 0
+        var failures: [String] = []
+        defer {
+            if added > 0 { infoMessage = AppText.text("已添加 \(added) 个下载任务") }
+            if !failures.isEmpty { errorMessage = failures.joined(separator: "\n") }
+        }
+        for job in jobs {
+            guard let key = job.updateKey, !updateInProgress(key) else { continue }
+            do {
+                if try await enqueueUpdate(of: job) { added += 1 }
+            } catch let error where error is AppleLoginError || error is AppleAuthError || error is CancellationError {
+                throw error
+            } catch {
+                failures.append(AppText.text("\(job.app.name.isEmpty ? job.app.id : job.app.name)：\(error.localizedDescription)"))
+                if error is DownloadQueueLimitError { break }
+            }
+        }
+    }
+
+    /// Queues the newer version of a finished download; false when there is none.
+    private func enqueueUpdate(of job: DownloadJob) async throws -> Bool {
+        guard let key = job.updateKey, let platform = job.updatePlatform, let latest = availableUpdates[key] else { return false }
         guard apple.active != nil else { throw ToolError.message(AppText.text("请先在「账号」中登录 Apple 账号")) }
         var app = latest
         if app.iconURL == nil { app.iconURL = job.app.iconURL }
@@ -852,7 +890,7 @@ final class ToolStore: ObservableObject {
             if asset.app.iconURL == nil { asset.app.iconURL = app.iconURL }
             try downloads.enqueue(asset)
         }
-        infoMessage = AppText.text("已开始下载新版本")
+        return true
     }
 
     /// Adds the latest version of several apps, one at a time. A problem
@@ -881,7 +919,7 @@ final class ToolStore: ObservableObject {
                     Task { @MainActor in
                         guard let self else { return }
                         let result = await self.startDownloads(remaining) { _ in }
-                        if result.added > 0 { self.infoMessage = "已添加 \(result.added) 个下载任务" }
+                        if result.added > 0 { self.infoMessage = AppText.text("已添加 \(result.added) 个下载任务") }
                         if !result.failures.isEmpty { self.errorMessage = result.failures.joined(separator: "\n") }
                     }
                 }
@@ -1065,6 +1103,12 @@ extension ToolStore {
         cacheLoading = false
         results = []; hasSearched = false; searchText = ""
         favorites = [PreviewData.favorite]
+        if ProcessInfo.processInfo.arguments.contains("--updates") {
+            for app in PreviewData.updatable {
+                var latest = app; latest.version = "99.0"
+                availableUpdates["\(AppPlatform.iOS.rawValue)|\(app.id)"] = latest
+            }
+        }
         let day: TimeInterval = 86400
         var record = WatchRecord(id: PreviewData.favorite.id, country: watchCountry, version: "3.2", price: 18, currency: "CNY",
                                  history: [PricePoint(date: Date().addingTimeInterval(-30 * day), price: 30),
