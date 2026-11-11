@@ -31,7 +31,7 @@ struct PackageInstallationView: View {
                         AppIcon(url: job.displayApp(packageIcon: manager.packageIconURL(job)).iconURL, size: 96)
                         VStack(spacing: 4) {
                             Text(job.app.name).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
-                            Text([job.app.version.isEmpty ? "" : "版本 \(job.app.version)", job.app.size > 0 ? job.app.size.byteLabel : ""]
+                            Text([job.app.version.isEmpty ? "" : AppText.text("版本 \(job.app.version)"), job.app.size > 0 ? job.app.size.byteLabel : ""]
                                 .filter { !$0.isEmpty }.joined(separator: " · "))
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }
@@ -57,7 +57,7 @@ struct PackageInstallationView: View {
                         }
                         Button {
                             if let file = manager.fileURL(job) { sharedFile = SharedFile(url: file) }
-                            else { issue = "找不到安装包文件，请重新下载。" }
+                            else { issue = AppText.text("找不到安装包文件，请重新下载。") }
                         } label: { Label("导出安装包", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity) }
                         .buttonStyle(.borderless)
                     }
@@ -83,13 +83,7 @@ struct PackageInstallationView: View {
                     if native {
                         Text("安装前请先在 LocalDevVPN 中点按连接，完成前请勿退出 iPadn。\n安装后 App Store 能识别并更新这个应用；设备上已有的 App Store 版本会被直接覆盖，数据保留。")
                     } else {
-                    Text((store.settings.automaticInstallation ? "安装完成前请勿退出 iPadn。"
-                          : store.settings.localInstallation ? "需先在安装方式中创建证书、安装描述文件并开启信任。"
-                          : "需要已配置的代理规则。")
-                         + (InstallLog.insideLiveContainer && store.settings.automaticInstallation
-                            ? "\n在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。" : "")
-                         + (proxied ? proxyHint : "")
-                         + "\n这种方式安装的应用 App Store 无法识别和更新，也不能覆盖设备上已有的 App Store 版本；需要这两项时请改用「原生安装」或导出到电脑安装。")
+                        Text(installationHint)
                     }
                 }
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)
@@ -102,12 +96,24 @@ struct PackageInstallationView: View {
                 } message: { Text(issue ?? "") }
         }
     }
+    /// What this install method needs to succeed.
+    private var installationHint: String {
+        var text = store.settings.automaticInstallation ? AppText.text("安装完成前请勿退出 iPadn。")
+            : store.settings.localInstallation ? AppText.text("需先在安装方式中创建证书、安装描述文件并开启信任。")
+            : AppText.text("需要已配置的代理规则。")
+        if InstallLog.insideLiveContainer && store.settings.automaticInstallation {
+            text += "\n" + AppText.text("在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。")
+        }
+        text += proxied ? proxyHint : ""
+        text += "\n" + AppText.text("这种方式安装的应用 App Store 无法识别和更新，也不能覆盖设备上已有的 App Store 版本；需要这两项时请改用「原生安装」或导出到电脑安装。")
+        return text
+    }
     /// Shown while a proxy or VPN is on: the address this method needs to reach directly.
     private var proxyHint: String {
         let host = store.settings.automaticInstallation ? "api.palera.in"
             : store.settings.localInstallation ? "ipadn.localtest.me" : nil
         guard let host else { return "" }
-        return "\n已开启代理：如果无法安装，请为 \(host) 添加直连（DIRECT）规则。"
+        return "\n" + AppText.text("已开启代理：如果无法安装，请为 \(host) 添加直连（DIRECT）规则。")
     }
     /// Hands the package to the system installer and waits for it to finish.
     private func requestNativeInstallation() {
@@ -140,7 +146,7 @@ struct PackageInstallationView: View {
         Task { @MainActor in
             defer { busy = false }
             do {
-                guard let file = manager.fileURL(job) else { throw ToolError.message("找不到安装包文件，请重新下载。") }
+                guard let file = manager.fileURL(job) else { throw ToolError.message(AppText.text("找不到安装包文件，请重新下载。")) }
                 let url: URL
                 if store.settings.automaticInstallation {
                     url = try await store.installation.automaticInstallURL(job: job, file: file)
@@ -165,9 +171,9 @@ struct PackageInstallationView: View {
                             try? await Task.sleep(for: .seconds(12))
                             if attempt == current { openingSystem = false }
                         }
-                        message = viaBrowser ? "请在 Safari 中确认安装，然后回到 iPadn 等待完成。" : "请在系统弹窗中确认安装，完成前请勿退出 iPadn。"
+                        message = viaBrowser ? AppText.text("请在 Safari 中确认安装，然后回到 iPadn 等待完成。") : AppText.text("请在系统弹窗中确认安装，完成前请勿退出 iPadn。")
                     }
-                    else { issue = "无法开始安装，请检查安装方式，或导出安装包。"; store.installation.stopHosting() }
+                    else { issue = AppText.text("无法开始安装，请检查安装方式，或导出安装包。"); store.installation.stopHosting() }
                     guard accepted, local else { return }
                     // The system fetches the install details from iPadn right away;
                     // if it never did, it could not connect.
@@ -176,8 +182,8 @@ struct PackageInstallationView: View {
                         if attempt == current, InstallLog.shared.manifestCount == served, !viaBrowser {
                             message = nil; started = false
                             issue = proxied
-                                ? "系统没能连接到 iPadn 的本机安装服务。开启代理或 VPN 时，请在代理规则中为 ipadn.localtest.me 添加直连（DIRECT）规则，或暂时关闭代理；也可以改用一键安装。"
-                                : "系统没能连接到 iPadn 的本机安装服务。请在「设置 › 通用 › 关于本机 › 证书信任设置」中确认已开启 iPadn 本机安装 CA；也可以改用一键安装。"
+                                ? AppText.text("系统没能连接到 iPadn 的本机安装服务。开启代理或 VPN 时，请在代理规则中为 ipadn.localtest.me 添加直连（DIRECT）规则，或暂时关闭代理；也可以改用一键安装。")
+                                : AppText.text("系统没能连接到 iPadn 的本机安装服务。请在「设置 › 通用 › 关于本机 › 证书信任设置」中确认已开启 iPadn 本机安装 CA；也可以改用一键安装。")
                         }
                     }
                 }
@@ -221,7 +227,7 @@ private struct InstallProgressRow: View {
                 ProgressView(value: progress.fraction).tint(UX.tint)
                     .animation(.linear(duration: 0.4), value: progress.fraction)
             } else {
-                Label(note ?? "请在系统弹窗中确认安装。", systemImage: "hand.tap")
+                Label(note ?? AppText.text("请在系统弹窗中确认安装。"), systemImage: "hand.tap")
             }
         }
         .font(.subheadline)

@@ -17,7 +17,7 @@ struct AppUpdateView: View {
                     Text("iPadn \(release.version)").font(.title2.weight(.bold))
                     Text([release.published?.formatted(date: .abbreviated, time: .omitted),
                           release.packageSize > 0 ? release.packageSize.byteLabel : nil,
-                          "当前 \(AppUpdateService.currentVersion)"].compactMap { $0 }.joined(separator: " · "))
+                          AppText.text("当前 \(AppUpdateService.currentVersion)")].compactMap { $0 }.joined(separator: " · "))
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
@@ -56,7 +56,7 @@ struct AppUpdateView: View {
                     if AppUpdateService.installedByTrollStore, let url = AppUpdateService.trollStoreURL(for: release) {
                         Button("用 TrollStore 安装", systemImage: "square.and.arrow.down") {
                             UIApplication.shared.open(url) { opened in
-                                if !opened { store.errorMessage = "没有打开 TrollStore，请在 TrollStore 设置中开启 URL Scheme，或下载后通过分享安装。" }
+                                if !opened { store.errorMessage = AppText.text("没有打开 TrollStore，请在 TrollStore 设置中开启 URL Scheme，或下载后通过分享安装。") }
                             }
                         }
                     }
@@ -90,7 +90,7 @@ struct AppUpdateView: View {
                 share = SharedFile(url: file)
             } catch {
                 progress = nil
-                if !(error is CancellationError) { store.errorMessage = "下载失败，请检查网络后重试。" }
+                if !(error is CancellationError) { store.errorMessage = AppText.text("下载失败，请检查网络后重试。") }
             }
         }
     }

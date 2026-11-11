@@ -2,7 +2,7 @@ import Foundation
 
 enum ApplePropertyListError: String, LocalizedError {
     case empty, malformed, unsupportedEnvelope, expectedDictionary
-    var errorDescription: String? { "Apple 返回的数据格式无法识别，请稍后重试。" }
+    var errorDescription: String? { AppText.text("Apple 返回的数据格式无法识别，请稍后重试。") }
 }
 
 /// Apple also sends iTunes XML documents, not just standard XML/binary plists.

@@ -107,7 +107,7 @@ enum AppUpdateService {
 
     /// Downloads the release's IPA and keeps it in `packageFolder`, replacing older versions.
     static func download(_ release: AppRelease, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
-        guard let url = release.package else { throw ToolError.message("这个版本没有可下载的安装包") }
+        guard let url = release.package else { throw ToolError.message(AppText.text("这个版本没有可下载的安装包")) }
         try Task.checkCancellation()
         // Its own folder while downloading; moved into place once complete.
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -162,7 +162,7 @@ enum AppUpdateService {
         }
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
             guard let response = downloadTask.response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
-                finish(.failure(ToolError.message("下载失败，请稍后重试"))); return
+                finish(.failure(ToolError.message(AppText.text("下载失败，请稍后重试")))); return
             }
             // The file is gone once this returns: move it now.
             do {

@@ -2,9 +2,9 @@ import Foundation
 
 enum StoreService {
     private static func endpoint(_ base: String, items: [URLQueryItem]) throws -> URL {
-        guard var components = URLComponents(string: base) else { throw ToolError.message("接口地址错误") }
+        guard var components = URLComponents(string: base) else { throw ToolError.message(AppText.text("接口地址错误")) }
         components.queryItems = items
-        guard let url = components.url else { throw ToolError.message("无法构造接口地址") }
+        guard let url = components.url else { throw ToolError.message(AppText.text("无法构造接口地址")) }
         return url
     }
 
@@ -455,7 +455,7 @@ enum StoreService {
                  iconURL: icon(plistString(raw["artworkUrl512"] ?? raw["artworkUrl100"])),
                  description: plistString(raw["description"]), category: localizedGenre(plistString(raw["primaryGenreName"])),
                  size: Int64(plistString(raw["fileSizeBytes"])) ?? 0,
-                 price: plistString(raw["formattedPrice"]).isEmpty ? "免费" : plistString(raw["formattedPrice"]),
+                 price: plistString(raw["formattedPrice"]),
                  priceValue: (raw["price"] as? NSNumber)?.doubleValue,
                  currency: plistString(raw["currency"]).isEmpty ? nil : plistString(raw["currency"]),
                  rating: (raw["averageUserRating"] as? NSNumber)?.doubleValue ?? 0,
@@ -475,6 +475,8 @@ enum StoreService {
             "Travel": "旅游", "Utilities": "工具", "Weather": "天气", "Stickers": "贴纸",
             "Video": "视频", "Graphics and Design": "图形和设计"
         ]
+        // The mapping is English to Chinese, so it only applies to a Chinese UI.
+        guard AppText.locale.language.languageCode?.identifier == "zh" else { return name }
         return names[name] ?? name
     }
 
@@ -621,9 +623,9 @@ actor VersionService {
     private var cacheRevision = UUID()
 
     func thirdParty(_ appID: String, sources: [VersionSource], force: Bool = false) async throws -> [AppVersion] {
-        guard !appID.isEmpty, appID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message("App ID 必须是数字") }
+        guard !appID.isEmpty, appID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message(AppText.text("App ID 必须是数字")) }
         let enabled = sources.filter(\.enabled)
-        guard !enabled.isEmpty else { throw ToolError.message("请在设置中启用至少一个版本来源") }
+        guard !enabled.isEmpty else { throw ToolError.message(AppText.text("请在设置中启用至少一个版本来源")) }
         let sourceKey = enabled.map { "\($0.name)|\($0.urlTemplate)|\($0.containerKey)|\($0.reverse)" }.joined(separator: ";")
         let key = appID + "|" + sourceKey
         if !force, let entry = cache[key], Date().timeIntervalSince(entry.savedAt) < 24 * 3600 { return entry.versions }
@@ -654,11 +656,11 @@ actor VersionService {
             if let old = cache[key], Date().timeIntervalSince(old.savedAt) < 7 * 86400 {
                 return old.versions.map {
                     var item = $0
-                    item.source += "（缓存）"
+                    item.source += AppText.text("（缓存）")
                     return item
                 }
             }
-            throw ToolError.message("暂时无法获取历史版本，可打开「从 Apple 获取完整版本列表」或手动输入版本 ID")
+            throw VersionListUnavailableError()
         }
         if revision == cacheRevision {
             cache = cache.filter { Date().timeIntervalSince($0.value.savedAt) < 7 * 86400 }
@@ -682,11 +684,11 @@ actor VersionService {
         for source in sources {
             for version in source where !version.id.isEmpty {
                 if let index = indices[version.id] {
-                    if result[index].version == "未知版本" && version.version != "未知版本" {
+                    if result[index].version == AppVersion.unknown && version.version != AppVersion.unknown {
                         result[index].version = version.version
                     }
                     if !result[index].source.components(separatedBy: "、").contains(version.source) {
-                        result[index].source += "、" + version.source
+                        result[index].source += AppText.text("、") + version.source
                     }
                 } else {
                     indices[version.id] = result.count
@@ -708,24 +710,24 @@ actor VersionService {
     static func check(_ source: VersionSource) async throws -> SourceCheck {
         let start = Date()
         let versions = try await fetch(probeAppID, source: source)
-        guard !versions.isEmpty else { throw ToolError.message("返回的版本列表为空") }
+        guard !versions.isEmpty else { throw ToolError.message(AppText.text("返回的版本列表为空")) }
         return SourceCheck(versions: versions.count, seconds: Date().timeIntervalSince(start))
     }
 
     static func fetch(_ id: String, source: VersionSource) async throws -> [AppVersion] {
         guard let url = source.url(for: id) else {
-            throw ToolError.message("\(source.name)：接口地址无效")
+            throw ToolError.message(AppText.text("\(source.name)：接口地址无效"))
         }
         let object = try await HTTPClient.shared.json(url)
         let value: Any? = source.containerKey.isEmpty ? object : (object as? [String: Any])?[source.containerKey]
-        guard let records = value as? [[String: Any]] else { throw ToolError.message("\(source.name)：暂时无法读取版本列表") }
+        guard let records = value as? [[String: Any]] else { throw ToolError.message(AppText.text("\(source.name)：暂时无法读取版本列表")) }
         var seen = Set<String>()
         let ordered = source.reverse ? Array(records.suffix(2000).reversed()) : Array(records.prefix(2000))
         return ordered.compactMap { record in
             let id = plistString(record["external_identifier"])
             guard !id.isEmpty, id.allSatisfy({ $0.isASCII && $0.isNumber }), seen.insert(id).inserted else { return nil }
             let version = plistString(record["bundle_version"])
-            return AppVersion(id: id, version: version.isEmpty ? "未知版本" : version, source: source.name)
+            return AppVersion(id: id, version: version.isEmpty ? AppVersion.unknown : version, source: source.name)
         }
     }
 

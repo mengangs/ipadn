@@ -3,6 +3,14 @@ import Combine
 @testable import iPadn
 
 final class DownloadConcurrencyTests: XCTestCase {
+    /// Assertions below check the Chinese copy: pin the language instead of
+    /// following whatever the simulator is set to. Set `locale:` on the
+    /// formatting calls whose numbers or currency symbols are asserted.
+    override func setUp() {
+        super.setUp()
+        AppText.locale = Locale(identifier: "zh-Hans")
+    }
+
     func testInterruptedRemovalRestoresOnlyUncommittedPackages() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let packages = root.appendingPathComponent("Packages")

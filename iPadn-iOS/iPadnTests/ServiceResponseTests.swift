@@ -3,6 +3,14 @@ import XCTest
 
 @MainActor
 final class ServiceResponseTests: XCTestCase {
+    /// Assertions below check the Chinese copy: pin the language instead of
+    /// following whatever the simulator is set to. Set `locale:` on the
+    /// formatting calls whose numbers or currency symbols are asserted.
+    override func setUp() {
+        super.setUp()
+        AppText.locale = Locale(identifier: "zh-Hans")
+    }
+
     /// Reduced from the public Apple response captured on 2026-11-08. Both
     /// the Document/Protocol envelope and the flat bag differ from the old mocks.
     private let bag = Data(#"""

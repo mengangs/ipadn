@@ -5,6 +5,14 @@ import CryptoKit
 @testable import iPadn
 
 final class CoreTests: XCTestCase {
+    /// Assertions below check the Chinese copy: pin the language instead of
+    /// following whatever the simulator is set to. Set `locale:` on the
+    /// formatting calls whose numbers or currency symbols are asserted.
+    override func setUp() {
+        super.setUp()
+        AppText.locale = Locale(identifier: "zh-Hans")
+    }
+
     func testPackageCompletionCannotOverwriteSharedIdentifierPrefixAndHandlesLongNames() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -87,11 +95,11 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(WatchService.update(nil, id: "2", country: "CN", listing: nil, now: start).changes, [])
         XCTAssertNotNil(record.recentChange(now: start + 480))
         XCTAssertNil(record.recentChange(now: start + 8 * 86400))
-        XCTAssertEqual(WatchService.format(0, currency: "CNY"), "免费")
-        XCTAssertTrue(WatchService.format(18, currency: "CNY").contains("18"))
-        XCTAssertTrue(WatchService.format(2.99, currency: "USD").contains("2.99"))
+        XCTAssertEqual(WatchService.format(0, currency: "CNY", locale: Locale(identifier: "zh_CN")), "免费")
+        XCTAssertTrue(WatchService.format(18, currency: "CNY", locale: Locale(identifier: "zh_CN")).contains("18"))
+        XCTAssertTrue(WatchService.format(2.99, currency: "USD", locale: Locale(identifier: "zh_CN")).contains("2.99"))
         XCTAssertNil(WatchService.message(.priceRise(from: 1, to: 2), currency: "CNY"))
-        XCTAssertEqual(WatchService.message(.newVersion("2.0"), currency: "CNY"), "有新版本 2.0")
+        XCTAssertEqual(WatchService.message(.newVersion("2.0"), currency: "CNY", locale: Locale(identifier: "zh_CN")), "有新版本 2.0")
         let raw: [String: Any] = ["trackId": 5, "trackName": "P", "price": 4.99, "currency": "USD", "formattedPrice": "$4.99"]
         XCTAssertEqual(StoreService.mapLookup(raw).priceValue, 4.99)
         XCTAssertEqual(StoreService.mapLookup(raw).currency, "USD")

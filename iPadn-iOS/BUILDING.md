@@ -54,6 +54,44 @@ python3 scripts/verify_project.py
 
 `tools/native_install/` 是独立的电脑端对照工具，用于通过 USB 验证原生安装协议，不参与应用构建；它有单独的离线测试工作流 `native-install-probe.yml`。
 
+## 本地化
+
+界面提供简体中文和英文。中文是字符串目录的源语言（键就是中文原文），英文写在同一个目录里：
+
+- `iPadn/Resources/Localizable.xcstrings`：界面与提示文字
+- `iPadn/Resources/InfoPlist.xcstrings`：网络权限说明、文稿类型名称
+- `iPadn/Resources/AppShortcuts.xcstrings`：快捷指令短语
+
+工程的开发语言是英文（`en`），这样未提供本地化的设备会显示英文而不是中文；源语言仍是 `zh-Hans`，两种语言都必须有值，否则设备会回落到另一种语言。
+
+**写法约定**
+
+- `Text("…")`、`Button("…")`、`Label("…")`、`Section("…")`、`.navigationTitle`、`.accessibilityLabel` 等参数是 `LocalizedStringKey`，字面量会自动本地化，不要再包一层。
+- 模型、服务和提示里组合出来的文字用 `AppText.text("…")`（`iPadn/App/Localization.swift`）。它按当前界面语言查找，测试可指定语言。
+- 不要拼接翻译片段（`AppText.text("A") + name`）；把整句写成一个键，用插值生成 `%@`／`%lld` 占位符。
+- 计数短语保留 `%lld`，英文在目录里加复数变化（`one`／`other`），中文只写 `other`。
+- 已是最终语言的字符串传给 `LocalizedStringKey` 参数时，它会被当作键再查一次；键不存在时原样显示，可以接受，但不要用这种方式处理含 `%` 的用户数据。
+- 不翻译：协议字段、SF Symbols、Bundle ID、商店返回的应用资料、以及作为数据保存的标记值（`DownloadStatus`／`DownloadFilter` 的 `rawValue`、`未在公开商店找到`、`未导入`、`未知版本`）。
+
+**新增或修改文字**
+
+在 Xcode 中编译一次后，新键会写入 `Localizable.xcstrings`；补上英文和中文的值，然后运行 `python3 scripts/verify_project.py`。缺失任一语言、英文里残留中文、复数键没有数字占位符都会让它失败。
+
+需要整体核对键集合时用导出（导出要求开发语言等于目录源语言）：
+
+```bash
+python3 scripts/generate_project.py --development-language zh-Hans
+xcodebuild -project iPadn.xcodeproj -scheme iPadn -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -exportLocalizations -localizationPath build/localizations -exportLanguage zh-Hans
+python3 scripts/generate_project.py   # 恢复开发语言 en
+```
+
+**测试与语言**
+
+单元测试在 `setUp` 中把 `AppText.locale` 固定为 `zh-Hans`，断言中文；涉及货币、数字的断言显式传 `locale:`。界面测试用 `-AppleLanguages (zh-Hans)` 启动应用，断言也是中文。英文界面需要手动在模拟器或真机上切换系统语言检查。
+
+英文 README 见仓库根目录的 `README_EN.md`。
+
 ## 测试
 
 - `iPadnTests`：单元测试与安装测试

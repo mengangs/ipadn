@@ -88,7 +88,7 @@ struct AppRow<Accessory: View>: View {
     let app: StoreApp
     var subtitle: String? = nil
     /// A short state shown next to the size, e.g. 已下载.
-    var badge: (text: String, tint: Color)? = nil
+    var badge: (text: LocalizedStringKey, tint: Color)? = nil
     @ViewBuilder var accessory: () -> Accessory
     var body: some View {
         HStack(spacing: 14) {
@@ -114,7 +114,7 @@ struct AppRow<Accessory: View>: View {
     }
 }
 extension AppRow where Accessory == EmptyView {
-    init(app: StoreApp, subtitle: String? = nil, badge: (text: String, tint: Color)? = nil) {
+    init(app: StoreApp, subtitle: String? = nil, badge: (text: LocalizedStringKey, tint: Color)? = nil) {
         self.init(app: app, subtitle: subtitle, badge: badge) { EmptyView() }
     }
 }
@@ -142,7 +142,7 @@ struct RootView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private let destinations = [("搜索", "magnifyingglass"), ("下载", "arrow.down.circle.fill"), ("已购", "bag.fill"), ("账号", "person.crop.circle.fill")]
+    private let destinations: [(title: LocalizedStringKey, symbol: String)] = [("搜索", "magnifyingglass"), ("下载", "arrow.down.circle.fill"), ("已购", "bag.fill"), ("账号", "person.crop.circle.fill")]
     var body: some View {
         Group {
             if sizeClass == .regular {
@@ -150,7 +150,7 @@ struct RootView: View {
                     List(selection: Binding<Int?>(get: { store.tab }, set: { if let value = $0 { store.tab = value } })) {
                         Section {
                             ForEach(0..<destinations.count, id: \.self) { index in
-                                Label(destinations[index].0, systemImage: destinations[index].1).tag(index)
+                                Label(destinations[index].title, systemImage: destinations[index].symbol).tag(index)
                             }
                         }
 
@@ -242,7 +242,7 @@ struct RootView: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.undoNotice?.id)
         .task(id: store.undoNotice?.id) {
             guard let notice = store.undoNotice else { return }
-            UIAccessibility.post(notification: .announcement, argument: notice.message + "，可以撤销")
+            UIAccessibility.post(notification: .announcement, argument: AppText.text("\(notice.message)，可以撤销"))
             do { try await Task.sleep(for: .seconds(5)) } catch { return }
             if store.undoNotice?.id == notice.id { store.undoNotice = nil }
         }

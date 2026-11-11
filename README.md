@@ -13,6 +13,8 @@
 
 [下载](https://github.com/mengangs/ipadn/releases/latest) · [安装下载的应用](#安装下载的应用) · [常见问题](#常见问题) · [反馈问题](https://github.com/mengangs/ipadn/issues)
 
+<sub>English: [README_EN.md](README_EN.md)。</sub>
+
 </div>
 
 <p align="center">

@@ -5,10 +5,20 @@ enum ToolError: LocalizedError {
     var errorDescription: String? { if case .message(let text) = self { return text }; return nil }
 }
 
+/// The download queue is full. A batch stops on this instead of retrying each
+/// remaining app, and it stays readable in any language.
+struct DownloadQueueLimitError: LocalizedError {
+    /// False for downloads that don't come from the settings page.
+    var mentionsSettings = true
+    var errorDescription: String? {
+        mentionsSettings ? AppText.text("已达到等待任务上限，可在设置中调整") : AppText.text("已达到等待任务上限")
+    }
+}
+
 /// A non-2xx response, kept typed so callers can tell "not found" apart.
 struct HTTPStatusError: LocalizedError {
     let code: Int
-    var errorDescription: String? { code == 404 ? "找不到相关内容" : "网络请求失败（\(code)），请稍后重试" }
+    var errorDescription: String? { code == 404 ? AppText.text("找不到相关内容") : AppText.text("网络请求失败（\(code)），请稍后重试") }
 }
 
 enum AppErrorMessage {
@@ -16,22 +26,22 @@ enum AppErrorMessage {
         if error is CancellationError { return "" }
         let ns = error as NSError
         if ns.domain == NSURLErrorDomain {
-            return "网络连接暂时不可用，请检查网络后重试。"
+            return AppText.text("网络连接暂时不可用，请检查网络后重试。")
         }
         if error is AppleAuthError || error is AppleLoginError {
-            return "请到「账号」中重新登录 Apple 账号后再试。"
+            return AppText.text("请到「账号」中重新登录 Apple 账号后再试。")
         }
         let message = error.localizedDescription
         if message.contains("2002") || message.contains("Your password has changed") {
-            return "Apple 账号需要重新登录，请到「账号」页面更新密码。"
+            return AppText.text("Apple 账号需要重新登录，请到「账号」页面更新密码。")
         }
         if let status = error as? HTTPStatusError {
-            return "商店暂时无法返回结果（\(status.code)），请稍后重试或更换地区。"
+            return AppText.text("商店暂时无法返回结果（\(status.code)），请稍后重试或更换地区。")
         }
         if message.contains("HTTP") || message.contains("JSON") || message.contains("itunes.apple.com") {
-            return "商店暂时无法返回结果，请稍后重试或更换地区。"
+            return AppText.text("商店暂时无法返回结果，请稍后重试或更换地区。")
         }
-        return "暂时无法完成搜索，请稍后重试。"
+        return AppText.text("暂时无法完成搜索，请稍后重试。")
     }
 }
  
@@ -81,10 +91,13 @@ struct StoreApp: Codable, Identifiable, Hashable {
     var description = ""
     var category = ""
     var size: Int64 = 0
-    var price = "免费"
+    var price = ""
     /// The listing's price as a number and its ISO currency, from the lookup API.
     var priceValue: Double?
     var currency: String?
+    /// Free apps come back without a price; older saves stored the word itself.
+    var isFree: Bool { price.isEmpty || price == "免费" }
+    var priceLabel: String { isFree ? AppText.text("免费") : price }
     var rating: Double = 0
     var minimumOS = ""
     var externalVersionID: String?
@@ -102,9 +115,20 @@ struct StoreApp: Codable, Identifiable, Hashable {
 }
 
 struct AppVersion: Codable, Identifiable, Hashable {
+    /// Version lists from Apple carry only IDs. The placeholder is data, not
+    /// display text: it is stored, merged and compared, so it stays fixed.
+    static let unknown = "未知版本"
     var id: String
     var version: String
     var source: String
+}
+
+/// Every third-party version source failed. Typed so the page can tell this
+/// apart from "this account doesn't own the app".
+struct VersionListUnavailableError: LocalizedError {
+    var errorDescription: String? {
+        AppText.text("暂时无法获取历史版本，可打开「从 Apple 获取完整版本列表」或手动输入版本 ID")
+    }
 }
 
 struct AppleAccount: Codable, Identifiable {
@@ -158,13 +182,13 @@ enum DownloadStatus: String, Codable {
     case queued, running, pausing, paused, processing, completed, failed
     var title: String {
         switch self {
-        case .queued: return "等待下载"
-        case .running: return "下载中"
-        case .pausing: return "正在暂停"
-        case .paused: return "已暂停"
-        case .processing: return "正在处理安装包"
-        case .completed: return "已完成"
-        case .failed: return "下载失败"
+        case .queued: return AppText.text("等待下载")
+        case .running: return AppText.text("下载中")
+        case .pausing: return AppText.text("正在暂停")
+        case .paused: return AppText.text("已暂停")
+        case .processing: return AppText.text("正在处理安装包")
+        case .completed: return AppText.text("已完成")
+        case .failed: return AppText.text("下载失败")
         }
     }
 }
@@ -187,6 +211,9 @@ struct DownloadJob: Codable, Identifiable {
     var protectedMacPackage: Bool?
     var localFilename: String?
     var error: String?
+    /// The download failed because its staging file could not be created:
+    /// retrying in the foreground avoids the background session's sandbox.
+    var foregroundFallback: Bool?
     var createdAt = Date()
     var progress: Double { expected > 0 ? min(1, max(0, Double(downloaded) / Double(expected))) : 0 }
     var account: String? { asset?.account }
@@ -346,13 +373,13 @@ enum SearchQuery: Equatable {
 
     static func parse(_ input: String) throws -> SearchQuery {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { throw ToolError.message("请输入应用名称、App ID 或 App Store 链接") }
+        guard !text.isEmpty else { throw ToolError.message(AppText.text("请输入应用名称、App ID 或 App Store 链接")) }
         if let url = URL(string: text), url.host?.lowercased() == "apps.apple.com" {
             let parts = url.pathComponents
             if let id = parts.first(where: { $0.hasPrefix("id") && $0.dropFirst(2).allSatisfy({ $0.isASCII && $0.isNumber }) && $0.count > 2 }) {
                 return .appID(String(id.dropFirst(2)), versionID: nil)
             }
-            throw ToolError.message("App Store 链接中没有有效 App ID")
+            throw ToolError.message(AppText.text("App Store 链接中没有有效 App ID"))
         }
         let parts = text.components(separatedBy: CharacterSet(charactersIn: " ,，:/+\t\n")).filter { !$0.isEmpty }
         if (1...2).contains(parts.count), parts.allSatisfy({ $0.allSatisfy({ $0.isASCII && $0.isNumber }) }) {
@@ -473,6 +500,16 @@ enum VersionOrder {
 enum DownloadFilter: String, CaseIterable, Identifiable {
     case all = "全部", active = "进行中", paused = "已暂停", completed = "已完成", failed = "失败"
     var id: String { rawValue }
+    /// Shown in menus and row headers; `rawValue` also tags the row identifiers.
+    var title: String {
+        switch self {
+        case .all: return AppText.text("全部")
+        case .active: return AppText.text("进行中")
+        case .paused: return AppText.text("已暂停")
+        case .completed: return AppText.text("已完成")
+        case .failed: return AppText.text("失败")
+        }
+    }
     var symbol: String {
         switch self {
         case .all: return "square.stack"

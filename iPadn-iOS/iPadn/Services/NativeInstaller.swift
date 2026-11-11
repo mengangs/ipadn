@@ -361,7 +361,8 @@ extension ToolSettings {
     /// Native installation is chosen and this build can do it.
     var usesNativeInstallation: Bool { nativeInstallation && NativeInstaller.isAvailable }
     var installationMethodTitle: String {
-        usesNativeInstallation ? "原生安装" : automaticInstallation ? "一键安装" : localInstallation ? "本机证书" : "代理服务"
+        usesNativeInstallation ? AppText.text("原生安装") : automaticInstallation ? AppText.text("一键安装")
+            : localInstallation ? AppText.text("本机证书") : AppText.text("代理服务")
     }
 }
 

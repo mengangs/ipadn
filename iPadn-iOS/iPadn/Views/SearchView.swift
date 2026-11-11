@@ -11,7 +11,8 @@ struct SearchView: View {
     @State private var getting: StoreApp?
     @State private var viewingFavorite: StoreApp?
     @State private var headerAway = false
-    private static let regions = [("CN", "中国大陆"), ("US", "美国"), ("HK", "香港"), ("TW", "台湾"), ("JP", "日本"), ("GB", "英国"), ("SG", "新加坡"), ("CA", "加拿大"), ("AU", "澳大利亚"), ("KR", "韩国"), ("DE", "德国"), ("FR", "法国")]
+    /// The common storefronts, in this order; names follow the interface language.
+    private static let regions = ["CN", "US", "HK", "TW", "JP", "GB", "SG", "CA", "AU", "KR", "DE", "FR"]
     var body: some View {
         List {
             Section {
@@ -41,7 +42,7 @@ struct SearchView: View {
             }
             if !store.results.isEmpty {
                 Section {
-                    ForEach(store.results) { app in resultRow(app, note: app.tvOSCandidate == true ? "可能支持 Apple TV" : nil) }
+                    ForEach(store.results) { app in resultRow(app, note: app.tvOSCandidate == true ? AppText.text("可能支持 Apple TV") : nil) }
                 } header: { Text("\(store.results.count) 个结果") }
             }
             if !store.localResults.isEmpty {
@@ -147,9 +148,9 @@ struct SearchView: View {
     private var regionPicker: some View {
         Menu {
             Picker("商店地区", selection: $store.settings.store.country) {
-                ForEach(Self.regions, id: \.0) { code, label in Text(label).tag(code) }
+                ForEach(Self.regions, id: \.self) { code in Text(StoreRegions.name(code)).tag(code) }
             }
-        } label: { chip(Self.regions.first { $0.0 == store.settings.store.country }?.1 ?? store.settings.store.country, symbol: "globe") }
+        } label: { chip(StoreRegions.name(store.settings.store.country), symbol: "globe") }
         .accessibilityLabel("商店地区")
     }
     private var platformPicker: some View {

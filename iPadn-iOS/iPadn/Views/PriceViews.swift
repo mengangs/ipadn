@@ -105,7 +105,7 @@ struct RegionPriceView: View {
                 ForEach(list) { group in InAppGroupRow(group: group, rates: rates, name: inAppNames[group.name] ?? group.name) }
                 if !blocked.isEmpty && !inAppsLoading {
                     Label {
-                        Text("当前网络打开\(blocked.map(StoreRegions.name).joined(separator: "、"))的 App Store 页面时会被转到中国区，所以读不到这些地区的内购价格。可以在代理工具中让 apps.apple.com 走代理，再下拉刷新。")
+                        Text("当前网络打开\(blocked.map { StoreRegions.name($0) }.joined(separator: AppText.text("、")))的 App Store 页面时会被转到中国区，所以读不到这些地区的内购价格。可以在代理工具中让 apps.apple.com 走代理，再下拉刷新。")
                             .font(.subheadline).foregroundStyle(.secondary)
                     } icon: {
                         Image(systemName: "info.circle").foregroundStyle(.secondary)
@@ -128,20 +128,20 @@ struct RegionPriceView: View {
     }
 
     private var footnote: String {
-        var lines = ["按\(currencyName(base))换算，从低到高排列。"]
+        var lines = [AppText.text("按\(currencyName(base))换算，从低到高排列。")]
         if let rates {
-            lines.append("汇率为 \(rates.updated.formatted(date: .abbreviated, time: .omitted)) 的参考中间价，实际扣款以发卡银行为准。")
+            lines.append(AppText.text("汇率为 \(rates.updated.formatted(date: .abbreviated, time: .omitted)) 的参考中间价，实际扣款以发卡银行为准。"))
         } else if !loading {
-            lines.append("暂时无法获取汇率，仅显示当地价格。")
+            lines.append(AppText.text("暂时无法获取汇率，仅显示当地价格。"))
         }
         if prices.contains(where: { StoreRegions.taxExcluded.contains($0.country) && $0.listing != nil }) {
-            lines.append("美国、加拿大的标价不含销售税。")
+            lines.append(AppText.text("美国、加拿大的标价不含销售税。"))
         }
         return lines.joined(separator: "\n")
     }
 
     private func currencyName(_ code: String) -> String {
-        (Locale(identifier: "zh_CN").localizedString(forCurrencyCode: code) ?? code) + "（\(code)）"
+        (AppText.locale.localizedString(forCurrencyCode: code) ?? code) + AppText.text("（\(code)）")
     }
 
     private func load() async {
@@ -190,10 +190,10 @@ struct RegionPriceRow: View {
         .accessibilityElement(children: .combine)
     }
     private var local: String {
-        guard item.listing != nil else { return "未在该地区上架" }
-        guard let price = item.price else { return "价格未知" }
+        guard item.listing != nil else { return AppText.text("未在该地区上架") }
+        guard let price = item.price else { return AppText.text("价格未知") }
         let text = WatchService.format(price, currency: item.currency)
-        return StoreRegions.taxExcluded.contains(item.country) && price > 0 ? text + "（不含税）" : text
+        return StoreRegions.taxExcluded.contains(item.country) && price > 0 ? text + AppText.text("（不含税）") : text
     }
     private var converted: String? {
         guard let price = item.price, price > 0, let rates, item.currency != rates.base,
@@ -269,7 +269,7 @@ struct RegionSelectionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
     private var others: [String] {
-        StoreRegions.byName.filter { !selection.contains($0) }
+        StoreRegions.byName().filter { !selection.contains($0) }
             .filter { search.isEmpty || StoreRegions.name($0).localizedCaseInsensitiveContains(search) || $0.localizedCaseInsensitiveContains(search) }
     }
     var body: some View {
