@@ -129,13 +129,13 @@ struct InstallationSettingsView: View {
                     store.infoMessage = AppText.text("已从 iPadn 文件夹导入配对文件。请在 LocalDevVPN 中连接后点按「检查连接」。")
                 }
             }
-            .onChange(of: scenePhase) { _, phase in if phase != .active, working == .profile { working = nil } }
+            .compatibleOnChange(of: scenePhase) { phase in if phase != .active, working == .profile { working = nil } }
             .sheet(isPresented: $showingPairingGuide) {
                 PairingGuideView(pairing: pairing)
                     .presentationDetents([.medium, .large])
                     .interactiveDismissDisabled(pairing.phase.isActive)
             }
-            .onChange(of: pairing.phase) { _, phase in
+            .compatibleOnChange(of: pairing.phase) { phase in
                 if phase == .finished {
                     hasPairingFile = NativeInstaller.hasPairingFile
                     store.infoMessage = AppText.text("配对完成。安装前请在 LocalDevVPN 中连接，可以点按「检查连接」确认。")

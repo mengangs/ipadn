@@ -408,11 +408,10 @@ private struct RevealDeleteModifier: ViewModifier {
     @State private var direction: CGFloat = 1
     @State private var lastVisibleY: CGFloat?
 
-    private func cardShape(rounding: CGFloat) -> UnevenRoundedRectangle {
+    private func cardShape(rounding: CGFloat) -> CompatibleCardShape {
         let top: CGFloat = grouping == .middle ? 24 * rounding : 24
         let bottom: CGFloat = grouping == .standalone ? 24 : 24 * rounding
-        return UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: bottom,
-                                      bottomTrailingRadius: bottom, topTrailingRadius: top, style: .continuous)
+        return CompatibleCardShape(top: top, bottom: bottom)
     }
 
     func body(content: Content) -> some View {
@@ -495,11 +494,11 @@ private struct RevealDeleteModifier: ViewModifier {
                     }
                 }
             }
-            .onChange(of: coordinator.active) { _, active in
+            .compatibleOnChange(of: coordinator.active) { active in
                 if active != id { driver.close(immediately: UIApplication.shared.applicationState != .active) }
             }
-            .onChange(of: enabled) { _, enabled in if !enabled { driver.close(immediately: true) } }
-            .onChange(of: reduceMotion) { _, _ in driver.close(immediately: true) }
+            .compatibleOnChange(of: enabled) { enabled in if !enabled { driver.close(immediately: true) } }
+            .compatibleOnChange(of: reduceMotion) { _ in driver.close(immediately: true) }
             .onDisappear { driver.close(immediately: true) }
             .accessibilityAction(named: Text(title)) { if enabled { commit() } }
     }
@@ -512,7 +511,7 @@ private struct RevealDeleteModifier: ViewModifier {
 
 extension View {
     func dismissRevealsWhenTabChanges(_ tab: Int) -> some View {
-        onChange(of: tab) { _, _ in RevealCoordinator.shared.active = nil }
+        compatibleOnChange(of: tab) { _ in RevealCoordinator.shared.active = nil }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
                 RevealCoordinator.shared.active = nil
             }

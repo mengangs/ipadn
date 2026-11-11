@@ -33,7 +33,7 @@ struct PrimaryButtonStyle: ButtonStyle {
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .opacity(enabled ? 1 : 0.35)
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
-            .animation(reduceMotion ? nil : .snappy(duration: 0.15), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.15), value: configuration.isPressed)
     }
 }
 typealias MonochromeButtonStyle = PrimaryButtonStyle
@@ -220,7 +220,7 @@ struct RootTabBar: ViewModifier {
     let headerScrolledAway: Bool
     func body(content: Content) -> some View {
         content
-            .contentMargins(.top, 0, for: .scrollContent)
+            .compatibleVerticalContentMargin(.top, 0)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -376,7 +376,7 @@ struct VerificationCodeField: View {
                 .foregroundStyle(.clear).tint(.clear)
                 .frame(width: 1, height: 1).opacity(0.02)
                 .accessibilityIdentifier("apple.verification.code")
-                .onChange(of: code) { _, value in
+                .compatibleOnChange(of: code) { value in
                     let digits = String(value.filter { $0.isASCII && $0.isNumber }.prefix(length))
                     if digits != value { code = digits; return }
                     if digits.count == length { onComplete(digits) }
@@ -400,7 +400,7 @@ struct VerificationCodeField: View {
             .accessibilityLabel("验证码，已输入 \(code.count) 位")
         }
         .onAppear { if !disabled { focused = true } }
-        .onChange(of: disabled) { _, value in if !value { focused = true } }
+        .compatibleOnChange(of: disabled) { value in if !value { focused = true } }
     }
 }
 
@@ -408,8 +408,8 @@ struct ToolPageStyle: ViewModifier {
     func body(content: Content) -> some View {
         content.listStyle(.insetGrouped).scrollContentBackground(.hidden)
             .background(Color(.systemGroupedBackground)).scrollDismissesKeyboard(.interactively)
-            .listSectionSpacing(20)
-            .contentMargins(.bottom, 20, for: .scrollContent)
+            .compatibleListSectionSpacing(20)
+            .compatibleVerticalContentMargin(.bottom, 20)
     }
 }
 extension View { func toolPage() -> some View { modifier(ToolPageStyle()) } }
@@ -468,5 +468,143 @@ extension AnyTransition {
             insertion: .opacity.combined(with: .scale(scale: 0.92))
                 .animation(.easeOut(duration: 0.18).delay(0.1)),
             removal: .opacity.animation(.easeIn(duration: 0.1)))
+    }
+}
+
+extension Animation {
+    static var compatibleSnappy: Animation {
+        if #available(iOS 17, *) { return .snappy }
+        return compatibleSnappy(duration: 0.5)
+    }
+    static func compatibleSnappy(duration: Double) -> Animation {
+        if #available(iOS 17, *) { return .snappy(duration: duration) }
+        return .spring(response: duration, dampingFraction: 0.85)
+    }
+}
+
+extension View {
+    @ViewBuilder func compatibleSymbolReplacement() -> some View {
+        if #available(iOS 17, *) { contentTransition(.symbolEffect(.replace)) }
+        else { contentTransition(.opacity) }
+    }
+    @ViewBuilder func compatibleSelectionFeedback<T: Equatable>(trigger: T) -> some View {
+        if #available(iOS 17, *) { sensoryFeedback(.selection, trigger: trigger) }
+        else { onChange(of: trigger) { _ in UISelectionFeedbackGenerator().selectionChanged() } }
+    }
+    @ViewBuilder func compatiblePresentationCornerRadius(_ radius: CGFloat) -> some View {
+        if #available(iOS 16.4, *) { presentationCornerRadius(radius) }
+        else { self }
+    }
+    @ViewBuilder func compatibleListSectionSpacing(_ spacing: CGFloat) -> some View {
+        if #available(iOS 17, *) { listSectionSpacing(spacing) }
+        else { self }
+    }
+    @ViewBuilder func compatibleVerticalContentMargin(_ edge: Edge.Set, _ length: CGFloat) -> some View {
+        if #available(iOS 17, *) { contentMargins(edge, length, for: .scrollContent) }
+        else if edge == .bottom {
+            safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: length).allowsHitTesting(false) }
+        } else { self }
+    }
+    @ViewBuilder func compatibleScrollTargetLayout() -> some View {
+        if #available(iOS 17, *) { scrollTargetLayout() }
+        else { self }
+    }
+    @ViewBuilder func compatibleViewAlignedScrolling() -> some View {
+        if #available(iOS 17, *) { scrollTargetBehavior(.viewAligned) }
+        else { self }
+    }
+}
+
+/// The reveal animation needs independently animated top and bottom radii.
+/// Native continuous corners are retained on iOS 17; iOS 16 uses circular arcs.
+struct CompatibleCardShape: Shape {
+    var top: CGFloat
+    var bottom: CGFloat
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(top, bottom) }
+        set { top = newValue.first; bottom = newValue.second }
+    }
+    func path(in rect: CGRect) -> Path {
+        if #available(iOS 17, *) {
+            return UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: bottom,
+                bottomTrailingRadius: bottom, topTrailingRadius: top, style: .continuous).path(in: rect)
+        }
+        let limit = max(0, min(rect.width, rect.height) / 2)
+        let t = min(max(0, top), limit), b = min(max(0, bottom), limit)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + t, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - t, y: rect.minY))
+        path.addArc(center: CGPoint(x: rect.maxX - t, y: rect.minY + t), radius: t,
+                    startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false)
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - b))
+        path.addArc(center: CGPoint(x: rect.maxX - b, y: rect.maxY - b), radius: b,
+                    startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
+        path.addLine(to: CGPoint(x: rect.minX + b, y: rect.maxY))
+        path.addArc(center: CGPoint(x: rect.minX + b, y: rect.maxY - b), radius: b,
+                    startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + t))
+        path.addArc(center: CGPoint(x: rect.minX + t, y: rect.minY + t), radius: t,
+                    startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+        path.closeSubpath()
+        return path
+    }
+}
+
+extension ToolbarItemPlacement {
+    static var compatibleTopBarLeading: Self {
+        if #available(iOS 17, *) { return .topBarLeading }
+        return .navigationBarLeading
+    }
+
+    static var compatibleTopBarTrailing: Self {
+        if #available(iOS 17, *) { return .topBarTrailing }
+        return .navigationBarTrailing
+    }
+}
+
+extension View {
+    @ViewBuilder func compatibleOnChange<Value: Equatable>(of value: Value, perform action: @escaping (Value) -> Void) -> some View {
+        if #available(iOS 17, *) { onChange(of: value) { _, newValue in action(newValue) } }
+        else { onChange(of: value, perform: action) }
+    }
+
+    @ViewBuilder func compatibleNavigationDestination<Item: Hashable, Destination: View>(
+        item: Binding<Item?>, @ViewBuilder destination: @escaping (Item) -> Destination
+    ) -> some View {
+        if #available(iOS 17, *) {
+            navigationDestination(item: item, destination: destination)
+        } else {
+            navigationDestination(isPresented: Binding(
+                get: { item.wrappedValue != nil },
+                set: { if !$0 { item.wrappedValue = nil } }
+            )) {
+                if let value = item.wrappedValue { destination(value) }
+            }
+        }
+    }
+
+    @ViewBuilder func compatibleInteractionShape<S: Shape>(_ shape: S) -> some View {
+        if #available(iOS 17, *) { contentShape([.interaction, .accessibility], shape) }
+        else { contentShape(.interaction, shape) }
+    }
+
+    @ViewBuilder func compatibleScrollBounce() -> some View {
+        if #available(iOS 16.4, *) { scrollBounceBehavior(.basedOnSize) }
+        else { self }
+    }
+
+    @ViewBuilder func compatibleBounce(trigger: some Equatable) -> some View {
+        if #available(iOS 17, *) { symbolEffect(.bounce, value: trigger) }
+        else { self }
+    }
+
+    @ViewBuilder func compatibleHorizontalScrollMargins(_ margin: CGFloat) -> some View {
+        if #available(iOS 17, *) { contentMargins(.horizontal, margin, for: .scrollContent) }
+        else { self }
+    }
+
+    @ViewBuilder func legacyHorizontalPadding(_ margin: CGFloat) -> some View {
+        if #available(iOS 17, *) { self }
+        else { padding(.horizontal, margin) }
     }
 }

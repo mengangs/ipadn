@@ -9,7 +9,7 @@ set -euo pipefail
 
 IPATOOL_COMMIT="4484b55d366e177ae6c89758c61588712c572fad"
 TCI_COMMIT="53471ef9cf480fab094bf13db3e5d2f9e2c30dc5"
-DEPLOYMENT_TARGET="17.0"
+DEPLOYMENT_TARGET="16.0"
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
 output="$project_root/build/macpkg"
 work="$project_root/build/macpkg-work"

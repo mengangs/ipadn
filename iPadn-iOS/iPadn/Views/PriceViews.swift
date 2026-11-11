@@ -50,7 +50,7 @@ struct RegionPriceView: View {
         .navigationTitle("多地区价格")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .compatibleTopBarTrailing) {
                 Menu {
                     Picker("换算货币", selection: $store.settings.baseCurrency) {
                         ForEach(Self.currencies, id: \.self) { Text(currencyName($0)).tag($0) }

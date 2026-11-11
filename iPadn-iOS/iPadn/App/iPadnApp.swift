@@ -80,7 +80,7 @@ struct iPadnApp: App {
                     await store.checkAppUpdate()
                 }
         }
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase) { phase in
             guard phase == .background, !LocalResources.isPreview else { return }
             // Session cookies kept in memory must survive the app being closed.
             store.apple.saveLiveCookies()
