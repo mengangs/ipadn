@@ -129,8 +129,8 @@ struct PackageInstallationView: View {
                 }
                 UX.feedback()
                 message = outcome.after?.recognisedByAppStore == false
-                    ? "安装完成，但系统没有保留这个安装包的购买记录，App Store 可能无法识别它。"
-                    : outcome.upgraded ? "已覆盖安装，原有数据保留。" : "安装完成。"
+                    ? AppText.text("安装完成，但系统没有保留这个安装包的购买记录，App Store 可能无法识别它。")
+                    : outcome.upgraded ? AppText.text("已覆盖安装，原有数据保留。") : AppText.text("安装完成。")
             } catch is CancellationError {
                 message = nil
             } catch { issue = error.localizedDescription }

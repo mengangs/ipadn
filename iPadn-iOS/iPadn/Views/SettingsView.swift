@@ -36,7 +36,7 @@ struct SettingsView: View {
                     }
                 Toggle("兼容下载模式", isOn: $store.settings.compatibleDownloadMode)
                 if store.downloads.backgroundDownloadsUnavailable && !store.settings.compatibleDownloadMode {
-                    Button("重新尝试后台下载") { store.downloads.retryBackgroundDownloads(); store.infoMessage = "下一个下载任务会重新尝试后台下载" }
+                    Button(AppText.text("重新尝试后台下载")) { store.downloads.retryBackgroundDownloads(); store.infoMessage = AppText.text("下一个下载任务会重新尝试后台下载") }
                 }
             } header: {
                 Text("下载")
@@ -270,7 +270,7 @@ struct SourceCheckLabel: View {
                 Label("可用 · \(versions) 个版本 · \(String(format: "%.1f", seconds)) 秒", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             case .unavailable(let reason):
-                Label("不可用：" + reason, systemImage: "exclamationmark.triangle.fill")
+                Label("不可用：\(reason)", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange).lineLimit(2)
             }
         }

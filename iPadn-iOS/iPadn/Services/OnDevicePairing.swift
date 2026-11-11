@@ -54,7 +54,7 @@ final class OnDevicePairing: ObservableObject {
                 try NativeInstaller.importPairingFile(data)
                 InstallLog.shared.add("on-device pairing finished")
                 finish(.finished)
-                if activity == nil { notify("配对完成", body: "回到 iPadn 继续。") }
+                if activity == nil { notify(AppText.text("配对完成"), body: AppText.text("回到 iPadn 继续。")) }
             } catch is CancellationError {
                 finish(.idle)
             } catch {
@@ -81,7 +81,7 @@ final class OnDevicePairing: ObservableObject {
             phase = .code(code)
             update(step: 3, code: code)
             // Also as a notification, for devices without Live Activities.
-            notify("iPadn 配对码：\(code)", body: "在「设置」中输入这个配对码。")
+            notify(AppText.text("iPadn 配对码：\(code)"), body: AppText.text("在「设置」中输入这个配对码。"))
         }
     }
 

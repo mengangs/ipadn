@@ -475,9 +475,10 @@ enum StoreService {
             "Travel": "旅游", "Utilities": "工具", "Weather": "天气", "Stickers": "贴纸",
             "Video": "视频", "Graphics and Design": "图形和设计"
         ]
-        // The mapping is English to Chinese, so it only applies to a Chinese UI.
-        guard AppText.locale.language.languageCode?.identifier == "zh" else { return name }
-        return names[name] ?? name
+        // Apple's name is already right for English. Otherwise the Chinese name
+        // is the catalog key, translated into the interface language there.
+        guard AppText.locale.language.languageCode?.identifier != "en", let key = names[name] else { return name }
+        return AppText.text(String.LocalizationValue(key))
     }
 
     static func icon(_ value: String) -> URL? {

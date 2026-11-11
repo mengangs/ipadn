@@ -2,16 +2,32 @@
   "sourceLanguage": "zh-Hans",
   "strings": {
     "CFBundleDisplayName": {
-      "comment": "Bundle display name",
-      "extractionState": "manual",
       "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPadn"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "iPadn"
           }
         },
-        "zh-Hans": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPadn"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPadn"
+          }
+        },
+        "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "iPadn"
@@ -20,16 +36,32 @@
       }
     },
     "CFBundleName": {
-      "comment": "Bundle name",
-      "extractionState": "manual",
       "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPadn"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "iPadn"
           }
         },
-        "zh-Hans": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPadn"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPadn"
+          }
+        },
+        "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "iPadn"
@@ -38,53 +70,103 @@
       }
     },
     "IPA 安装包": {
-      "comment": "Document type name shown by the Files app and the share sheet",
-      "extractionState": "manual",
       "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IPA 安装包"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "IPA Package"
           }
         },
-        "zh-Hans": {
+        "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "IPA 安装包"
+            "value": "IPA パッケージ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IPA 패키지"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IPA 安裝包"
           }
         }
       }
     },
     "NSLocalNetworkUsageDescription": {
-      "comment": "Privacy - Local Network Usage Description",
-      "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Loads signing resources and serves installation packages over this device's loopback address."
-          }
-        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通过本机回环地址加载签名资源和提供安装包文件。"
+            "value": "通过本机回环地址加载签名资源和提供安装包文件，并查找本机的安装服务。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loads signing resources and serves installation packages over this device's loopback address, and finds this device's installation service."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このデバイスのループバックアドレスで署名リソースを読み込み、インストールパッケージを提供し、このデバイスのインストールサービスを検出します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 기기의 루프백 주소로 서명 리소스를 불러오고 설치 패키지를 제공하며, 이 기기의 설치 서비스를 찾습니다."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "透過本機迴環地址載入簽名資源和提供安裝包檔案，並查詢本機的安裝服務。"
           }
         }
       }
     },
     "iOS App Archive": {
       "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS App Archive"
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "iOS App Archive"
           }
         },
-        "zh-Hans": {
+        "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "iOS App Archive"
+            "value": "iOS App アーカイブ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS 앱 아카이브"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS App 封存檔"
           }
         }
       }

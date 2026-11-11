@@ -263,7 +263,8 @@ enum InAppPriceService {
         // then the other storefronts that were read.
         var candidates: [String] = []
         let tagRegion = Locale(identifier: language).region?.identifier.uppercased()
-        let fallbackRegion: String? = language.hasPrefix("zh-Hans") ? "CN" : language.hasPrefix("zh-Hant") ? "TW" : nil
+        let fallbackRegion: String? = language.hasPrefix("zh-Hans") ? "CN" : language.hasPrefix("zh-Hant") ? "TW"
+            : language.hasPrefix("ja") ? "JP" : language.hasPrefix("ko") ? "KR" : nil
         for code in [tagRegion, fallbackRegion, Locale.current.region?.identifier.uppercased()].compactMap({ $0 }) + english.keys.sorted()
         where !candidates.contains(code) && english[code]?.isEmpty == false {
             candidates.append(code)

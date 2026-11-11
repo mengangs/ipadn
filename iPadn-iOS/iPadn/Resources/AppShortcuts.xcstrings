@@ -15,6 +15,24 @@
             "state": "translated",
             "value": "在 ${applicationName} 搜索应用"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 ${applicationName} 搜尋應用"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} で App を検索"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}에서 앱 검색"
+          }
         }
       }
     },
@@ -31,6 +49,24 @@
           "stringUnit": {
             "state": "translated",
             "value": "用 ${applicationName} 导入安装包"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用 ${applicationName} 匯入安裝包"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName} でパッケージを読み込む"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}(으)로 패키지 가져오기"
           }
         }
       }

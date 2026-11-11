@@ -118,12 +118,16 @@ for file in ROOT.rglob("*.swift"):
     try: balance_swift(file.read_text())
     except AssertionError as error: failures.append(str(file.relative_to(ROOT)) + ": " + str(error))
 
-# Localization: Chinese source strings keyed by their own text, English translations
-# in the same catalogs. Both languages must resolve, or a device in one of them sees
-# the other language (the bundle falls back to the development language).
+# Localization: Chinese source strings keyed by their own text, every shipped
+# language translated in the same catalogs. A language missing a value would show
+# the development language (English) for that string instead.
+LANGUAGES = ["zh-Hans", "en", "zh-Hant", "ja", "ko"]
+PLACEHOLDER = re.compile(r"%(?:\d+\$)?(?:lld|ld|d|u|@|lf|f|%)|\$\{[A-Za-z]+\}")
 catalogs = {}
-for name in ["Localizable", "InfoPlist", "AppShortcuts"]:
-    file = ROOT / "iPadn/Resources" / (name + ".xcstrings")
+for name, file in [("Localizable", ROOT / "iPadn/Resources/Localizable.xcstrings"),
+                   ("InfoPlist", ROOT / "iPadn/Resources/InfoPlist.xcstrings"),
+                   ("AppShortcuts", ROOT / "iPadn/Resources/AppShortcuts.xcstrings"),
+                   ("LiveActivity", ROOT / "iPadnLiveActivity/Localizable.xcstrings")]:
     check(file.exists(), "Missing string catalog " + name)
     if not file.exists(): continue
     catalog = json.loads(file.read_text())
@@ -134,22 +138,27 @@ for name in ["Localizable", "InfoPlist", "AppShortcuts"]:
         # An empty key is a placeholder label, never shown as text.
         if key == "": continue
         localizations = entry.get("localizations", {})
-        check("en" in localizations, name + ".xcstrings: no English for " + repr(key))
-        check("zh-Hans" in localizations, name + ".xcstrings: no Chinese for " + repr(key))
+        for language in LANGUAGES:
+            check(language in localizations, name + ".xcstrings: no " + language + " for " + repr(key))
+        expected = sorted(PLACEHOLDER.findall(key)) if name != "InfoPlist" else None
         for language, unit in localizations.items():
             values = []
             if "stringUnit" in unit: values.append(unit["stringUnit"].get("value", ""))
             for form in unit.get("variations", {}).get("plural", {}).values():
                 values.append(form["stringUnit"].get("value", ""))
             check(values and all(v != "" for v in values), name + ".xcstrings: empty value for " + repr(key) + " (" + language + ")")
-            if language == "en":
-                check(not any("\u4e00" <= c <= "\u9fff" for v in values for c in v), name + ".xcstrings: Chinese left in English for " + repr(key))
+            if language in ("en", "ko"):
+                check(not any("\u4e00" <= c <= "\u9fff" for v in values for c in v), name + ".xcstrings: Chinese left in " + language + " for " + repr(key))
+            if expected is not None:
+                for v in values:
+                    check(sorted(PLACEHOLDER.findall(v)) == expected, name + ".xcstrings: placeholders differ in " + language + " for " + repr(key))
         if "variations" in localizations.get("en", {}):
             check("%lld" in key or "%d" in key or "%@" in key, name + ".xcstrings: plural without a number in " + repr(key))
 target_project = objects[project["rootObject"]]
 check(target_project.get("developmentRegion") == "en", "The development language must stay en so other languages see English")
 check("zh-Hans" in (target_project.get("knownRegions") or []), "knownRegions must include zh-Hans")
-check("en" in (target_project.get("knownRegions") or []), "knownRegions must include en")
+for language in LANGUAGES:
+    check(language in (target_project.get("knownRegions") or []), "knownRegions must include " + language)
 resource_paths = set()
 for phase in objects.values():
     if phase.get("isa") != "PBXResourcesBuildPhase": continue
@@ -158,6 +167,7 @@ for phase in objects.values():
         if reference.get("path"): resource_paths.add(reference["path"])
 for name in ["Localizable.xcstrings", "InfoPlist.xcstrings", "AppShortcuts.xcstrings"]:
     check("Resources/" + name in resource_paths, name + " is not in the app's resources")
+check("Localizable.xcstrings" in resource_paths, "The Live Activity catalog is not in the extension's resources")
 check(catalogs.get("InfoPlist", {}).get("strings", {}).get("NSLocalNetworkUsageDescription", {}).get("localizations", {}).get("en") is not None,
       "InfoPlist.xcstrings must translate NSLocalNetworkUsageDescription")
 
@@ -166,7 +176,7 @@ hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in s
 expected = json.loads((ROOT / "vendor/SAPRuntime/manifest.json").read_text())["files"]
 check(hashes == expected, "Bundled runtime files or hashes differ from local manifest")
 report = {"passed": not failures, "app_swift_files": len(actual_swift), "project_objects": len(objects), "runtime_sha256": hashes,
-          "checks": ["OpenStep project graph", "referenced files", "plist parsing", "icon filenames and opaque square dimensions", "shared scheme targets", "Swift lexical delimiters", "bundled runtime hashes", "string catalogs (source, English, Chinese)"],
+          "checks": ["OpenStep project graph", "referenced files", "plist parsing", "icon filenames and opaque square dimensions", "shared scheme targets", "Swift lexical delimiters", "bundled runtime hashes", "string catalogs (zh-Hans, en, zh-Hant, ja, ko; placeholders)"],
           "not_run": ["Swift compilation/type checking", "XCTest", "iOS Simulator", "real device", "Apple account/server requests", "IPA installation"], "failures": failures}
 (ROOT / "build").mkdir(exist_ok=True)
 (ROOT / "build/verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

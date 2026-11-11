@@ -528,7 +528,7 @@ struct AppDetailView: View {
                     Image(systemName: "shippingbox").foregroundStyle(.secondary).frame(width: 28)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(installer.title).font(.subheadline.weight(.medium)).lineLimit(2)
-                        Text("来自开发者网站 · " + installer.format.uppercased()).font(.caption).foregroundStyle(.secondary)
+                        Text("来自开发者网站 · \(installer.format.uppercased())").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
                     RowCapsule(title: "下载") { enqueueMacInstaller(installer) }

@@ -339,13 +339,13 @@ struct ExistingAccountVerificationView: View {
                     // Signed in, yet the store still wants verification: only a code helps.
                     Self.lastSilentSignIn = nil
                     sent = true
-                    issue = "Apple 仍要求验证此账号。请在登录了该账户的设备上打开「设置 › [你的姓名] › 登录与安全 › 获取验证码」，输入显示的验证码。"
+                    issue = AppText.text("Apple 仍要求验证此账号。请在登录了该账户的设备上打开「设置 › [你的姓名] › 登录与安全 › 获取验证码」，输入显示的验证码。")
                 } else {
                     Self.lastSilentSignIn = Date()
                     UX.success(); onVerified(); dismiss()
                 }
             } catch is CancellationError {
-                issue = "请求已取消，可以点按「重新发送验证码」"; sent = true
+                issue = AppText.text("请求已取消，可以点按「重新发送验证码」"); sent = true
             } catch {
                 issue = error.localizedDescription; sent = true
             }

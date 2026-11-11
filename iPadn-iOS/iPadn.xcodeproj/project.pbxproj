@@ -1678,6 +1678,24 @@
 			path = Info.plist;
 			sourceTree = "<group>";
 		};
+		747698A3D65DB53772BB4CD9 = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.json.xcstrings;
+			path = Localizable.xcstrings;
+			sourceTree = "<group>";
+		};
+		27F6B51C72614BFE5D34792A = {
+			isa = PBXBuildFile;
+			fileRef = 747698A3D65DB53772BB4CD9;
+		};
+		EED3A2B96866204B3B7B2916 = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				27F6B51C72614BFE5D34792A,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		39E53A5B4D47BF25EC27D946 = {
 			isa = PBXGroup;
 			children = (
@@ -1685,6 +1703,7 @@
 				22BBF0B88BEA14A3FDE85551,
 				A6453BEED269FDBE2052F83D,
 				947188B458A1FB28E930E1FF,
+				747698A3D65DB53772BB4CD9,
 			);
 			path = iPadnLiveActivity;
 			sourceTree = "<group>";
@@ -1713,6 +1732,8 @@
 				CURRENT_PROJECT_VERSION = 25;
 				SKIP_INSTALL = YES;
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1739,6 +1760,8 @@
 				CURRENT_PROJECT_VERSION = 25;
 				SKIP_INSTALL = YES;
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1762,6 +1785,7 @@
 			buildConfigurationList = A6E42B98CB6A30B792DCE7C7;
 			buildPhases = (
 				ABAB1DAEFEE463CAF5CC7A31,
+				EED3A2B96866204B3B7B2916,
 			);
 			buildRules = (
 			);
@@ -1826,6 +1850,9 @@
 			knownRegions = (
 				"zh-Hans",
 				en,
+				"zh-Hant",
+				ja,
+				ko,
 				Base,
 			);
 			mainGroup = 97A63A01E61FD439E8760B8E;

@@ -54,7 +54,7 @@ struct InstallationSettingsView: View {
                 Section {
                     Label("App Store 能识别并更新安装的应用", systemImage: "checkmark.seal")
                     Label("可以直接覆盖 App Store 安装的应用，数据保留", systemImage: "arrow.triangle.2.circlepath")
-                    LabeledContent("配对文件", value: hasPairingFile ? "已导入" : "未导入")
+                    LabeledContent("配对文件", value: hasPairingFile ? AppText.text("已导入") : AppText.text("未导入"))
                     if OnDevicePairing.isSupported {
                         Button { pairing.start(); showingPairingGuide = true } label: {
                             actionLabel(hasPairingFile ? "重新配对" : "在本机配对", systemImage: "iphone.radiowaves.left.and.right", running: pairing.phase.isActive)
@@ -126,7 +126,7 @@ struct InstallationSettingsView: View {
                 // A pairing file dropped into iPadn's folder is picked up without asking.
                 if store.settings.usesNativeInstallation, !hasPairingFile, (try? NativeInstaller.importPairingFileFromDocuments()) == true {
                     hasPairingFile = NativeInstaller.hasPairingFile
-                    notice = "已从 iPadn 文件夹导入配对文件。请在 LocalDevVPN 中连接后点按「检查连接」。"
+                    notice = AppText.text("已从 iPadn 文件夹导入配对文件。请在 LocalDevVPN 中连接后点按「检查连接」。")
                 }
             }
             .onChange(of: scenePhase) { _, phase in if phase != .active, working == .profile { working = nil } }
@@ -138,7 +138,7 @@ struct InstallationSettingsView: View {
             .onChange(of: pairing.phase) { _, phase in
                 if phase == .finished {
                     hasPairingFile = NativeInstaller.hasPairingFile
-                    notice = "配对完成。安装前请在 LocalDevVPN 中连接，可以点按「检查连接」确认。"
+                    notice = AppText.text("配对完成。安装前请在 LocalDevVPN 中连接，可以点按「检查连接」确认。")
                 }
             }
             // Pairing files come as .plist, .rppairing or no extension at all.
@@ -172,7 +172,7 @@ struct InstallationSettingsView: View {
                 }.presentationDetents([.medium, .large])
             }
             .actionConfirmation(isPresented: $removingPairingFile, title: "移除配对文件？", message: "之后使用原生安装需要重新导入。", confirmTitle: "移除", destructive: true) {
-                do { try NativeInstaller.removePairingFile(); hasPairingFile = NativeInstaller.hasPairingFile; notice = "配对文件已移除。" }
+                do { try NativeInstaller.removePairingFile(); hasPairingFile = NativeInstaller.hasPairingFile; notice = AppText.text("配对文件已移除。") }
                 catch { issue = error.localizedDescription }
             }
             .actionConfirmation(isPresented: $replacingCertificate, title: "重新创建证书？", message: "需要重新安装并信任新的描述文件。", confirmTitle: "重新创建", destructive: false) { createLocalCertificate() }
@@ -246,7 +246,7 @@ struct InstallationSettingsView: View {
         do {
             if try NativeInstaller.importPairingFileFromDocuments() {
                 hasPairingFile = NativeInstaller.hasPairingFile
-                notice = "已从 iPadn 文件夹导入配对文件。请在 LocalDevVPN 中连接后点按「检查连接」。"
+                notice = AppText.text("已从 iPadn 文件夹导入配对文件。请在 LocalDevVPN 中连接后点按「检查连接」。")
                 return
             }
         } catch {
@@ -265,7 +265,7 @@ struct InstallationSettingsView: View {
             defer { busy = false; working = nil }
             do {
                 _ = try await NativeInstaller.lookup(bundleID: Bundle.main.bundleIdentifier ?? "app.local.iPadn")
-                notice = "连接正常，可以使用原生安装。"
+                notice = AppText.text("连接正常，可以使用原生安装。")
             } catch { issue = error.localizedDescription }
         }
     }

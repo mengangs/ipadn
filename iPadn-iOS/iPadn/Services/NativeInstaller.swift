@@ -90,14 +90,14 @@ enum NativeInstaller {
     static func validatePairingFile(_ data: Data) throws {
         guard data.count <= 64 * 1024,
               let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
-            throw ToolError.message("这不是有效的配对文件。")
+            throw ToolError.message(AppText.text("这不是有效的配对文件。"))
         }
         if plist["HostCertificate"] != nil || plist["DeviceCertificate"] != nil {
-            throw ToolError.message("这是旧格式的配对文件。请在电脑上用 idevice_pair 生成「远程配对（RPPairing）」文件。")
+            throw ToolError.message(AppText.text("这是旧格式的配对文件。请在电脑上用 idevice_pair 生成「远程配对（RPPairing）」文件。"))
         }
         guard (plist["public_key"] as? Data)?.count == 32, (plist["private_key"] as? Data)?.count == 32,
               let identifier = plist["identifier"] as? String, !identifier.isEmpty else {
-            throw ToolError.message("这不是有效的远程配对文件。请在电脑上用 idevice_pair 生成「远程配对（RPPairing）」文件。")
+            throw ToolError.message(AppText.text("这不是有效的远程配对文件。请在电脑上用 idevice_pair 生成「远程配对（RPPairing）」文件。"))
         }
     }
 
@@ -151,15 +151,15 @@ enum NativeInstaller {
     private static var running = false
     private static func begin() throws {
         gate.lock(); defer { gate.unlock() }
-        guard !running else { throw ToolError.message("另一个安装正在进行，请稍候。") }
+        guard !running else { throw ToolError.message(AppText.text("另一个安装正在进行，请稍候。")) }
         running = true
     }
     private static func end() { gate.lock(); running = false; gate.unlock() }
 
     private static func request(bundleID: String, package: URL?, port: UInt16) throws -> String {
-        guard isAvailable else { throw ToolError.message("当前版本不包含原生安装组件。") }
-        guard hasPairingFile else { throw ToolError.message("请先在安装方式中导入配对文件。") }
-        guard !bundleID.isEmpty else { throw ToolError.message("安装包信息不完整，无法安装。") }
+        guard isAvailable else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
+        guard hasPairingFile else { throw ToolError.message(AppText.text("请先在安装方式中导入配对文件。")) }
+        guard !bundleID.isEmpty else { throw ToolError.message(AppText.text("安装包信息不完整，无法安装。")) }
         var body: [String: Any] = ["pairing_file": pairingFileURL.path, "host": deviceAddress,
                                    "port": Int(port), "bundle_id": bundleID, "hostname": "iPadn"]
         if let package { body["ipa"] = package.path }
@@ -207,7 +207,7 @@ enum NativeInstaller {
         let body = try request(bundleID: bundleID, package: nil, port: port)
         InstallLog.shared.add("native lookup (port \(port))")
         return try await Task.detached(priority: .userInitiated) {
-            guard let lookupFunction else { throw ToolError.message("当前版本不包含原生安装组件。") }
+            guard let lookupFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
             let reply = try decode(body.withCString { lookupFunction($0) })
             guard let app = reply.app else { throw Failure(stage: "reply", detail: "missing app") }
             return app
@@ -231,7 +231,7 @@ enum NativeInstaller {
         defer { Task { @MainActor in UIApplication.shared.endBackgroundTask(background) } }
         do {
             let outcome = try await Task.detached(priority: .userInitiated) {
-                guard let installFunction else { throw ToolError.message("当前版本不包含原生安装组件。") }
+                guard let installFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
                 let box = Unmanaged.passRetained(ProgressBox(progress))
                 defer { box.release() }
                 let callback: ProgressFunction = { context, phase, done, total in
@@ -291,11 +291,11 @@ enum NativeInstaller {
     /// Waits for the device to pair with iPadn and returns the new pairing
     /// file. Blocks until the user finishes in Settings, gives up or cancels.
     static func pair(name: String, events: @escaping @Sendable (PairingEvent) -> Void) async throws -> Data {
-        guard pairingIsAvailable else { throw ToolError.message("当前版本不包含本机配对组件。") }
+        guard pairingIsAvailable else { throw ToolError.message(AppText.text("当前版本不包含本机配对组件。")) }
         try begin(); defer { end() }
         let body = String(decoding: try JSONSerialization.data(withJSONObject: ["name": name]), as: UTF8.self)
         return try await Task.detached(priority: .userInitiated) {
-            guard let pairFunction, let freeFunction else { throw ToolError.message("当前版本不包含本机配对组件。") }
+            guard let pairFunction, let freeFunction else { throw ToolError.message(AppText.text("当前版本不包含本机配对组件。")) }
             let box = Unmanaged.passRetained(EventBox(events))
             defer { box.release() }
             let callback: EventFunction = { context, kind, payload in
@@ -325,34 +325,36 @@ enum NativeInstaller {
         let lowered = detail.lowercased()
         switch stage {
         case "connect":
-            return "无法连接本机安装服务。请先在 LocalDevVPN 中点按连接，并保持 Wi-Fi 开启；如果正在使用其他代理或 VPN，需要先切换到 LocalDevVPN。"
+            return AppText.text("无法连接本机安装服务。请先在 LocalDevVPN 中点按连接，并保持 Wi-Fi 开启；如果正在使用其他代理或 VPN，需要先切换到 LocalDevVPN。")
         case "pairing_file":
-            return "无法读取配对文件，请重新导入。"
+            return AppText.text("无法读取配对文件，请重新导入。")
         case "pairing" where lowered.contains("pair-verify") || lowered.contains("auth") || lowered.contains("srp"):
-            return "配对没有完成。请确认输入的配对码正确，然后重试。"
+            return AppText.text("配对没有完成。请确认输入的配对码正确，然后重试。")
         case "pairing":
-            return "系统没有接受这份配对文件。配对文件可能已失效（系统更新、还原或重新信任电脑之后），请在电脑上重新生成并导入。"
+            return AppText.text("系统没有接受这份配对文件。配对文件可能已失效（系统更新、还原或重新信任电脑之后），请在电脑上重新生成并导入。")
         case "tunnel":
-            return "已连接但无法建立安装通道。请确认设备已解锁，然后重试。"
+            return AppText.text("已连接但无法建立安装通道。请确认设备已解锁，然后重试。")
         case "lookup":
-            return "无法读取设备上的应用信息，请重试。"
+            return AppText.text("无法读取设备上的应用信息，请重试。")
         case "listen", "accept":
-            return "无法开始配对，请确认已允许 iPadn 访问本地网络，然后重试。"
+            return AppText.text("无法开始配对，请确认已允许 iPadn 访问本地网络，然后重试。")
         case "timeout":
-            return "等待配对超时。请重新开始，并在 5 分钟内于「设置」中完成配对。"
+            return AppText.text("等待配对超时。请重新开始，并在 5 分钟内于「设置」中完成配对。")
         case "package":
-            return "无法读取安装包文件，请重新下载。"
+            return AppText.text("无法读取安装包文件，请重新下载。")
         case "upload":
-            return lowered.contains("nospace") || lowered.contains("no space") ? "设备存储空间不足，无法安装。" : "安装包传输中断，请保持 LocalDevVPN 连接后重试。"
+            return lowered.contains("nospace") || lowered.contains("no space") ? AppText.text("设备存储空间不足，无法安装。") : AppText.text("安装包传输中断，请保持 LocalDevVPN 连接后重试。")
         case "install":
             if lowered.contains("applicationverificationfailed") || lowered.contains("verification") {
-                return "系统无法验证这个安装包。请确认它是用当前登录设备 App Store 的账号获取的，或重新下载。"
+                return AppText.text("系统无法验证这个安装包。请确认它是用当前登录设备 App Store 的账号获取的，或重新下载。")
             }
-            if lowered.contains("downgrade") { return "设备上已安装更新的版本，系统不允许降级覆盖。" }
-            if lowered.contains("notenoughspace") || lowered.contains("no space") { return "设备存储空间不足，无法安装。" }
-            return "系统安装失败：" + (detail.isEmpty ? "未知错误" : String(detail.prefix(160)))
+            if lowered.contains("downgrade") { return AppText.text("设备上已安装更新的版本，系统不允许降级覆盖。") }
+            if lowered.contains("notenoughspace") || lowered.contains("no space") { return AppText.text("设备存储空间不足，无法安装。") }
+            return detail.isEmpty ? AppText.text("系统安装失败：未知错误")
+                : AppText.text("系统安装失败：\(String(detail.prefix(160)))")
         default:
-            return "原生安装失败（\(stage)）" + (detail.isEmpty ? "" : "：" + String(detail.prefix(160)))
+            return detail.isEmpty ? AppText.text("原生安装失败（\(stage)）")
+                : AppText.text("原生安装失败（\(stage)）：\(String(detail.prefix(160)))")
         }
     }
 }

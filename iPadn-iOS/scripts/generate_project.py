@@ -153,6 +153,11 @@ for path in sorted((ROOT / "iPadnLiveActivity").glob("*.swift")):
     extension_files.append(reference)
     extension_sources.append(add("ExtensionBuild/" + path.name, "PBXBuildFile", fileRef=reference))
 extension_files.append(add("ExtensionInfoPlist", "PBXFileReference", lastKnownFileType="text.plist.xml", path="Info.plist", sourceTree="<group>"))
+# The extension runs in its own process and reads its own string catalog.
+extension_catalog = add("ExtensionFile/Localizable.xcstrings", "PBXFileReference", lastKnownFileType="text.json.xcstrings", path="Localizable.xcstrings", sourceTree="<group>")
+extension_files.append(extension_catalog)
+extension_resources = add("ExtensionResources", "PBXResourcesBuildPhase", buildActionMask="2147483647",
+                          files=[add("ExtensionBuild/Localizable.xcstrings", "PBXBuildFile", fileRef=extension_catalog)], runOnlyForDeploymentPostprocessing="0")
 objects[root_group]["children"].append(add("ExtensionGroup", "PBXGroup", children=extension_files, path="iPadnLiveActivity", sourceTree="<group>"))
 extension_phase = add("ExtensionSources", "PBXSourcesBuildPhase", buildActionMask="2147483647", files=extension_sources, runOnlyForDeploymentPostprocessing="0")
 extension_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn.LiveActivity", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
@@ -160,9 +165,10 @@ extension_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn.LiveActivity
                       "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": app_settings["MARKETING_VERSION"],
                       "CURRENT_PROJECT_VERSION": app_settings["CURRENT_PROJECT_VERSION"], "SKIP_INSTALL": "YES",
                       "APPLICATION_EXTENSION_API_ONLY": "YES",
+                      "SWIFT_EMIT_LOC_STRINGS": "YES", "LOCALIZATION_PREFERS_STRING_CATALOGS": "YES",
                       "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks"]}
 extension_configs = configs("Extension", extension_settings)
-add("ExtensionTarget", "PBXNativeTarget", buildConfigurationList=extension_configs, buildPhases=[extension_phase], buildRules=[], dependencies=[],
+add("ExtensionTarget", "PBXNativeTarget", buildConfigurationList=extension_configs, buildPhases=[extension_phase, extension_resources], buildRules=[], dependencies=[],
     name="iPadnLiveActivity", productName="iPadnLiveActivity", productReference=extension_product,
     productType="com.apple.product-type.app-extension")
 extension_proxy = add("ExtensionProxy", "PBXContainerItemProxy", containerPortal=uid("Project"), proxyType="1", remoteGlobalIDString=extension_id, remoteInfo="iPadnLiveActivity")
@@ -175,7 +181,7 @@ project_id = add("Project", "PBXProject", attributes={"BuildIndependentTargetsIn
     # English is the fallback for devices whose language the app doesn't ship,
     # while the Chinese source strings stay the keys of the string catalogs.
     buildConfigurationList=project_configs, compatibilityVersion="Xcode 14.0", developmentRegion=OPTIONS.development_language,
-    hasScannedForEncodings="0", knownRegions=["zh-Hans", "en", "Base"], mainGroup=root_group, productRefGroup=products,
+    hasScannedForEncodings="0", knownRegions=["zh-Hans", "en", "zh-Hant", "ja", "ko", "Base"], mainGroup=root_group, productRefGroup=products,
     projectDirPath="", projectRoot="", targets=[app_id, test_id, ui_id, extension_id], packageReferences=[package])
 
 def render(value, indent=0):

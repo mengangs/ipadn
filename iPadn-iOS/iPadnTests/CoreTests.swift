@@ -818,6 +818,22 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(AppleService.mergedCookie("tok=ab==; b=2", with: [], now: now), "tok=ab==; b=2")
     }
 
+    func testGenreNamesFollowTheInterfaceLanguage() {
+        let saved = AppText.locale
+        defer { AppText.locale = saved }
+        AppText.locale = Locale(identifier: "zh-Hans")
+        XCTAssertEqual(StoreService.localizedGenre("Productivity"), "效率")
+        AppText.locale = Locale(identifier: "ja")
+        XCTAssertEqual(StoreService.localizedGenre("Productivity"), "仕事効率化")
+        AppText.locale = Locale(identifier: "ko")
+        XCTAssertEqual(StoreService.localizedGenre("Photo & Video"), "사진 및 비디오")
+        // English is Apple's own name; unknown genres pass through in every language.
+        AppText.locale = Locale(identifier: "en")
+        XCTAssertEqual(StoreService.localizedGenre("Productivity"), "Productivity")
+        AppText.locale = Locale(identifier: "ja")
+        XCTAssertEqual(StoreService.localizedGenre("Something New"), "Something New")
+    }
+
     func testVersionSourceTemplatesAcceptBothPlaceholdersAndOnlyHTTPS() {
         XCTAssertEqual(VersionSource.iosDump.url(for: "414478124")?.absoluteString, "https://iosdump.apdoilaan.work/history/414478124")
         let legacy = VersionSource(name: "a", urlTemplate: "https://example.com/v?id={id}", containerKey: "", reverse: true)
