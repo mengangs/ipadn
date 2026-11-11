@@ -29,6 +29,8 @@ struct DownloadsView: View {
     }
     /// The newest finished download of each app with a newer store version.
     private var updateTargets: [UUID: StoreApp] {
+        // "New version alerts" off: no hints here either.
+        guard store.settings.updateNotifications else { return [:] }
         var targets: [UUID: StoreApp] = [:]
         var seen = Set<String>()
         for job in manager.jobs where job.status == .completed {
@@ -141,7 +143,7 @@ struct DownloadsView: View {
         }
         .task(id: manager.jobs.filter { $0.status == .completed }.map { $0.id.uuidString }.joined()) {
             await manager.loadPackageIcons()
-            await store.checkForUpdates()
+            if store.settings.updateNotifications { await store.checkForUpdates() }
         }
         .refreshable { await store.checkForUpdates(force: true) }
         .animation(UX.motion(reduceMotion), value: manager.jobs.map(\.id))

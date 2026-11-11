@@ -106,6 +106,17 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(WatchService.format(18, currency: "CNY", locale: Locale(identifier: "zh_CN")).contains("18"))
         XCTAssertTrue(WatchService.format(2.99, currency: "USD", locale: Locale(identifier: "zh_CN")).contains("2.99"))
         XCTAssertNil(WatchService.message(.priceRise(from: 1, to: 2), currency: "CNY"))
+        // A target price silences drops that stay above it; free always counts.
+        XCTAssertTrue(WatchService.notifies(.priceDrop(from: 30, to: 18), target: nil))
+        XCTAssertFalse(WatchService.notifies(.priceDrop(from: 30, to: 18), target: 12))
+        XCTAssertTrue(WatchService.notifies(.priceDrop(from: 30, to: 12), target: 12))
+        XCTAssertTrue(WatchService.notifies(.free(from: 30), target: 12))
+        XCTAssertTrue(WatchService.notifies(.newVersion("2.0"), target: 12))
+        var targeted = WatchRecord(id: "9", country: "CN", started: start, checked: start)
+        targeted.price = 30; targeted.currency = "CNY"; targeted.target = 12
+        XCTAssertEqual(WatchService.update(targeted, id: "9", country: "CN", listing: listing("1.0", 25, "CNY"), now: start + 60).record.target, 12)
+        XCTAssertNil(WatchService.update(targeted, id: "9", country: "CN", listing: listing("1.0", 3, "USD"), now: start + 60).record.target,
+                     "a new currency makes the old target meaningless")
         XCTAssertEqual(WatchService.message(.newVersion("2.0"), currency: "CNY", locale: Locale(identifier: "zh_CN")), "有新版本 2.0")
         let raw: [String: Any] = ["trackId": 5, "trackName": "P", "price": 4.99, "currency": "USD", "formattedPrice": "$4.99"]
         XCTAssertEqual(StoreService.mapLookup(raw).priceValue, 4.99)
@@ -861,6 +872,29 @@ final class CoreTests: XCTestCase {
         defer { AppText.locale = saved }
         AppText.locale = Locale(identifier: "en")
         XCTAssertTrue(HTTPStatusError(code: 401).localizedDescription.contains("sign in again"))
+    }
+
+    func testBackupRoundTripsAndMergesFollowedApps() throws {
+        var settings = ToolSettings()
+        settings.searchLimit = 50; settings.baseCurrency = "USD"
+        let a = StoreApp(id: "1", name: "A"), b = StoreApp(id: "2", name: "B"), c = StoreApp(id: "3", name: "C")
+        var record = WatchRecord(id: "1", country: "US", started: Date(timeIntervalSince1970: 1_700_000_000), checked: Date(timeIntervalSince1970: 1_700_000_100))
+        record.price = 4.99; record.currency = "USD"; record.target = 2.99
+        let backup = AppBackup(settings: settings, favorites: [a, b], watch: [record.key: record],
+                               keptVersions: ["0|1": "1.2"], searchHistory: [SearchHistoryItem(term: "notes", count: 2, lastUsed: Date(timeIntervalSince1970: 1_700_000_000))])
+        let data = try backup.encoded()
+        let text = String(decoding: data, as: UTF8.self)
+        for secret in ["password", "passwordToken", "cookie", "dsid"] { XCTAssertFalse(text.contains(secret), secret) }
+        let restored = try AppBackup.decode(data)
+        XCTAssertEqual(restored.settings, settings)
+        XCTAssertEqual(restored.favorites.map(\.id), ["1", "2"])
+        XCTAssertEqual(restored.watch[record.key]?.target, 2.99)
+        XCTAssertEqual(restored.keptVersions, ["0|1": "1.2"])
+        XCTAssertEqual(AppBackup.merged([a, b], with: [b, c]).map(\.id), ["1", "2", "3"])
+        XCTAssertThrowsError(try AppBackup.decode(Data("{}".utf8)))
+        XCTAssertThrowsError(try AppBackup.decode(Data("not json".utf8)))
+        var future = backup; future.format = AppBackup.currentFormat + 1
+        XCTAssertThrowsError(try AppBackup.decode(try future.encoded()))
     }
 
     func testRegionLocalesFindTheirScript() {
