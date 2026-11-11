@@ -8,21 +8,29 @@
 Works with iPhone, iPad, Apple TV and Mac apps, including older versions and apps removed from sale.
 
 [![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=downloads&color=111111)](https://github.com/mengangs/ipadn/releases)
+[![Stars](https://img.shields.io/github/stars/mengangs/ipadn?label=stars&color=111111)](https://github.com/mengangs/ipadn/stargazers)
 ![Requires](https://img.shields.io/badge/iOS%20%2F%20iPadOS-17%2B-111111)
-![Design](https://img.shields.io/badge/design-App%20Store-111111)
+[![License](https://img.shields.io/github/license/mengangs/ipadn?label=license&color=111111)](LICENSE)
+
+[简体中文](README.md) · **English**
 
 [Download](https://github.com/mengangs/ipadn/releases/latest) · [Install a download](#installing-a-downloaded-app) · [FAQ](#frequently-asked-questions) · [Report a problem](https://github.com/mengangs/ipadn/issues)
-
-<sub>中文版说明见 [README.md](README.md)。</sub>
 
 </div>
 
 <p align="center">
-  <img src="docs/images/01-search.jpg" width="19%" alt="Search">
-  <img src="docs/images/02-detail.jpg" width="19%" alt="App details">
-  <img src="docs/images/03-versions.jpg" width="19%" alt="Version history and release notes">
-  <img src="docs/images/04-prices.jpg" width="19%" alt="Regional price comparison">
-  <img src="docs/images/05-purchased.jpg" width="19%" alt="Purchases">
+  <img src="docs/images/en/01-search.jpg" width="24%" alt="Search">
+  <img src="docs/images/en/02-detail.jpg" width="24%" alt="App details">
+  <img src="docs/images/en/03-versions.jpg" width="24%" alt="Version history and release notes">
+  <img src="docs/images/en/04-prices.jpg" width="24%" alt="Regional price comparison">
+</p>
+
+<p align="center">
+  <img src="docs/images/en/05-downloads.jpg" width="24%" alt="Downloads">
+  <img src="docs/images/en/06-purchased.jpg" width="24%" alt="Purchases">
+  <img src="docs/images/en/07-native-install.jpg" width="24%" alt="Native Install">
+  <img src="docs/images/en/08-languages.jpg" width="24%" alt="Arabic interface">
 </p>
 
 ---
@@ -49,7 +57,7 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 The interface follows the App Store's design. Appearance follows the system and the icon is dark by default (both can be changed in Settings), with Dynamic Type, the iPad sidebar and alternate app icons.
 
-**Languages:** Simplified Chinese, Traditional Chinese, English, Japanese and Korean. iPadn follows the system language; to choose a different one for iPadn only, use Settings › iPadn › Language. Traditional Chinese, Japanese and Korean are machine-assisted translations; corrections are welcome in [Issues](https://github.com/mengangs/ipadn/issues).
+**Languages:** English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Russian, Spanish, French, German, Portuguese (Brazil) and Arabic, with a right-to-left layout for Arabic. iPadn follows the system language; to choose a different one for iPadn only, use Settings › iPadn › Language. English was refined by a community contributor and the other languages are machine-assisted translations; corrections are welcome in [Issues](https://github.com/mengangs/ipadn/issues) or a pull request.
 
 ## Getting started
 
@@ -232,6 +240,23 @@ On mainland Chinese networks Apple redirects other regions' App Store pages to C
 
 No. Removing an account only clears that account's sign-in details and purchase records.
 </details>
+
+## Contributing
+
+- **Translations:** every interface string lives in [`Localizable.xcstrings`](iPadn-iOS/iPadn/Resources/Localizable.xcstrings); open it in Xcode to edit entries one by one. Pull requests that improve a language or add a new one are welcome.
+- **Bug reports:** describe your device, system version and steps in [Issues](https://github.com/mengangs/ipadn/issues). If you can, attach the file from Account › Settings › Export diagnostics; it contains no account names or credentials.
+- **Building:** see [BUILDING.md](iPadn-iOS/BUILDING.md).
+
+## Acknowledgements
+
+- [kylefmohr](https://github.com/kylefmohr) contributed the English translation ([#35](https://github.com/mengangs/ipadn/pull/35)).
+- Thanks to everyone who reported problems and suggested ideas, and to the open-source projects iPadn uses, listed in [Third-party components and licenses](iPadn-iOS/THIRD_PARTY_NOTICES.md).
+
+## Star history
+
+<a href="https://star-history.com/#mengangs/ipadn&Date">
+  <img src="https://api.star-history.com/svg?repos=mengangs/ipadn&type=Date" width="600" alt="Star history">
+</a>
 
 ## More
 

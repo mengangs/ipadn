@@ -1042,7 +1042,10 @@ final class ToolStore: ObservableObject {
 extension ToolStore {
     func prepareAccountPreview() {
         apple.prepareAccountPreview()
-        owned = [OwnedApp(id: "preview-app", bundleID: "example.pixel", name: "像素日记", version: "3.2", purchaseDate: Date(), iconURL: nil)]
+        owned = PreviewData.apps.enumerated().map { index, app in
+            OwnedApp(id: app.id, bundleID: app.bundleID, name: app.name, version: app.version,
+                     purchaseDate: Date().addingTimeInterval(-Double(index + 1) * 9 * 86400), iconURL: app.iconURL)
+        }
     }
     func prepareArchivePreview() {
         searchText = "Forward"; lastSearchTerm = searchText; hasSearched = true
@@ -1052,15 +1055,15 @@ extension ToolStore {
         visualPreview = true
         cacheLoading = false
         results = []; hasSearched = false; searchText = ""
-        favorites = [StoreApp(id: "preview-app", name: "像素日记", bundleID: "example.pixel", version: "3.2", category: "摄影与录像", size: 128_000_000)]
+        favorites = [PreviewData.favorite]
         let day: TimeInterval = 86400
-        var record = WatchRecord(id: "preview-app", country: watchCountry, version: "3.2", price: 18, currency: "CNY",
+        var record = WatchRecord(id: PreviewData.favorite.id, country: watchCountry, version: "3.2", price: 18, currency: "CNY",
                                  history: [PricePoint(date: Date().addingTimeInterval(-30 * day), price: 30),
                                            PricePoint(date: Date().addingTimeInterval(-3 * day), price: 18)],
                                  started: Date().addingTimeInterval(-30 * day), checked: Date())
         record.change = .priceDrop(from: 30, to: 18); record.changed = Date().addingTimeInterval(-3 * day)
         watch = [record.key: record]
-        searchHistory = [SearchHistoryItem(term: "效率工具", count: 3, lastUsed: Date()), SearchHistoryItem(term: "照片编辑", count: 1, lastUsed: Date())]
+        searchHistory = (PreviewData.chinese ? ["效率工具", "照片编辑"] : ["Notion", "Spotify"]).map { SearchHistoryItem(term: $0, count: 1, lastUsed: Date()) }
     }
 }
 #endif

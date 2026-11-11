@@ -883,7 +883,7 @@ enum AppleLoginResponse {
 extension AppleService {
     func prepareAccountPreview() {
         accountStorageError = nil
-        accounts = [AppleAccount(id: "demo@example.com", name: "示例账号", password: "", cookie: "", dsid: "", passwordToken: "", storeFront: "", fullStoreFront: ""), AppleAccount(id: "second@example.com", name: "另一个账号", password: "", cookie: "", dsid: "", passwordToken: "", storeFront: "", fullStoreFront: "")]
+        accounts = [AppleAccount(id: "demo@example.com", name: PreviewData.chinese ? "示例账号" : "Alex Morgan", password: "", cookie: "", dsid: "", passwordToken: "", storeFront: "", fullStoreFront: ""), AppleAccount(id: "second@example.com", name: PreviewData.chinese ? "另一个账号" : "Sam Lee", password: "", cookie: "", dsid: "", passwordToken: "", storeFront: "", fullStoreFront: "")]
         activeID = accounts.first?.id
     }
 }

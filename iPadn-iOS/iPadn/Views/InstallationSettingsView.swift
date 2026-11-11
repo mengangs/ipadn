@@ -42,14 +42,16 @@ struct InstallationSettingsView: View {
     }
     var body: some View {
         Form {
+            // A list of choices instead of a segmented control, so every
+            // method's name stays readable in longer languages.
             Section {
                 Picker("安装方式", selection: method) {
                     Text("一键安装").tag(Method.automatic)
                     if NativeInstaller.isAvailable { Text("原生安装").tag(Method.native) }
                     Text("本机证书").tag(Method.localCertificate)
                     Text("代理服务").tag(Method.proxy)
-                }.pickerStyle(.segmented).accessibilityIdentifier("installation.method")
-            }
+                }.pickerStyle(.inline).labelsHidden().accessibilityIdentifier("installation.method")
+            } header: { Text("安装方式") }
             if store.settings.usesNativeInstallation {
                 Section {
                     Label("App Store 能识别并更新安装的应用", systemImage: "checkmark.seal")

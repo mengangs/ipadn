@@ -123,7 +123,8 @@ private struct RevealGestureAttachment: UIViewRepresentable {
             recognizer.canBegin = { [weak self] origin, direction in
                 guard let self, let anchor = self.anchor, let host = self.host, self.parent.enabled else { return false }
                 let point = anchor.convert(origin, from: host)
-                return !(point.x < 20 && direction > 0)
+                // Leave the leading edge to the system's back swipe.
+                return !(self.layoutX(point.x) < 20 && self.layoutSign * direction > 0)
             }
             recognizer.horizontalIntent = { [weak self] in self?.cancelRowPresses() }
         }
@@ -173,13 +174,24 @@ private struct RevealGestureAttachment: UIViewRepresentable {
             host?.removeGestureRecognizer(recognizer); host?.removeGestureRecognizer(closeTap); host = nil
         }
         @objc private func closeRow() { parent.close() }
+        /// UIKit reports touches left to right, while SwiftUI mirrors offsets
+        /// and edges in a right-to-left layout; these map touches into the
+        /// layout's direction so a swipe follows the finger in Arabic too.
+        private var layoutSign: CGFloat {
+            anchor?.effectiveUserInterfaceLayoutDirection == .rightToLeft ? -1 : 1
+        }
+        private func layoutX(_ x: CGFloat) -> CGFloat {
+            guard let anchor, layoutSign < 0 else { return x }
+            return anchor.bounds.width - x
+        }
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             guard parent.enabled, let anchor else { return false }
             let point = touch.location(in: anchor)
             guard anchor.bounds.contains(point) else { return false }
+            let x = layoutX(point.x)
             // The exposed operation stays a normal button, not a new swipe.
-            if parent.offset < 0 && point.x > anchor.bounds.width + parent.offset { return false }
-            if parent.offset > 0 && point.x < parent.offset { return false }
+            if parent.offset < 0 && x > anchor.bounds.width + parent.offset { return false }
+            if parent.offset > 0 && x < parent.offset { return false }
             return true
         }
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -192,8 +204,9 @@ private struct RevealGestureAttachment: UIViewRepresentable {
             #if DEBUG
             if recognizer.state != .changed { print("Reveal event: \(recognizer.state.rawValue), translation: \(recognizer.translation)") }
             #endif
-            parent.changed(recognizer.state, recognizer.translation, recognizer.horizontalVelocity,
-                           anchor.convert(recognizer.location, from: host), recognizer.initialDirection)
+            let location = anchor.convert(recognizer.location, from: host)
+            parent.changed(recognizer.state, layoutSign * recognizer.translation, layoutSign * recognizer.horizontalVelocity,
+                           CGPoint(x: layoutX(location.x), y: location.y), layoutSign * recognizer.initialDirection)
         }
     }
     func makeCoordinator() -> Coordinator { Coordinator(self) }

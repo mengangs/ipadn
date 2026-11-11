@@ -177,8 +177,16 @@ struct PurchasedView: View {
                             } else {
                                 NavigationLink { AppDetailView(app: storeApp(app)) } label: {
                                     AppRow(app: storeApp(app), subtitle: subtitle, badge: badges[app.id]) {
-                                        RowCapsule(title: "下载") { getting = app.storeApp; UX.feedback() }
+                                        // The App Store's re-download glyph leaves room for the
+                                        // purchase date in longer languages.
+                                        Image(systemName: "icloud.and.arrow.down")
+                                            .font(.title3.weight(.medium)).foregroundStyle(UX.tint)
+                                            .frame(width: 34, height: 44).contentShape(Rectangle())
+                                            .highPriorityGesture(TapGesture().onEnded { getting = app.storeApp; UX.feedback() })
+                                            .accessibilityElement(children: .ignore)
+                                            .accessibilityAddTraits(.isButton)
                                             .accessibilityLabel("下载 \(app.name)")
+                                            .accessibilityAction { getting = app.storeApp; UX.feedback() }
                                     }
                                 }
                             }

@@ -95,8 +95,9 @@ struct AppRow<Accessory: View>: View {
             AppIcon(url: app.iconURL, size: 64)
             VStack(alignment: .leading, spacing: 3) {
                 Text(app.name.isEmpty ? app.bundleID : app.name).font(.body.weight(.medium)).lineLimit(2)
-                let detail = subtitle ?? [app.displayCategory, app.version.isEmpty ? "" : "v\(app.version)"]
-                    .filter { !$0.isEmpty }.joined(separator: " · ")
+                // The category gets its own line so a long name in another
+                // language doesn't push the version out of view.
+                let detail = subtitle ?? app.displayCategory
                 if !detail.isEmpty {
                     // Scrolls once in place when the row is too narrow, like download cards.
                     MarqueeText(text: detail).foregroundStyle(.secondary)
@@ -104,7 +105,9 @@ struct AppRow<Accessory: View>: View {
                 HStack(spacing: 6) {
                     if app.isDelisted { TagBadge(text: "已下架", tint: .orange) }
                     if let badge { TagBadge(text: badge.text, tint: badge.tint) }
-                    if app.size > 0 { Text(app.size.byteLabel).font(.caption).foregroundStyle(.tertiary) }
+                    let facts = [subtitle == nil && !app.version.isEmpty ? "v\(app.version)" : "", app.size > 0 ? app.size.byteLabel : ""]
+                        .filter { !$0.isEmpty }.joined(separator: " · ")
+                    if !facts.isEmpty { Text(facts).font(.caption).foregroundStyle(.tertiary).lineLimit(1) }
                 }
             }
             Spacer(minLength: 8)

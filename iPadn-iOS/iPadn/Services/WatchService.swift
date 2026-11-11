@@ -101,8 +101,9 @@ enum WatchService {
     private static func same(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 0.000_1 }
 
     /// "免费" for zero, else the amount in its currency ("¥18", "$2.99").
+    /// Words follow the interface language; `locale` only shapes the number.
     static func format(_ price: Double, currency: String, locale: Locale = AppText.formattingLocale) -> String {
-        if price == 0 { return AppText.text("免费", in: locale) }
+        if price == 0 { return AppText.text("免费") }
         let whole = price.rounded() == price
         return formatters.withLock { cache in
             let key = locale.identifier + "|" + currency + (whole ? "|0" : "|2")
@@ -123,13 +124,14 @@ enum WatchService {
     private static let formatters = NSLockedValue([String: NumberFormatter]())
 
     /// A sentence for a notification, or nil when the change is not worth one.
+    /// Written in the interface language; `locale` formats the amounts.
     static func message(_ change: WatchChange, currency: String, locale: Locale = AppText.formattingLocale) -> String? {
         switch change {
-        case .newVersion(let version): return AppText.text("有新版本 \(version)", in: locale)
-        case .priceDrop(let from, let to): return AppText.text("降价：\(format(from, currency: currency, locale: locale)) → \(format(to, currency: currency, locale: locale))", in: locale)
-        case .free(let from): return AppText.text("限免：原价 \(format(from, currency: currency, locale: locale))，现在免费", in: locale)
-        case .delisted: return AppText.text("已从 App Store 下架，获取过的账号仍可下载，建议尽快备份", in: locale)
-        case .relisted: return AppText.text("已重新上架", in: locale)
+        case .newVersion(let version): return AppText.text("有新版本 \(version)")
+        case .priceDrop(let from, let to): return AppText.text("降价：\(format(from, currency: currency, locale: locale)) → \(format(to, currency: currency, locale: locale))")
+        case .free(let from): return AppText.text("限免：原价 \(format(from, currency: currency, locale: locale))，现在免费")
+        case .delisted: return AppText.text("已从 App Store 下架，获取过的账号仍可下载，建议尽快备份")
+        case .relisted: return AppText.text("已重新上架")
         case .priceRise: return nil
         }
     }

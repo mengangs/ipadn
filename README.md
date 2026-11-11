@@ -8,21 +8,29 @@
 支持 iPhone、iPad、Apple TV 与 Mac 应用，包括历史版本与已下架应用。
 
 [![最新版本](https://img.shields.io/github/v/release/mengangs/ipadn?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
+[![下载量](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F&color=111111)](https://github.com/mengangs/ipadn/releases)
+[![Stars](https://img.shields.io/github/stars/mengangs/ipadn?label=Stars&color=111111)](https://github.com/mengangs/ipadn/stargazers)
 ![系统要求](https://img.shields.io/badge/iOS%20%2F%20iPadOS-17%2B-111111)
-![设计](https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-App%20Store%20%E9%A3%8E%E6%A0%BC-111111)
+[![许可证](https://img.shields.io/github/license/mengangs/ipadn?label=%E8%AE%B8%E5%8F%AF%E8%AF%81&color=111111)](LICENSE)
+
+**简体中文** · [English](README_EN.md)
 
 [下载](https://github.com/mengangs/ipadn/releases/latest) · [安装下载的应用](#安装下载的应用) · [常见问题](#常见问题) · [反馈问题](https://github.com/mengangs/ipadn/issues)
-
-<sub>English: [README_EN.md](README_EN.md)。</sub>
 
 </div>
 
 <p align="center">
-  <img src="docs/images/01-search.jpg" width="19%" alt="搜索应用">
-  <img src="docs/images/02-detail.jpg" width="19%" alt="应用详情">
-  <img src="docs/images/03-versions.jpg" width="19%" alt="历史版本与更新说明">
-  <img src="docs/images/04-prices.jpg" width="19%" alt="多地区比价">
-  <img src="docs/images/05-purchased.jpg" width="19%" alt="已购项目">
+  <img src="docs/images/zh/01-search.jpg" width="24%" alt="搜索应用">
+  <img src="docs/images/zh/02-detail.jpg" width="24%" alt="应用详情">
+  <img src="docs/images/zh/03-versions.jpg" width="24%" alt="历史版本与更新说明">
+  <img src="docs/images/zh/04-prices.jpg" width="24%" alt="多地区比价">
+</p>
+
+<p align="center">
+  <img src="docs/images/zh/05-downloads.jpg" width="24%" alt="下载管理">
+  <img src="docs/images/zh/06-purchased.jpg" width="24%" alt="已购项目">
+  <img src="docs/images/zh/07-native-install.jpg" width="24%" alt="原生安装">
+  <img src="docs/images/zh/08-languages.jpg" width="24%" alt="阿拉伯语界面">
 </p>
 
 ---
@@ -49,7 +57,7 @@
 
 界面参考 App Store 设计，外观默认跟随系统、图标默认深色（都可在设置中更改），支持动态字体和 iPad 侧栏，还可以在设置中更换应用图标。
 
-**界面语言**：简体中文、繁體中文、English、日本語、한국어。iPadn 跟随系统语言，也可以在「设置 › iPadn › 语言」中单独设置。繁体中文、日语和韩语为机器辅助翻译，欢迎在 [Issues](https://github.com/mengangs/ipadn/issues) 中纠错。
+**界面语言**：简体中文、繁體中文、English、日本語、한국어、Русский、Español、Français、Deutsch、Português (Brasil)、العربية，阿拉伯语使用从右到左的排版。iPadn 跟随系统语言，也可以在「设置 › iPadn › 语言」中单独设置。英文由社区贡献者完善，其他语言为机器辅助翻译，欢迎在 [Issues](https://github.com/mengangs/ipadn/issues) 或 Pull Request 中纠错。
 
 ## 开始使用
 
@@ -232,6 +240,23 @@ Apple 只允许下载你的账号拥有许可的应用。版本也可能已经�
 
 不会。移除账号只清除该账号的登录信息和已购记录。
 </details>
+
+## 参与贡献
+
+- **翻译**：所有界面文字在 [`Localizable.xcstrings`](iPadn-iOS/iPadn/Resources/Localizable.xcstrings) 中，用 Xcode 打开即可逐条编辑。改进现有语言或新增语言都欢迎提交 Pull Request。
+- **反馈问题**：在 [Issues](https://github.com/mengangs/ipadn/issues) 中描述设备、系统版本和操作步骤；方便的话附上「账号 › 设置 › 导出诊断信息」生成的文件，其中不含账号名称和登录凭据。
+- **自行编译**：步骤见 [BUILDING.md](iPadn-iOS/BUILDING.md)。
+
+## 致谢
+
+- [kylefmohr](https://github.com/kylefmohr) 贡献了英文翻译（[#35](https://github.com/mengangs/ipadn/pull/35)）。
+- 感谢所有提交问题和建议的用户，以及 iPadn 使用的开源项目，详见[第三方组件与许可](iPadn-iOS/THIRD_PARTY_NOTICES.md)。
+
+## Star 趋势
+
+<a href="https://star-history.com/#mengangs/ipadn&Date">
+  <img src="https://api.star-history.com/svg?repos=mengangs/ipadn&type=Date" width="600" alt="Star 趋势">
+</a>
 
 ## 更多
 

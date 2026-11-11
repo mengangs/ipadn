@@ -95,8 +95,9 @@ struct StoreApp: Codable, Identifiable, Hashable {
     /// The listing's price as a number and its ISO currency, from the lookup API.
     var priceValue: Double?
     var currency: String?
-    /// Free apps come back without a price; older saves stored the word itself.
-    var isFree: Bool { price.isEmpty || price == "免费" }
+    /// Free apps come back without a price, or with the store's own word for
+    /// free ("Free", "免費"); older saves stored "免费". A zero amount decides.
+    var isFree: Bool { price.isEmpty || priceValue == 0 || price == "免费" }
     var priceLabel: String { isFree ? AppText.text("免费") : price }
     var rating: Double = 0
     var minimumOS = ""

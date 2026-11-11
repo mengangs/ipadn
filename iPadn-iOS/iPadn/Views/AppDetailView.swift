@@ -116,7 +116,7 @@ struct AppDetailView: View {
                             HStack {
                                 Label("多地区价格对比", systemImage: "globe")
                                 Spacer()
-                                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                                Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                             }
                             .contentShape(Rectangle())
                         }

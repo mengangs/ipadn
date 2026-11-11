@@ -121,7 +121,7 @@ for file in ROOT.rglob("*.swift"):
 # Localization: Chinese source strings keyed by their own text, every shipped
 # language translated in the same catalogs. A language missing a value would show
 # the development language (English) for that string instead.
-LANGUAGES = ["zh-Hans", "en", "zh-Hant", "ja", "ko"]
+LANGUAGES = ["zh-Hans", "en", "zh-Hant", "ja", "ko", "ru", "es", "fr", "de", "pt-BR", "ar"]
 PLACEHOLDER = re.compile(r"%(?:\d+\$)?(?:lld|ld|d|u|@|lf|f|%)|\$\{[A-Za-z]+\}")
 catalogs = {}
 for name, file in [("Localizable", ROOT / "iPadn/Resources/Localizable.xcstrings"),
@@ -147,7 +147,7 @@ for name, file in [("Localizable", ROOT / "iPadn/Resources/Localizable.xcstrings
             for form in unit.get("variations", {}).get("plural", {}).values():
                 values.append(form["stringUnit"].get("value", ""))
             check(values and all(v != "" for v in values), name + ".xcstrings: empty value for " + repr(key) + " (" + language + ")")
-            if language in ("en", "ko"):
+            if language not in ("zh-Hans", "zh-Hant", "ja"):
                 check(not any("\u4e00" <= c <= "\u9fff" for v in values for c in v), name + ".xcstrings: Chinese left in " + language + " for " + repr(key))
             if expected is not None:
                 for v in values:
@@ -176,7 +176,7 @@ hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in s
 expected = json.loads((ROOT / "vendor/SAPRuntime/manifest.json").read_text())["files"]
 check(hashes == expected, "Bundled runtime files or hashes differ from local manifest")
 report = {"passed": not failures, "app_swift_files": len(actual_swift), "project_objects": len(objects), "runtime_sha256": hashes,
-          "checks": ["OpenStep project graph", "referenced files", "plist parsing", "icon filenames and opaque square dimensions", "shared scheme targets", "Swift lexical delimiters", "bundled runtime hashes", "string catalogs (zh-Hans, en, zh-Hant, ja, ko; placeholders)"],
+          "checks": ["OpenStep project graph", "referenced files", "plist parsing", "icon filenames and opaque square dimensions", "shared scheme targets", "Swift lexical delimiters", "bundled runtime hashes", "string catalogs (zh-Hans, en, zh-Hant, ja, ko, ru, es, fr, de, pt-BR, ar; placeholders)"],
           "not_run": ["Swift compilation/type checking", "XCTest", "iOS Simulator", "real device", "Apple account/server requests", "IPA installation"], "failures": failures}
 (ROOT / "build").mkdir(exist_ok=True)
 (ROOT / "build/verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

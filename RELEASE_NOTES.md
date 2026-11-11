@@ -1,30 +1,24 @@
-## iPadn 1.9.0
+## iPadn 1.9.1
 
-本版本新增原生安装，并集中修复下载、验证和界面细节。适用于 iOS / iPadOS 17 及更新版本；安装包未签名，请用自己的工具签名后安装。
+本版本新增多语言界面，并修复若干显示问题。适用于 iOS / iPadOS 17 及更新版本；安装包未签名，请用自己的工具签名后安装。
 
-**原生安装**
+**多语言**
 
-- 新增「原生安装」方式：通过系统自带的安装服务安装，效果与用电脑安装相同。App Store 能识别并更新安装的应用，爱思助手等工具显示为苹果正版，可以直接覆盖 App Store 已装的版本并保留数据。之前用其他方式安装、App Store 显示云朵的应用，用原生安装覆盖一次即可恢复。
-- iOS / iPadOS 27 起可以在手机上完成配对，不需要电脑：在「设置 › 隐私与安全性 › 开发者模式」中选择 iPadn，输入配对码即可。配对步骤和配对码实时显示在灵动岛、锁屏和通知中。
-- iOS 17.4 – 26 可导入电脑生成的远程配对文件；放进 iPadn 的「文件」文件夹会自动导入。
-- 需要 LocalDevVPN。安装包不会离开这台设备；默认安装方式不变。
+- 界面支持 11 种语言：简体中文、繁體中文、English、日本語、한국어、Русский、Español、Français、Deutsch、Português (Brasil)、العربية。iPadn 跟随系统语言，也可以在「设置 › iPadn › 语言」中单独设置。
+- 阿拉伯语使用从右到左的排版，列表左滑、右滑等操作随之镜像。
+- 内购项目名称按界面语言显示，例如日语界面读取日本区的名称。
+- 英文翻译由 [kylefmohr](https://github.com/kylefmohr) 贡献（#35）；其他语言为机器辅助翻译，欢迎在 Issues 或 Pull Request 中纠错。
 
-**下载与验证**
+**修复与改进**
 
-- 下载或获取应用需要验证 Apple 账户时，会先替你请求 Apple 发送验证码，再显示输入页；新增「重新发送验证码」。下载列表、已购批量下载和 Mac 安装包也会直接弹出验证，验证后自动继续。
-- 持续保存 Apple 返回的会话信息，减少获取新应用时反复要求验证。
-- 修复部分签名下载到 100% 后又从头下载：首次启动时用一个很小的文件检测后台下载是否可用，不可用时直接改用应用内下载。
-- 点「获取」后更快开始：下载、登录等操作排在后台读取版本信息之前，签名组件保留更久，并在打开应用详情时提前准备。
-- 暂停的任务在详情中显示已下载大小、百分比和总大小。
+- 修复简体中文界面下，多地区价格中的「免费」可能显示为繁体，应用详情中的价格可能显示为英文「Free」。
+- 关注应用的价格变化通知跟随界面语言，不再跟随地区设置。
+- 搜索结果中的分类单独一行，较长的分类名不再挤掉版本号。
+- 已购项目的下载按钮改为云朵图标，购买日期可以完整显示。
+- 安装设置中的安装方式改为列表，各语言下名称都能完整显示。
 
-**版本来源**
+**English**
 
-- 新增默认版本来源 iosdump；接口地址同时支持 `{id}` 与 `{appId}`。
-- 版本来源列表新增「检测全部来源」，显示每个来源是否可用、返回的版本数和耗时。
-
-**界面**
-
-- 账号列表各账号之间增加分隔线。
-- 应用详情页「更多来自开发者」的图标不再被卡片边缘裁剪。
+iPadn now speaks 11 languages: English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Russian, Spanish, French, German, Portuguese (Brazil) and Arabic, with a right-to-left layout for Arabic. In-app purchase names follow the interface language. The English translation was contributed by [kylefmohr](https://github.com/kylefmohr) (#35); the other languages are machine-assisted, and corrections are welcome. This release also fixes prices shown in the wrong script or language, keeps versions visible next to long category names in search results, and makes install methods and purchase dates readable in longer languages.
 
 更早版本的更新内容见 [Releases](https://github.com/mengangs/ipadn/releases)。

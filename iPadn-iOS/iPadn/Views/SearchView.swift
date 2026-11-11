@@ -117,7 +117,7 @@ struct SearchView: View {
                     Button { viewingFavorite = app } label: {
                         HStack {
                             WatchRow(app: app)
-                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                            Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                         }.contentShape(Rectangle())
                     }
                         .buttonStyle(RevealRowButtonStyle())

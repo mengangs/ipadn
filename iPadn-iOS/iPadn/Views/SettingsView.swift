@@ -122,7 +122,7 @@ struct SettingsView: View {
                             }
                             Spacer()
                             Text(source.enabled ? "已启用" : "已停用").font(.caption).foregroundStyle(.secondary)
-                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                            Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                         }
                     }
                     .accessibilityIdentifier("settings.source." + source.name)
