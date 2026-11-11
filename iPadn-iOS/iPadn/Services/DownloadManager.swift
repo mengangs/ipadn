@@ -814,6 +814,8 @@ final class DownloadManager: NSObject, ObservableObject {
         tasks.removeValue(forKey: id)
         progressPublishedAt.removeValue(forKey: id)
         updateBackgroundTask()
+        RequestFailureLog.record(nil, status: (error as? HTTPStatusError)?.code,
+                                 error: error is HTTPStatusError || error is ToolError ? nil : error, stage: "download")
         jobs[index].status = .failed; jobs[index].error = error.localizedDescription
         jobs[index].foregroundFallback = Self.cannotCreateFile(error)
         persist(); schedule()

@@ -1,5 +1,28 @@
 import Foundation
 
+/// Recent failed requests for diagnostics: time, host, endpoint name and
+/// status only. No query strings, headers, bodies or account details.
+enum RequestFailureLog {
+    private static let entries = NSLockedValue<[String]>([])
+    static func record(_ url: URL?, status: Int? = nil, error: Error? = nil, stage: String? = nil) {
+        let time = Date().formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
+        var parts = [time]
+        if let stage { parts.append("stage=" + stage) }
+        if let host = url?.host { parts.append("host=" + host) }
+        if let last = url?.lastPathComponent, endpointName(last) { parts.append("endpoint=" + last) }
+        if let status { parts.append("http=\(status)") }
+        if let error = error as NSError? { parts.append("error=\(error.domain)#\(error.code)") }
+        let line = parts.joined(separator: "; ")
+        entries.withLock { list in list.append(line); if list.count > 20 { list.removeFirst(list.count - 20) } }
+    }
+    /// Apple endpoint names (buyProduct, volumeStoreDownloadProduct); never
+    /// file names or tokens.
+    static func endpointName(_ value: String) -> Bool {
+        !value.isEmpty && value.count <= 40 && value.allSatisfy { $0.isLetter && $0.isASCII }
+    }
+    static var text: String { entries.withLock { $0.isEmpty ? "(none)" : $0.joined(separator: "\n") } }
+}
+
 final class HTTPClient: Sendable {
     static let shared = HTTPClient()
     static let userAgent = "Configurator/2.21 (Macintosh; OS X 15.2; 24C5089c) AppleWebKit/0620.1.16.11.6"
@@ -119,6 +142,7 @@ final class HTTPClient: Sendable {
                 continue
             }
             guard (200..<300).contains(response.statusCode) else {
+                RequestFailureLog.record(current, status: response.statusCode)
                 throw HTTPStatusError(code: response.statusCode)
             }
             return (data, response)
@@ -154,6 +178,7 @@ final class HTTPClient: Sendable {
                 continue
             }
             guard response.statusCode == 206, let contentRange = response.value(forHTTPHeaderField: "Content-Range") else {
+                RequestFailureLog.record(current, status: response.statusCode, stage: "range")
                 bytes.task.cancel(); throw HTTPStatusError(code: response.statusCode)
             }
             var data = Data()

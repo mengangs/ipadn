@@ -18,7 +18,14 @@ struct DownloadQueueLimitError: LocalizedError {
 /// A non-2xx response, kept typed so callers can tell "not found" apart.
 struct HTTPStatusError: LocalizedError {
     let code: Int
-    var errorDescription: String? { code == 404 ? AppText.text("找不到相关内容") : AppText.text("网络请求失败（\(code)），请稍后重试") }
+    var errorDescription: String? {
+        switch code {
+        case 404: return AppText.text("找不到相关内容")
+        // Apple refuses requests whose sign-in it no longer accepts.
+        case 401: return AppText.text("Apple 拒绝了这次请求（\(code)），登录可能已失效，请到「账号」中重新登录后再试。")
+        default: return AppText.text("网络请求失败（\(code)），请稍后重试")
+        }
+    }
 }
 
 enum AppErrorMessage {
