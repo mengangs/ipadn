@@ -278,6 +278,14 @@ final class CoreTests: XCTestCase {
             }
         }
         XCTAssertEqual(AppIconService.systemChoice(for: nil), .dimensional)
+        // After an update the system may report no alternate while the Home
+        // Screen still shows one: trust the remembered icon if it is bundled.
+        XCTAssertEqual(AppIconService.effectiveSelection(reported: nil, remembered: "AppIconLight", isBundled: { _ in true }),
+                       Selection(style: .dimensional, theme: .light))
+        XCTAssertEqual(AppIconService.effectiveSelection(reported: nil, remembered: "AppIconLight", isBundled: { _ in false }), AppIconService.primary)
+        XCTAssertEqual(AppIconService.effectiveSelection(reported: "AppIconFlat", remembered: "AppIconLight", isBundled: { _ in true }),
+                       Selection(style: .flat, theme: .automatic))
+        XCTAssertEqual(AppIconService.effectiveSelection(reported: nil, remembered: nil), AppIconService.primary)
         XCTAssertEqual(AppIconService.systemChoice(for: "AppIconFlat"), .flat)
         XCTAssertEqual(AppIconService.systemChoice(for: "some-other-icon"), .dimensional)
         XCTAssertTrue(AppIconService.isTransientIconError(NSError(domain: NSPOSIXErrorDomain, code: 35)))
@@ -830,6 +838,17 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(AppleService.mergedCookie("a=1", with: [], now: now), "a=1")
         // Values containing "=" survive a round trip.
         XCTAssertEqual(AppleService.mergedCookie("tok=ab==; b=2", with: [], now: now), "tok=ab==; b=2")
+    }
+
+    func testUnreadableSystemDownloadsAreRecognized() {
+        // "未能打开文件 CFNetworkDownload_….tmp，因为你没有查看它的权限" (#36).
+        XCTAssertTrue(DownloadManager.isPermissionError(NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoPermissionError)))
+        XCTAssertTrue(DownloadManager.isPermissionError(NSError(domain: NSCocoaErrorDomain, code: NSFileWriteNoPermissionError)))
+        let wrapped = NSError(domain: NSCocoaErrorDomain, code: NSFileReadUnknownError,
+                              userInfo: [NSUnderlyingErrorKey: NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))])
+        XCTAssertTrue(DownloadManager.isPermissionError(wrapped))
+        XCTAssertFalse(DownloadManager.isPermissionError(NSError(domain: NSCocoaErrorDomain, code: NSFileNoSuchFileError)))
+        XCTAssertFalse(DownloadManager.isPermissionError(NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)))
     }
 
     func testRegionLocalesFindTheirScript() {

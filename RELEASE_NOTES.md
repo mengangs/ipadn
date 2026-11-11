@@ -1,24 +1,21 @@
-## iPadn 1.9.1
+## iPadn 1.9.2
 
-本版本新增多语言界面，并修复若干显示问题。适用于 iOS / iPadOS 17 及更新版本；安装包未签名，请用自己的工具签名后安装。
+本版本新增「支持 iPadn」页面，并修复两个问题。适用于 iOS / iPadOS 17 及更新版本；安装包未签名，请用自己的工具签名后安装。
 
-**多语言**
+**支持 iPadn**
 
-- 界面支持 11 种语言：简体中文、繁體中文、English、日本語、한국어、Русский、Español、Français、Deutsch、Português (Brasil)、العربية。iPadn 跟随系统语言，也可以在「设置 › iPadn › 语言」中单独设置。
-- 阿拉伯语使用从右到左的排版，列表左滑、右滑等操作随之镜像。
-- 内购项目名称按界面语言显示，例如日语界面读取日本区的名称。
-- 英文翻译由 [kylefmohr](https://github.com/kylefmohr) 贡献（#35）；其他语言为机器辅助翻译，欢迎在 Issues 或 Pull Request 中纠错。
+- 新增「账号 › 设置 › 支持 iPadn」：iPadn 会一直免费开源、没有广告；如果它帮到了你，可以通过爱发电（支付宝、微信）或 USDT（BEP20）请作者喝杯咖啡，也可以在 GitHub 点个 Star 或帮忙改进翻译。
 
-**修复与改进**
+**下载**
 
-- 修复简体中文界面下，多地区价格中的「免费」可能显示为繁体，应用详情中的价格可能显示为英文「Free」。
-- 关注应用的价格变化通知跟随界面语言，不再跟随地区设置。
-- 搜索结果中的分类单独一行，较长的分类名不再挤掉版本号。
-- 已购项目的下载按钮改为云朵图标，购买日期可以完整显示。
-- 安装设置中的安装方式改为列表，各语言下名称都能完整显示。
+- 修复部分签名方式下下载完成后提示「未能打开文件 CFNetworkDownload_….tmp，因为你没有查看它的权限」（#36）：遇到这种情况会自动改用应用内下载重新下载一次，之后的下载直接在应用内进行，下载时请保持 iPadn 在前台。首次启动时的后台下载检测也会检查文件能否读取。
+
+**应用图标**
+
+- 修复更新 iPadn 后，主屏幕上仍是之前选择的浅色或跟随系统图标，「设置」里却显示为深色。从本版本起 iPadn 会记住你选择的图标；更新前就遇到这种情况时，在「设置 › 应用图标 › 图标主题」中重新选择一次即可。
 
 **English**
 
-iPadn now speaks 11 languages: English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Russian, Spanish, French, German, Portuguese (Brazil) and Arabic, with a right-to-left layout for Arabic. In-app purchase names follow the interface language. The English translation was contributed by [kylefmohr](https://github.com/kylefmohr) (#35); the other languages are machine-assisted, and corrections are welcome. This release also fixes prices shown in the wrong script or language, keeps versions visible next to long category names in search results, and makes install methods and purchase dates readable in longer languages.
+Adds a Support iPadn page under Account › Settings: iPadn stays free, open source and ad-free, and you can buy the author a coffee through Afdian or USDT (BEP20) if you like. Fixes downloads that failed with "you don't have permission to view CFNetworkDownload_….tmp" under some signing tools (#36): iPadn now downloads such packages again inside the app, and later downloads stay there. Also fixes Settings showing the dark icon after an update while the Home Screen kept the light or automatic icon; if this happened before updating, choose the icon theme once more in Settings.
 
 更早版本的更新内容见 [Releases](https://github.com/mengangs/ipadn/releases)。

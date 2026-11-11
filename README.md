@@ -242,12 +242,24 @@ Apple 只允许下载你的账号拥有许可的应用。版本也可能已经�
 
 ## 支持 iPadn
 
-iPadn 会一直免费并开源，不含广告。如果它帮你省下了时间，或者你只是喜欢这个项目，欢迎请作者喝杯咖啡，你的支持是持续更新的动力。点个 Star、反馈问题或帮忙改进翻译，也同样是很大的帮助。
+<div align="center">
 
-- **爱发电**（支持支付宝、微信）：[afdian.com/a/mengangs](https://afdian.com/a/mengangs)
-- **USDT**（仅限 BNB Smart Chain / BEP20 网络）：`0x5f0cff7587b9fc305f9fa626135789bd5100818e`
+<sub>❤️ ❤️ ❤️</sub>
 
-> 转账 USDT 前请核对网络为 BEP20、地址完全一致。其他网络或其他币种转入可能无法找回。
+iPadn 会一直**免费、开源、没有广告**。<br>
+如果它帮你省下了时间，或者你只是喜欢这个项目，欢迎请作者喝杯咖啡 ☕<br>
+你的鼓励是持续更新的动力。
+
+<a href="https://afdian.com/a/mengangs"><img src="https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E8%AF%B7%E4%BD%9C%E8%80%85%E5%96%9D%E6%9D%AF%E5%92%96%E5%95%A1-946ce6?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="爱发电"></a>
+<img src="https://img.shields.io/badge/USDT-BEP20-26a17b?style=for-the-badge&logo=tether&logoColor=white" alt="USDT BEP20">
+
+| 爱发电（支付宝、微信） | USDT（BNB Smart Chain / BEP20） |
+| :---: | :---: |
+| [**afdian.com/a/mengangs**](https://afdian.com/a/mengangs)<br><sub>可按月赞助，也可一次性支持</sub> | <img src="docs/images/usdt-bep20.png" width="180" alt="USDT 收款二维码"><br><code>0x5f0cff7587b9fc305f9fa626135789bd5100818e</code> |
+
+<sub>转账 USDT 前请核对网络为 BEP20、地址完全一致，其他网络或币种转入可能无法找回。<br>在 iPadn「账号 › 设置 › 支持 iPadn」中也可以扫码或复制地址。<br>点个 Star、反馈问题或帮忙改进翻译，同样是很大的支持。</sub>
+
+</div>
 
 ## 参与贡献
 

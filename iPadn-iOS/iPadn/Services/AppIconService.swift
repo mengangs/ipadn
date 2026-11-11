@@ -66,6 +66,27 @@ final class AppIconService: ObservableObject {
     }
     static func systemChoice(for alternateIconName: String?) -> Choice { systemSelection(for: alternateIconName).style }
 
+    // After an update installed by a signing tool, the Home Screen keeps the
+    // alternate icon while alternateIconName reports none. The last icon the
+    // system confirmed is remembered so Settings shows the one on screen.
+    private static let rememberedKey = "appIconRememberedAlternate"
+    static var rememberedAlternate: String? {
+        get { UserDefaults.standard.string(forKey: rememberedKey) }
+        set { UserDefaults.standard.set(newValue, forKey: rememberedKey) }
+    }
+    /// The icon on the Home Screen: what the system reports, or, when it
+    /// reports the primary icon, a remembered alternate this bundle still has.
+    static func effectiveSelection(reported: String?, remembered: String?,
+                                   isBundled: ((String) -> Bool)? = nil) -> Selection {
+        if reported == nil, let remembered, isBundled?(remembered) ?? bundledAlternateIsAvailable(remembered) {
+            return systemSelection(for: remembered)
+        }
+        return systemSelection(for: reported)
+    }
+    private static var observedSelection: Selection {
+        effectiveSelection(reported: UIApplication.shared.alternateIconName, remembered: rememberedAlternate)
+    }
+
     // External IPA re-signing tools can remove the uncompiled alternate PNGs.
     // supportsAlternateIcons alone does not prove that the installed bundle is complete.
     static func bundledAlternateIsAvailable(_ name: String = "AppIconFlat", in bundle: Bundle = .main) -> Bool {
@@ -87,15 +108,18 @@ final class AppIconService: ObservableObject {
     init() { refresh() }
     func refresh() {
         guard !simulatesChanges else { return }
-        let observed = Self.systemSelection(for: UIApplication.shared.alternateIconName)
+        let observed = Self.observedSelection
         current = Self.confirmedThisLaunch ?? observed
-        if awaitingSystem == observed {
-            confirm(observed)
+        // A pending change is confirmed by the system's own report.
+        let reported = Self.systemSelection(for: UIApplication.shared.alternateIconName)
+        if awaitingSystem == reported {
+            confirm(reported)
         }
     }
 
     private func confirm(_ choice: Selection) {
         Self.confirmedThisLaunch = choice
+        Self.rememberedAlternate = choice.alternateName
         current = choice
         awaitingSystem = nil
         statusHint = nil
@@ -111,12 +135,14 @@ final class AppIconService: ObservableObject {
     /// A different theme, keeping the style.
     func select(theme: Theme) async throws {
         refresh()
-        try await apply(Selection(style: current.style, theme: theme))
+        try await apply(Selection(style: current.style, theme: theme), reapplyPrimary: true)
     }
 
-    private func apply(_ choice: Selection) async throws {
+    private func apply(_ choice: Selection, reapplyPrimary: Bool = false) async throws {
         guard !changing else { throw ToolError.message(AppText.text("正在等待系统处理图标切换")) }
-        guard choice != current else { return }
+        // Choosing the primary icon again is allowed: after an update the
+        // Home Screen may still show an alternate the system no longer reports.
+        guard choice != current || (reapplyPrimary && choice.alternateName == nil) else { return }
         guard supported else { throw ToolError.message(AppText.text("当前设备不支持更换图标")) }
         guard simulatesChanges || UIApplication.shared.applicationState == .active else {
             throw ToolError.message(AppText.text("请回到应用前台再切换图标"))
@@ -131,6 +157,16 @@ final class AppIconService: ObservableObject {
         reconciliation = nil
         awaitingSystem = nil
         statusHint = nil
+
+        // The system believes the primary icon is set while an alternate may
+        // be on screen; asking for the primary would change nothing, so set
+        // an alternate first.
+        if choice.alternateName == nil, UIApplication.shared.alternateIconName == nil,
+           let restated = [Self.rememberedAlternate, "AppIconLight"].compactMap({ $0 }).first(where: { Self.bundledAlternateIsAvailable($0) }),
+           Self.rememberedAlternate != nil || (reapplyPrimary && choice == current) {
+            _ = await request(Self.systemSelection(for: restated))
+            try? await Task.sleep(for: .milliseconds(800))
+        }
 
         var lastError: Error?
         // SpringBoard rejects a change with EAGAIN while it is still applying

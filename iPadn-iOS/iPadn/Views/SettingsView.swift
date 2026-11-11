@@ -212,6 +212,10 @@ struct SettingsView: View {
                     }
                 Link("项目与更新", destination: URL(string: "https://github.com/mengangs/ipadn")!)
             }
+            Section {
+                NavigationLink { SupportView() } label: { SupportRow() }
+                    .accessibilityIdentifier("settings.support")
+            }
         }
         .toolPage().navigationTitle("设置").navigationBarTitleDisplayMode(.inline)
         .onChange(of: scenePhase) { _, phase in if phase == .active { icons.refresh() } }

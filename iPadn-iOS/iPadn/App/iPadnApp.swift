@@ -126,6 +126,7 @@ private struct PreviewScreen: View {
             if args.contains("--login") { NavigationStack { LoginView() } }
             else if args.contains("--detail"), let app = store.favorites.first { NavigationStack { AppDetailView(app: app) } }
             else if args.contains("--installation") { NavigationStack { InstallationSettingsView() } }
+            else if args.contains("--support") { NavigationStack { SupportView() } }
             else { RootView() }
         }
         .environment(\.dynamicTypeSize, args.contains("--largest-text") ? .accessibility5 : args.contains("--large-text") ? .accessibility2 : .large)

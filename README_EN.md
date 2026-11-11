@@ -242,12 +242,24 @@ No. Removing an account only clears that account's sign-in details and purchase 
 
 ## Support iPadn
 
-iPadn will always be free and open source, with no ads. If it saves you time or you simply enjoy it, you're welcome to buy the author a coffee; it helps keep updates coming. Starring the repo, reporting problems and improving translations help just as much.
+<div align="center">
 
-- **Afdian** (Alipay, WeChat Pay): [afdian.com/a/mengangs](https://afdian.com/a/mengangs)
-- **USDT** (BNB Smart Chain / BEP20 only): `0x5f0cff7587b9fc305f9fa626135789bd5100818e`
+<sub>❤️ ❤️ ❤️</sub>
 
-> Before sending USDT, check that the network is BEP20 and the address matches exactly. Funds sent on another network or in another token may be lost.
+iPadn will always be **free, open source and ad-free**.<br>
+If it saves you time or you simply enjoy it, you're welcome to buy the author a coffee ☕<br>
+Your support keeps the updates coming.
+
+<a href="https://afdian.com/a/mengangs"><img src="https://img.shields.io/badge/Afdian-Buy%20me%20a%20coffee-946ce6?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="Afdian"></a>
+<img src="https://img.shields.io/badge/USDT-BEP20-26a17b?style=for-the-badge&logo=tether&logoColor=white" alt="USDT BEP20">
+
+| Afdian (Alipay, WeChat Pay) | USDT (BNB Smart Chain / BEP20) |
+| :---: | :---: |
+| [**afdian.com/a/mengangs**](https://afdian.com/a/mengangs)<br><sub>Monthly or one-time</sub> | <img src="docs/images/usdt-bep20.png" width="180" alt="USDT QR code"><br><code>0x5f0cff7587b9fc305f9fa626135789bd5100818e</code> |
+
+<sub>Before sending USDT, check that the network is BEP20 and the address matches exactly; funds sent on another network or in another token may be lost.<br>You can also scan or copy the address in iPadn under Account › Settings › Support iPadn.<br>Starring the repo, reporting problems and improving translations help just as much.</sub>
+
+</div>
 
 ## Contributing
 
