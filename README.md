@@ -9,7 +9,6 @@
 
 [![最新版本](https://img.shields.io/github/v/release/mengangs/ipadn?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
 [![下载量](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F&color=111111)](https://github.com/mengangs/ipadn/releases)
-[![Stars](https://img.shields.io/github/stars/mengangs/ipadn?label=Stars&color=111111)](https://github.com/mengangs/ipadn/stargazers)
 ![系统要求](https://img.shields.io/badge/iOS%20%2F%20iPadOS-17%2B-111111)
 [![许可证](https://img.shields.io/github/license/mengangs/ipadn?label=%E8%AE%B8%E5%8F%AF%E8%AF%81&color=111111)](LICENSE)
 
@@ -251,12 +250,6 @@ Apple 只允许下载你的账号拥有许可的应用。版本也可能已经�
 
 - [kylefmohr](https://github.com/kylefmohr) 贡献了英文翻译（[#35](https://github.com/mengangs/ipadn/pull/35)）。
 - 感谢所有提交问题和建议的用户，以及 iPadn 使用的开源项目，详见[第三方组件与许可](iPadn-iOS/THIRD_PARTY_NOTICES.md)。
-
-## Star 趋势
-
-<a href="https://star-history.com/#mengangs/ipadn&Date">
-  <img src="https://api.star-history.com/svg?repos=mengangs/ipadn&type=Date" width="600" alt="Star 趋势">
-</a>
 
 ## 更多
 

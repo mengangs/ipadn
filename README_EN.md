@@ -9,7 +9,6 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 [![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=downloads&color=111111)](https://github.com/mengangs/ipadn/releases)
-[![Stars](https://img.shields.io/github/stars/mengangs/ipadn?label=stars&color=111111)](https://github.com/mengangs/ipadn/stargazers)
 ![Requires](https://img.shields.io/badge/iOS%20%2F%20iPadOS-17%2B-111111)
 [![License](https://img.shields.io/github/license/mengangs/ipadn?label=license&color=111111)](LICENSE)
 
@@ -251,12 +250,6 @@ No. Removing an account only clears that account's sign-in details and purchase 
 
 - [kylefmohr](https://github.com/kylefmohr) contributed the English translation ([#35](https://github.com/mengangs/ipadn/pull/35)).
 - Thanks to everyone who reported problems and suggested ideas, and to the open-source projects iPadn uses, listed in [Third-party components and licenses](iPadn-iOS/THIRD_PARTY_NOTICES.md).
-
-## Star history
-
-<a href="https://star-history.com/#mengangs/ipadn&Date">
-  <img src="https://api.star-history.com/svg?repos=mengangs/ipadn&type=Date" width="600" alt="Star history">
-</a>
 
 ## More
 
