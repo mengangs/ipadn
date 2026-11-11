@@ -11,6 +11,9 @@
 
 用户已授权：审查后提交、CI 编译测试通过后发布 1.9.0。本节为最新状态，下方原生安装小节为过程记录。
 
+- **已发布**：2026-11-11 08:17（UTC+8）[iPadn v1.9.0](https://github.com/mengangs/ipadn/releases/tag/v1.9.0)，build 25，Latest，非草稿/预发布，标签指向 `7b6b8dae`（`main` 已快进到同一提交）。IPA SHA-256 `432e787aee12612fa1c8212fbd39813c920ed22c3e75f93530f5ef9b5c3e7184`，附件 digest、校验文件与 build-info 已核对一致；发布正文与 `RELEASE_NOTES.md` 逐字一致（CI 末尾追加验证行），无问号乱码。
+- **验证范围**：同一提交的分支完整运行 [42925501376](https://github.com/mengangs/ipadn/actions/runs/42925501376)：Release 编译、IPA 校验（Mac PKG 与原生安装均已链接、扩展已嵌入）、143 项测试（含全部 UI）通过、0 失败。标签运行 [42928442473](https://github.com/mengangs/ipadn/actions/runs/42928442473) 重新编译并跑 132 项单元测试后发布。离线探针工作流 Ubuntu/Windows 通过。CI 包已在真机（iOS 27.0.1）签名安装并正常启动，数据保留。
+
 - 原生安装（详见下节）；iOS 27 起本机配对：`OnDevicePairing.swift` + Rust `pairing.rs`（idevice `PairableHost`），Swift 用 `NetService` 广播 `_remotepairing-pairable-host._tcp`。配对期间以静音音频（mixWithOthers，`UIBackgroundModes` 增加 `audio`）保持后台，仅配对时启用；实时活动扩展 `iPadnLiveActivity` 显示步骤与配对码，图标为内嵌的应用图标。真机（iOS 27.0.1）本机配对、导入、检查连接、OneDrive 原生安装与覆盖均由用户确认通过。
 - 验证码：Apple 只在「密码登录且不带验证码」时推送验证码。`ExistingAccountVerificationView` 打开时先调用 `requestVerificationCode` 触发推送；Apple 直接放行则自动继续；60 秒内再次放行仍被要求验证时停止自动继续、改为提示手动获取验证码，避免循环。新增重新发送；`ToolStore.requestVerification` 供下载列表、已购批量、Mac 包统一弹出验证。真机未遇到 Apple 要求验证的场景，未实测。
 - 会话 Cookie：store 响应的 Set-Cookie 按名合并（`AppleService.mergedCookie`），内存中立即生效，钥匙串最多每分钟写一次，退到后台时保存。目的是减少反复要求验证，效果未实测。
