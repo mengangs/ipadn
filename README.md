@@ -9,13 +9,12 @@
 
 [![最新版本](https://img.shields.io/github/v/release/mengangs/ipadn?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
 [![下载量](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F&color=111111)](https://github.com/mengangs/ipadn/releases)
-[![Stars](https://img.shields.io/github/stars/mengangs/ipadn?label=Stars&color=111111)](https://github.com/mengangs/ipadn/stargazers)
 ![系统要求](https://img.shields.io/badge/iOS%20%2F%20iPadOS-17%2B-111111)
 [![许可证](https://img.shields.io/github/license/mengangs/ipadn?label=%E8%AE%B8%E5%8F%AF%E8%AF%81&color=111111)](LICENSE)
 
 **简体中文** · [English](README_EN.md)
 
-[下载](https://github.com/mengangs/ipadn/releases/latest) · [安装下载的应用](#安装下载的应用) · [常见问题](#常见问题) · [反馈问题](https://github.com/mengangs/ipadn/issues)
+[下载](https://github.com/mengangs/ipadn/releases/latest) · [安装下载的应用](#安装下载的应用) · [常见问题](#常见问题) · [反馈问题](https://github.com/mengangs/ipadn/issues) · [支持 iPadn](#支持-ipadn)
 
 </div>
 
@@ -241,6 +240,15 @@ Apple 只允许下载你的账号拥有许可的应用。版本也可能已经�
 不会。移除账号只清除该账号的登录信息和已购记录。
 </details>
 
+## 支持 iPadn
+
+iPadn 会一直免费并开源，不含广告。如果它帮你省下了时间，或者你只是喜欢这个项目，欢迎请作者喝杯咖啡，你的支持是持续更新的动力。点个 Star、反馈问题或帮忙改进翻译，也同样是很大的帮助。
+
+- **爱发电**（支持支付宝、微信）：[afdian.com/a/mengangs](https://afdian.com/a/mengangs)
+- **USDT**（仅限 BNB Smart Chain / BEP20 网络）：`0x5f0cff7587b9fc305f9fa626135789bd5100818e`
+
+> 转账 USDT 前请核对网络为 BEP20、地址完全一致。其他网络或其他币种转入可能无法找回。
+
 ## 参与贡献
 
 - **翻译**：所有界面文字在 [`Localizable.xcstrings`](iPadn-iOS/iPadn/Resources/Localizable.xcstrings) 中，用 Xcode 打开即可逐条编辑。改进现有语言或新增语言都欢迎提交 Pull Request。
@@ -251,12 +259,6 @@ Apple 只允许下载你的账号拥有许可的应用。版本也可能已经�
 
 - [kylefmohr](https://github.com/kylefmohr) 贡献了英文翻译（[#35](https://github.com/mengangs/ipadn/pull/35)）。
 - 感谢所有提交问题和建议的用户，以及 iPadn 使用的开源项目，详见[第三方组件与许可](iPadn-iOS/THIRD_PARTY_NOTICES.md)。
-
-## Star 趋势
-
-<a href="https://star-history.com/#mengangs/ipadn&Date">
-  <img src="https://api.star-history.com/svg?repos=mengangs/ipadn&type=Date" width="600" alt="Star 趋势">
-</a>
 
 ## 更多
 

@@ -9,13 +9,12 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 [![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=downloads&color=111111)](https://github.com/mengangs/ipadn/releases)
-[![Stars](https://img.shields.io/github/stars/mengangs/ipadn?label=stars&color=111111)](https://github.com/mengangs/ipadn/stargazers)
 ![Requires](https://img.shields.io/badge/iOS%20%2F%20iPadOS-17%2B-111111)
 [![License](https://img.shields.io/github/license/mengangs/ipadn?label=license&color=111111)](LICENSE)
 
 [简体中文](README.md) · **English**
 
-[Download](https://github.com/mengangs/ipadn/releases/latest) · [Install a download](#installing-a-downloaded-app) · [FAQ](#frequently-asked-questions) · [Report a problem](https://github.com/mengangs/ipadn/issues)
+[Download](https://github.com/mengangs/ipadn/releases/latest) · [Install a download](#installing-a-downloaded-app) · [FAQ](#frequently-asked-questions) · [Report a problem](https://github.com/mengangs/ipadn/issues) · [Support iPadn](#support-ipadn)
 
 </div>
 
@@ -241,6 +240,15 @@ On mainland Chinese networks Apple redirects other regions' App Store pages to C
 No. Removing an account only clears that account's sign-in details and purchase records.
 </details>
 
+## Support iPadn
+
+iPadn will always be free and open source, with no ads. If it saves you time or you simply enjoy it, you're welcome to buy the author a coffee; it helps keep updates coming. Starring the repo, reporting problems and improving translations help just as much.
+
+- **Afdian** (Alipay, WeChat Pay): [afdian.com/a/mengangs](https://afdian.com/a/mengangs)
+- **USDT** (BNB Smart Chain / BEP20 only): `0x5f0cff7587b9fc305f9fa626135789bd5100818e`
+
+> Before sending USDT, check that the network is BEP20 and the address matches exactly. Funds sent on another network or in another token may be lost.
+
 ## Contributing
 
 - **Translations:** every interface string lives in [`Localizable.xcstrings`](iPadn-iOS/iPadn/Resources/Localizable.xcstrings); open it in Xcode to edit entries one by one. Pull requests that improve a language or add a new one are welcome.
@@ -251,12 +259,6 @@ No. Removing an account only clears that account's sign-in details and purchase 
 
 - [kylefmohr](https://github.com/kylefmohr) contributed the English translation ([#35](https://github.com/mengangs/ipadn/pull/35)).
 - Thanks to everyone who reported problems and suggested ideas, and to the open-source projects iPadn uses, listed in [Third-party components and licenses](iPadn-iOS/THIRD_PARTY_NOTICES.md).
-
-## Star history
-
-<a href="https://star-history.com/#mengangs/ipadn&Date">
-  <img src="https://api.star-history.com/svg?repos=mengangs/ipadn&type=Date" width="600" alt="Star history">
-</a>
 
 ## More
 
