@@ -7,13 +7,25 @@
 
 ---
 
+## 2026-11-12 未发布（main，下一版）
+
+已合并进 `main`、尚未发版（用户要几轮优化后一起发）。版本号仍是 1.9.2（build 27），发版前需要升版本并写 `RELEASE_NOTES.md`。
+
+- **#42 一键全部更新**：下载页两个以上可更新时显示「全部更新」（`ToolStore.downloadAllUpdates`）。
+- **#45**：关注的付费应用可设目标价，降到目标价才提醒、限免照常提醒（`WatchRecord.target`、`WatchService.notifies`，设置里可关）；「备份与维护」导出/导入设置与关注（`AppBackup`，不含账号、令牌、安装包）；设置首页改成分类入口（`SettingsView.Page`）；关闭「新版本提醒」后下载页也不显示更新提示；版本卡片改为紧凑一行。
+- **#48 AltStore 源**：`altstore-source.json`（最近 10 个版本）由 `iPadn-iOS/scripts/generate_altstore_source.py` 生成，发布流程发版后自动更新并推送到 main。地址 `https://raw.githubusercontent.com/mengangs/ipadn/main/altstore-source.json`，尚未在真实签名工具中加载验证。
+- **#49 支持 iOS / iPadOS 16**（来自 tageniu 的 #47，保留其提交）：主程序最低 16.0，iOS 17 写法用 `compatible…` 封装（`DesignSystem.swift`），灵动岛扩展仍为 17。新代码里不要直接用 iOS 17 才有的 API（两参数 `onChange`、`symbolEffect`、`contentMargins` 等），改用这些封装。本地 xtool 构建的 `Package.swift` 仍是 `.v17`，所以本地编译查不出 iOS 16 问题，要靠 CI。没有 iOS 16 真机测试。
+- **决定不做**：分享扩展（多占 App ID、LiveContainer 不支持、跳转不可靠）。
+- **后续计划**：第二批「本机已装应用」（借原生安装配对列出已装 App、对比更新、修复云朵图标）；第三批再从 Wi-Fi 传输、灵动岛下载进度、发现页、小组件、版本对比、评论、安装包信息页、快捷指令、仅 Wi-Fi 下载、翻译、应用锁中挑选。加扩展类功能前先和用户确认 App ID 占用。
+- **CI 偶发失败**：`testLargeDownloadListsLaunchAndScroll`、`testSignerCancelResumesPendingJavaScript`、模拟器"Failed to terminate"、macOS 运行机排不上队，重跑即可。
+
 ## 2026-11-11 iPadn 1.9.2（build 27）
 
 - **已发布**：2026-11-11 19:19（UTC+8）[iPadn v1.9.2](https://github.com/mengangs/ipadn/releases/tag/v1.9.2)，Latest，标签指向 `c03e2f2f`（PR #39、#40 合并；内容与 CI run 43005857736 测试的提交 `1ec2decd` 完全相同）。IPA SHA-256 `b9b183b3eeb61dde6f4b901e7d381c4e3021a02bf6b1f84300e007721c95e3d9`，与校验文件、build-info 一致；发布正文以 `RELEASE_NOTES.md` 开头逐字一致；136 项单元测试 + 11 项 UI 测试通过。正式包已装到 iPhone 15 Pro，版本 1.9.2（27）。
 - **内容**：#36 后台下载文件无读取权限时自动改用应用内下载（`DownloadManager.isPermissionError`、`fallBackToForeground`）；更新后图标主题显示（`AppIconService.rememberedAlternate`）；「设置 › 支持 iPadn」（`SupportView.swift`，爱发电 + USDT BEP20 `0x5f0cff7587b9fc305f9fa626135789bd5100818e`，地址已与用户币安截图逐字及二维码核对）；诊断信息记录最近失败请求（`RequestFailureLog`，仅元数据）、「复制诊断信息」、401 提示重新登录。
 - **README**：支持区（徽章、USDT 二维码 `docs/images/usdt-bep20.png`、`.github/FUNDING.yml`）；去掉 Stars 徽章和趋势图；补充 iOS 27 以下配对为何需要电脑。GitHub 仓库简介已中英双语。
 - **issue**：#33 已回复并关闭（邀请校对翻译）；#36 已回复修复并关闭。
-- **待办**：LiveContainer + 美区账号下载 401，等用户用 1.9.2 的「复制诊断信息」反馈后定位。iOS 15/16 兼容已评估，用户决定暂不做。
+- **待办**：LiveContainer + 美区账号下载 401，等用户用 1.9.2 的「复制诊断信息」反馈后定位。iOS 16 已通过 #49 支持；iOS 15 不做。
 
 ## 2026-11-11 iPadn 1.9.1（build 26）多语言版本
 
