@@ -65302,6 +65302,286 @@
           }
         }
       }
+    },
+    "目标价": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标价"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Target price"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標價"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標価格"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "목표 가격"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Целевая цена"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Precio objetivo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prix cible"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zielpreis"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preço-alvo"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "السعر المستهدف"
+          }
+        }
+      }
+    },
+    "任意降价": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意降价"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Any drop"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任何降價"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての値下げ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 인하"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Любое снижение"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cualquier bajada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toute baisse"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jede Senkung"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qualquer queda"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أي انخفاض"
+          }
+        }
+      }
+    },
+    "每次降价都会提醒。填写后，只在降到这个价格或以下时提醒。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每次降价都会提醒。填写后，只在降到这个价格或以下时提醒。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You’re notified about every price drop. Enter a price to be notified only when it drops to that price or lower."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每次降價都會提醒。填寫後，只在降到這個價格或以下時提醒。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "値下げのたびに通知します。価格を入力すると、その価格以下になったときだけ通知します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가격이 내릴 때마다 알립니다. 가격을 입력하면 그 가격 이하로 내렸을 때만 알립니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Уведомления приходят при каждом снижении цены. Укажите цену, чтобы получать их только при снижении до нее или ниже."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se te avisa de cada bajada de precio. Introduce un precio para recibir el aviso solo cuando baje a ese precio o menos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vous êtes averti à chaque baisse de prix. Saisissez un prix pour n’être averti que lorsqu’il atteint ce prix ou moins."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Du wirst über jede Preissenkung informiert. Gib einen Preis ein, um nur benachrichtigt zu werden, wenn er diesen Preis erreicht oder unterschreitet."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Você é avisado a cada queda de preço. Digite um preço para ser avisado só quando cair para esse valor ou menos."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتم إشعارك بكل انخفاض في السعر. أدخل سعرًا ليتم إشعارك فقط عندما ينخفض إلى ذلك السعر أو أقل."
+          }
+        }
+      }
+    },
+    "降到 %@ 或以下时提醒；限免仍会提醒。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "降到 %@ 或以下时提醒；限免仍会提醒。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You’re notified when the price drops to %@ or lower, and whenever the app becomes free."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "降到 %@ 或以下時提醒；限免仍會提醒。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 以下になったときに通知します。無料になったときも通知します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 이하로 내리면 알립니다. 무료가 되어도 알립니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Уведомление придет, когда цена снизится до %@ или ниже, а также когда приложение станет бесплатным."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se te avisa cuando el precio baje a %@ o menos, y siempre que la app pase a ser gratis."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vous êtes averti lorsque le prix atteint %@ ou moins, et chaque fois que l’app devient gratuite."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Du wirst benachrichtigt, wenn der Preis auf %@ oder darunter fällt und wenn die App kostenlos wird."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Você é avisado quando o preço cair para %@ ou menos, e sempre que o app ficar grátis."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتم إشعارك عندما ينخفض السعر إلى %@ أو أقل، وكذلك عندما يصبح التطبيق مجانيًا."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

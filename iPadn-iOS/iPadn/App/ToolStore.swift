@@ -481,7 +481,8 @@ final class ToolStore: ObservableObject {
                 let changes = country == primary ? result.changes : result.changes.filter {
                     if case .priceDrop = $0 { return true }; if case .free = $0 { return true }; return false
                 }
-                events += changes.map { (app: listing ?? app, change: $0, currency: result.record.currency, country: country) }
+                events += changes.filter { WatchService.notifies($0, target: result.record.target) }
+                    .map { (app: listing ?? app, change: $0, currency: result.record.currency, country: country) }
             }
             // Keep the list's version and price current.
             if let listing = found[app.id], let index = refreshed.firstIndex(where: { $0.id == app.id }) {
@@ -511,6 +512,14 @@ final class ToolStore: ObservableObject {
             Task { await self.checkWatched(force: true) }
         }
         return events
+    }
+
+    /// Sets or clears the price at which a followed app's drop is announced.
+    func setWatchTarget(_ target: Double?, id: String, country: String) {
+        let key = WatchRecord.key(id: id, country: country)
+        guard watch[key] != nil else { return }
+        watch[key]?.target = target.flatMap { $0 > 0 ? $0 : nil }
+        persistWatch()
     }
 
     private func persistWatch() {
