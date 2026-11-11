@@ -65092,6 +65092,146 @@
           }
         }
       }
+    },
+    "复制诊断信息": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制诊断信息"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy diagnostics"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拷貝診斷資訊"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "診断情報をコピー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진단 정보 복사"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скопировать диагностику"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar diagnóstico"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier les diagnostics"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagnose kopieren"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar diagnóstico"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "نسخ بيانات التشخيص"
+          }
+        }
+      }
+    },
+    "Apple 拒绝了这次请求（%lld），登录可能已失效，请到「账号」中重新登录后再试。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 拒绝了这次请求（%lld），登录可能已失效，请到「账号」中重新登录后再试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple refused the request (%lld). The sign-in may have expired; sign in again under Account and try again."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 拒絕了這次請求（%lld），登入可能已失效，請到「帳號」中重新登入後再試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple がリクエストを拒否しました（%lld）。サインインの有効期限が切れている可能性があります。「アカウント」でサインインし直してから再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple이 요청을 거부했습니다(%lld). 로그인이 만료되었을 수 있습니다. 계정에서 다시 로그인한 후 다시 시도하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple отклонила запрос (%lld). Возможно, срок входа истек: войдите снова в разделе «Учетная запись» и повторите попытку."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple rechazó la solicitud (%lld). Puede que la sesión haya caducado; vuelve a iniciar sesión en Cuenta e inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple a refusé la requête (%lld). La connexion a peut-être expiré ; reconnectez-vous dans Compte et réessayez."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple hat die Anfrage abgelehnt (%lld). Die Anmeldung ist evtl. abgelaufen; melde dich unter „Account“ erneut an und versuche es noch einmal."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Apple recusou a solicitação (%lld). A sessão pode ter expirado; inicie a sessão novamente em Conta e tente de novo."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "رفضت Apple الطلب (%lld). ربما انتهت صلاحية تسجيل الدخول؛ سجّل الدخول مرة أخرى من الحساب ثم حاول مجددًا."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

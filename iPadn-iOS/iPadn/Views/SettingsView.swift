@@ -174,6 +174,8 @@ struct SettingsView: View {
                 Button("导出诊断信息") {
                     do { share = SharedFile(url: try store.exportDiagnostics()) } catch { store.errorMessage = error.localizedDescription }
                 }
+                Button("复制诊断信息") { store.copyDiagnostics(); UX.feedback() }
+                    .accessibilityIdentifier("settings.copy-diagnostics")
                 Button("恢复默认设置", role: .destructive) { resetSettings = true }
             }
             Section {

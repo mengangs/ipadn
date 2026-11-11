@@ -1016,7 +1016,18 @@ final class ToolStore: ObservableObject {
     }
 
     func exportDiagnostics() throws -> URL {
-        let details = [
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("iPadn-Diagnostics.txt")
+        try diagnosticsText().write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+    /// Copies the diagnostics, for when the share sheet can't open
+    /// (inside LiveContainer, for example).
+    func copyDiagnostics() {
+        UIPasteboard.general.string = diagnosticsText()
+        infoMessage = AppText.text("已复制到剪贴板")
+    }
+    func diagnosticsText() -> String {
+        [
             "iPadn " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""), "Platform: \(settings.store.platform.title)", "Region: \(settings.store.country)",
             "Jobs: \(downloads.jobs.count)", "Concurrent limit: \(settings.maxConcurrentDownloads)",
             "Version sources: \(settings.versionSources.filter(\.enabled).count)",
@@ -1028,12 +1039,10 @@ final class ToolStore: ObservableObject {
             "iOS " + UIDevice.current.systemVersion,
             "Last login (metadata only):", apple.loginDiagnostic,
             "Last update check (metadata only):", appUpdateDiagnostic,
+            "Recent request failures (metadata only):", RequestFailureLog.text,
             "Installation server log:", InstallLog.shared.text.isEmpty ? "(empty)" : InstallLog.shared.text,
             "Contains no credentials, cookies, Apple account names or download URLs."
         ].joined(separator: "\n")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("iPadn-Diagnostics.txt")
-        try details.write(to: url, atomically: true, encoding: .utf8)
-        return url
     }
 }
 

@@ -851,6 +851,18 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(DownloadManager.isPermissionError(NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)))
     }
 
+    func testRequestFailuresKeepOnlyEndpointNames() {
+        XCTAssertTrue(RequestFailureLog.endpointName("buyProduct"))
+        XCTAssertTrue(RequestFailureLog.endpointName("volumeStoreDownloadProduct"))
+        XCTAssertFalse(RequestFailureLog.endpointName("mzps2486598912345.signed.dpkg.ipa"))
+        XCTAssertFalse(RequestFailureLog.endpointName("1234567"))
+        XCTAssertFalse(RequestFailureLog.endpointName(""))
+        let saved = AppText.locale
+        defer { AppText.locale = saved }
+        AppText.locale = Locale(identifier: "en")
+        XCTAssertTrue(HTTPStatusError(code: 401).localizedDescription.contains("sign in again"))
+    }
+
     func testRegionLocalesFindTheirScript() {
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh_CN")), "免费")
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh-Hans_CN")), "免费")
