@@ -10,6 +10,44 @@ struct SearchHistoryItem: Codable, Identifiable {
     var lastUsed: Date
 }
 
+/// Settings and followed apps in one file, to carry over to another install.
+/// Never holds accounts, tokens, the device identifier or packages.
+struct AppBackup: Codable {
+    static let currentFormat = 1
+    var format = AppBackup.currentFormat
+    var app = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    var created = Date()
+    var settings: ToolSettings
+    var favorites: [StoreApp]
+    var watch: [String: WatchRecord]
+    var keptVersions: [String: String]
+    var searchHistory: [SearchHistoryItem]
+
+    static func decode(_ data: Data) throws -> AppBackup {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let backup = try? decoder.decode(AppBackup.self, from: data), backup.format >= 1 else {
+            throw ToolError.message(AppText.text("这不是有效的 iPadn 备份文件。"))
+        }
+        guard backup.format <= currentFormat else {
+            throw ToolError.message(AppText.text("这个备份来自更新版本的 iPadn，请先更新 iPadn。"))
+        }
+        return backup
+    }
+    func encoded() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(self)
+    }
+    /// The backup's followed apps first, then the ones only this install has.
+    static func merged(_ imported: [StoreApp], with existing: [StoreApp]) -> [StoreApp] {
+        let ids = Set(imported.map(\.id))
+        var seen = Set<String>()
+        return (imported + existing.filter { !ids.contains($0.id) }).filter { seen.insert($0.id).inserted }
+    }
+}
+
 struct UndoNotice: Identifiable {
     let id = UUID()
     let message: String
@@ -481,7 +519,8 @@ final class ToolStore: ObservableObject {
                 let changes = country == primary ? result.changes : result.changes.filter {
                     if case .priceDrop = $0 { return true }; if case .free = $0 { return true }; return false
                 }
-                events += changes.map { (app: listing ?? app, change: $0, currency: result.record.currency, country: country) }
+                events += changes.filter { WatchService.notifies($0, target: settings.targetPrices ? result.record.target : nil) }
+                    .map { (app: listing ?? app, change: $0, currency: result.record.currency, country: country) }
             }
             // Keep the list's version and price current.
             if let listing = found[app.id], let index = refreshed.firstIndex(where: { $0.id == app.id }) {
@@ -511,6 +550,14 @@ final class ToolStore: ObservableObject {
             Task { await self.checkWatched(force: true) }
         }
         return events
+    }
+
+    /// Sets or clears the price at which a followed app's drop is announced.
+    func setWatchTarget(_ target: Double?, id: String, country: String) {
+        let key = WatchRecord.key(id: id, country: country)
+        guard watch[key] != nil else { return }
+        watch[key]?.target = target.flatMap { $0 > 0 ? $0 : nil }
+        persistWatch()
     }
 
     private func persistWatch() {
@@ -1051,6 +1098,39 @@ final class ToolStore: ObservableObject {
                 do { try downloads.enqueueURL(download); tab = 1 } catch { errorMessage = error.localizedDescription }
             }
         } else if url.host == "apps.apple.com" { tab = 0; search(url.absoluteString) }
+    }
+
+    /// Writes settings, followed apps with their price records, kept
+    /// versions and recent searches to a file for the share sheet.
+    func exportBackup() throws -> URL {
+        let backup = AppBackup(settings: settings, favorites: favorites, watch: watch,
+                               keptVersions: keptVersions, searchHistory: searchHistory)
+        let day = Date().formatted(.iso8601.year().month().day())
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("iPadn-Backup-\(day).json")
+        try backup.encoded().write(to: url, options: .atomic)
+        return url
+    }
+    /// Replaces the settings and merges followed apps, price records, kept
+    /// versions and recent searches; the backup wins where both have an entry.
+    func importBackup(_ data: Data) async throws {
+        let backup = try AppBackup.decode(data)
+        let next = AppBackup.merged(backup.favorites, with: favorites)
+        let previous = favoriteTask
+        await previous?.value
+        try await saveCache(next, filename: "favorites.json")
+        favorites = next
+        let followed = Set(next.map(\.id))
+        watch = watch.merging(backup.watch) { _, imported in imported }.filter { followed.contains($0.value.id) }
+        persistWatch()
+        keptVersions = keptVersions.merging(backup.keptVersions) { _, imported in imported }
+        LocalResources.defaults.set(keptVersions, forKey: "storage_keptVersions")
+        let terms = Set(backup.searchHistory.map(\.term))
+        searchHistory = Array((backup.searchHistory + searchHistory.filter { !terms.contains($0.term) }).prefix(50))
+        persistHistory()
+        settings = backup.settings
+        updateLocalResults()
+        infoMessage = AppText.text("已导入备份")
+        Task { await checkWatched(force: true) }
     }
 
     func exportDiagnostics() throws -> URL {

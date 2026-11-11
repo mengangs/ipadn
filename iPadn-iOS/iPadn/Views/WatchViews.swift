@@ -72,6 +72,9 @@ struct PriceHistorySection: View {
             if let price = record.price {
                 LabeledContent("当前价格", value: WatchService.format(price, currency: record.currency))
             }
+            if store.settings.targetPrices, let price = record.price, price > 0 {
+                TargetPriceRow(record: record) { store.setWatchTarget($0, id: app.id, country: shown) }
+            }
             if record.history.count > 1 {
                 if let low = record.history.map(\.price).min() {
                     LabeledContent("关注以来最低", value: WatchService.format(low, currency: record.currency))
@@ -90,6 +93,51 @@ struct PriceHistorySection: View {
         } else {
             Text("暂时无法读取价格，稍后会自动重试。").font(.footnote).foregroundStyle(.secondary)
         }
+    }
+}
+
+/// The price a drop has to reach before iPadn announces it; empty means any drop.
+private struct TargetPriceRow: View {
+    let record: WatchRecord
+    let save: (Double?) -> Void
+    @State private var text = ""
+    @FocusState private var focused: Bool
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("目标价")
+                Spacer()
+                TextField("任意降价", text: $text)
+                    .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                    .focused($focused).frame(maxWidth: 140)
+                    .accessibilityIdentifier("watch.target-price")
+                if focused {
+                    Button("完成") { focused = false }.font(.body.weight(.semibold)).buttonStyle(.borderless)
+                }
+            }
+            Text(record.target == nil ? "每次降价都会提醒。填写后，只在降到这个价格或以下时提醒。"
+                 : "降到 \(WatchService.format(record.target ?? 0, currency: record.currency)) 或以下时提醒；限免仍会提醒。")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+        .onAppear { text = Self.string(record.target) }
+        .onChange(of: record.key) { _, _ in text = Self.string(record.target) }
+        .onChange(of: focused) { _, editing in
+            guard !editing else { return }
+            let value = Self.value(text)
+            save(value)
+            text = Self.string(value)
+        }
+    }
+    /// Accepts either decimal separator, whatever the keyboard offers.
+    static func value(_ text: String) -> Double? {
+        let cleaned = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
+            .replacingOccurrences(of: "٫", with: ".")
+        guard let value = Double(cleaned), value > 0, value.isFinite else { return nil }
+        return value
+    }
+    static func string(_ value: Double?) -> String {
+        guard let value else { return "" }
+        return value.rounded() == value ? String(Int(value)) : String(format: "%.2f", value)
     }
 }
 

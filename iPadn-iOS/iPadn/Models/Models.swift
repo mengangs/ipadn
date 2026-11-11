@@ -278,6 +278,8 @@ struct ToolSettings: Codable, Equatable {
     var updateNotifications = true
     /// Background checks of followed apps (new version, price drop, removal), with a notification.
     var watchNotifications = true
+    /// Lets a followed paid app have a target price for drop notifications.
+    var targetPrices = true
     /// Checks GitHub for new iPadn releases, with a notification.
     var appUpdateCheck = true
     /// Storefronts compared on the price page and tracked for followed apps.
@@ -312,7 +314,7 @@ struct ToolSettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
         case useSignerCache, appearance, plistServer, versionSources, localInstallation, localInstallHost
-        case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency, appUpdateCheck
+        case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency, appUpdateCheck, targetPrices
         case appearanceSchema, compatibleDownloadMode, nativeInstallation, versionSourcesSchema
     }
     init(from decoder: Decoder) throws {
@@ -326,6 +328,7 @@ struct ToolSettings: Codable, Equatable {
         updateNotifications = try values.decodeIfPresent(Bool.self, forKey: .updateNotifications) ?? updateNotifications
         proMode = try values.decodeIfPresent(Bool.self, forKey: .proMode) ?? proMode
         watchNotifications = try values.decodeIfPresent(Bool.self, forKey: .watchNotifications) ?? watchNotifications
+        targetPrices = try values.decodeIfPresent(Bool.self, forKey: .targetPrices) ?? targetPrices
         let regions = (try values.decodeIfPresent([String].self, forKey: .priceRegions) ?? priceRegions).filter { StoreRegions.codes.contains($0) }
         priceRegions = regions.isEmpty ? priceRegions : regions
         baseCurrency = try values.decodeIfPresent(String.self, forKey: .baseCurrency) ?? baseCurrency
