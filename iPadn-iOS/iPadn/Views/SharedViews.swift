@@ -256,7 +256,9 @@ struct RootView: View {
             // Deterministic geometry checks without changing real notice timing.
             if LocalResources.isPreview && ProcessInfo.processInfo.arguments.contains("--notice-preview") { return }
             #endif
-            do { try await Task.sleep(nanoseconds: 3_500_000_000) } catch { return }
+            // Longer notices (setup steps, other languages) stay up longer.
+            let seconds = min(8, max(3.5, Double(message.count) / 14))
+            do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
             if store.infoMessage == message { store.infoMessage = nil }
         }
         .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {

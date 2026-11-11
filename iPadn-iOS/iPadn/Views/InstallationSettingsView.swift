@@ -13,7 +13,6 @@ struct InstallationSettingsView: View {
     /// Stored value, not display text: the certificate is either present or not.
     private static let notImported = "未导入"
     @State private var issue: String?
-    @State private var notice: String?
     @State private var busy = false
     /// Which action is running, shown with a spinner on its own row.
     @State private var working: Action?
@@ -42,16 +41,16 @@ struct InstallationSettingsView: View {
     }
     var body: some View {
         Form {
-            // A list of choices instead of a segmented control, so every
-            // method's name stays readable in longer languages.
+            // Segments use short names so four of them fit in every
+            // language; the section below each one gives the full name.
             Section {
                 Picker("安装方式", selection: method) {
-                    Text("一键安装").tag(Method.automatic)
-                    if NativeInstaller.isAvailable { Text("原生安装").tag(Method.native) }
-                    Text("本机证书").tag(Method.localCertificate)
-                    Text("代理服务").tag(Method.proxy)
-                }.pickerStyle(.inline).labelsHidden().accessibilityIdentifier("installation.method")
-            } header: { Text("安装方式") }
+                    Text("安装方式·一键").tag(Method.automatic)
+                    if NativeInstaller.isAvailable { Text("安装方式·原生").tag(Method.native) }
+                    Text("安装方式·证书").tag(Method.localCertificate)
+                    Text("安装方式·代理").tag(Method.proxy)
+                }.pickerStyle(.segmented).accessibilityIdentifier("installation.method")
+            }
             if store.settings.usesNativeInstallation {
                 Section {
                     Label("App Store 能识别并更新安装的应用", systemImage: "checkmark.seal")
@@ -118,7 +117,6 @@ struct InstallationSettingsView: View {
                     Text("适用于已配置 Surge、Loon 等代理规则的用户。")
                 }
             }
-            if let notice { Section { Label(notice, systemImage: "checkmark.circle").font(.subheadline) } }
             Section {
                 Link("安装帮助", destination: URL(string: "https://github.com/mengangs/ipadn#安装下载的应用")!)
             }
@@ -128,7 +126,7 @@ struct InstallationSettingsView: View {
                 // A pairing file dropped into iPadn's folder is picked up without asking.
                 if store.settings.usesNativeInstallation, !hasPairingFile, (try? NativeInstaller.importPairingFileFromDocuments()) == true {
                     hasPairingFile = NativeInstaller.hasPairingFile
-                    notice = AppText.text("已从 iPadn 文件夹导入配对文件。请在 LocalDevVPN 中连接后点按「检查连接」。")
+                    store.infoMessage = AppText.text("已从 iPadn 文件夹导入配对文件。请在 LocalDevVPN 中连接后点按「检查连接」。")
                 }
             }
             .onChange(of: scenePhase) { _, phase in if phase != .active, working == .profile { working = nil } }
@@ -140,7 +138,7 @@ struct InstallationSettingsView: View {
             .onChange(of: pairing.phase) { _, phase in
                 if phase == .finished {
                     hasPairingFile = NativeInstaller.hasPairingFile
-                    notice = AppText.text("配对完成。安装前请在 LocalDevVPN 中连接，可以点按「检查连接」确认。")
+                    store.infoMessage = AppText.text("配对完成。安装前请在 LocalDevVPN 中连接，可以点按「检查连接」确认。")
                 }
             }
             // Pairing files come as .plist, .rppairing or no extension at all.
@@ -152,7 +150,7 @@ struct InstallationSettingsView: View {
                         guard let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 64 * 1024 else { throw ToolError.message(AppText.text("这不是有效的配对文件。")) }
                         try NativeInstaller.importPairingFile(try Data(contentsOf: url))
                         hasPairingFile = NativeInstaller.hasPairingFile
-                        notice = AppText.text("配对文件已导入。请在 LocalDevVPN 中连接后点按「检查连接」。")
+                        store.infoMessage = AppText.text("配对文件已导入。请在 LocalDevVPN 中连接后点按「检查连接」。")
                         return
                     }
                     guard let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 2 * 1024 * 1024 else { throw ToolError.message(AppText.text("请选择 .p12 或 .pfx 证书文件")) }
@@ -174,7 +172,7 @@ struct InstallationSettingsView: View {
                 }.presentationDetents([.medium, .large])
             }
             .actionConfirmation(isPresented: $removingPairingFile, title: "移除配对文件？", message: "之后使用原生安装需要重新导入。", confirmTitle: "移除", destructive: true) {
-                do { try NativeInstaller.removePairingFile(); hasPairingFile = NativeInstaller.hasPairingFile; notice = AppText.text("配对文件已移除。") }
+                do { try NativeInstaller.removePairingFile(); hasPairingFile = NativeInstaller.hasPairingFile; store.infoMessage = AppText.text("配对文件已移除。") }
                 catch { issue = error.localizedDescription }
             }
             .actionConfirmation(isPresented: $replacingCertificate, title: "重新创建证书？", message: "需要重新安装并信任新的描述文件。", confirmTitle: "重新创建", destructive: false) { createLocalCertificate() }
@@ -201,7 +199,7 @@ struct InstallationSettingsView: View {
         catch { issue = error.localizedDescription }
     }
     private func createLocalCertificate() {
-        guard !busy else { return }; busy = true; notice = nil; working = .create
+        guard !busy else { return }; busy = true; working = .create
         UX.feedback()
         Task {
             defer { busy = false; working = nil }
@@ -211,7 +209,7 @@ struct InstallationSettingsView: View {
                     localRoot: material.rootCertificate, localIdentifier: material.identifier)
                 store.installation.stopHosting(); store.settings.localInstallation = true; store.settings.localInstallHost = ManifestBuilder.defaultLocalHost
                 refreshCertificate()
-                notice = AppText.text("证书已创建，请安装描述文件。")
+                store.infoMessage = AppText.text("证书已创建，请安装描述文件。")
             } catch { issue = error.localizedDescription }
         }
     }
@@ -226,7 +224,7 @@ struct InstallationSettingsView: View {
                 guard let profile = try InstallationCertificate.localProfile() else { throw ToolError.message(AppText.text("请先创建证书")) }
                 let url = try await store.installation.profileURL(data: profile)
                 openURL(url) { accepted in
-                    if accepted { notice = AppText.text("请在「设置」中安装描述文件，然后在「通用 › 关于本机 › 证书信任设置」中开启信任。") }
+                    if accepted { store.infoMessage = AppText.text("请在「设置」中安装描述文件，然后在「通用 › 关于本机 › 证书信任设置」中开启信任。") }
                     else { issue = AppText.text("无法打开描述文件，请稍后重试。"); working = nil }
                 }
             } catch { issue = error.localizedDescription; working = nil }
@@ -238,17 +236,16 @@ struct InstallationSettingsView: View {
             try InstallationCertificate.save(data: data, password: password)
             store.installation.stopHosting()
             certificateData = nil; password = ""; issue = nil
-            refreshCertificate(); notice = AppText.text("证书已导入。")
+            refreshCertificate(); store.infoMessage = AppText.text("证书已导入。")
         } catch { issue = error.localizedDescription }
     }
     /// Takes a pairing file from iPadn's own folder first; the system file
     /// picker is the fallback for files kept elsewhere.
     private func importPairingFile() {
-        notice = nil
         do {
             if try NativeInstaller.importPairingFileFromDocuments() {
                 hasPairingFile = NativeInstaller.hasPairingFile
-                notice = AppText.text("已从 iPadn 文件夹导入配对文件。请在 LocalDevVPN 中连接后点按「检查连接」。")
+                store.infoMessage = AppText.text("已从 iPadn 文件夹导入配对文件。请在 LocalDevVPN 中连接后点按「检查连接」。")
                 return
             }
         } catch {
@@ -261,18 +258,18 @@ struct InstallationSettingsView: View {
     /// Goes through the VPN, the pairing and the tunnel, then asks the system
     /// about iPadn itself: a full rehearsal without installing anything.
     private func checkConnection() {
-        guard !busy else { return }; busy = true; notice = nil; working = .connection
+        guard !busy else { return }; busy = true; working = .connection
         UX.feedback()
         Task {
             defer { busy = false; working = nil }
             do {
                 _ = try await NativeInstaller.lookup(bundleID: Bundle.main.bundleIdentifier ?? "app.local.iPadn")
-                notice = AppText.text("连接正常，可以使用原生安装。")
+                store.infoMessage = AppText.text("连接正常，可以使用原生安装。")
             } catch { issue = error.localizedDescription }
         }
     }
     private func checkCertificate() {
-        busy = true; notice = nil; working = .check
+        busy = true; working = .check
         UX.feedback()
         Task {
             defer { busy = false; working = nil }
@@ -280,7 +277,7 @@ struct InstallationSettingsView: View {
                 let host = try ManifestBuilder.localHost(store.settings.localInstallHost)
                 guard let certificate = try InstallationCertificate.load() else { throw ToolError.message(AppText.text("请先创建或导入证书")) }
                 try await certificate.validateAsync(host: host)
-                notice = AppText.text("证书有效。")
+                store.infoMessage = AppText.text("证书有效。")
             } catch { issue = error.localizedDescription }
         }
     }
