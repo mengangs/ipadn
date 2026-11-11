@@ -279,3 +279,35 @@ struct RootView: View {
     }
 }
 
+/// The top notice inside a sheet, which covers RootView's own banner. The
+/// root still times the notice out and announces it; this only shows it.
+private struct SheetNotice: ViewModifier {
+    @EnvironmentObject private var store: ToolStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) {
+            if let message = store.infoMessage {
+                Button { store.infoMessage = nil } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text(message).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }.padding(.horizontal, 18).padding(.vertical, 11).frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+                .frame(maxWidth: 320)
+                .padding(.horizontal, 24).padding(.top, 8)
+                .accessibilityLabel(message).accessibilityHint("点按关闭提示")
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.infoMessage)
+    }
+}
+
+extension View {
+    /// Shows the app's top notice while this view is presented as a sheet.
+    func sheetNotice() -> some View { modifier(SheetNotice()) }
+}

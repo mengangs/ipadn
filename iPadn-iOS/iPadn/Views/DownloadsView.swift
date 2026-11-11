@@ -274,7 +274,7 @@ struct DownloadsView: View {
             }
         }
         .sheet(item: $installing) { job in
-            PackageInstallationView(job: job).environmentObject(store).environmentObject(manager)
+            PackageInstallationView(job: job).sheetNotice().environmentObject(store).environmentObject(manager)
         }
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
     }
