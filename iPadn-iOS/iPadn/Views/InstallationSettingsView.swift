@@ -349,7 +349,10 @@ private struct PairingGuideView: View {
                 } footer: {
                     Text("看不到「开发者模式」时，需要先在该页面开启并按提示重启设备。配对期间 iPadn 会在后台保持运行，完成后自动停止。")
                 }
-                Section { PairingStatusRow(phase: pairing.phase) { pairing.cancel() } }
+                // Nothing to show once pairing is cancelled; an empty card would remain.
+                if pairing.phase != .idle {
+                    Section { PairingStatusRow(phase: pairing.phase) { pairing.cancel() } }
+                }
             }
             .navigationTitle("在本机配对").navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -363,7 +366,8 @@ private struct PairingGuideView: View {
             }
         }
     }
-    private func guideRow(_ number: Int, _ title: String, _ detail: String) -> some View {
+    // Keys, not Strings: Text(String) is shown verbatim and never translated.
+    private func guideRow(_ number: Int, _ title: LocalizedStringKey, _ detail: LocalizedStringKey) -> some View {
         let done = step > number && step != 0
         let current = step == number
         return HStack(alignment: .top, spacing: 12) {
