@@ -72,7 +72,7 @@ struct PriceHistorySection: View {
             if let price = record.price {
                 LabeledContent("当前价格", value: WatchService.format(price, currency: record.currency))
             }
-            if let price = record.price, price > 0 {
+            if store.settings.targetPrices, let price = record.price, price > 0 {
                 TargetPriceRow(record: record) { store.setWatchTarget($0, id: app.id, country: shown) }
             }
             if record.history.count > 1 {
