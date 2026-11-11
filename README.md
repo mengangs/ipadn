@@ -14,7 +14,7 @@
 
 **简体中文** · [English](README_EN.md)
 
-[下载](https://github.com/mengangs/ipadn/releases/latest) · [安装下载的应用](#安装下载的应用) · [常见问题](#常见问题) · [反馈问题](https://github.com/mengangs/ipadn/issues)
+[下载](https://github.com/mengangs/ipadn/releases/latest) · [安装下载的应用](#安装下载的应用) · [常见问题](#常见问题) · [反馈问题](https://github.com/mengangs/ipadn/issues) · [支持 iPadn](#支持-ipadn)
 
 </div>
 
@@ -239,6 +239,15 @@ Apple 只允许下载你的账号拥有许可的应用。版本也可能已经�
 
 不会。移除账号只清除该账号的登录信息和已购记录。
 </details>
+
+## 支持 iPadn
+
+iPadn 会一直免费并开源，不含广告。如果它帮你省下了时间，或者你只是喜欢这个项目，欢迎请作者喝杯咖啡，你的支持是持续更新的动力。点个 Star、反馈问题或帮忙改进翻译，也同样是很大的帮助。
+
+- **爱发电**（支持支付宝、微信）：[afdian.com/a/mengangs](https://afdian.com/a/mengangs)
+- **USDT**（仅限 BNB Smart Chain / BEP20 网络）：`0x5f0cff7587b9fc305f9fa626135789bd5100818e`
+
+> 转账 USDT 前请核对网络为 BEP20、地址完全一致。其他网络或其他币种转入可能无法找回。
 
 ## 参与贡献
 

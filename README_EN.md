@@ -14,7 +14,7 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 [简体中文](README.md) · **English**
 
-[Download](https://github.com/mengangs/ipadn/releases/latest) · [Install a download](#installing-a-downloaded-app) · [FAQ](#frequently-asked-questions) · [Report a problem](https://github.com/mengangs/ipadn/issues)
+[Download](https://github.com/mengangs/ipadn/releases/latest) · [Install a download](#installing-a-downloaded-app) · [FAQ](#frequently-asked-questions) · [Report a problem](https://github.com/mengangs/ipadn/issues) · [Support iPadn](#support-ipadn)
 
 </div>
 
@@ -239,6 +239,15 @@ On mainland Chinese networks Apple redirects other regions' App Store pages to C
 
 No. Removing an account only clears that account's sign-in details and purchase records.
 </details>
+
+## Support iPadn
+
+iPadn will always be free and open source, with no ads. If it saves you time or you simply enjoy it, you're welcome to buy the author a coffee; it helps keep updates coming. Starring the repo, reporting problems and improving translations help just as much.
+
+- **Afdian** (Alipay, WeChat Pay): [afdian.com/a/mengangs](https://afdian.com/a/mengangs)
+- **USDT** (BNB Smart Chain / BEP20 only): `0x5f0cff7587b9fc305f9fa626135789bd5100818e`
+
+> Before sending USDT, check that the network is BEP20 and the address matches exactly. Funds sent on another network or in another token may be lost.
 
 ## Contributing
 
