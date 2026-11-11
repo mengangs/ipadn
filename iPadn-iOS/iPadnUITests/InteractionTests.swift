@@ -142,6 +142,7 @@ final class InteractionTests: XCTestCase {
         let settingsAgain = app.buttons["accounts.settings"]
         XCTAssertTrue(settingsAgain.waitForExistence(timeout: 15))
         settingsAgain.tap()
+        openSettingsPage("appearance", in: app)
         if !dimensional.isHittable { app.swipeUp() }
         XCTAssertTrue(dimensional.waitForExistence(timeout: 15))
         if !dimensional.isHittable { app.swipeUp() }
