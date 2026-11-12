@@ -255,7 +255,7 @@ info = {"CFBundleDevelopmentRegion": "$(DEVELOPMENT_LANGUAGE)", "CFBundleExecuta
         "CFBundleURLTypes": [{"CFBundleURLName": "app.local.iPadn", "CFBundleURLSchemes": ["ipadn"]}],
         "LSApplicationQueriesSchemes": ["itms-services"],
         # audio keeps iPadn answering while the user pairs in Settings (on-device pairing only).
-        "UIBackgroundModes": ["fetch", "audio"], "BGTaskSchedulerPermittedIdentifiers": ["app.local.iPadn.update-check"],
+        "UIBackgroundModes": ["fetch", "audio"], "BGTaskSchedulerPermittedIdentifiers": ["app.local.iPadn.update-check", "app.local.iPadn.work.*"],
         "NSSupportsLiveActivities": True,
         "CADisableMinimumFrameDurationOnPhone": True,
         "CFBundleIcons": {"CFBundleAlternateIcons": {name: {"CFBundleIconFiles": [name + "60x60"], "UIPrerenderedIcon": False}

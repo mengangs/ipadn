@@ -73,8 +73,14 @@ struct SettingsView: View {
                     }
                 Toggle("仅使用 Wi‑Fi 下载", isOn: $store.settings.wifiOnlyDownloads)
                     .accessibilityIdentifier("settings.wifi-only")
-                Toggle("下载完成后自动安装", isOn: $store.settings.autoInstall)
-                    .accessibilityIdentifier("settings.auto-install")
+                Toggle(isOn: $store.settings.autoInstall) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("下载完成后自动安装")
+                        Text("只有原生安装能在后台自动完成，其他安装方式需要打开 iPadn 后确认。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("settings.auto-install")
                 Toggle("实时活动显示下载进度", isOn: $store.settings.downloadLiveActivity)
                     .accessibilityIdentifier("settings.download-activity")
                 Toggle("兼容下载模式", isOn: $store.settings.compatibleDownloadMode)
