@@ -4,7 +4,7 @@ import SwiftUI
 struct DiscoverSection: View {
     @EnvironmentObject private var store: ToolStore
     var body: some View {
-        if AppChart.free.feed(store.settings.store.platform) != nil {
+        if store.settings.showDiscover, AppChart.free.feed(store.settings.store.platform) != nil {
             Section {
                 ForEach(AppChart.allCases) { chart in
                     NavigationLink { ChartView(chart: chart) } label: {

@@ -88,27 +88,29 @@ struct SearchView: View {
 
     @ViewBuilder private var suggestions: some View {
         if !store.searchHistory.isEmpty {
-            ForEach(Array(store.searchHistory.prefix(8))) { item in
-                Section {
-                    Button { store.search(item.term) } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                            Text(item.term).foregroundStyle(.primary).lineLimit(1)
-                            Spacer()
-                        }.frame(minHeight: 36).contentShape(Rectangle())
-                    }
-                    .buttonStyle(RevealRowButtonStyle())
-                    .accessibilityIdentifier("history.\(item.id)")
-                    .revealDelete(id: "history." + item.id, style: .compact) { withAnimation { store.removeHistory(item.term) } }
-                } header: {
-                    if item.id == store.searchHistory.first?.id {
-                        HStack {
-                            Text("最近搜索").font(.title3.weight(.bold)).foregroundStyle(.primary).textCase(nil)
-                            Spacer()
-                            Button("清除") { confirmClear = true }.font(.body).textCase(nil)
+            // Short terms as chips that wrap, rather than one wide row each.
+            Section {
+                ChipFlow(spacing: 8) {
+                    ForEach(Array(store.searchHistory.prefix(12))) { item in
+                        // Tap searches; a long press lifts just this chip with a Delete menu.
+                        MenuChip(title: item.term, symbol: "magnifyingglass", identifier: "history.\(item.id)",
+                                 deleteTitle: AppText.text("删除")) {
+                            store.search(item.term)
+                        } onDelete: {
+                            withAnimation { store.removeHistory(item.term) }
                         }
                     }
                 }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
+            } header: {
+                HStack {
+                    Text("最近搜索").font(.title3.weight(.bold)).foregroundStyle(.primary).textCase(nil)
+                    Spacer()
+                    Button("清除") { confirmClear = true }.font(.body).textCase(nil)
+                }
+            } footer: {
+                Text("长按可删除单条记录。")
             }
         }
         if !store.favorites.isEmpty {
