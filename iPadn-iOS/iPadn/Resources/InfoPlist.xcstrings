@@ -216,67 +216,67 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通过本机回环地址加载签名资源和提供安装包文件，并查找本机的安装服务。"
+            "value": "通过本机回环地址加载签名资源和提供安装包文件，查找本机的安装服务，并在你开启「Wi‑Fi 传输」时向同一网络的电脑提供安装包。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Loads signing resources and serves installation packages over this device's loopback address, and finds this device's installation service."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このデバイスのループバックアドレスで署名リソースを読み込み、インストールパッケージを提供し、このデバイスのインストールサービスを検出します。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이 기기의 루프백 주소로 서명 리소스를 불러오고 설치 패키지를 제공하며, 이 기기의 설치 서비스를 찾습니다."
+            "value": "Loads signing resources and serves installation packages over this device’s loopback address, finds this device’s installation service, and, when you turn on Wi‑Fi Transfer, offers packages to computers on the same network."
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "透過本機迴環地址載入簽名資源和提供安裝包檔案，並查詢本機的安裝服務。"
+            "value": "透過本機回送位址載入簽署資源和提供安裝包檔案，尋找本機的安裝服務，並在你開啟「Wi‑Fi 傳輸」時向同一網路的電腦提供安裝包。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このデバイスのループバックアドレスで署名リソースを読み込んでインストールパッケージを提供し、このデバイスのインストールサービスを検出します。また「Wi‑Fi転送」をオンにしたときは、同じネットワークのコンピュータにパッケージを提供します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 기기의 루프백 주소로 서명 리소스를 불러오고 설치 패키지를 제공하며, 이 기기의 설치 서비스를 찾습니다. “Wi‑Fi 전송”을 켜면 같은 네트워크의 컴퓨터에 패키지를 제공합니다."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Загружает ресурсы подписи и раздает установочные пакеты через loopback-адрес этого устройства, а также находит службу установки этого устройства."
+            "value": "Загружает ресурсы подписи и отдаёт установочные пакеты через loopback-адрес устройства, находит службу установки, а при включённой «Передаче по Wi‑Fi» отдаёт пакеты компьютерам в той же сети."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Carga recursos de firma y sirve paquetes de instalación mediante la dirección de loopback de este dispositivo, y busca su servicio de instalación."
+            "value": "Carga recursos de firma y sirve paquetes de instalación por la dirección de loopback de este dispositivo, encuentra su servicio de instalación y, al activar la Transferencia por Wi‑Fi, ofrece paquetes a ordenadores de la misma red."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charge les ressources de signature et fournit les paquets d’installation via l’adresse de bouclage de cet appareil, et détecte son service d’installation."
+            "value": "Charge les ressources de signature et fournit les paquets d’installation via l’adresse de bouclage de cet appareil, trouve son service d’installation et, quand le Transfert Wi‑Fi est activé, propose les paquets aux ordinateurs du même réseau."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lädt Signaturressourcen und stellt Installationspakete über die Loopback-Adresse dieses Geräts bereit und findet seinen Installationsdienst."
+            "value": "Lädt Signaturressourcen und stellt Installationspakete über die Loopback-Adresse dieses Geräts bereit, findet seinen Installationsdienst und bietet bei aktivierter WLAN-Übertragung Pakete für Computer im selben Netzwerk an."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Carrega recursos de assinatura e fornece pacotes de instalação pelo endereço de loopback deste dispositivo, e encontra o serviço de instalação dele."
+            "value": "Carrega recursos de assinatura e serve pacotes de instalação pelo endereço de loopback deste dispositivo, encontra seu serviço de instalação e, com a Transferência por Wi‑Fi ativada, oferece pacotes a computadores na mesma rede."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "يحمّل موارد التوقيع ويقدّم حزم التثبيت عبر عنوان loopback لهذا الجهاز، ويعثر على خدمة التثبيت فيه."
+            "value": "يحمّل موارد التوقيع ويقدّم حزم التثبيت عبر عنوان الاسترجاع في هذا الجهاز، ويعثر على خدمة التثبيت فيه، وعند تشغيل «النقل عبر Wi‑Fi» يقدّم الحزم لأجهزة الحاسوب على الشبكة نفسها."
           }
         }
       }
