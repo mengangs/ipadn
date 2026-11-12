@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Network
 import UserNotifications
 import UIKit
 
@@ -67,6 +68,18 @@ final class DownloadManager: NSObject, ObservableObject {
     private var notifications = true
     private var compatibleDownloadMode = false
     private var fallbackForegroundIDs = Set<UUID>()
+    /// Settings: download only over Wi-Fi; install each finished download.
+    private var wifiOnly = false
+    private var autoInstall = false
+    private var pathMonitor: NWPathMonitor?
+    /// The network in use is cellular (no Wi-Fi or wired connection).
+    private var onCellular = false
+    /// "Download Anyway" until Wi-Fi is back.
+    private var cellularAllowed = false
+    /// Downloads wait for Wi-Fi: the setting is on and only cellular is available.
+    @Published private(set) var waitingForWiFi = false
+    /// Finished downloads waiting for the install sheet to open.
+    @Published var pendingAutoInstalls: [UUID] = []
     /// The system download service could not write into iPadn's container
     /// (seen with some re-signed builds). Kept per app build: a new install
     /// or signature may behave differently, so it is checked again then.
@@ -235,7 +248,47 @@ final class DownloadManager: NSObject, ObservableObject {
         notifications = settings.notifications
         artworkCountry = settings.store.country
         compatibleDownloadMode = settings.compatibleDownloadMode
+        autoInstall = settings.autoInstall
+        if !autoInstall { pendingAutoInstalls.removeAll() }
+        wifiOnly = settings.wifiOnlyDownloads
+        if wifiOnly { startPathMonitor() }
+        applyNetworkRule()
         updateBackgroundTask()
+        schedule()
+    }
+
+    private func startPathMonitor() {
+        guard pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let cellular = path.status == .satisfied && path.usesInterfaceType(.cellular)
+                && !path.usesInterfaceType(.wifi) && !path.usesInterfaceType(.wiredEthernet)
+            Task { @MainActor in
+                guard let self else { return }
+                if !cellular { self.cellularAllowed = false }
+                guard cellular != self.onCellular else { return }
+                self.onCellular = cellular
+                self.applyNetworkRule()
+                self.schedule()
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "iPadn.network-path", qos: .utility))
+        pathMonitor = monitor
+    }
+
+    /// On cellular with Wi-Fi only on, running downloads go back to the queue
+    /// (keeping their progress) and continue once Wi-Fi is back.
+    private func applyNetworkRule() {
+        let blocked = wifiOnly && onCellular && !cellularAllowed
+        if waitingForWiFi != blocked { waitingForWiFi = blocked }
+        guard blocked else { return }
+        for job in jobs where job.status == .running { pause(job.id, requeue: true) }
+    }
+
+    /// Downloads over cellular this time, until Wi-Fi is back.
+    func downloadOverCellular() {
+        cellularAllowed = true
+        applyNetworkRule()
         schedule()
     }
 
@@ -388,7 +441,7 @@ final class DownloadManager: NSObject, ObservableObject {
     }
 
     private func schedule() {
-        guard !restoring, storageError == nil, removingIDs.isEmpty else { return }
+        guard !restoring, storageError == nil, removingIDs.isEmpty, !waitingForWiFi else { return }
         let running = jobs.filter { $0.status == .running || $0.status == .pausing }.count
         let count = max(0, maxConcurrent - running)
         for job in jobs.filter({ $0.status == .queued }).prefix(count) { start(job.id) }
@@ -403,6 +456,8 @@ final class DownloadManager: NSObject, ObservableObject {
         } else {
             var request = URLRequest(url: url)
             request.setValue(HTTPClient.userAgent, forHTTPHeaderField: "User-Agent")
+            // Also holds while iPadn is suspended and cannot watch the network.
+            request.allowsCellularAccess = !wifiOnly || cellularAllowed
             task = active.downloadTask(with: request)
         }
         task.taskDescription = id.uuidString
@@ -414,7 +469,8 @@ final class DownloadManager: NSObject, ObservableObject {
         updateBackgroundTask()
         persist(); task.resume()
     }
-    func pause(_ id: UUID) {
+    /// Pauses a download; `requeue` puts it back in the queue instead.
+    func pause(_ id: UUID, requeue: Bool = false) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
         if jobs[index].status == .queued { jobs[index].status = .paused; persist(); return }
         guard jobs[index].status == .running, let task = tasks[id] else { return }
@@ -429,7 +485,7 @@ final class DownloadManager: NSObject, ObservableObject {
                 // The byte count lives in the row's progress while running;
                 // keep it on the task so everything showing it stays right.
                 if let progress = self.rowProgress[id] { self.jobs[index] = progress.applying(to: self.jobs[index]) }
-                self.jobs[index].status = .paused
+                self.jobs[index].status = requeue ? .queued : .paused
                 self.persist(); self.schedule()
             }
         })
@@ -745,6 +801,11 @@ final class DownloadManager: NSObject, ObservableObject {
                 try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
                 if job.protectedMacPackage == true { MacPackageSecrets.delete(id) }
                 self.persist(); self.notify(title: AppText.text("安装包已准备好"), body: result.1.name + " " + result.1.version)
+                // Only downloaded app packages; imported files and Mac packages are not installed here.
+                if self.autoInstall, job.rawFormat == nil, job.protectedMacPackage != true, job.sourceURL != nil,
+                   !self.pendingAutoInstalls.contains(id) {
+                    self.pendingAutoInstalls.append(id)
+                }
                 Task { await self.loadPackageIcons() }
             } catch is CancellationError {
                 self.cancelling.remove(id)

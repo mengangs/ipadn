@@ -86,6 +86,8 @@ struct iPadnApp: App {
                 .onAppear { configureLock(launching: true) }
                 .task { if !LocalResources.isPreview { await AppLock.shared.unlock() } }
                 .compatibleOnChange(of: lockSettings) { _ in configureLock(launching: false) }
+                .onReceive(store.downloads.$pendingAutoInstalls) { _ in AutoInstall.presentNext(store) }
+                .onReceive(AppLock.shared.$locked) { locked in if !locked { AutoInstall.presentNext(store) } }
                 .task {
                     guard !LocalResources.isPreview, store.settings.appUpdateCheck else { return }
                     await store.checkAppUpdate()
@@ -93,6 +95,7 @@ struct iPadnApp: App {
         }
         .onChange(of: scenePhase) { phase in
             if !LocalResources.isPreview { AppLock.shared.sceneChanged(to: phase) }
+            if phase == .active { AutoInstall.presentNext(store) }
             guard phase == .background, !LocalResources.isPreview else { return }
             // Session cookies kept in memory must survive the app being closed.
             store.apple.saveLiveCookies()

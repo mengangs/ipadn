@@ -7,6 +7,8 @@ struct PackageInstallationView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     let job: DownloadJob
+    /// Opened because the download just finished: start installing right away.
+    var startsAutomatically = false
     @State private var busy = false
     /// The link is open and the system is loading the install details: the
     /// button keeps showing progress until its prompt actually appears.
@@ -91,6 +93,11 @@ struct PackageInstallationView: View {
                 .interactiveDismissDisabled(nativePhase != nil)
                 .sheet(item: $sharedFile) { ShareSheet(items: [$0.url]) }
                 .compatibleOnChange(of: scenePhase) { phase in if phase != .active { openingSystem = false } }
+                .task {
+                    guard startsAutomatically, !attempted else { return }
+                    try? await Task.sleep(for: .milliseconds(500))
+                    requestInstallation()
+                }
                 .alert("安装未开始", isPresented: Binding(get: { issue != nil }, set: { if !$0 { issue = nil } })) {
                     Button("知道了", role: .cancel) { issue = nil }
                 } message: { Text(issue ?? "") }

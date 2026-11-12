@@ -67823,6 +67823,426 @@
         }
       }
     },
+    "仅使用 Wi‑Fi 下载": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅使用 Wi‑Fi 下载"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download over Wi‑Fi Only"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "僅使用 Wi‑Fi 下載"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wi‑Fi接続時のみダウンロード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wi‑Fi에서만 다운로드"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загружать только по Wi‑Fi"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargar solo con Wi‑Fi"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Télécharger en Wi‑Fi uniquement"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nur über WLAN laden"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baixar só por Wi‑Fi"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التنزيل عبر Wi‑Fi فقط"
+          }
+        }
+      }
+    },
+    "下载完成后自动安装": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载完成后自动安装"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install When Downloaded"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下載完成後自動安裝"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダウンロード後に自動インストール"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다운로드 후 자동 설치"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Устанавливать после загрузки"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalar al terminar la descarga"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installer une fois téléchargé"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nach dem Laden installieren"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalar ao terminar o download"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التثبيت بعد اكتمال التنزيل"
+          }
+        }
+      }
+    },
+    "开启「仅使用 Wi‑Fi 下载」后，只有蜂窝数据时下载会暂停排队，连上 Wi‑Fi 后自动继续。「下载完成后自动安装」会在 iPadn 打开时弹出安装并开始安装。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启「仅使用 Wi‑Fi 下载」后，只有蜂窝数据时下载会暂停排队，连上 Wi‑Fi 后自动继续。「下载完成后自动安装」会在 iPadn 打开时弹出安装并开始安装。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "With “Download over Wi‑Fi Only”, downloads wait in the queue while only cellular data is available and continue on Wi‑Fi. “Install When Downloaded” opens the installer and starts installing while iPadn is open."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開啟「僅使用 Wi‑Fi 下載」後，只有行動數據時下載會暫停排隊，連上 Wi‑Fi 後自動繼續。「下載完成後自動安裝」會在 iPadn 開啟時彈出安裝並開始安裝。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「Wi‑Fi接続時のみダウンロード」をオンにすると、モバイルデータ通信しかないときはダウンロードが待機し、Wi‑Fiにつながると自動で再開します。「ダウンロード後に自動インストール」は、iPadnを開いているときにインストール画面を表示してインストールを始めます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“Wi‑Fi에서만 다운로드”를 켜면 셀룰러 데이터만 있을 때 다운로드가 대기열에서 기다리고 Wi‑Fi에 연결되면 자동으로 계속됩니다. “다운로드 후 자동 설치”는 iPadn이 열려 있을 때 설치 화면을 띄우고 설치를 시작합니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "При включённом параметре «Загружать только по Wi‑Fi» загрузки ждут в очереди, пока доступна только сотовая сеть, и продолжаются по Wi‑Fi. «Устанавливать после загрузки» открывает установку и начинает её, пока iPadn открыто."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Con «Descargar solo con Wi‑Fi», las descargas esperan en la cola mientras solo haya datos móviles y continúan con Wi‑Fi. «Instalar al terminar la descarga» abre el instalador y empieza a instalar mientras iPadn está abierta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avec « Télécharger en Wi‑Fi uniquement », les téléchargements attendent dans la file tant que seules les données cellulaires sont disponibles et reprennent en Wi‑Fi. « Installer une fois téléchargé » ouvre l’installation et la lance tant qu’iPadn est ouverte."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit „Nur über WLAN laden“ warten Downloads in der Warteschlange, solange nur Mobilfunk verfügbar ist, und laufen im WLAN weiter. „Nach dem Laden installieren“ öffnet die Installation und startet sie, während iPadn geöffnet ist."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Com “Baixar só por Wi‑Fi”, os downloads esperam na fila enquanto só houver dados celulares e continuam no Wi‑Fi. “Instalar ao terminar o download” abre o instalador e começa a instalar enquanto o iPadn estiver aberto."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "عند تشغيل «التنزيل عبر Wi‑Fi فقط» تنتظر التنزيلات في القائمة ما دامت البيانات الخلوية وحدها متاحة، وتستمر عند الاتصال بشبكة Wi‑Fi. يفتح «التثبيت بعد اكتمال التنزيل» شاشة التثبيت ويبدأ التثبيت ما دام iPadn مفتوحًا."
+          }
+        }
+      }
+    },
+    "等待 Wi‑Fi": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待 Wi‑Fi"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for Wi‑Fi"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待 Wi‑Fi"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wi‑Fiを待機中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wi‑Fi 대기 중"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ожидание Wi‑Fi"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esperando Wi‑Fi"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente du Wi‑Fi"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warten auf WLAN"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aguardando Wi‑Fi"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "بانتظار Wi‑Fi"
+          }
+        }
+      }
+    },
+    "当前只有蜂窝数据，下载会在连上 Wi‑Fi 后继续。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前只有蜂窝数据，下载会在连上 Wi‑Fi 后继续。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only cellular data is available. Downloads continue on Wi‑Fi."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目前只有行動數據，下載會在連上 Wi‑Fi 後繼續。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在はモバイルデータ通信のみです。Wi‑Fiにつながるとダウンロードを再開します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 셀룰러 데이터만 사용할 수 있습니다. Wi‑Fi에 연결되면 다운로드가 계속됩니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сейчас доступна только сотовая сеть. Загрузки продолжатся по Wi‑Fi."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo hay datos móviles. Las descargas continuarán con Wi‑Fi."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seules les données cellulaires sont disponibles. Les téléchargements reprendront en Wi‑Fi."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerade ist nur Mobilfunk verfügbar. Downloads laufen im WLAN weiter."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Só há dados celulares agora. Os downloads continuam no Wi‑Fi."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "البيانات الخلوية وحدها متاحة الآن. ستستمر التنزيلات عند الاتصال بشبكة Wi‑Fi."
+          }
+        }
+      }
+    },
+    "仍使用蜂窝数据下载": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍使用蜂窝数据下载"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download over Cellular"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍使用行動數據下載"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モバイルデータ通信でダウンロード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "셀룰러 데이터로 다운로드"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загрузить по сотовой сети"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargar con datos móviles"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Télécharger via le réseau cellulaire"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Über Mobilfunk laden"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baixar por dados celulares"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التنزيل عبر البيانات الخلوية"
+          }
+        }
+      }
+    },
     "应用锁": {
       "localizations": {
         "zh-Hans": {
