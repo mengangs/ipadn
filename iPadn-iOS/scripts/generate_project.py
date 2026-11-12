@@ -135,7 +135,7 @@ app_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn", "PRODUCT_NAME": 
                 "IPADN_MACPKG_LDFLAGS": "",
                 # Empty unless scripts/build_unsigned_ipa.sh built the native installation library.
                 "IPADN_NATIVE_LDFLAGS": "",
-                "OTHER_LDFLAGS": ["$(inherited)", "$(IPADN_MACPKG_LDFLAGS)", "$(IPADN_NATIVE_LDFLAGS)"]}
+                "OTHER_LDFLAGS": ["$(inherited)", "-weak_framework", "Translation", "$(IPADN_MACPKG_LDFLAGS)", "$(IPADN_NATIVE_LDFLAGS)"]}
 test_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadnTests", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
                  "DEVELOPMENT_TEAM": "", "TARGETED_DEVICE_FAMILY": "1,2", "GENERATE_INFOPLIST_FILE": "YES",
                  "TEST_HOST": "$(BUILT_PRODUCTS_DIR)/iPadn.app/iPadn", "BUNDLE_LOADER": "$(TEST_HOST)",
