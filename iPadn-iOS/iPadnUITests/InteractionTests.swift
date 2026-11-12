@@ -404,6 +404,27 @@ final class InteractionTests: XCTestCase {
             .press(forDuration: 0.05, thenDragTo: element.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.5)))
     }
 
+    /// iPhone Duo: screenshots of the main screens on whichever display the
+    /// simulator shows, with its size in the name. Runs only on that simulator.
+    func testDuoLayoutScreens() throws {
+        let device = ProcessInfo.processInfo.environment["SIMULATOR_DEVICE_NAME"] ?? ""
+        try XCTSkipUnless(device.localizedCaseInsensitiveContains("Duo"), "Only on the iPhone Duo simulator")
+        let screens: [(name: String, arguments: [String])] = [
+            ("search", []), ("downloads", ["--downloads"]), ("purchased", ["--purchased"]),
+            ("accounts", ["--accounts"]), ("detail", ["--detail"]),
+        ]
+        for screen in screens {
+            let app = Self.launchableApp()
+            app.launchArguments = Self.languageArguments + ["--visual-preview"] + screen.arguments
+            app.launch()
+            _ = app.windows.firstMatch.waitForExistence(timeout: 10)
+            sleep(2)
+            let size = app.windows.firstMatch.frame.size
+            attach("duo-\(screen.name)-\(Int(size.width))x\(Int(size.height))", app: app)
+            app.terminate()
+        }
+    }
+
     private func attach(_ name: String, app: XCUIApplication) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
