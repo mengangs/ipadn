@@ -236,12 +236,20 @@ private final class RevealCoordinator: ObservableObject {
 /// motion model supplies resistance, velocity transfer and interruptible springs.
 @MainActor
 private final class RevealDriver: NSObject, ObservableObject {
+    /// One revealed button: its center measured from the row's outer edge.
+    struct ButtonFrame: Equatable {
+        var center: CGFloat
+        var width: CGFloat
+        var scale: CGFloat
+        var opacity: Double
+    }
     private struct Presentation: Equatable {
         var offset: CGFloat = 0
         var scale: CGFloat = 0
         var opacity: Double = 0
         var actionWidth: CGFloat = 52
         var rounding: CGFloat = 0
+        var buttons: [ButtonFrame] = []
     }
     @Published private var presentation = Presentation()
     @Published private(set) var blocksPress = false
@@ -270,15 +278,16 @@ private final class RevealDriver: NSObject, ObservableObject {
     var actionOpacity: Double { presentation.opacity }
     var actionWidth: CGFloat { presentation.actionWidth }
     var rounding: CGFloat { presentation.rounding }
+    var buttons: [ButtonFrame] { presentation.buttons }
 
-    func begin(width: CGFloat, direction: CGFloat, reduced: Bool, actionWidth: CGFloat) {
+    func begin(width: CGFloat, direction: CGFloat, reduced: Bool, actionWidth: CGFloat, count: Int = 1) {
         #if DEBUG
         frameCallbacks = 0; presentations = 0; delayedFrames = 0; worstInterval = 0
         #endif
         pressReset?.cancel(); blocksPress = true
         self.direction = direction; self.reduced = reduced
         var parameters = ItemListRevealMotionParameters()
-        parameters.width = Double(width); parameters.count = 1
+        parameters.width = Double(width); parameters.count = max(1, count)
         parameters.buttonWidth = Double(actionWidth); parameters.isDestructive = true
         parameters.displayScale = Double(UIScreen.main.scale)
         motion.configure(parameters)
@@ -312,11 +321,14 @@ private final class RevealDriver: NSObject, ObservableObject {
         }
     }
     private func render() {
-        let geometry = motion.buttonGeometry.first
+        let all = motion.buttonGeometry
+        let geometry = all.first
         let next = Presentation(offset: CGFloat(max(0, motion.body.value)) * direction,
                                 scale: CGFloat(geometry?.scale ?? 0), opacity: geometry?.opacity ?? 0,
                                 actionWidth: CGFloat(geometry?.width ?? 52),
-                                rounding: min(1, max(0, CGFloat(motion.surface.value))))
+                                rounding: min(1, max(0, CGFloat(motion.surface.value))),
+                                buttons: all.map { ButtonFrame(center: CGFloat($0.center), width: CGFloat($0.width),
+                                                               scale: CGFloat($0.scale), opacity: $0.opacity) })
         guard next != presentation else { return }
         #if DEBUG
         if measuresFrames { presentations += 1 }
@@ -362,6 +374,20 @@ private final class RevealDriver: NSObject, ObservableObject {
 }
 
 enum RevealActionStyle { case compact, round }
+
+/// A button revealed by swiping a row. The first is the primary one: at the
+/// outer edge, and what a full swipe does (Telegram's chat list does the same).
+struct RevealAction {
+    var title: LocalizedStringKey
+    var systemImage: String
+    var tint: Color
+    var role: ButtonRole?
+    var action: () -> Void
+
+    static func delete(_ title: LocalizedStringKey = "删除", action: @escaping () -> Void) -> RevealAction {
+        RevealAction(title: title, systemImage: "trash.fill", tint: .red, role: .destructive, action: action)
+    }
+}
 enum RevealRowGrouping { case standalone, first, middle }
 
 private struct RevealSuppressesPressKey: EnvironmentKey {
@@ -395,9 +421,10 @@ private struct RevealDeleteModifier: ViewModifier {
     let grouping: RevealRowGrouping
     /// Leading inset of the hairline under a grouped row; nil draws none.
     let separatorInset: CGFloat?
-    let title: LocalizedStringKey
     let style: RevealActionStyle
-    let action: () -> Void
+    let actions: [RevealAction]
+    private var primary: RevealAction { actions[0] }
+    private var title: LocalizedStringKey { primary.title }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
     @ScaledMetric(relativeTo: .caption) private var actionSize: CGFloat = 52
@@ -427,7 +454,20 @@ private struct RevealDeleteModifier: ViewModifier {
             .background(Color(.secondarySystemGroupedBackground), in: cardShape(rounding: driver.rounding))
             .offset(x: driver.offset)
             .overlay(alignment: driver.offset >= 0 ? .leading : .trailing) {
-                if abs(driver.offset) > 1 {
+                if abs(driver.offset) > 1 && actions.count > 1 {
+                    // Several buttons, each where the shared motion model puts it.
+                    GeometryReader { box in
+                        ForEach(Array(actions.enumerated()), id: \.offset) { index, item in
+                            if index < driver.buttons.count {
+                                let frame = driver.buttons[index]
+                                actionButton(item, frame: frame)
+                                    .position(x: driver.offset < 0 ? box.size.width - frame.center : frame.center,
+                                              y: box.size.height / 2)
+                            }
+                        }
+                    }
+                    .frame(width: max(0, abs(driver.offset)))
+                } else if abs(driver.offset) > 1 {
                     Button(role: .destructive, action: commit) {
                         Group {
                             if style == .compact {
@@ -482,7 +522,7 @@ private struct RevealDeleteModifier: ViewModifier {
                     case .began:
                         direction = driver.offset == 0 ? initialDirection : (driver.offset > 0 ? 1 : -1)
                         coordinator.active = id
-                        driver.begin(width: width, direction: direction, reduced: reduceMotion, actionWidth: actionSize)
+                        driver.begin(width: width, direction: direction, reduced: reduceMotion, actionWidth: actionSize, count: actions.count)
                         driver.change(translation: translation, velocity: velocity, distanceFromEdge: direction > 0 ? width - location.x : location.x)
                     case .changed:
                         driver.change(translation: translation, velocity: velocity, distanceFromEdge: direction > 0 ? width - location.x : location.x)
@@ -500,12 +540,35 @@ private struct RevealDeleteModifier: ViewModifier {
             .compatibleOnChange(of: enabled) { enabled in if !enabled { driver.close(immediately: true) } }
             .compatibleOnChange(of: reduceMotion) { _ in driver.close(immediately: true) }
             .onDisappear { driver.close(immediately: true) }
-            .accessibilityAction(named: Text(title)) { if enabled { commit() } }
+            .accessibilityActions {
+                ForEach(Array(actions.enumerated()), id: \.offset) { _, item in
+                    Button(item.title) { if enabled { commit(item) } }
+                }
+            }
     }
-    private func commit() {
+    private func actionButton(_ item: RevealAction, frame: RevealDriver.ButtonFrame) -> some View {
+        Button(role: item.role) { commit(item) } label: {
+            VStack(spacing: 6 * actionSize / 52) {
+                Image(systemName: item.systemImage).font(.system(size: 22 * actionSize / 52, weight: .regular)).foregroundStyle(.white)
+                    .frame(width: frame.width, height: actionSize)
+                    .background(item.tint, in: Capsule())
+                Text(item.title).font(.caption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+            }
+            .scaleEffect(reduceMotion ? 1 : frame.scale)
+            .opacity(reduceMotion ? 1 : frame.opacity)
+            .frame(width: frame.width + 10)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(item.title)
+        .accessibilityElement(children: .ignore)
+    }
+    private func commit() { commit(primary) }
+    private func commit(_ item: RevealAction) {
         guard enabled else { return }
         coordinator.active = nil; driver.close()
-        action()
+        item.action()
     }
 }
 
@@ -517,7 +580,11 @@ extension View {
             }
     }
     func revealDelete(id: String, enabled: Bool = true, grouping: RevealRowGrouping = .standalone, separatorInset: CGFloat? = nil, style: RevealActionStyle = .round, title: LocalizedStringKey = "删除", action: @escaping () -> Void) -> some View {
-        modifier(RevealDeleteModifier(id: id, enabled: enabled, grouping: grouping, separatorInset: grouping == .standalone ? nil : separatorInset, title: title, style: style, action: action))
+        revealActions(id: id, enabled: enabled, grouping: grouping, separatorInset: separatorInset, style: style, [.delete(title, action: action)])
+    }
+    /// Swipe to reveal several buttons; the first is the primary (full swipe).
+    func revealActions(id: String, enabled: Bool = true, grouping: RevealRowGrouping = .standalone, separatorInset: CGFloat? = nil, style: RevealActionStyle = .round, _ actions: [RevealAction]) -> some View {
+        modifier(RevealDeleteModifier(id: id, enabled: enabled, grouping: grouping, separatorInset: grouping == .standalone ? nil : separatorInset, style: style, actions: actions))
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)

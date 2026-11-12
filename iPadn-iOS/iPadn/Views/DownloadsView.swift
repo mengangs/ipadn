@@ -238,9 +238,13 @@ struct DownloadsView: View {
         return text
     }
     private func taskContent(_ job: DownloadJob, update: StoreApp?, editing: Bool = false) -> some View {
-        DownloadTaskRow(snapshot: job, progress: manager.progress(for: job.id), update: update, kept: store.keepsVersion(job), editing: editing, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
-            if let file = manager.fileURL(job) { share = SharedFile(url: file) }
-        }, updating: { downloadUpdate(job) })
+        DownloadTaskRow(snapshot: job, progress: manager.progress(for: job.id), update: update, kept: store.keepsVersion(job), editing: editing, inspecting: { inspecting = job }, primary: { primary(job) }, updating: { downloadUpdate(job) })
+    }
+    private func shareAction(_ job: DownloadJob) -> [RevealAction] {
+        guard job.status == .completed, let file = manager.fileURL(job) else { return [] }
+        return [RevealAction(title: "分享", systemImage: "square.and.arrow.up", tint: .accentColor, role: nil) {
+            share = SharedFile(url: file)
+        }]
     }
     private func downloadUpdate(_ job: DownloadJob) {
         UX.feedback()
@@ -300,7 +304,7 @@ struct DownloadsView: View {
                     ForEach(Array(visible.enumerated()), id: \.element.id) { index, job in
                         Section {
                             // One row in both modes, so entering edit mode slides the
-                            // selection mark in and the share button out.
+                            // selection mark in.
                             HStack(spacing: 12) {
                                 if edit {
                                     Image(systemName: selection.contains(job.id) ? "checkmark.circle.fill" : "circle")
@@ -322,8 +326,10 @@ struct DownloadsView: View {
                             }
                             .accessibilityElement(children: .contain)
                             .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
-                            .revealDelete(id: "download." + job.id.uuidString,
-                                          enabled: !edit && !actionBusy && job.status != .processing && job.status != .pausing) { askDelete([job.id]) }
+                            // Swipe for Delete (full swipe) and, with a file, Share: the row keeps its room for the version.
+                            .revealActions(id: "download." + job.id.uuidString,
+                                           enabled: !edit && !actionBusy && job.status != .processing && job.status != .pausing,
+                                           [.delete { askDelete([job.id]) }] + shareAction(job))
                             .contextMenu {
                                 if !edit {
                                     if let latest = updates[job.id] {
@@ -490,11 +496,9 @@ struct DownloadTaskRow: View {
     var update: StoreApp? = nil
     /// Kept at this version: no update reminders.
     var kept = false
-    /// In edit mode the share button steps aside to leave the row room.
     var editing = false
     var inspecting: () -> Void
     var primary: () -> Void
-    var exporting: () -> Void
     var updating: () -> Void = {}
     private var displayedApp: StoreApp {
         job.displayApp(packageIcon: manager.packageIconURL(job))
@@ -598,24 +602,11 @@ struct DownloadTaskRow: View {
         case .failed:
             RowCapsule(title: "重试", action: primary)
         case .completed:
-            HStack(spacing: 8) {
-                if job.rawFormat == nil {
-                    Button("安装", action: primary)
-                        .buttonStyle(CapsuleButtonStyle(filled: true))
-                        .accessibilityIdentifier("download.install." + job.app.id)
-                }
-                if !editing {
-                    Button(action: exporting) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.body.weight(.semibold))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(RevealRowButtonStyle())
-                    .accessibilityLabel("分享")
-                    .accessibilityIdentifier("download.export." + job.app.id)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
+            // Share moved into the row's swipe actions.
+            if job.rawFormat == nil {
+                Button("安装", action: primary)
+                    .buttonStyle(CapsuleButtonStyle(filled: true))
+                    .accessibilityIdentifier("download.install." + job.app.id)
             }
         }
     }
