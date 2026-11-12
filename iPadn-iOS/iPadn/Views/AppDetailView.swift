@@ -24,7 +24,7 @@ struct AppDetailView: View {
     @State private var metadataLoading = Set<String>()
     @State private var metadataFailures = 0
     @State private var metadataStopped = false
-    /// Long histories start with the newest ten versions.
+    /// Long histories start with the newest five versions.
     @State private var showAllVersions = false
     /// Release notes by version number, from the App Store page's version history.
     @State private var releaseNotes: [String: ReleaseNote] = [:]
