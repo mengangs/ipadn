@@ -255,6 +255,7 @@ final class DownloadManager: NSObject, ObservableObject {
         applyNetworkRule()
         updateBackgroundTask()
         schedule()
+        DownloadActivity.shared.attach(self, enabled: settings.downloadLiveActivity)
     }
 
     private func startPathMonitor() {
