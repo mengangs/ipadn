@@ -260,6 +260,9 @@ struct DownloadsView: View {
                     .listRowBackground(Color.clear).listRowSeparator(.hidden)
                 }
                 if let error = manager.storageError { Section { InlineIssue(message: error) } }
+            if manager.waitingForWiFi, manager.jobs.contains(where: { [.queued, .pausing].contains($0.status) }) {
+                Section { WiFiWaitRow() }
+            }
                 if let warning = manager.discoveryWarning { Section { InlineIssue(message: warning) } }
                 if let warning = manager.saveWarning { Section { InlineIssue(message: warning) } }
                 if visible.isEmpty {

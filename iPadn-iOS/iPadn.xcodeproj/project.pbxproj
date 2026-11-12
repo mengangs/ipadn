@@ -179,6 +179,26 @@
 			isa = PBXBuildFile;
 			fileRef = 03223D703FED7749D0182600;
 		};
+		13CED9008CBE668A4EA6BA76 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/DownloadActivity.swift";
+			sourceTree = "<group>";
+		};
+		0B798648110D3E2411FCDAA4 = {
+			isa = PBXBuildFile;
+			fileRef = 13CED9008CBE668A4EA6BA76;
+		};
+		915A2E41DF6387F7AB848588 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/DownloadActivityAttributes.swift";
+			sourceTree = "<group>";
+		};
+		56644B3E8FC3F4757AB71784 = {
+			isa = PBXBuildFile;
+			fileRef = 915A2E41DF6387F7AB848588;
+		};
 		F8027934C71C79D0C4556300 = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -449,6 +469,16 @@
 			isa = PBXBuildFile;
 			fileRef = 51D958971B0F3CA6069C330F;
 		};
+		466D597620E6DD9E4CE9BA7C = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/AutoInstall.swift";
+			sourceTree = "<group>";
+		};
+		4A9662AA68301F38F18D0A3B = {
+			isa = PBXBuildFile;
+			fileRef = 466D597620E6DD9E4CE9BA7C;
+		};
 		C378265D29DC31EA6BC9A4BB = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -628,6 +658,16 @@
 		C6D0230308EF258E44323DB5 = {
 			isa = PBXBuildFile;
 			fileRef = 07B91807410A843BBA1314A5;
+		};
+		8FFC3DA4E441E51F10BB4BDD = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/TranslateButton.swift";
+			sourceTree = "<group>";
+		};
+		6A154E22B7CCF6928D3D30BF = {
+			isa = PBXBuildFile;
+			fileRef = 8FFC3DA4E441E51F10BB4BDD;
 		};
 		8A4DEA75A35CD9D1C0FF762C = {
 			isa = PBXFileReference;
@@ -1169,6 +1209,8 @@
 				77BE20F05C95CF0C3CDD1102,
 				135F5A5E3C8029531EAFCC61,
 				03223D703FED7749D0182600,
+				13CED9008CBE668A4EA6BA76,
+				915A2E41DF6387F7AB848588,
 				F8027934C71C79D0C4556300,
 				BCDB149703DDF289FBA19140,
 				3228CD82BBADE4C6F497128C,
@@ -1196,6 +1238,7 @@
 				179AE521F9E371EE4200EDB4,
 				64ED8F7AAAC933FAC771090F,
 				51D958971B0F3CA6069C330F,
+				466D597620E6DD9E4CE9BA7C,
 				C378265D29DC31EA6BC9A4BB,
 				A1E708F62865C66C68AA85E9,
 				8F1179CCA505E90A3DE9BA29,
@@ -1214,6 +1257,7 @@
 				B8B5827DB7B30C5EF9E4CE8E,
 				2A6123AA668AF32CCFD14F3B,
 				07B91807410A843BBA1314A5,
+				8FFC3DA4E441E51F10BB4BDD,
 				8A4DEA75A35CD9D1C0FF762C,
 				D05E572A50390E96676EFEC2,
 				8FEB83A29956DE0B59952846,
@@ -1309,6 +1353,8 @@
 				DF17CC0ED5E25791D522742C,
 				D049070A4AAA6DF92E0DC832,
 				D9FE40E25730AE6E6B295708,
+				0B798648110D3E2411FCDAA4,
+				56644B3E8FC3F4757AB71784,
 				7C04EA5E4EC7AB7D31EE0AE7,
 				BF33CC061A259701E2392CC4,
 				BA280790D649F882F8B296E5,
@@ -1336,6 +1382,7 @@
 				7532C26779F64E89AE34C747,
 				81760043801C5EA796AC3B07,
 				5B43C4134FAB32D4721B5D05,
+				4A9662AA68301F38F18D0A3B,
 				BBA95D751DB25B4ECFB64D15,
 				E03C6E916BCB77F54CB0D996,
 				94FC099DDAA41D79877704E8,
@@ -1354,6 +1401,7 @@
 				E68DE723119F75E73EA2FB8A,
 				8EC9B11F6D5AB55D221E9B4F,
 				C6D0230308EF258E44323DB5,
+				6A154E22B7CCF6928D3D30BF,
 				5B8632E80D35F5043533FD9E,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1546,6 +1594,8 @@
 				IPADN_NATIVE_LDFLAGS = "";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
+					"-weak_framework",
+					Translation,
 					"$(IPADN_MACPKG_LDFLAGS)",
 					"$(IPADN_NATIVE_LDFLAGS)",
 				);
@@ -1585,6 +1635,8 @@
 				IPADN_NATIVE_LDFLAGS = "";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
+					"-weak_framework",
+					Translation,
 					"$(IPADN_MACPKG_LDFLAGS)",
 					"$(IPADN_NATIVE_LDFLAGS)",
 				);
@@ -1825,6 +1877,26 @@
 			isa = PBXBuildFile;
 			fileRef = B9B6E775C9E3807FECDDBF17;
 		};
+		F3696AC574B11DA928CB0594 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = DownloadActivityAttributes.swift;
+			sourceTree = "<group>";
+		};
+		ECA8DAB969CA45AA8BB873DB = {
+			isa = PBXBuildFile;
+			fileRef = F3696AC574B11DA928CB0594;
+		};
+		5DADD55B273D7BFE271F15A5 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = DownloadLiveActivity.swift;
+			sourceTree = "<group>";
+		};
+		12F6806C5D9416C0ED1FF953 = {
+			isa = PBXBuildFile;
+			fileRef = 5DADD55B273D7BFE271F15A5;
+		};
 		22BBF0B88BEA14A3FDE85551 = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -1873,6 +1945,8 @@
 			isa = PBXGroup;
 			children = (
 				B9B6E775C9E3807FECDDBF17,
+				F3696AC574B11DA928CB0594,
+				5DADD55B273D7BFE271F15A5,
 				22BBF0B88BEA14A3FDE85551,
 				A6453BEED269FDBE2052F83D,
 				947188B458A1FB28E930E1FF,
@@ -1886,6 +1960,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				DFBC772F97669146C26EDECB,
+				ECA8DAB969CA45AA8BB873DB,
+				12F6806C5D9416C0ED1FF953,
 				C7ABAF1B8A596D9B74056CBE,
 				286B99F3F2D6620776189450,
 			);
