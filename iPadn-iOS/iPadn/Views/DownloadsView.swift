@@ -110,7 +110,6 @@ struct DownloadsView: View {
                                     .accessibilityIdentifier("download.select." + job.id.uuidString)
                             }
                         }
-                        .modifier(DrawerRow(shown: cardsShown || reduceMotion, index: index, travel: 28))
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
                         .revealDelete(id: "download." + job.id.uuidString,
@@ -149,6 +148,8 @@ struct DownloadsView: View {
                                 }
                             }
                         }
+                        // Outside the card background, so the whole card slides.
+                        .modifier(DrawerRow(shown: cardsShown || reduceMotion, index: index, travel: 28))
                     } header: {
                         if job.id == visible.first?.id {
                             HStack(alignment: .firstTextBaseline) {
