@@ -55,6 +55,11 @@ struct UndoNotice: Identifiable {
 }
 
 @MainActor
+final class TabState: ObservableObject {
+    @Published var selection = 0
+}
+
+@MainActor
 final class ToolStore: ObservableObject {
     let signer = SAPSigner()
     let versions = VersionService()
@@ -72,7 +77,14 @@ final class ToolStore: ObservableObject {
             if oldValue.store != settings.store, hasSearched { search() }
         }
     }
-    @Published var tab = 0
+    /// The selected tab lives in its own object: only the tab bar observes
+    /// it, so switching tabs doesn't make every page that watches the store
+    /// rebuild (issue #41).
+    let tabs = TabState()
+    var tab: Int {
+        get { tabs.selection }
+        set { tabs.selection = newValue }
+    }
     @Published var searchText = ""
     @Published private(set) var searchError: String?
     @Published private(set) var lastSearchTerm = ""
