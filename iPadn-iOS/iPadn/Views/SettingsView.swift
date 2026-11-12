@@ -145,6 +145,8 @@ struct SettingsView: View {
                 Picker("搜索结果数量", selection: $store.settings.searchLimit) {
                     ForEach([10, 30, 50, 100, 200], id: \.self) { Text("\($0)").tag($0) }
                 }
+                Toggle("在搜索页显示「发现」", isOn: $store.settings.showDiscover.animation())
+                    .accessibilityIdentifier("settings.show-discover")
                 Picker("外观", selection: $store.settings.appearance) {
                     Text("跟随系统").tag("system"); Text("浅色").tag("light"); Text("深色").tag("dark")
                 }

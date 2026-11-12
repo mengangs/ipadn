@@ -264,17 +264,18 @@ final class InteractionTests: XCTestCase {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview"]
         app.launch()
+        // Recent searches are chips; a long press offers Delete.
         let history = app.buttons["history.效率工具"]
-        XCTAssertTrue(history.waitForExistence(timeout: 10)); revealActions(on: history)
+        XCTAssertTrue(history.waitForExistence(timeout: 10))
+        history.press(forDuration: 1.0)
         XCTAssertTrue(app.buttons["删除"].firstMatch.waitForExistence(timeout: 5))
-        attach("11-history-swipe", app: app)
-        // Tapping the displaced card closes its actions without submitting
-        // the history query; the row must remain and the operation disappear.
-        history.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        attach("11-history-menu", app: app)
+        // Dismissing the menu leaves the chip and runs no search.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
         let closed = NSPredicate(format: "exists == false")
         expectation(for: closed, evaluatedWith: app.buttons["删除"].firstMatch)
         waitForExpectations(timeout: 5)
-        XCTAssertTrue(history.exists)
+        XCTAssertTrue(history.waitForExistence(timeout: 5))
         let favorite = app.buttons["favorite.preview-app"]
         XCTAssertTrue(favorite.waitForExistence(timeout: 5))
         revealActions(on: favorite)
@@ -327,7 +328,8 @@ final class InteractionTests: XCTestCase {
         app.launch()
         let history = app.buttons["history.效率工具"]
         XCTAssertTrue(history.waitForExistence(timeout: 10))
-        revealActions(on: history)
+        history.press(forDuration: 1.0)
+        XCTAssertTrue(app.buttons["删除"].firstMatch.waitForExistence(timeout: 5))
         app.buttons["删除"].firstMatch.tap()
         let undo = app.buttons["notice.undo"]
         XCTAssertTrue(undo.waitForExistence(timeout: 5))
