@@ -146,6 +146,8 @@ private struct PreviewScreen: View {
             else if args.contains("--detail"), let app = store.favorites.first { NavigationStack { AppDetailView(app: app) } }
             else if args.contains("--installation") { NavigationStack { InstallationSettingsView() } }
             else if args.contains("--support") { NavigationStack { SupportView() } }
+            else if args.contains("--lock") { AppLockScreen(lock: AppLock.shared).onAppear { AppLock.shared.showPreview() }
+                .preferredColorScheme(store.settings.appearance == "dark" ? .dark : .light) }
             else if args.contains("--installed") { NavigationStack { InstalledAppsView() } }
             else { RootView() }
         }

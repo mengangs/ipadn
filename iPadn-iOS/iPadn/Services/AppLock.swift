@@ -80,6 +80,11 @@ final class AppLock: ObservableObject {
         return (try? await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)) ?? false
     }
 
+    #if DEBUG
+    /// Screenshots of the lock screen without asking anyone to authenticate.
+    func showPreview() { locked = true }
+    #endif
+
     func unlock() async {
         guard locked, UIApplication.shared.applicationState == .active else { return }
         if await authenticate(reason: AppText.text("解锁 iPadn")) {
@@ -100,7 +105,7 @@ final class AppLock: ObservableObject {
             cover.windowLevel = .alert + 1
             cover.overrideUserInterfaceStyle = style
             let host = UIHostingController(rootView: AppLockScreen(lock: self))
-            host.view.backgroundColor = .systemGroupedBackground
+            host.view.backgroundColor = .systemBackground
             cover.rootViewController = host
             cover.makeKeyAndVisible()
             window = cover
@@ -114,23 +119,79 @@ final class AppLock: ObservableObject {
 
 struct AppLockScreen: View {
     @ObservedObject var lock: AppLock
-    var body: some View {
-        VStack(spacing: 18) {
-            Spacer()
-            Image(systemName: "lock.fill").font(.system(size: 44, weight: .semibold)).foregroundStyle(.secondary)
-            Text("iPadn 已锁定").font(.title2.weight(.semibold))
-            Spacer()
-            if lock.locked {
-                Button { Task { await lock.unlock() } } label: {
-                    Text(AppLock.unlockTitle).frame(maxWidth: .infinity, minHeight: 50)
-                }
-                .buttonStyle(.borderedProminent).tint(UX.tint)
-                .padding(.horizontal, 32)
-                .accessibilityIdentifier("appLock.unlock")
-            }
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var shown = false
+    /// The icon the Home Screen shows: its style, and its light or dark look.
+    private let icon = AppIconService().current
+    private var brand: String { icon.style.preview }
+    private var iconScheme: ColorScheme {
+        switch icon.theme {
+        case .light: return .light
+        case .dark: return .dark
+        case .automatic: return UIScreen.main.traitCollection.userInterfaceStyle == .dark ? .dark : .light
         }
-        .padding(.bottom, 40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
+    }
+    private var symbol: String {
+        switch AppLock.method {
+        case .faceID: return "faceid"
+        case .touchID: return "touchid"
+        default: return "lock.open.fill"
+        }
+    }
+    var body: some View {
+        ZStack {
+            background
+            VStack(spacing: 0) {
+                Spacer()
+                VStack(spacing: 18) {
+                    Image(brand).resizable().scaledToFit().frame(width: 92, height: 92)
+                        .clipShape(RoundedRectangle(cornerRadius: 92 * UX.iconCorner, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 92 * UX.iconCorner, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+                        .environment(\.colorScheme, iconScheme)
+                        .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0.18), radius: 22, y: 10)
+                        .accessibilityHidden(true)
+                    Text(verbatim: "iPadn").font(.system(.largeTitle, design: .rounded).weight(.bold))
+                    Label("已锁定", systemImage: "lock.fill")
+                        .font(.footnote.weight(.medium)).foregroundStyle(.secondary)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(.thinMaterial, in: Capsule())
+                }
+                .scaleEffect(shown ? 1 : 0.94).opacity(shown ? 1 : 0)
+                Spacer()
+                if lock.locked {
+                    Button { Task { await lock.unlock() } } label: {
+                        VStack(spacing: 12) {
+                            Image(systemName: symbol).font(.system(size: 34, weight: .regular))
+                                .frame(width: 76, height: 76)
+                                .background(.regularMaterial, in: Circle())
+                                .overlay(Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+                            Text(AppLock.unlockTitle).font(.subheadline.weight(.medium))
+                        }
+                        .foregroundStyle(.primary)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("appLock.unlock")
+                    .transition(.opacity)
+                }
+            }
+            .padding(.bottom, 56)
+        }
+        .onAppear { withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { shown = true } }
+    }
+
+    /// A quiet wash of grey with the brand mark blurred far behind.
+    private var background: some View {
+        ZStack {
+            Color(.systemBackground)
+            LinearGradient(colors: [Color(.secondarySystemBackground), Color(.systemBackground)],
+                           startPoint: .top, endPoint: .bottom)
+            Image(brand).resizable().scaledToFit().frame(width: 420, height: 420)
+                .environment(\.colorScheme, iconScheme)
+                .blur(radius: 90).opacity(colorScheme == .dark ? 0.35 : 0.12)
+                .offset(y: -120)
+        }
+        .ignoresSafeArea()
     }
 }

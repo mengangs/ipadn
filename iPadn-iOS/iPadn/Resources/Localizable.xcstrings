@@ -68313,76 +68313,6 @@
         }
       }
     },
-    "iPadn 已锁定": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn 已锁定"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn Is Locked"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn 已鎖定"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadnはロックされています"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn이 잠겨 있음"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn заблокировано"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn está bloqueada"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn est verrouillée"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn ist gesperrt"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "O iPadn está bloqueado"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn مقفل"
-          }
-        }
-      }
-    },
     "解锁 iPadn": {
       "localizations": {
         "zh-Hans": {
@@ -69079,6 +69009,76 @@
           "stringUnit": {
             "state": "translated",
             "value": "يطلب iPadn التحقق من هويتك عند فتحه أو عند العودة بعد فترة، ويخفي محتواه في مبدّل التطبيقات. تستمر التنزيلات في الخلفية."
+          }
+        }
+      }
+    },
+    "已锁定": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已锁定"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Locked"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已鎖定"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ロック中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잠김"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Заблокировано"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bloqueada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verrouillée"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesperrt"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bloqueado"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "مقفل"
           }
         }
       }
