@@ -29,7 +29,7 @@ final class DownloadManager: NSObject, ObservableObject {
     static var sessionID: String {
         (Bundle.main.bundleIdentifier ?? "app.local.iPadn") + ".background.downloads"
     }
-    @Published private(set) var jobs: [DownloadJob] = []
+    @Published private(set) var jobs: [DownloadJob] = [] { didSet { updateInstallKeepAlive() } }
     @Published var storageError: String?
     @Published private(set) var discoveryWarning: String?
     /// The last save failed (for example, the disk is full); cleared by the next successful save.
@@ -88,7 +88,22 @@ final class DownloadManager: NSObject, ObservableObject {
     /// so finished downloads install by themselves, also in the background.
     private var silentInstall = false
     private var silentQueue: [UUID] = []
-    private var silentRunning = false
+    private var silentRunning = false { didSet { updateInstallKeepAlive() } }
+    /// iOS suspends iPadn soon after it leaves the screen, which would stop the
+    /// install (and the Live Activity) until iPadn is opened again. From the
+    /// download to the end of its silent installation, iPadn keeps running.
+    private let installKeepAlive = BackgroundKeepAlive(name: "iPadn auto install")
+    private var keepingAlive = false
+    private func updateInstallKeepAlive() {
+        let busy = silentInstall && (silentRunning || !silentQueue.isEmpty || jobs.contains { job in
+            [.running, .queued, .processing].contains(job.status)
+                && job.rawFormat == nil && job.protectedMacPackage != true && job.sourceURL != nil
+        })
+        guard busy != keepingAlive else { return }
+        keepingAlive = busy
+        InstallLog.shared.add(busy ? "keeping iPadn running for the automatic install" : "automatic install keep-alive ended")
+        if busy { installKeepAlive.start() } else { installKeepAlive.stop() }
+    }
     /// A line for iPadn's top notice while it is open (notifications only
     /// appear in the background).
     @Published var autoInstallNotice: String?
@@ -301,6 +316,7 @@ final class DownloadManager: NSObject, ObservableObject {
         compatibleDownloadMode = settings.compatibleDownloadMode
         autoInstall = settings.autoInstall
         silentInstall = settings.autoInstall && settings.usesNativeInstallation
+        updateInstallKeepAlive()
         if !autoInstall { pendingAutoInstalls.removeAll(); silentQueue.removeAll() }
         wifiOnly = settings.wifiOnlyDownloads
         if wifiOnly { startPathMonitor() }

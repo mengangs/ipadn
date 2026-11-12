@@ -33,6 +33,26 @@ private extension DownloadActivityAttributes.ContentState {
     }
     var others: String? { count > 1 ? String(localized: "另有 \(count - 1) 个任务") : nil }
     var tint: Color { finished ? .green : .accentColor }
+    /// What is happening, at a glance in the compact Dynamic Island.
+    var symbol: String {
+        switch phase {
+        case 0: return "arrow.down"
+        case 1: return "shippingbox.fill"
+        case 2, 5: return "checkmark"
+        case 4: return "arrow.down.app.fill"
+        default: return "clock.fill"
+        }
+    }
+    /// A word or a percentage beside it.
+    var short: String {
+        switch phase {
+        case 0, 4: return fraction.formatted(.percent.precision(.fractionLength(0)))
+        case 1: return String(localized: "准备中")
+        case 2: return String(localized: "完成")
+        case 5: return String(localized: "已安装")
+        default: return String(localized: "等待")
+        }
+    }
 }
 
 private struct DownloadBar: View {
@@ -137,7 +157,14 @@ struct DownloadLiveActivity: Widget {
             } compactLeading: {
                 AppMarkView(size: 22)
             } compactTrailing: {
-                DownloadRing(state: state)
+                // The step (downloading, installing, done) and how far it is.
+                HStack(spacing: 3) {
+                    Image(systemName: state.symbol).font(.caption2.weight(.bold))
+                    Text(state.short).font(.caption.weight(.semibold)).monospacedDigit()
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                }
+                .foregroundStyle(state.tint)
+                .frame(maxWidth: 64)
             } minimal: {
                 DownloadRing(state: state)
             }

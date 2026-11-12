@@ -1,7 +1,10 @@
 import ActivityKit
 import Combine
 import Foundation
+import OSLog
 import UIKit
+
+private let activityLog = Logger(subsystem: "app.local.iPadn", category: "LiveActivity")
 
 /// Keeps the download Live Activity in step with the download list
 /// (Settings › Downloads › Live Activity).
@@ -65,7 +68,7 @@ final class DownloadActivity {
             activity = nil; lastSent = nil; shownIDs = []
             let done = DownloadActivityAttributes.ContentState(phase: 5, name: installed, count: 0, written: 1000, expected: 1000,
                                                                updated: Date(), estimatedEnd: nil)
-            Task { await current.end(ActivityContent(state: done, staleDate: nil), dismissalPolicy: .after(.now + 600)) }
+            finish(current, with: done)
             return
         }
         // Downloaded and about to install silently: keep the activity for the install.
@@ -83,7 +86,7 @@ final class DownloadActivity {
                 var done = current.content.state
                 done.phase = 2; done.count = 0; done.written = max(done.written, done.expected)
                 done.updated = Date(); done.estimatedEnd = nil
-                Task { await current.end(ActivityContent(state: done, staleDate: nil), dismissalPolicy: .after(.now + 600)) }
+                finish(current, with: done)
             } else {
                 Task { await current.end(nil, dismissalPolicy: .immediate) }
             }
@@ -131,7 +134,35 @@ final class DownloadActivity {
         let interval: TimeInterval = state.phase == 4 ? 1 : 5
         guard changed || Date().timeIntervalSince(lastSentAt) >= interval else { return }
         lastSent = state; lastSentAt = Date()
-        Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+        if changed { activityLog.notice("LA update phase \(state.phase) \(state.name, privacy: .public) bg=\(UIApplication.shared.applicationState != .active)") }
+        // Starting to install: the Dynamic Island opens briefly to say so.
+        let alert = changed && state.phase == 4 && last?.phase != 4 ? Self.alert(state) : nil
+        Task { await activity.update(ActivityContent(state: state, staleDate: nil), alertConfiguration: alert) }
+    }
+
+    /// Shows the final state (downloaded or installed) in the Dynamic Island
+    /// for several seconds, then ends the activity; the Lock Screen keeps it a while.
+    /// Ending at once would take it off the Dynamic Island before it is seen.
+    @available(iOS 16.2, *)
+    private func finish(_ activity: Activity<DownloadActivityAttributes>, with state: DownloadActivityAttributes.ContentState) {
+        let task = BackgroundTime()
+        activityLog.notice("LA finish phase \(state.phase) bg=\(UIApplication.shared.applicationState != .active)")
+        Task {
+            await activity.update(ActivityContent(state: state, staleDate: nil), alertConfiguration: Self.alert(state))
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .after(.now + 600))
+            task.end()
+        }
+    }
+
+    @available(iOS 16.2, *)
+    private static func alert(_ state: DownloadActivityAttributes.ContentState) -> AlertConfiguration {
+        let title: LocalizedStringResource = switch state.phase {
+        case 2: "下载完成"
+        case 4: "正在安装"
+        default: "已安装"
+        }
+        return AlertConfiguration(title: title, body: LocalizedStringResource(String.LocalizationValue(state.name)), sound: .default)
     }
 
     private func startTimer() {
@@ -144,4 +175,16 @@ final class DownloadActivity {
     }
 
     private func stopTimer() { timer?.invalidate(); timer = nil }
+}
+
+
+/// A little time in the background to finish what was started.
+@MainActor
+private final class BackgroundTime {
+    private var id = UIBackgroundTaskIdentifier.invalid
+    init() { id = UIApplication.shared.beginBackgroundTask { [weak self] in self?.end() } }
+    func end() {
+        guard id != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(id); id = .invalid
+    }
 }
