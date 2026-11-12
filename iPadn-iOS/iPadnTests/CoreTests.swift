@@ -914,6 +914,27 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(InstalledAppsView.isUpdate(latest, installed: "10.1", versionID: nil))
     }
 
+    func testPackageInfoReadsDeclarations() {
+        let info = PackageInfoService.describe([
+            "CFBundleDisplayName": "Demo", "CFBundleIdentifier": "com.example.demo",
+            "CFBundleShortVersionString": "2.1", "CFBundleVersion": "210", "MinimumOSVersion": "16.0",
+            "NSCameraUsageDescription": "Scan codes", "NSLocationWhenInUseUsageDescription": "Nearby stores",
+            "NSSomethingNew": "not a permission",
+            "CFBundleURLTypes": [["CFBundleURLSchemes": ["demo", "demo-auth"]], ["CFBundleURLSchemes": ["demo"]]],
+            "UIBackgroundModes": ["remote-notification", "audio"],
+        ])
+        XCTAssertEqual(info.name, "Demo")
+        XCTAssertEqual(info.permissions.map(\.key), ["NSCameraUsageDescription", "NSLocationWhenInUseUsageDescription"])
+        XCTAssertEqual(info.permissions.first?.reason, "Scan codes")
+        XCTAssertEqual(info.urlSchemes, ["demo", "demo-auth"])
+        XCTAssertEqual(info.backgroundModes, ["audio", "remote-notification"])
+        XCTAssertTrue(PackageInfoService.isExtensionInfo("PlugIns/Widget.appex/Info.plist"))
+        XCTAssertFalse(PackageInfoService.isExtensionInfo("PlugIns/Widget.appex/en.lproj/Info.plist"))
+        XCTAssertEqual(PackageInfoService.languages(in: ["en.lproj/Main.strings", "zh-Hans.lproj/x", "Base.lproj/y", "Assets.car"]), ["en", "zh-Hans"])
+        XCTAssertNil(PackageInfoService.permissionName("NSSomethingNewUsageDescription"))
+        XCTAssertNotNil(PackageInfoService.extensionKind("com.apple.widgetkit-extension"))
+    }
+
     func testRegionLocalesFindTheirScript() {
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh_CN")), "免费")
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh-Hans_CN")), "免费")
