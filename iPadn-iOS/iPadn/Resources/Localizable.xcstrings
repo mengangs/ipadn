@@ -67053,76 +67053,6 @@
         }
       }
     },
-    "读取本机应用需要原生安装：先完成配对，并在 LocalDevVPN 中连接。": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "读取本机应用需要原生安装：先完成配对，并在 LocalDevVPN 中连接。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reading the apps on this device uses Native Install: pair first, then connect in LocalDevVPN."
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "讀取本機 App 需要原生安裝：先完成配對，並在 LocalDevVPN 中連線。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このデバイスの App を読み込むにはネイティブインストールを使います。先にペアリングし、LocalDevVPN で接続してください。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이 기기의 앱을 읽으려면 네이티브 설치가 필요합니다. 먼저 페어링한 후 LocalDevVPN에서 연결하세요."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Для чтения приложений нужна нативная установка: сначала создайте пару, затем подключитесь в LocalDevVPN."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Para leer las apps del dispositivo se usa la instalación nativa: empareja primero y conéctate en LocalDevVPN."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La lecture des apps de l’appareil utilise l’installation native : jumelez d’abord, puis connectez-vous dans LocalDevVPN."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zum Lesen der Apps wird die native Installation genutzt: Kopple zuerst und verbinde dich dann in LocalDevVPN."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Para ler os apps do dispositivo é usada a instalação nativa: emparelhe primeiro e conecte no LocalDevVPN."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تتطلب قراءة التطبيقات على هذا الجهاز التثبيت الأصلي: أكمل الإقران أولًا، ثم اتصل في LocalDevVPN."
-          }
-        }
-      }
-    },
     "前往安装设置": {
       "localizations": {
         "zh-Hans": {
@@ -67539,6 +67469,426 @@
           "stringUnit": {
             "state": "translated",
             "value": "تُقرأ قائمة التطبيقات المثبّتة على هذا الجهاز فقط. للتحقق من التحديثات، يسأل iPadn شركة Apple عن إصدارات هذه التطبيقات في المتجر."
+          }
+        }
+      }
+    },
+    "需要先完成原生安装配对": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要先完成原生安装配对"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pair for Native Install First"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要先完成原生安裝配對"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先にネイティブインストールのペアリングが必要です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "먼저 네이티브 설치 페어링이 필요합니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сначала создайте пару для нативной установки"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primero empareja para la instalación nativa"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jumelez d’abord pour l’installation native"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zuerst für die native Installation koppeln"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primeiro emparelhe para a instalação nativa"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أكمل إقران التثبيت الأصلي أولًا"
+          }
+        }
+      }
+    },
+    "本机应用借助原生安装读取手机上已装的应用。在安装设置中完成一次配对后即可使用。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机应用借助原生安装读取手机上已装的应用。在安装设置中完成一次配对后即可使用。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps on This Device reads the apps installed on this phone through Native Install. Pair once in Installation settings to use it."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本機 App 藉由原生安裝讀取手機上已安裝的 App。在安裝設定中完成一次配對後即可使用。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このデバイスの App は、ネイティブインストールを使ってインストール済みの App を読み込みます。インストール設定で一度ペアリングすると使えます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 기기의 앱은 네이티브 설치를 통해 설치된 앱을 읽습니다. 설치 설정에서 한 번 페어링하면 사용할 수 있습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Раздел читает установленные приложения через нативную установку. Создайте пару один раз в настройках установки."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta sección lee las apps instaladas mediante la instalación nativa. Empareja una vez en los ajustes de instalación para usarla."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette section lit les apps installées via l’installation native. Jumelez une fois dans les réglages d’installation pour l’utiliser."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Bereich liest die installierten Apps über die native Installation. Kopple einmal in den Installationseinstellungen, um ihn zu nutzen."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta seção lê os apps instalados pela instalação nativa. Emparelhe uma vez nos ajustes de instalação para usá-la."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يقرأ هذا القسم التطبيقات المثبّتة عبر التثبيت الأصلي. أكمل الإقران مرة واحدة في إعدادات التثبيت لاستخدامه."
+          }
+        }
+      }
+    },
+    "需要连接 LocalDevVPN": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要连接 LocalDevVPN"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect LocalDevVPN"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要連線 LocalDevVPN"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LocalDevVPN に接続してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LocalDevVPN에 연결하세요"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключите LocalDevVPN"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conecta LocalDevVPN"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connectez LocalDevVPN"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LocalDevVPN verbinden"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conecte o LocalDevVPN"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "اتصل بـ LocalDevVPN"
+          }
+        }
+      }
+    },
+    "本机应用通过 LocalDevVPN 读取手机上已装的应用。打开 LocalDevVPN 并点按连接，回到 iPadn 后会自动读取。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机应用通过 LocalDevVPN 读取手机上已装的应用。打开 LocalDevVPN 并点按连接，回到 iPadn 后会自动读取。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps on This Device reads installed apps through LocalDevVPN. Open LocalDevVPN and tap Connect; iPadn reads the list when you come back."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本機 App 透過 LocalDevVPN 讀取手機上已安裝的 App。打開 LocalDevVPN 並點一下連線，回到 iPadn 後會自動讀取。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このデバイスの App は LocalDevVPN を通じてインストール済みの App を読み込みます。LocalDevVPN を開いて接続をタップし、iPadn に戻ると自動で読み込みます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 기기의 앱은 LocalDevVPN을 통해 설치된 앱을 읽습니다. LocalDevVPN을 열고 연결을 탭한 뒤 iPadn으로 돌아오면 자동으로 읽습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Раздел читает установленные приложения через LocalDevVPN. Откройте LocalDevVPN и нажмите «Подключить» — при возвращении iPadn прочитает список."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta sección lee las apps instaladas a través de LocalDevVPN. Abre LocalDevVPN y toca Conectar; al volver, iPadn leerá la lista."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette section lit les apps installées via LocalDevVPN. Ouvrez LocalDevVPN et touchez Connecter ; iPadn lira la liste à votre retour."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Bereich liest installierte Apps über LocalDevVPN. Öffne LocalDevVPN und tippe auf „Verbinden“; beim Zurückkehren liest iPadn die Liste."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta seção lê os apps instalados pelo LocalDevVPN. Abra o LocalDevVPN e toque em Conectar; ao voltar, o iPadn lê a lista."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يقرأ هذا القسم التطبيقات المثبّتة عبر LocalDevVPN. افتح LocalDevVPN واضغط «اتصال»، وسيقرأ iPadn القائمة عند عودتك."
+          }
+        }
+      }
+    },
+    "重新读取": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新读取"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try Again"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新讀取"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再読み込み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 읽기"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторить"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reintentar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réessayer"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut versuchen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tentar de novo"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إعادة المحاولة"
+          }
+        }
+      }
+    },
+    "需配对并连接 LocalDevVPN": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需配对并连接 LocalDevVPN"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs pairing and LocalDevVPN"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需配對並連線 LocalDevVPN"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペアリングと LocalDevVPN が必要"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "페어링 및 LocalDevVPN 필요"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нужны пара и LocalDevVPN"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requiere emparejar y LocalDevVPN"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jumelage et LocalDevVPN requis"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopplung und LocalDevVPN nötig"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requer emparelhamento e LocalDevVPN"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتطلب الإقران وLocalDevVPN"
           }
         }
       }

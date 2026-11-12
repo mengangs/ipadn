@@ -6,6 +6,7 @@ import SwiftUI
 /// came from.
 struct InstalledAppsView: View {
     @EnvironmentObject private var store: ToolStore
+    @Environment(\.scenePhase) private var scenePhase
     @State private var apps: [NativeInstaller.InstalledApp] = []
     @State private var listings: [String: StoreApp] = [:]
     @State private var loading = false
@@ -57,16 +58,13 @@ struct InstalledAppsView: View {
         let grouped = Dictionary(grouping: shown, by: group(of:))
         List {
             if !paired {
-                Section {
-                    Text("读取本机应用需要原生安装：先完成配对，并在 LocalDevVPN 中连接。")
-                        .font(.subheadline).foregroundStyle(.secondary)
-                    NavigationLink { InstallationSettingsView() } label: { Label("前往安装设置", systemImage: "arrow.down.app") }
-                }
+                requirement(title: "需要先完成原生安装配对",
+                            message: "本机应用借助原生安装读取手机上已装的应用。在安装设置中完成一次配对后即可使用。",
+                            retry: false)
             } else if let issue, apps.isEmpty {
-                Section {
-                    InlineIssue(message: issue) { Task { await load() } }
-                    NavigationLink { InstallationSettingsView() } label: { Label("前往安装设置", systemImage: "arrow.down.app") }
-                }
+                requirement(title: "需要连接 LocalDevVPN",
+                            message: "本机应用通过 LocalDevVPN 读取手机上已装的应用。打开 LocalDevVPN 并点按连接，回到 iPadn 后会自动读取。",
+                            retry: true, detail: issue)
             } else if loading && apps.isEmpty {
                 Section {
                     HStack(spacing: 10) { ProgressView(); Text("正在读取本机应用…").foregroundStyle(.secondary) }
@@ -96,7 +94,37 @@ struct InstalledAppsView: View {
         .toolPage().navigationTitle("本机应用").navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
         .task { if !loaded { await load() } }
+        // Back from LocalDevVPN: try again without asking.
+        .compatibleOnChange(of: scenePhase) { phase in
+            if phase == .active, issue != nil, apps.isEmpty { Task { await load() } }
+        }
         .overlay { if updating { ProgressView().padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
+    }
+
+    /// What this page needs, shown like a feature that waits for its setup
+    /// rather than an error.
+    @ViewBuilder private func requirement(title: LocalizedStringKey, message: LocalizedStringKey, retry: Bool, detail: String? = nil) -> some View {
+        Section {
+            VStack(spacing: 10) {
+                Image(systemName: "iphone.radiowaves.left.and.right")
+                    .font(.system(size: 40, weight: .regular)).foregroundStyle(.secondary)
+                    .padding(.bottom, 2).accessibilityHidden(true)
+                Text(title).font(.headline).multilineTextAlignment(.center)
+                Text(message).font(.subheadline).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                if retry {
+                    Button { Task { await load() } } label: {
+                        if loading { ProgressView() } else { Text("重新读取") }
+                    }
+                    .buttonStyle(CapsuleButtonStyle()).disabled(loading).padding(.top, 4)
+                    .accessibilityIdentifier("installed.retry")
+                }
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 14)
+            NavigationLink { InstallationSettingsView() } label: { Label("前往安装设置", systemImage: "arrow.down.app") }
+        } footer: {
+            if let detail { Text(detail) }
+        }
     }
 
     @ViewBuilder private func section(_ kind: Group, _ rows: [NativeInstaller.InstalledApp]) -> some View {
