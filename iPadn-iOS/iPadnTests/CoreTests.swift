@@ -1045,6 +1045,28 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(AppChart.free.feed(.tvOS))
     }
 
+    func testMacListingOfUniversalAppHidesIPhoneVersion() {
+        let universal: [String: Any] = ["trackId": 6747369377, "trackName": "EplayerX", "kind": "software", "version": "1.9.5", "fileSizeBytes": "130503680"]
+        let macOnly: [String: Any] = ["trackId": 497799835, "trackName": "Xcode", "kind": "mac-software", "version": "27.2", "fileSizeBytes": "3000000000"]
+        XCTAssertEqual(StoreService.mapMacLookup(universal).version, "")
+        XCTAssertEqual(StoreService.mapMacLookup(universal).size, 0)
+        XCTAssertEqual(StoreService.mapMacLookup(macOnly).version, "27.2")
+        XCTAssertEqual(StoreService.mapLookup(universal).version, "1.9.5")
+    }
+
+    func testOlderVersionIsRecognisedFromTheVersionList() throws {
+        var app = StoreApp(id: "1517062289", name: "bilibili")
+        app.externalVersionID = "873726575"
+        let asset = DownloadAsset(app: app, url: URL(string: "https://example.com/a.ipa")!,
+                                  externalVersionIDs: ["800000000", "873726575", "899000000"], platform: "iphone", account: "a")
+        var job = DownloadJob(app: app, asset: asset, status: .completed)
+        XCTAssertTrue(job.isOlderVersion)
+        job.app.externalVersionID = "899000000"
+        XCTAssertFalse(job.isOlderVersion)
+        job.asset = nil
+        XCTAssertFalse(job.isOlderVersion)
+    }
+
     func testRegionLocalesFindTheirScript() {
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh_CN")), "免费")
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh-Hans_CN")), "免费")

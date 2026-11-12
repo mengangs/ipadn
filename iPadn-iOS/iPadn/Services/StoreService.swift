@@ -147,7 +147,7 @@ enum StoreService {
                 // macSoftware is the native Mac App Store catalog. Exclude
                 // unrelated mobile-only results before showing Mac installers.
                 return try await searchEntities(store.platform.searchEntity)
-                    .filter(Self.supportsNativeMac).map(mapLookup)
+                    .filter(Self.supportsNativeMac).map(mapMacLookup)
             }
             guard store.platform == .tvOS else {
                 return try await searchEntities(store.platform.searchEntity).map(mapLookup)
@@ -170,7 +170,8 @@ enum StoreService {
                 URLQueryItem(name: "id", value: id), URLQueryItem(name: "country", value: store.country)
             ])
             let rows = (try await HTTPClient.shared.json(url) as? [String: Any])?["results"] as? [[String: Any]] ?? []
-            let apps = Self.idLookupMatches(rows, id: id, platform: store.platform).map(mapLookup)
+            let apps = Self.idLookupMatches(rows, id: id, platform: store.platform)
+                .map(store.platform == .macOS ? mapMacLookup : mapLookup)
             if !apps.isEmpty { return apps }
             return try await platformApp(id, store: store).map { [$0] } ?? []
         }
@@ -447,6 +448,16 @@ enum StoreService {
         let larger = "\(side)x\(side)\(suffix)" + (parts.count > 1 ? "." + parts[1] : "")
         return Screenshot(url: url.deletingLastPathComponent().appendingPathComponent(larger),
                           aspect: Double(width) / Double(height))
+    }
+
+    /// A Mac listing. For an app sold for iPhone and Mac together the lookup
+    /// reports the iPhone version and size ("kind" software); only a Mac-only
+    /// app ("mac-software") carries its Mac version. The Mac version then
+    /// comes from Apple's download offer instead of showing the iPhone one.
+    static func mapMacLookup(_ raw: [String: Any]) -> StoreApp {
+        var app = mapLookup(raw)
+        if plistString(raw["kind"]) != "mac-software" { app.version = ""; app.size = 0 }
+        return app
     }
 
     static func mapLookup(_ raw: [String: Any]) -> StoreApp {
