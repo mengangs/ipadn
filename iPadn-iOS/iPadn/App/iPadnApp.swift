@@ -84,6 +84,7 @@ struct iPadnApp: App {
         WindowGroup {
             appContent
                 .environmentObject(store)
+                .environmentObject(store.tabs)
                 .environmentObject(store.apple)
                 .environmentObject(store.downloads)
                 .environmentObject(store.signer)

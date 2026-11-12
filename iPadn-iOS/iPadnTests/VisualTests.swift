@@ -37,7 +37,7 @@ final class VisualTests: XCTestCase {
     @MainActor
     private func capture<V: View>(_ name: String, view: V, store: ToolStore, size: CGSize = CGSize(width: 390, height: 844), dark: Bool = false, textSize: DynamicTypeSize = .large, regular: Bool = false) async throws {
         let content = view
-            .environmentObject(store).environmentObject(store.apple).environmentObject(store.downloads).environmentObject(store.signer)
+            .environmentObject(store).environmentObject(store.tabs).environmentObject(store.apple).environmentObject(store.downloads).environmentObject(store.signer)
             .environment(\.colorScheme, dark ? .dark : .light)
             .environment(\.dynamicTypeSize, textSize)
             .environment(\.horizontalSizeClass, regular ? .regular : .compact)
