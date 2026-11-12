@@ -914,6 +914,16 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(InstalledAppsView.isUpdate(latest, installed: "10.1", versionID: nil))
     }
 
+    func testAppLockSettingsDecode() throws {
+        XCTAssertFalse(ToolSettings().appLock)
+        let saved = try JSONDecoder().decode(ToolSettings.self, from: Data(#"{"appLock":true,"appLockDelay":99999}"#.utf8))
+        XCTAssertTrue(saved.appLock)
+        XCTAssertEqual(saved.appLockDelay, 3600)
+        let old = try JSONDecoder().decode(ToolSettings.self, from: Data("{}".utf8))
+        XCTAssertFalse(old.appLock)
+        XCTAssertEqual(old.appLockDelay, 0)
+    }
+
     func testRegionLocalesFindTheirScript() {
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh_CN")), "免费")
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh-Hans_CN")), "免费")

@@ -65,6 +65,14 @@ struct iPadnApp: App {
         RootView()
         #endif
     }
+    private var lockSettings: String {
+        "\(store.settings.appLock)-\(store.settings.appLockDelay)-\(store.settings.appearance)"
+    }
+    private func configureLock(launching: Bool) {
+        guard !LocalResources.isPreview else { return }
+        AppLock.shared.configure(enabled: store.settings.appLock, delay: store.settings.appLockDelay,
+                                 appearance: store.settings.appearance, launching: launching)
+    }
     var body: some Scene {
         WindowGroup {
             appContent
@@ -75,12 +83,16 @@ struct iPadnApp: App {
                 .tint(UX.tint)
                 .toggleStyle(TintedSwitchToggleStyle())
                 .onOpenURL { store.handleURL($0) }
+                .onAppear { configureLock(launching: true) }
+                .task { if !LocalResources.isPreview { await AppLock.shared.unlock() } }
+                .compatibleOnChange(of: lockSettings) { _ in configureLock(launching: false) }
                 .task {
                     guard !LocalResources.isPreview, store.settings.appUpdateCheck else { return }
                     await store.checkAppUpdate()
                 }
         }
         .onChange(of: scenePhase) { phase in
+            if !LocalResources.isPreview { AppLock.shared.sceneChanged(to: phase) }
             guard phase == .background, !LocalResources.isPreview else { return }
             // Session cookies kept in memory must survive the app being closed.
             store.apple.saveLiveCookies()
