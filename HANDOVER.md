@@ -1,6 +1,6 @@
 # iPadn 项目全面交接与问题排查文档 (HANDOVER.md)
 
-> **更新时间**：2026-11-11
+> **更新时间**：2026-11-12
 > **代码仓库**：`https://github.com/mengangs/ipadn.git` (`main` 分支)  
 > **本地工作区**：`D:\iOS-Dev\projects\ipadn` (映射到 WSL2: `/mnt/d/iOS-Dev/projects/ipadn`)  
 > **目标产品**：iOS 原生应用 `iPadn` (`app.local.iPadn`)
@@ -9,15 +9,51 @@
 
 ## 2026-11-12 未发布（main，下一版）
 
-已合并进 `main`、尚未发版（用户要几轮优化后一起发）。版本号仍是 1.9.2（build 27），发版前需要升版本并写 `RELEASE_NOTES.md`。
+已合并进 `main`、尚未发版（用户要几轮优化后一起发）。版本号仍是 1.9.2（build 27），发版前需要升版本并写 `RELEASE_NOTES.md`。第三批功能已全部完成并合并；main 上的完整 CI（含全部 UI 测试）在合并 #58–#63 后通过，#64–#68 各自的分支 CI 均通过。
 
+### 第一、二批
 - **#42 一键全部更新**：下载页两个以上可更新时显示「全部更新」（`ToolStore.downloadAllUpdates`）。
-- **#45**：关注的付费应用可设目标价，降到目标价才提醒、限免照常提醒（`WatchRecord.target`、`WatchService.notifies`，设置里可关）；「备份与维护」导出/导入设置与关注（`AppBackup`，不含账号、令牌、安装包）；设置首页改成分类入口（`SettingsView.Page`）；关闭「新版本提醒」后下载页也不显示更新提示；版本卡片改为紧凑一行。
-- **#48 AltStore 源**：`altstore-source.json`（最近 10 个版本）由 `iPadn-iOS/scripts/generate_altstore_source.py` 生成，发布流程发版后自动更新并推送到 main。地址 `https://raw.githubusercontent.com/mengangs/ipadn/main/altstore-source.json`，尚未在真实签名工具中加载验证。
-- **#49 支持 iOS / iPadOS 16**（来自 tageniu 的 #47，保留其提交）：主程序最低 16.0，iOS 17 写法用 `compatible…` 封装（`DesignSystem.swift`），灵动岛扩展仍为 17。新代码里不要直接用 iOS 17 才有的 API（两参数 `onChange`、`symbolEffect`、`contentMargins` 等），改用这些封装。本地 xtool 构建的 `Package.swift` 仍是 `.v17`，所以本地编译查不出 iOS 16 问题，要靠 CI。没有 iOS 16 真机测试。
-- **决定不做**：分享扩展（多占 App ID、LiveContainer 不支持、跳转不可靠）。
-- **后续计划**：第二批「本机已装应用」（借原生安装配对列出已装 App、对比更新、修复云朵图标）；第三批再从 Wi-Fi 传输、灵动岛下载进度、发现页、小组件、版本对比、评论、安装包信息页、快捷指令、仅 Wi-Fi 下载、翻译、应用锁中挑选。加扩展类功能前先和用户确认 App ID 占用。
-- **CI 偶发失败**：`testLargeDownloadListsLaunchAndScroll`、`testSignerCancelResumesPendingJavaScript`、模拟器"Failed to terminate"、macOS 运行机排不上队，重跑即可。
+- **#45**：关注的付费应用可设目标价（`WatchRecord.target`、`WatchService.notifies`，设置里可关）；「备份与维护」导出/导入设置与关注（`AppBackup`，不含账号、令牌、安装包）；设置首页改成分类入口（`SettingsView.Page`）；关闭「新版本提醒」后下载页也不显示更新提示；版本卡片改为紧凑一行。
+- **#48 AltStore 源**：`altstore-source.json`（最近 10 个版本）由 `iPadn-iOS/scripts/generate_altstore_source.py` 生成，发版后自动更新并推送到 main；只取标准版安装包（名称不含 `-lite-`）。地址 `https://raw.githubusercontent.com/mengangs/ipadn/main/altstore-source.json`，尚未在真实签名工具中加载验证。
+- **#49 支持 iOS / iPadOS 16**（来自 tageniu 的 #47）：主程序最低 16.0，iOS 17 写法用 `compatible…` 封装（`DesignSystem.swift`），扩展仍为 17。新代码不要直接用 iOS 17 才有的 API。本地 xtool 构建的 `Package.swift` 是 `.v17`，查不出 iOS 16 问题，要靠 CI。没有 iOS 16 真机测试。
+- **#51 本机应用**（账号页）：借原生安装的配对列出已装应用，分组「可更新 / 链接安装 / App Store / 其他」，`InstalledAppsView`、Rust `iPadnNativeList`。需要 iOS 17.4+ 和配对文件。
+- **#52 图标崩溃修复**：不再解析安装包里的 `Assets.car`（网易云音乐会让 `UIImage(named:in:)` 断言崩溃）；扫描图标期间崩溃过的任务不再重复扫描（`packageIconScansInProgress`）。
+- **#53 下载页编辑模式**：紧凑列表、全选、抽屉式动画，两套列表常驻避免切换卡顿。
+
+### 第三批（全部完成）
+- **#55 安装包信息页**：任务详情 →「安装包信息」，权限（按含义合并）、扩展、语言、URL Scheme、后台模式、Watch / App Clip、框架（`PackageInfoService`、`PackageInfoView`）。
+- **#56 用户评论**：详情页「评论」卡片 + 全部评论页（星级筛选、地区切换、最多 500 条），来源 `itunes.apple.com/{cc}/rss/customerreviews`（`ReviewService`、`ReviewViews.swift`）。
+- **#57**：版本历史默认显示 5 个。
+- **#58 翻译**：简介和更新说明在 iOS 17.4+ 显示「翻译」，系统翻译面板「替换为译文」后可「显示原文」（`TranslateButton`，用 NaturalLanguage 判断是否外语）。`Translation` 弱链接（`-weak_framework Translation`），iOS 16 与 17.0–17.3 不受影响。
+- **#59 应用锁**：设置 →「应用锁」，面容 / 触控 ID / 密码，可选立即或 1/5/15 分钟后要求验证；锁屏是独立窗口，盖住所有弹窗，也遮住多任务预览；开关本身需要验证（`AppLock.swift`）。锁屏显示与桌面一致的图标样式和深浅。DEBUG 可用 `--visual-preview --lock` 截图。新增 `NSFaceIDUsageDescription`。
+- **#60 仅 Wi‑Fi 下载 / 下载完成自动安装**（设置 → 下载，默认关）：只有蜂窝时下载回到队列，连上 Wi‑Fi 自动继续，下载页可「仍使用蜂窝数据下载」；自动安装在 iPadn 位于前台且已解锁时弹出安装页并开始安装（`AutoInstall.swift`）。自动安装未在真机完整测试。
+- **#61 灵动岛 / 锁屏下载进度**：在原有扩展里新增 `DownloadLiveActivity`，不新增 App ID。后台时用 `ProgressView(timerInterval:)` 按测速估算，回前台校正；全部完成显示 10 分钟，暂停/删除立即结束（`DownloadActivity.swift`，设置可关）。DEBUG 可用 `--open-url=<链接>` 启动测试下载。
+- **#62 快捷指令动作**：下载应用、检查更新、下载全部更新、下载进度、暂停/继续全部、关注应用；两个 Siri 短语。本地 xtool 构建不生成 App Intents 元数据，只能用 CI 构建的安装包测试；尚未真机测试。
+- **#63 版本对比**（专业模式）：安装包信息页列出同一应用的其他已下载版本，对比版本、权限、扩展、框架、语言等增减（`PackageComparison`）。未真机测试（需要同一应用两个版本）。
+- **#64 发现页**：搜索页最近搜索和关注下面的「发现」：免费榜、付费榜、畅销榜，按当前地区和平台，可按分类筛选（`ChartService`，来源 `itunes.apple.com/{cc}/rss/top…applications`）。
+- **#65 Wi‑Fi 传输**（账号页）：同一 Wi‑Fi 下电脑浏览器下载已完成的安装包。只在页面打开且前台时运行，离开/后台/闲置 10 分钟停止；地址含 128 位随机密钥，20 次错误请求停止；只应答局域网地址；只读（`WiFiTransferServer`）。本地网络权限说明已更新。
+- **#66 桌面小组件 + 精简版**：扩展里加快捷入口小组件（小、中、锁屏圆形），通过 `ipadn://open?tab=…[&check=updates]` 打开，无 App Group、不读应用数据。发版同时发布 `iPadn-<版本>-lite-unsigned.ipa`（`scripts/make_lite_ipa.py` 去掉扩展，只需 1 个 App ID）；每次 CI 构建也会生成精简版。
+- **#67 LiveContainer 提示**（来自 issue #44）：在 LiveContainer 中运行时，下载页提示在 LiveContainer 里长按 iPadn 打开「修复文件导入」（Fix File Picker），之后才能导入导出和弹出系统安装窗口。DEBUG 可用 `--livecontainer` 显示。
+- **#68 阻止 App Store 更新**（来自 issue #46，未用系统漏洞）：原生安装页开关，开启后通过安装器的 `iTunesMetadata` 选项传入改过的购买记录（`softwareVersionExternalIdentifier` = 2000000000），安装包本身不改；关掉再装一次即可恢复更新。本机应用页标记「已阻止更新」。真机验证：版本号改旧 → App Store 显示「更新」，改高 → 显示「打开」，应用正常启动；用户在 iPadn 里实测有效。
+
+### Issues
+- #44、#46 已回复并关闭。仍开着：#54（iPhone duo 适配）、#41（iOS 18 卡顿）。
+- LiveContainer + 美区账号下载 401：仍在等用户的诊断信息。
+
+### 待排查：原生安装后 WQFiles / AppsManager 无法备份数据（2026-11-12 用户转述）
+- 现象：用 iPadn 原生安装的应用，WQFiles 无法备份，AppsManager-iOS27（基于 Apps Manager 1.8.4 的修改版）看不到它的数据大小；App Store 安装的可以。卸载（保留数据）后从 App Store 重新安装，仍然不行。报告者的 iPadn、WQFiles、AppsManager 都装在 LiveContainer 里；iOS 27.0.1。诊断日志没有相关信息。
+- 已查（2026-11-12，本机 iPhone，用电脑上的 installation_proxy 装 OneDrive 26.1.4 测试后已删除）：
+  - 所有用户应用（163 个）`IsHostBackupEligible` 都是 True，原生安装的也是，签名、购买记录与 App Store 安装一致。
+  - **每次 installation_proxy 安装或覆盖，应用都会换一个新的数据容器 UUID**（5852E224 → A23AE3F5 → 2F88D91A → 6F845DD3），系统记录（`Container`、`HOME`）始终指向新目录，数据会迁移。
+  - App Store 安装的应用有 `ParallelPlaceholderPath = True`，installation_proxy 安装的没有。
+  - 未能确认 App Store 更新是否也会换数据目录（App Store 缓存了更新状态，没能触发更新）。
+- 初步怀疑：这些工具在 iOS 27 上借漏洞直接扫描数据目录，可能找到旧的空目录或同一应用的多个目录；「卸载保留数据」会保留同一个目录，所以从 App Store 重装也不变。尚未证实。
+- 已请报告者提供：AppsManager 里该应用显示的数据路径截图；一个之前没装过、直接原生安装的应用能否备份；把出问题的应用彻底删除（不是保留数据卸载）后从 App Store 安装能否恢复。
+- 可能方向：确认 App Store 更新是否保留容器路径；看安装选项能否保留原容器或带上与 App Store 相同的标记。
+
+- **决定不做**：分享扩展（多占 App ID、LiveContainer 不支持、跳转不可靠）；带实时数据的小组件（需要 App Group，签名工具支持不一）。
+- **CI 偶发失败**：`testLargeDownloadListsLaunchAndScroll`、`testSignerCancelResumesPendingJavaScript`、`testHistoryDeletionCanBeUndone`、模拟器 "Failed to terminate" / "Failed to get background assertion"、构建时从 GitHub 克隆依赖失败、macOS 运行机排不上队，重跑即可。
+- **本地工具**：`.build/native-pair/` 下有 `update_branch.sh`（合并 main 并自动解决字符串目录和测试冲突）、`union_catalog.py`、`resolve_tests.py`、`resolve_both.py`、`set_version_id.py`、`probe_*.py`。Bash heredoc 会吃掉反斜杠，编辑脚本用文件写。
 
 ## 2026-11-11 iPadn 1.9.2（build 27）
 
