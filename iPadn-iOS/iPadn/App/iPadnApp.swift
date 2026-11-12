@@ -93,8 +93,9 @@ struct iPadnApp: App {
                 .onAppear { configureLock(launching: true) }
                 .task { if !LocalResources.isPreview { await AppLock.shared.unlock() } }
                 .compatibleOnChange(of: lockSettings) { _ in configureLock(launching: false) }
-                .onReceive(store.downloads.$pendingAutoInstalls) { _ in AutoInstall.presentNext(store) }
-                .onReceive(AppLock.shared.$locked) { locked in if !locked { AutoInstall.presentNext(store) } }
+                // @Published sends before the value changes: look once it has.
+                .onReceive(store.downloads.$pendingAutoInstalls) { _ in AutoInstall.presentSoon(store) }
+                .onReceive(AppLock.shared.$locked) { locked in if !locked { AutoInstall.presentSoon(store) } }
                 .task {
                     guard !LocalResources.isPreview, store.settings.appUpdateCheck else { return }
                     await store.checkAppUpdate()
