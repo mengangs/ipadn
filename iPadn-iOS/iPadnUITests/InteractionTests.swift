@@ -74,14 +74,10 @@ final class InteractionTests: XCTestCase {
         app.buttons["download.filter.menu"].tap()
         app.buttons["download.filter.已完成"].tap()
         let install = app.buttons["安装"].firstMatch
-        let share = app.buttons["分享"].firstMatch
         if !install.waitForExistence(timeout: 10) { print(app.debugDescription) }
         XCTAssertTrue(install.exists)
-        XCTAssertTrue(share.exists)
-        // Compact trailing actions on the task card: 安装 capsule, then share.
-        XCTAssertEqual(install.frame.midY, share.frame.midY, accuracy: 4)
-        XCTAssertLessThan(install.frame.maxX, share.frame.minX)
-        XCTAssertGreaterThanOrEqual(share.frame.height, 44)
+        // Share lives in the row's swipe actions now; the card keeps only 安装.
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "download.export.")).firstMatch.exists)
         attach("17-completed-actions", app: app)
         install.tap()
         let settings = app.buttons["installation.settings"]
