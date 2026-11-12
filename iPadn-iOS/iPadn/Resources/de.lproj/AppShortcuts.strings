@@ -1,2 +1,4 @@
 "在 ${applicationName} 搜索应用" = "In ${applicationName} nach Apps suchen";
 "用 ${applicationName} 导入安装包" = "Paket mit ${applicationName} importieren";
+"用 ${applicationName} 检查更新" = "In ${applicationName} nach Updates suchen";
+"${applicationName} 的下载进度" = "${applicationName} Download-Fortschritt";

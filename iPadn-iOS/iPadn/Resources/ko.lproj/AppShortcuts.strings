@@ -1,2 +1,4 @@
 "在 ${applicationName} 搜索应用" = "${applicationName}에서 앱 검색";
 "用 ${applicationName} 导入安装包" = "${applicationName}(으)로 패키지 가져오기";
+"用 ${applicationName} 检查更新" = "${applicationName}에서 업데이트 확인";
+"${applicationName} 的下载进度" = "${applicationName} 다운로드 진행 상황";

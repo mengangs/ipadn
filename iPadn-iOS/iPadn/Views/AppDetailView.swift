@@ -24,11 +24,14 @@ struct AppDetailView: View {
     @State private var metadataLoading = Set<String>()
     @State private var metadataFailures = 0
     @State private var metadataStopped = false
-    /// Long histories start with the newest ten versions.
+    /// Long histories start with the newest five versions.
     @State private var showAllVersions = false
     /// Release notes by version number, from the App Store page's version history.
     @State private var releaseNotes: [String: ReleaseNote] = [:]
     @State private var expandedNotes = Set<String>()
+    /// Translations chosen in the system sheet, by version ID.
+    @State private var translatedNotes: [String: String] = [:]
+    @State private var translatedDescription: String?
     /// The rows on screen belong to the previous region, platform or source
     /// and are replaced as soon as the new list arrives.
     @State private var versionsStale = false
@@ -100,12 +103,25 @@ struct AppDetailView: View {
                 if store.settings.store.platform == .macOS { macSection }
                 if !app.description.isEmpty {
                     CardSection {
-                        Text(app.description).font(.subheadline).lineLimit(showDescription ? nil : 4).textSelection(.enabled)
-                        if !showDescription {
-                            Button("更多") { withAnimation { showDescription = true } }.font(.subheadline)
+                        Text(translatedDescription ?? app.description).font(.subheadline)
+                            .lineLimit(showDescription ? nil : 4).textSelection(.enabled)
+                        let translates = TranslateButton.offered(for: app.description, translation: translatedDescription)
+                        if !showDescription || translates {
+                            HStack {
+                                if !showDescription {
+                                    Button("更多") { withAnimation { showDescription = true } }
+                                }
+                                Spacer()
+                                if translates {
+                                    TranslateButton(text: app.description, translation: $translatedDescription)
+                                        .accessibilityIdentifier("detail.description.translate")
+                                }
+                            }
+                            .font(.subheadline).buttonStyle(.borderless)
                         }
                     } header: { sectionTitle("简介") }
                 }
+                if !app.isDelisted { ReviewsCard(app: app) }
                 if !app.isDelisted {
                     CardSection {
                         if store.isFavorite(app) { PriceHistorySection(app: app) }
@@ -282,6 +298,8 @@ struct AppDetailView: View {
                 .zoomTransition(shot.id, in: screenshotZoom)
         }
     }
+    /// Versions shown before “Show all”.
+    static let collapsedVersions = 5
     private func sectionTitle(_ text: LocalizedStringKey) -> some View {
         Text(text).font(.title3.weight(.bold)).foregroundStyle(.primary).textCase(nil)
     }
@@ -403,8 +421,8 @@ struct AppDetailView: View {
                 SearchInput(text: $versionSearch, placeholder: "筛选版本号或版本 ID")
             }
             let matches = filtered
-            // A search shows every match; otherwise ten until expanded.
-            let limit = showAllVersions || !versionSearch.isEmpty ? matches.count : 10
+            // A search shows every match; otherwise five until expanded.
+            let limit = showAllVersions || !versionSearch.isEmpty ? matches.count : Self.collapsedVersions
             if versions.isEmpty && versionsLoading {
                 // Placeholders where the rows will be, instead of a spinner row
                 // that appears and disappears.
@@ -419,7 +437,7 @@ struct AppDetailView: View {
                     }
             }
             if !versions.isEmpty && matches.isEmpty { Text("没有匹配的版本。").font(.subheadline).foregroundStyle(.secondary) }
-            if versionSearch.isEmpty && matches.count > 10 {
+            if versionSearch.isEmpty && matches.count > Self.collapsedVersions {
                 Button {
                     withAnimation(.compatibleSnappy) { showAllVersions.toggle() }
                 } label: {
@@ -490,9 +508,15 @@ struct AppDetailView: View {
                 .buttonStyle(.borderless)
                 .accessibilityIdentifier("detail.version.notes." + version.id)
                 if expanded {
-                    Text(note.text).font(.footnote).foregroundStyle(.secondary)
+                    Text(translatedNotes[version.id] ?? note.text).font(.footnote).foregroundStyle(.secondary)
                         .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity)
+                    if TranslateButton.offered(for: note.text, translation: translatedNotes[version.id]) {
+                        TranslateButton(text: note.text, translation: Binding(
+                            get: { translatedNotes[version.id] }, set: { translatedNotes[version.id] = $0 }))
+                            .font(.caption.weight(.medium)).buttonStyle(.borderless)
+                            .accessibilityIdentifier("detail.version.translate." + version.id)
+                    }
                 }
             }
         }

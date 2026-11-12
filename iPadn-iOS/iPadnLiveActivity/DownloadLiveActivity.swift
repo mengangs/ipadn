@@ -1,0 +1,144 @@
+import ActivityKit
+import SwiftUI
+import WidgetKit
+
+private extension DownloadActivityAttributes.ContentState {
+    var title: String {
+        switch phase {
+        case 0: return String(localized: "正在下载")
+        case 1: return String(localized: "正在准备安装包")
+        case 2: return String(localized: "下载完成")
+        default: return String(localized: "等待下载")
+        }
+    }
+    var fraction: Double {
+        guard expected > 0 else { return phase == 2 ? 1 : 0 }
+        return min(1, max(0, Double(written) / Double(expected)))
+    }
+    /// The bar's interval: it shows `fraction` at `updated` and reaches the
+    /// end at `estimatedEnd`, so it moves on its own between updates.
+    var interval: ClosedRange<Date>? {
+        guard phase == 0, let end = estimatedEnd, end > updated, fraction < 1 else { return nil }
+        let start = end.addingTimeInterval(-end.timeIntervalSince(updated) / (1 - fraction))
+        return start...end
+    }
+    var bytes: String {
+        guard expected > 0 else { return "" }
+        let style = ByteCountFormatter()
+        style.countStyle = .file
+        return style.string(fromByteCount: written) + " / " + style.string(fromByteCount: expected)
+    }
+    var others: String? { count > 1 ? String(localized: "另有 \(count - 1) 个任务") : nil }
+    var tint: Color { phase == 2 ? .green : .accentColor }
+}
+
+private struct DownloadBar: View {
+    let state: DownloadActivityAttributes.ContentState
+    var body: some View {
+        Group {
+            if let interval = state.interval {
+                ProgressView(timerInterval: interval, countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() }
+            } else {
+                ProgressView(value: state.fraction)
+            }
+        }
+        .tint(state.tint)
+    }
+}
+
+private struct DownloadRing: View {
+    let state: DownloadActivityAttributes.ContentState
+    var body: some View {
+        Group {
+            if state.phase == 2 {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            } else if let interval = state.interval {
+                ProgressView(timerInterval: interval, countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() }
+                    .progressViewStyle(.circular)
+            } else {
+                ProgressView(value: state.fraction).progressViewStyle(.circular)
+            }
+        }
+        .tint(state.tint)
+        .frame(width: 20, height: 20)
+    }
+}
+
+/// Time left while downloading, otherwise the state in a word or two.
+private struct DownloadTrailing: View {
+    let state: DownloadActivityAttributes.ContentState
+    var body: some View {
+        if let interval = state.interval, interval.upperBound > .now {
+            Text(timerInterval: Date.now...interval.upperBound, countsDown: true)
+                .monospacedDigit().multilineTextAlignment(.trailing)
+        } else if state.phase == 0 {
+            Text(state.fraction, format: .percent.precision(.fractionLength(0))).monospacedDigit()
+        } else {
+            Text(state.phase == 2 ? String(localized: "完成") : state.phase == 1 ? String(localized: "准备中") : String(localized: "等待"))
+        }
+    }
+}
+
+struct DownloadLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: DownloadActivityAttributes.self) { context in
+            let state = context.state
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    AppMarkView(size: 38)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(state.title).font(.subheadline).foregroundStyle(.secondary)
+                        Text(state.name).font(.headline).lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    DownloadTrailing(state: state).font(.subheadline.weight(.semibold)).frame(maxWidth: 80, alignment: .trailing)
+                }
+                if state.phase != 2 { DownloadBar(state: state) }
+                HStack {
+                    Text(state.bytes)
+                    Spacer()
+                    if let others = state.others { Text(others) }
+                }
+                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            }
+            .padding(16)
+            .activityBackgroundTint(nil)
+        } dynamicIsland: { context in
+            let state = context.state
+            return DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    AppMarkView(size: 34).padding(.leading, 4)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    DownloadTrailing(state: state).font(.headline).foregroundStyle(state.tint)
+                        .frame(maxWidth: 76, alignment: .trailing).padding(.trailing, 4).padding(.top, 6)
+                }
+                DynamicIslandExpandedRegion(.center) {
+                    VStack(spacing: 1) {
+                        Text(state.title).font(.caption).foregroundStyle(.secondary)
+                        Text(state.name).font(.headline).lineLimit(1)
+                    }
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    VStack(spacing: 6) {
+                        if state.phase != 2 { DownloadBar(state: state) }
+                        HStack {
+                            Text(state.bytes)
+                            Spacer()
+                            if let others = state.others { Text(others) }
+                        }
+                        .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                    .padding(.horizontal, 4)
+                }
+            } compactLeading: {
+                AppMarkView(size: 22)
+            } compactTrailing: {
+                DownloadRing(state: state)
+            } minimal: {
+                DownloadRing(state: state)
+            }
+            .keylineTint(state.tint)
+        }
+    }
+}

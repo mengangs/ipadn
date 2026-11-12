@@ -49,7 +49,8 @@ def version_entry(release):
     if release.get("draft") or release.get("prerelease") or not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
         return None
     assets = {asset["name"]: asset for asset in release.get("assets", [])}
-    package = next((asset for name, asset in assets.items() if name.endswith("-unsigned.ipa")), None)
+    # The standard package (with the extension); the lite one is for App ID-limited signing.
+    package = next((asset for name, asset in assets.items() if name.endswith("-unsigned.ipa") and "-lite-" not in name), None)
     if package is None:
         return None
     version = tag[1:]

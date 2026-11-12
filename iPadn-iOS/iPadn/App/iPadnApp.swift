@@ -39,6 +39,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         if !LocalResources.isPreview { UpdateCheckScheduler.register() }
+        #if DEBUG
+        // Device tests: open an iPadn link at launch, e.g. --open-url=ipadn://download?url=…
+        if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--open-url=") }),
+           let url = URL(string: String(argument.dropFirst("--open-url=".count))) {
+            Task { @MainActor in try? await Task.sleep(for: .seconds(2)); AppContainer.shared.handleURL(url) }
+        }
+        #endif
         return true
     }
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
@@ -65,6 +72,14 @@ struct iPadnApp: App {
         RootView()
         #endif
     }
+    private var lockSettings: String {
+        "\(store.settings.appLock)-\(store.settings.appLockDelay)-\(store.settings.appearance)"
+    }
+    private func configureLock(launching: Bool) {
+        guard !LocalResources.isPreview else { return }
+        AppLock.shared.configure(enabled: store.settings.appLock, delay: store.settings.appLockDelay,
+                                 appearance: store.settings.appearance, launching: launching)
+    }
     var body: some Scene {
         WindowGroup {
             appContent
@@ -75,12 +90,19 @@ struct iPadnApp: App {
                 .tint(UX.tint)
                 .toggleStyle(TintedSwitchToggleStyle())
                 .onOpenURL { store.handleURL($0) }
+                .onAppear { configureLock(launching: true) }
+                .task { if !LocalResources.isPreview { await AppLock.shared.unlock() } }
+                .compatibleOnChange(of: lockSettings) { _ in configureLock(launching: false) }
+                .onReceive(store.downloads.$pendingAutoInstalls) { _ in AutoInstall.presentNext(store) }
+                .onReceive(AppLock.shared.$locked) { locked in if !locked { AutoInstall.presentNext(store) } }
                 .task {
                     guard !LocalResources.isPreview, store.settings.appUpdateCheck else { return }
                     await store.checkAppUpdate()
                 }
         }
         .onChange(of: scenePhase) { phase in
+            if !LocalResources.isPreview { AppLock.shared.sceneChanged(to: phase) }
+            if phase == .active { AutoInstall.presentNext(store) }
             guard phase == .background, !LocalResources.isPreview else { return }
             // Session cookies kept in memory must survive the app being closed.
             store.apple.saveLiveCookies()
@@ -134,6 +156,9 @@ private struct PreviewScreen: View {
             else if args.contains("--detail"), let app = store.favorites.first { NavigationStack { AppDetailView(app: app) } }
             else if args.contains("--installation") { NavigationStack { InstallationSettingsView() } }
             else if args.contains("--support") { NavigationStack { SupportView() } }
+            else if args.contains("--lock") { AppLockScreen(lock: AppLock.shared).onAppear { AppLock.shared.showPreview() }
+                .preferredColorScheme(store.settings.appearance == "dark" ? .dark : .light) }
+            else if args.contains("--installed") { NavigationStack { InstalledAppsView() } }
             else { RootView() }
         }
         .environment(\.dynamicTypeSize, args.contains("--largest-text") ? .accessibility5 : args.contains("--large-text") ? .accessibility2 : .large)

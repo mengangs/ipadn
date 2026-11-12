@@ -76,6 +76,12 @@ struct AccountsView: View {
             Section {
                 Button { store.tab = 2 } label: { Label("已购项目", systemImage: "bag") }
                 Button { store.tab = 1 } label: { Label("下载与安装", systemImage: "arrow.down.circle") }
+                if InstalledAppsView.isSupported {
+                    NavigationLink { InstalledAppsView() } label: { Label("本机应用", systemImage: "iphone") }
+                    NavigationLink { WiFiTransferView() } label: { Label("Wi‑Fi 传输", systemImage: "laptopcomputer.and.arrow.down") }
+                        .accessibilityIdentifier("account.wifi-transfer")
+                        .accessibilityIdentifier("accounts.installed-apps")
+                }
                 NavigationLink { SettingsView() } label: { Label("设置", systemImage: "gearshape") }
                     .accessibilityIdentifier("accounts.settings")
             }
