@@ -743,11 +743,15 @@ struct MenuChip: UIViewRepresentable {
         }
 
         private func preview(_ interaction: UIContextMenuInteraction) -> UITargetedPreview? {
-            guard let view = interaction.view, view.window != nil else { return nil }
+            guard let view = interaction.view, let window = view.window else { return nil }
             let parameters = UIPreviewParameters()
             parameters.backgroundColor = .clear
             parameters.visiblePath = UIBezierPath(roundedRect: view.bounds, cornerRadius: view.bounds.height / 2)
-            return UITargetedPreview(view: view, parameters: parameters)
+            // No drop shadow around the lifted chip.
+            parameters.shadowPath = UIBezierPath()
+            // Lift it in the window: the list cell clips the enlarged chip at its edge.
+            let center = view.convert(CGPoint(x: view.bounds.midX, y: view.bounds.midY), to: window)
+            return UITargetedPreview(view: view, parameters: parameters, target: UIPreviewTarget(container: window, center: center))
         }
     }
 }
