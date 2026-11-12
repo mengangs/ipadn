@@ -73072,6 +73072,146 @@
           }
         }
       }
+    },
+    "实时活动显示下载进度": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时活动显示下载进度"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Downloads in Live Activity"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以即時動態顯示下載進度"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブアクティビティでダウンロードを表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실시간 현황에 다운로드 표시"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показывать загрузки в Live Activity"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar descargas en Actividad en vivo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher les téléchargements en Activité en direct"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloads als Live-Aktivität zeigen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar downloads em Atividade ao Vivo"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "عرض التنزيلات في النشاط المباشر"
+          }
+        }
+      }
+    },
+    "下载时在锁定屏幕和灵动岛显示进度。iPadn 在后台时按测得的速度估算进度，回到 iPadn 后更新为实际进度。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载时在锁定屏幕和灵动岛显示进度。iPadn 在后台时按测得的速度估算进度，回到 iPadn 后更新为实际进度。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shows download progress on the Lock Screen and in the Dynamic Island. While iPadn is in the background, progress is estimated from the measured speed and corrected when you return."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下載時在鎖定畫面和動態島顯示進度。iPadn 在背景時依測得的速度估算進度，回到 iPadn 後更新為實際進度。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダウンロード中はロック画面とDynamic Islandに進行状況を表示します。iPadnがバックグラウンドのときは測定した速度から推定し、戻ると実際の進行状況に更新します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다운로드 중 잠금 화면과 Dynamic Island에 진행 상황을 표시합니다. iPadn이 백그라운드에 있을 때는 측정한 속도로 추정하고, 돌아오면 실제 진행 상황으로 업데이트합니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показывает ход загрузки на экране блокировки и в Dynamic Island. Пока iPadn в фоне, ход оценивается по измеренной скорости и уточняется, когда вы вернётесь."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muestra el progreso en la pantalla bloqueada y en la Dynamic Island. Con iPadn en segundo plano, se estima según la velocidad medida y se corrige al volver."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Affiche la progression sur l’écran verrouillé et dans la Dynamic Island. Quand iPadn est en arrière-plan, elle est estimée d’après la vitesse mesurée et corrigée à votre retour."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeigt den Fortschritt auf dem Sperrbildschirm und in der Dynamic Island. Im Hintergrund wird er anhand der gemessenen Geschwindigkeit geschätzt und bei der Rückkehr korrigiert."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostra o progresso na Tela Bloqueada e na Dynamic Island. Com o iPadn em segundo plano, ele é estimado pela velocidade medida e corrigido quando você volta."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يعرض تقدم التنزيل على شاشة القفل وفي Dynamic Island. عندما يكون iPadn في الخلفية يُقدَّر التقدم من السرعة المقيسة ويُصحَّح عند عودتك."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

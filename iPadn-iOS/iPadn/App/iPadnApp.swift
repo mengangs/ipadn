@@ -39,6 +39,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         if !LocalResources.isPreview { UpdateCheckScheduler.register() }
+        #if DEBUG
+        // Device tests: open an iPadn link at launch, e.g. --open-url=ipadn://download?url=…
+        if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--open-url=") }),
+           let url = URL(string: String(argument.dropFirst("--open-url=".count))) {
+            Task { @MainActor in try? await Task.sleep(for: .seconds(2)); AppContainer.shared.handleURL(url) }
+        }
+        #endif
         return true
     }
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,

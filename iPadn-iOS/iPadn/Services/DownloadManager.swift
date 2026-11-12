@@ -237,6 +237,7 @@ final class DownloadManager: NSObject, ObservableObject {
         compatibleDownloadMode = settings.compatibleDownloadMode
         updateBackgroundTask()
         schedule()
+        DownloadActivity.shared.attach(self, enabled: settings.downloadLiveActivity)
     }
 
     private func restore() async {

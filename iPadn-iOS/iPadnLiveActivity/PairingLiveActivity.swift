@@ -6,6 +6,7 @@ import WidgetKit
 struct iPadnLiveActivityBundle: WidgetBundle {
     var body: some Widget {
         PairingLiveActivity()
+        DownloadLiveActivity()
     }
 }
 
