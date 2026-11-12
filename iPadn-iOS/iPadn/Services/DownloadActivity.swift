@@ -137,13 +137,13 @@ final class DownloadActivity {
                      written: written, expected: expected, updated: now, estimatedEnd: end)
     }
 
-    /// Changes of phase, app or count go out at once; progress every few seconds.
+    /// Changes of phase, app or count go out at once; progress once a second when it moved.
     @available(iOS 16.2, *)
     private func send(_ state: DownloadActivityAttributes.ContentState, to activity: Activity<DownloadActivityAttributes>) {
         let last = lastSent as? DownloadActivityAttributes.ContentState
         let changed = last == nil || last!.phase != state.phase || last!.name != state.name || last!.count != state.count
-        let interval: TimeInterval = state.phase == 4 ? 1 : 5
-        guard changed || Date().timeIntervalSince(lastSentAt) >= interval else { return }
+        let moved = last == nil || last!.written != state.written || last!.expected != state.expected
+        guard changed || (moved && Date().timeIntervalSince(lastSentAt) >= 1) else { return }
         lastSent = state; lastSentAt = Date()
         if changed { activityLog.notice("LA update phase \(state.phase) \(state.name, privacy: .public) bg=\(UIApplication.shared.applicationState != .active)") }
         // Starting to install: the Dynamic Island opens briefly to say so.
@@ -151,17 +151,17 @@ final class DownloadActivity {
         Task { await activity.update(ActivityContent(state: state, staleDate: Self.staleDate(state)), alertConfiguration: alert) }
     }
 
-    /// Shows the final state (downloaded or installed) in the Dynamic Island
-    /// for several seconds, then ends the activity; the Lock Screen keeps it a while.
-    /// Ending at once would take it off the Dynamic Island before it is seen.
+    /// Shows the final state (downloaded, installed, not installed) for a
+    /// moment, then ends the activity together with the task. The notification
+    /// sent at the same time is the alert, so the Dynamic Island doesn't open again.
     @available(iOS 16.2, *)
     private func finish(_ activity: Activity<DownloadActivityAttributes>, with state: DownloadActivityAttributes.ContentState) {
         let task = BackgroundTime()
         activityLog.notice("LA finish phase \(state.phase) bg=\(UIApplication.shared.applicationState != .active)")
         Task {
-            await activity.update(ActivityContent(state: state, staleDate: nil), alertConfiguration: Self.alert(state))
-            try? await Task.sleep(nanoseconds: 10_000_000_000)
-            await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .after(.now + 600))
+            await activity.update(ActivityContent(state: state, staleDate: nil))
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .immediate)
             task.end()
         }
     }
@@ -185,7 +185,7 @@ final class DownloadActivity {
 
     private func startTimer() {
         guard activity != nil, timer == nil else { return }
-        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
         RunLoop.main.add(timer, forMode: .common)
