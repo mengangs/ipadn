@@ -29,6 +29,9 @@ struct PackageInfo: Equatable {
     var hasWatchApp = false
     var hasAppClip = false
     var frameworks = 0
+    var frameworkNames: [String] = []
+    /// The package file's size on disk.
+    var packageSize: Int64 = 0
 }
 
 enum PackageInfoService {
@@ -49,10 +52,12 @@ enum PackageInfoService {
         info.languages = languages(in: paths)
         info.hasWatchApp = paths.contains { $0.hasPrefix("Watch/") }
         info.hasAppClip = paths.contains { $0.hasPrefix("AppClips/") }
-        info.frameworks = Set(paths.compactMap { path -> String? in
+        info.frameworkNames = Set(paths.compactMap { path -> String? in
             let parts = path.split(separator: "/")
             return parts.count >= 2 && parts[0] == "Frameworks" ? String(parts[1]) : nil
-        }).count
+        }).sorted()
+        info.frameworks = info.frameworkNames.count
+        info.packageSize = ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? NSNumber)?.int64Value ?? 0
         // Extensions: PlugIns/*.appex and Extensions/*.appex, each with its own Info.plist.
         for path in paths where isExtensionInfo(path) {
             guard let entry = archive[prefix + path], let extensionPlist = try? readPlist(entry, archive: archive) else { continue }
