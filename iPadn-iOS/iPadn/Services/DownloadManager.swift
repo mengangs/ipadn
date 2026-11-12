@@ -168,7 +168,11 @@ final class DownloadManager: NSObject, ObservableObject {
                 continue
             }
             if silentInstall { installSilently(id) }
-            else if !pendingAutoInstalls.contains(id) { pendingAutoInstalls.append(id) }
+            else {
+                // Other install methods ask once; cancelling that sheet is the answer.
+                markWaiting(id, false)
+                if !pendingAutoInstalls.contains(id) { pendingAutoInstalls.append(id) }
+            }
         }
     }
     /// The system download service could not write into iPadn's container
@@ -902,7 +906,8 @@ final class DownloadManager: NSObject, ObservableObject {
                 self.persist()
                 // Only downloaded app packages; imported files and Mac packages are not installed here.
                 let installs = self.autoInstall && job.rawFormat == nil && job.protectedMacPackage != true && job.sourceURL != nil
-                if installs { self.markWaiting(id, true) }
+                // Kept across launches only for the silent install, which iOS can interrupt.
+                if installs && self.silentInstall { self.markWaiting(id, true) }
                 if installs && self.silentInstall {
                     self.installSilently(id)
                 } else {
