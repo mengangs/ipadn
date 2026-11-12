@@ -33,7 +33,14 @@ struct ChartView: View {
     @State private var getting: StoreApp?
 
     private var platform: AppPlatform { store.settings.store.platform }
-    private var country: String { store.settings.store.country }
+    /// Another storefront picked on this page; nil follows the search page.
+    @State private var region: String?
+    private var country: String { region ?? store.settings.store.country }
+    private var regions: [String] {
+        var list = [store.settings.store.country.uppercased()]
+        for code in store.settings.priceRegions.map({ $0.uppercased() }) where !list.contains(code) { list.append(code) }
+        return list
+    }
 
     var body: some View {
         List {
@@ -73,6 +80,20 @@ struct ChartView: View {
         }
         .toolPage().navigationTitle(chart.title).navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .compatibleTopBarTrailing) {
+                Menu {
+                    ForEach(regions, id: \.self) { code in
+                        Button { region = code == store.settings.store.country.uppercased() ? nil : code } label: {
+                            if code == country.uppercased() { Label(StoreRegions.flag(code) + " " + StoreRegions.name(code), systemImage: "checkmark") }
+                            else { Text(StoreRegions.flag(code) + " " + StoreRegions.name(code)) }
+                        }
+                    }
+                } label: {
+                    Text(verbatim: StoreRegions.flag(country.uppercased())).font(.title3).frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel(AppText.text("榜单地区：\(StoreRegions.name(country.uppercased()))"))
+                .accessibilityIdentifier("chart.region")
+            }
             if platform != .macOS {
                 ToolbarItem(placement: .compatibleTopBarTrailing) {
                     Menu {

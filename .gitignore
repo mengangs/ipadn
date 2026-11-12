@@ -9,3 +9,6 @@
 /Config/
 /scripts/
 /iPadn-iOS/vendor/ZIPFoundation/
+
+# Local copy of build_native_install.sh with LF line endings for WSL
+/iPadn-iOS/scripts/.bni.sh

@@ -8,6 +8,11 @@ import UIKit
 enum AutoInstall {
     private static weak var showing: UIViewController?
 
+    /// From a publisher, which fires before the published value is set.
+    static func presentSoon(_ store: ToolStore) {
+        DispatchQueue.main.async { presentNext(store) }
+    }
+
     static func presentNext(_ store: ToolStore) {
         guard !LocalResources.isPreview, showing == nil,
               UIApplication.shared.applicationState == .active, !AppLock.shared.locked,
@@ -19,7 +24,8 @@ enum AutoInstall {
         }
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
                 .first(where: { $0.activationState == .foregroundActive }),
-              let window = scene.windows.first(where: { $0.windowLevel == .normal && !$0.isHidden }),
+              let window = scene.windows.first(where: { $0.isKeyWindow && $0.windowLevel == .normal })
+                ?? scene.windows.first(where: { $0.windowLevel == .normal && !$0.isHidden && $0.rootViewController != nil }),
               var top = window.rootViewController else { return }
         while let next = top.presentedViewController, !next.isBeingDismissed { top = next }
         guard !top.isBeingDismissed else { return }

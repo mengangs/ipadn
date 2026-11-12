@@ -44,7 +44,8 @@ struct PackageComparison: Equatable {
         basic(AppText.text("构建号"), old.build, new.build)
         basic(AppText.text("最低系统"), old.minimumOS.isEmpty ? "" : "iOS " + old.minimumOS, new.minimumOS.isEmpty ? "" : "iOS " + new.minimumOS)
         basic(AppText.text("适用设备"), old.devices, new.devices)
-        if old.packageSize > 0, new.packageSize > 0, old.packageSize != new.packageSize {
+        // Only a difference the reader can see: a few bytes print the same.
+        if old.packageSize > 0, new.packageSize > 0, old.packageSize.byteLabel != new.packageSize.byteLabel {
             result.basics.append(Change(title: AppText.text("安装包大小"), old: old.packageSize.byteLabel, new: new.packageSize.byteLabel))
         }
         basic("Apple Watch", included(old.hasWatchApp), included(new.hasWatchApp))
