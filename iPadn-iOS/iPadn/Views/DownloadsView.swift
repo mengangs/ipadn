@@ -60,6 +60,17 @@ struct DownloadsView: View {
                         if manager.jobs.isEmpty { store.tab = 0 } else { term = ""; filter = .all }
                     })
                 }
+            } else if editMode.isEditing {
+                Section {
+                    ForEach(visible) { job in editRow(job) }
+                        .onMove(perform: filter == .all && term.isEmpty ? { manager.move(from: $0, to: $1) } : nil)
+                } header: {
+                    Text(headerSummary(visible: visible, updates: updates))
+                } footer: {
+                    if filter == .all && term.isEmpty && visible.count > 1 {
+                        Text("拖动右侧的把手调整顺序，等待中的任务按这个顺序下载。")
+                    }
+                }
             } else {
                 ForEach(visible) { job in
                     Section {
@@ -138,7 +149,6 @@ struct DownloadsView: View {
                         }
                     }
                 }
-                .onMove(perform: editMode.isEditing && filter == .all && term.isEmpty ? { manager.move(from: $0, to: $1) } : nil)
             }
         }
         .task(id: manager.jobs.filter { $0.status == .completed }.map { $0.id.uuidString }.joined()) {
@@ -183,8 +193,16 @@ struct DownloadsView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if editMode.isEditing {
-                HStack {
-                    Text("已选 \(selection.count) 项").font(.subheadline)
+                HStack(spacing: 16) {
+                    let ids = Set(filteredJobs.map(\.id))
+                    let all = !ids.isEmpty && ids.isSubset(of: selection)
+                    Button(all ? "取消全选" : "全选") {
+                        if all { selection.subtract(ids) } else { selection.formUnion(ids) }
+                        UX.feedback()
+                    }
+                    .disabled(ids.isEmpty)
+                    .accessibilityIdentifier("downloads.select-all")
+                    Text("已选 \(selection.count) 项").font(.subheadline).foregroundStyle(.secondary)
                     Spacer()
                     Button("删除所选", systemImage: "trash", role: .destructive) { askDelete(selection) }
                         .disabled(selection.isEmpty)
@@ -309,6 +327,31 @@ struct DownloadsView: View {
         let jobs = manager.jobs.filter { updateTargets[$0.id] != nil }
         UX.feedback()
         perform { try await store.downloadAllUpdates(of: jobs); filter = .all; term = "" }
+    }
+    /// A compact row for edit mode: selection mark, icon, name and state.
+    private func editRow(_ job: DownloadJob) -> some View {
+        let app = job.displayApp(packageIcon: manager.packageIconURL(job))
+        let selected = selection.contains(job.id)
+        let details = [app.version.isEmpty ? "" : "v" + app.version, job.status.title].filter { !$0.isEmpty }.joined(separator: " · ")
+        return Button { toggleSelection(job.id) } label: {
+            HStack(spacing: 12) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                    .compatibleSymbolReplacement()
+                AppIcon(url: app.iconURL, size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.name.isEmpty ? app.bundleID : app.name).font(.body).lineLimit(1)
+                    Text(details).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(selected ? AppText.text("取消选择 \(app.name)") : AppText.text("选择 \(app.name)"))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("download.select." + job.id.uuidString)
     }
     private func toggleSelection(_ id: UUID) {
         if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
