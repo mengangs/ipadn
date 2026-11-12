@@ -75,12 +75,14 @@ struct iPadnApp: App {
                 .tint(UX.tint)
                 .toggleStyle(TintedSwitchToggleStyle())
                 .onOpenURL { store.handleURL($0) }
+                .onReceive(store.downloads.$pendingAutoInstalls) { _ in AutoInstall.presentNext(store) }
                 .task {
                     guard !LocalResources.isPreview, store.settings.appUpdateCheck else { return }
                     await store.checkAppUpdate()
                 }
         }
         .onChange(of: scenePhase) { phase in
+            if phase == .active { AutoInstall.presentNext(store) }
             guard phase == .background, !LocalResources.isPreview else { return }
             // Session cookies kept in memory must survive the app being closed.
             store.apple.saveLiveCookies()

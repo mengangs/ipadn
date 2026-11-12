@@ -69,6 +69,10 @@ struct SettingsView: View {
                     .compatibleOnChange(of: store.settings.updateNotifications) { on in
                         if on { UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in } }
                     }
+                Toggle("仅使用 Wi‑Fi 下载", isOn: $store.settings.wifiOnlyDownloads)
+                    .accessibilityIdentifier("settings.wifi-only")
+                Toggle("下载完成后自动安装", isOn: $store.settings.autoInstall)
+                    .accessibilityIdentifier("settings.auto-install")
                 Toggle("兼容下载模式", isOn: $store.settings.compatibleDownloadMode)
                 if store.downloads.backgroundDownloadsUnavailable && !store.settings.compatibleDownloadMode {
                     Button(AppText.text("重新尝试后台下载")) { store.downloads.retryBackgroundDownloads(); store.infoMessage = AppText.text("下一个下载任务会重新尝试后台下载") }
@@ -78,6 +82,7 @@ struct SettingsView: View {
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("关闭「新版本提醒」后，下载页不再显示新版本提示，也不发送通知。")
+                    Text("开启「仅使用 Wi‑Fi 下载」后，只有蜂窝数据时下载会暂停排队，连上 Wi‑Fi 后自动继续。「下载完成后自动安装」会在 iPadn 打开时弹出安装并开始安装。")
                     if store.downloads.backgroundDownloadsUnavailable && !store.settings.compatibleDownloadMode {
                         Text("当前签名下系统后台下载无法保存文件，已自动改用应用内下载，下载时请保持 iPadn 在前台。更换签名后可以点按「重新尝试后台下载」。")
                     } else {
