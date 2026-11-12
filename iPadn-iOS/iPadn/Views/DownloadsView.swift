@@ -183,7 +183,7 @@ struct DownloadsView: View {
                                 if job.rawFormat == nil {
                                     Section {
                                         PackagePlatformRow(file: file)
-                                        NavigationLink { PackageInfoView(file: file) } label: {
+                                        NavigationLink { PackageInfoView(file: file, job: job) } label: {
                                             Label("安装包信息", systemImage: "info.circle")
                                         }
                                         .accessibilityIdentifier("download.package-info")

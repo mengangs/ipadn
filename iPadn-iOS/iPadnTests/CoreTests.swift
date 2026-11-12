@@ -940,6 +940,28 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(ReviewService.parse(Data("not json".utf8)).isEmpty)
     }
 
+    func testPackageComparisonListsChanges() {
+        var old = PackageInfo()
+        old.version = "1.0"; old.build = "10"; old.minimumOS = "15.0"
+        old.permissions = [.init(key: "NSCameraUsageDescription", reason: "Scan")]
+        old.frameworkNames = ["A.framework", "B.framework"]
+        old.urlSchemes = ["demo"]
+        var new = old
+        new.version = "1.1"; new.build = "11"
+        new.permissions.append(.init(key: "NSMicrophoneUsageDescription", reason: "Talk"))
+        new.frameworkNames = ["B.framework", "C.framework"]
+        let result = PackageComparison.compare(old, new)
+        XCTAssertEqual(result.basics.map(\.old), ["1.0", "10"])
+        XCTAssertEqual(result.basics.map(\.new), ["1.1", "11"])
+        XCTAssertEqual(result.permissions.added.count, 1)
+        XCTAssertTrue(result.permissions.removed.isEmpty)
+        XCTAssertEqual(result.frameworks.added, ["C.framework"])
+        XCTAssertEqual(result.frameworks.removed, ["A.framework"])
+        XCTAssertTrue(result.urlSchemes.isEmpty)
+        XCTAssertFalse(result.unchanged)
+        XCTAssertTrue(PackageComparison.compare(old, old).unchanged)
+    }
+
     func testPackageInfoReadsDeclarations() {
         let info = PackageInfoService.describe([
             "CFBundleDisplayName": "Demo", "CFBundleIdentifier": "com.example.demo",
