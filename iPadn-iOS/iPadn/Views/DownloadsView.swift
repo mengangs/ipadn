@@ -49,129 +49,19 @@ struct DownloadsView: View {
         // Filter once per render; rows and headers read this copy.
         let visible = filteredJobs
         let updates = updateTargets
+        // Both layouts stay alive and only their visibility swaps, so changing
+        // modes rebuilds nothing mid-animation; the rows do all the moving.
         ZStack {
-        List {
-            if !manager.jobs.isEmpty {
-                Section {
-                    SearchInput(text: $term, placeholder: "搜索名称、版本或 Bundle ID", capsule: true)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                }
-                .listRowBackground(Color.clear).listRowSeparator(.hidden)
-            }
-            if let error = manager.storageError { Section { InlineIssue(message: error) } }
-            if let warning = manager.discoveryWarning { Section { InlineIssue(message: warning) } }
-            if let warning = manager.saveWarning { Section { InlineIssue(message: warning) } }
-            if visible.isEmpty {
-                Section {
-                    EmptyState(title: manager.jobs.isEmpty ? "暂无下载任务" : "没有匹配任务", message: manager.jobs.isEmpty ? "在搜索中获取应用，或点按右上角的 + 导入安装包。" : "试试其他筛选条件。", symbol: manager.jobs.isEmpty ? "tray.and.arrow.down" : "line.3.horizontal.decrease.circle", actionTitle: manager.jobs.isEmpty ? "搜索应用" : "显示全部", action: {
-                        if manager.jobs.isEmpty { store.tab = 0 } else { term = ""; filter = .all }
-                    })
-                }
-            } else if editMode.isEditing {
-                Section {
-                    ForEach(Array(visible.enumerated()), id: \.element.id) { index, job in
-                        editRow(job)
-                            // Rows settle in one after another, a few hundredths apart.
-                            .modifier(DrawerRow(shown: editRowsShown || reduceMotion, index: index, travel: 18))
-                    }
-                    .onMove(perform: filter == .all && term.isEmpty ? { manager.move(from: $0, to: $1) } : nil)
-                } header: {
-                    Text(headerSummary(visible: visible, updates: updates))
-                } footer: {
-                    if filter == .all && term.isEmpty && visible.count > 1 {
-                        // Shown with the rows, not before them.
-                        Text("拖动右侧的把手调整顺序，等待中的任务按这个顺序下载。")
-                            .opacity(editRowsShown || reduceMotion ? 1 : 0)
-                            .animation(.easeOut(duration: 0.18).delay(0.08), value: editRowsShown)
-                    }
-                }
-                .onAppear { DispatchQueue.main.async { editRowsShown = true } }
-            } else {
-                ForEach(Array(visible.enumerated()), id: \.element.id) { index, job in
-                    Section {
-                        // One row in both modes, so entering edit mode slides the
-                        // selection mark in and the share button out.
-                        HStack(spacing: 12) {
-                            if editMode.isEditing {
-                                Image(systemName: selection.contains(job.id) ? "checkmark.circle.fill" : "circle")
-                                    .font(.title2)
-                                    .foregroundStyle(selection.contains(job.id) ? Color.accentColor : Color.secondary)
-                                    .frame(width: 32)
-                                    .transition(.move(edge: .leading).combined(with: .opacity))
-                            }
-                            taskContent(job, update: updates[job.id], editing: editMode.isEditing)
-                                .allowsHitTesting(!editMode.isEditing)
-                        }
-                        .overlay {
-                            if editMode.isEditing {
-                                Button { toggleSelection(job.id) } label: { Color.clear.contentShape(Rectangle()) }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel(selection.contains(job.id) ? AppText.text("取消选择 \(job.app.name)") : AppText.text("选择 \(job.app.name)"))
-                                    .accessibilityIdentifier("download.select." + job.id.uuidString)
-                            }
-                        }
-                        .accessibilityElement(children: .contain)
-                        .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
-                        .revealDelete(id: "download." + job.id.uuidString,
-                                      enabled: !editMode.isEditing && !actionBusy && job.status != .processing && job.status != .pausing) { askDelete([job.id]) }
-                        .contextMenu {
-                            if !editMode.isEditing {
-                                if let latest = updates[job.id] {
-                                    Button("下载新版本 \(latest.version)", systemImage: "arrow.down.circle") { downloadUpdate(job) }
-                                }
-                                if job.status == .completed && job.updateKey != nil {
-                                    if store.keepsVersion(job) {
-                                        Button("恢复更新提醒", systemImage: "bell") { store.keepVersion(false, of: job); UX.feedback() }
-                                    } else {
-                                        Button("保留此版本", systemImage: "pin") {
-                                            store.keepVersion(true, of: job); UX.feedback()
-                                            store.infoMessage = AppText.text("已保留此版本，不再提醒更新")
-                                        }
-                                    }
-                                }
-                                Button("任务详情", systemImage: "info.circle") { inspecting = job }
-                                if let file = manager.fileURL(job) {
-                                    Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: file) }
-                                    if job.rawFormat == nil {
-                                        Button("安装", systemImage: "square.and.arrow.down") { installing = job }
-                                    }
-                                    Button("复制本机链接", systemImage: "link") {
-                                        perform {
-                                            let url = try await store.installation.localURL(file: file)
-                                            UIPasteboard.general.string = url.absoluteString
-                                            store.infoMessage = AppText.text("已复制链接")
-                                        }
-                                    }
-                                }
-                                if job.status != .processing && job.status != .pausing {
-                                    Button("删除任务及文件", systemImage: "trash", role: .destructive) { askDelete([job.id]) }
-                                }
-                            }
-                        }
-                        // Outside the card background, so the whole card slides.
-                        .modifier(DrawerRow(shown: cardsShown || reduceMotion, index: index, travel: 28))
-                    } header: {
-                        if job.id == visible.first?.id {
-                            HStack(alignment: .firstTextBaseline) {
-                                Text(headerSummary(visible: visible, updates: updates))
-                                Spacer()
-                                // One update has its own button on the row.
-                                if updates.count > 1, !editMode.isEditing {
-                                    Button("全部更新") { downloadAllUpdates() }
-                                        .font(.body.weight(.semibold)).textCase(nil).buttonStyle(.borderless)
-                                        .disabled(actionBusy)
-                                        .accessibilityIdentifier("downloads.update-all")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        // Cards and the compact edit list are two layouts; they swap with a
-        // shared zoom and fade so the change reads as one motion.
-        .id(editMode.isEditing)
-        .transition(reduceMotion ? .opacity : .identity)
+            downloadList(edit: false, visible: visible, updates: updates)
+                .environment(\.editMode, .constant(.inactive))
+                .opacity(editMode.isEditing ? 0 : 1)
+                .allowsHitTesting(!editMode.isEditing)
+                .accessibilityHidden(editMode.isEditing)
+            downloadList(edit: true, visible: visible, updates: updates)
+                .environment(\.editMode, $editMode)
+                .opacity(editMode.isEditing ? 1 : 0)
+                .allowsHitTesting(editMode.isEditing)
+                .accessibilityHidden(!editMode.isEditing)
         }
         .task(id: manager.jobs.filter { $0.status == .completed }.map { $0.id.uuidString }.joined()) {
             await manager.loadPackageIcons()
@@ -180,7 +70,6 @@ struct DownloadsView: View {
         .refreshable { await store.checkForUpdates(force: true) }
         .animation(UX.motion(reduceMotion), value: manager.jobs.map(\.id))
         .toolPage().navigationTitle("下载").navigationBarTitleDisplayMode(.large)
-        .environment(\.editMode, $editMode)
         .toolbar {
             ToolbarItemGroup(placement: .compatibleTopBarLeading) {
                 Button(editMode.isEditing ? "完成" : "编辑") { toggleEditMode() }
@@ -236,6 +125,8 @@ struct DownloadsView: View {
             // Cards are back on screen: pull them out one after another.
             if !mode.isEditing && !cardsShown { DispatchQueue.main.async { cardsShown = true } }
             if !mode.isEditing { editRowsShown = false }
+            // The edit list is already built; pull its rows out once it shows.
+            if mode.isEditing { DispatchQueue.main.async { editRowsShown = true } }
         }
         .compatibleOnChange(of: filter) { _ in selection.removeAll() }
         .compatibleOnChange(of: term) { _ in selection.removeAll() }
@@ -354,6 +245,127 @@ struct DownloadsView: View {
         UX.feedback()
         perform { try await store.downloadAllUpdates(of: jobs); filter = .all; term = "" }
     }
+    /// One layout of the list: task cards, or the compact rows of edit mode.
+    @ViewBuilder private func downloadList(edit: Bool, visible: [DownloadJob], updates: [UUID: StoreApp]) -> some View {
+            List {
+                if !manager.jobs.isEmpty {
+                    Section {
+                        SearchInput(text: $term, placeholder: "搜索名称、版本或 Bundle ID", capsule: true)
+                            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    }
+                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                }
+                if let error = manager.storageError { Section { InlineIssue(message: error) } }
+                if let warning = manager.discoveryWarning { Section { InlineIssue(message: warning) } }
+                if let warning = manager.saveWarning { Section { InlineIssue(message: warning) } }
+                if visible.isEmpty {
+                    Section {
+                        EmptyState(title: manager.jobs.isEmpty ? "暂无下载任务" : "没有匹配任务", message: manager.jobs.isEmpty ? "在搜索中获取应用，或点按右上角的 + 导入安装包。" : "试试其他筛选条件。", symbol: manager.jobs.isEmpty ? "tray.and.arrow.down" : "line.3.horizontal.decrease.circle", actionTitle: manager.jobs.isEmpty ? "搜索应用" : "显示全部", action: {
+                            if manager.jobs.isEmpty { store.tab = 0 } else { term = ""; filter = .all }
+                        })
+                    }
+                } else if edit {
+                    Section {
+                        ForEach(Array(visible.enumerated()), id: \.element.id) { index, job in
+                            editRow(job)
+                                // Rows settle in one after another, a few hundredths apart.
+                                .modifier(DrawerRow(shown: editRowsShown || reduceMotion, index: index, travel: 18))
+                        }
+                        .onMove(perform: filter == .all && term.isEmpty ? { manager.move(from: $0, to: $1) } : nil)
+                    } header: {
+                        Text(headerSummary(visible: visible, updates: updates))
+                    } footer: {
+                        if filter == .all && term.isEmpty && visible.count > 1 {
+                            // Shown with the rows, not before them.
+                            Text("拖动右侧的把手调整顺序，等待中的任务按这个顺序下载。")
+                                .opacity(editRowsShown || reduceMotion ? 1 : 0)
+                                .animation(.easeOut(duration: 0.18).delay(0.08), value: editRowsShown)
+                        }
+                    }
+                } else {
+                    ForEach(Array(visible.enumerated()), id: \.element.id) { index, job in
+                        Section {
+                            // One row in both modes, so entering edit mode slides the
+                            // selection mark in and the share button out.
+                            HStack(spacing: 12) {
+                                if edit {
+                                    Image(systemName: selection.contains(job.id) ? "checkmark.circle.fill" : "circle")
+                                        .font(.title2)
+                                        .foregroundStyle(selection.contains(job.id) ? Color.accentColor : Color.secondary)
+                                        .frame(width: 32)
+                                        .transition(.move(edge: .leading).combined(with: .opacity))
+                                }
+                                taskContent(job, update: updates[job.id], editing: edit)
+                                    .allowsHitTesting(!edit)
+                            }
+                            .overlay {
+                                if edit {
+                                    Button { toggleSelection(job.id) } label: { Color.clear.contentShape(Rectangle()) }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel(selection.contains(job.id) ? AppText.text("取消选择 \(job.app.name)") : AppText.text("选择 \(job.app.name)"))
+                                        .accessibilityIdentifier("download.select." + job.id.uuidString)
+                                }
+                            }
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
+                            .revealDelete(id: "download." + job.id.uuidString,
+                                          enabled: !edit && !actionBusy && job.status != .processing && job.status != .pausing) { askDelete([job.id]) }
+                            .contextMenu {
+                                if !edit {
+                                    if let latest = updates[job.id] {
+                                        Button("下载新版本 \(latest.version)", systemImage: "arrow.down.circle") { downloadUpdate(job) }
+                                    }
+                                    if job.status == .completed && job.updateKey != nil {
+                                        if store.keepsVersion(job) {
+                                            Button("恢复更新提醒", systemImage: "bell") { store.keepVersion(false, of: job); UX.feedback() }
+                                        } else {
+                                            Button("保留此版本", systemImage: "pin") {
+                                                store.keepVersion(true, of: job); UX.feedback()
+                                                store.infoMessage = AppText.text("已保留此版本，不再提醒更新")
+                                            }
+                                        }
+                                    }
+                                    Button("任务详情", systemImage: "info.circle") { inspecting = job }
+                                    if let file = manager.fileURL(job) {
+                                        Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: file) }
+                                        if job.rawFormat == nil {
+                                            Button("安装", systemImage: "square.and.arrow.down") { installing = job }
+                                        }
+                                        Button("复制本机链接", systemImage: "link") {
+                                            perform {
+                                                let url = try await store.installation.localURL(file: file)
+                                                UIPasteboard.general.string = url.absoluteString
+                                                store.infoMessage = AppText.text("已复制链接")
+                                            }
+                                        }
+                                    }
+                                    if job.status != .processing && job.status != .pausing {
+                                        Button("删除任务及文件", systemImage: "trash", role: .destructive) { askDelete([job.id]) }
+                                    }
+                                }
+                            }
+                            // Outside the card background, so the whole card slides.
+                            .modifier(DrawerRow(shown: cardsShown || reduceMotion, index: index, travel: 28))
+                        } header: {
+                            if job.id == visible.first?.id {
+                                HStack(alignment: .firstTextBaseline) {
+                                    Text(headerSummary(visible: visible, updates: updates))
+                                    Spacer()
+                                    // One update has its own button on the row.
+                                    if updates.count > 1, !edit {
+                                        Button("全部更新") { downloadAllUpdates() }
+                                            .font(.body.weight(.semibold)).textCase(nil).buttonStyle(.borderless)
+                                            .disabled(actionBusy)
+                                            .accessibilityIdentifier("downloads.update-all")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+    }
+
     /// Like a drawer: the current rows slide up and in, the list swaps while
     /// nothing is showing, then the other layout's rows slide down and out.
     private func toggleEditMode() {
