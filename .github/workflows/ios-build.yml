@@ -144,7 +144,7 @@ jobs:
           fi
           killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
           xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
-            -configuration Debug -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=latest" \
+            -configuration Debug -destination "platform=iOS Simulator,name=iPhone 18 Pro" \
             -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
             -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 \
             -destination-timeout 120 -derivedDataPath build/TestDerivedData \
@@ -170,7 +170,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
-            -configuration Debug -destination "platform=iOS Simulator,name=iPhone Duo,OS=latest" \
+            -configuration Debug -destination "platform=iOS Simulator,name=iPhone Duo" \
             -destination-timeout 120 -derivedDataPath build/TestDerivedData \
             -resultBundlePath build/DuoResults.xcresult \
             -only-testing:iPadnUITests/InteractionTests/testDuoLayoutScreens \
