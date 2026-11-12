@@ -7,13 +7,14 @@ struct SettingsView: View {
     /// Settings are grouped into pages, like the system's Settings app, so
     /// the first screen stays short.
     enum Page {
-        case root, downloads, follow, appearance, sources, maintenance
+        case root, downloads, follow, appearance, lock, sources, maintenance
         var title: LocalizedStringKey {
             switch self {
             case .root: return "设置"
             case .downloads: return "下载"
             case .follow: return "关注"
             case .appearance: return "外观与图标"
+            case .lock: return "应用锁"
             case .sources: return "历史版本来源"
             case .maintenance: return "备份与维护"
             }
@@ -54,6 +55,7 @@ struct SettingsView: View {
                 pageLink(.downloads, "arrow.down.circle", "settings.page.downloads")
                 pageLink(.follow, "bell", "settings.page.follow")
                 pageLink(.appearance, "paintbrush", "settings.page.appearance")
+                pageLink(.lock, "lock", "settings.page.lock")
                 pageLink(.sources, "clock.arrow.circlepath", "settings.page.sources")
                 NavigationLink { InstallationSettingsView() } label: { Label("安装设置", systemImage: "arrow.down.app") }
                     .accessibilityIdentifier("settings.installation")
@@ -69,6 +71,10 @@ struct SettingsView: View {
                     .compatibleOnChange(of: store.settings.updateNotifications) { on in
                         if on { UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in } }
                     }
+                Toggle("仅使用 Wi‑Fi 下载", isOn: $store.settings.wifiOnlyDownloads)
+                    .accessibilityIdentifier("settings.wifi-only")
+                Toggle("下载完成后自动安装", isOn: $store.settings.autoInstall)
+                    .accessibilityIdentifier("settings.auto-install")
                 Toggle("兼容下载模式", isOn: $store.settings.compatibleDownloadMode)
                 if store.downloads.backgroundDownloadsUnavailable && !store.settings.compatibleDownloadMode {
                     Button(AppText.text("重新尝试后台下载")) { store.downloads.retryBackgroundDownloads(); store.infoMessage = AppText.text("下一个下载任务会重新尝试后台下载") }
@@ -78,6 +84,7 @@ struct SettingsView: View {
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("关闭「新版本提醒」后，下载页不再显示新版本提示，也不发送通知。")
+                    Text("开启「仅使用 Wi‑Fi 下载」后，只有蜂窝数据时下载会暂停排队，连上 Wi‑Fi 后自动继续。「下载完成后自动安装」会在 iPadn 打开时弹出安装并开始安装。")
                     if store.downloads.backgroundDownloadsUnavailable && !store.settings.compatibleDownloadMode {
                         Text("当前签名下系统后台下载无法保存文件，已自动改用应用内下载，下载时请保持 iPadn 在前台。更换签名后可以点按「重新尝试后台下载」。")
                     } else {
@@ -96,6 +103,38 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings.target-prices")
             } header: { Text("关注") } footer: {
                 Text("关注的应用有新版本、降价、限免或下架时通知你。后台检查的时间由系统决定，打开 iPadn 时也会检查。")
+            }
+            }
+            if page == .lock {
+            Section {
+                Toggle(isOn: Binding(get: { store.settings.appLock }, set: { on in
+                    Task {
+                        guard await AppLock.shared.authenticate(reason: AppText.text(on ? "开启应用锁" : "关闭应用锁")) else { return }
+                        withAnimation { store.settings.appLock = on }
+                    }
+                })) {
+                    switch AppLock.method {
+                    case .faceID: Text("使用面容 ID 锁定")
+                    case .touchID: Text("使用触控 ID 锁定")
+                    default: Text("使用密码锁定")
+                    }
+                }
+                .disabled(AppLock.method == .unavailable && !store.settings.appLock)
+                .accessibilityIdentifier("settings.app-lock")
+                if store.settings.appLock {
+                    Picker("需要验证", selection: $store.settings.appLockDelay) {
+                        Text("立即").tag(0)
+                        Text("1 分钟后").tag(60)
+                        Text("5 分钟后").tag(300)
+                        Text("15 分钟后").tag(900)
+                    }
+                }
+            } footer: {
+                if AppLock.method == .unavailable && !store.settings.appLock {
+                    Text("这台设备没有设置密码，无法使用应用锁。")
+                } else {
+                    Text("打开 iPadn 或离开一段时间后回来时需要验证身份；多任务界面中也会隐藏内容。下载会在后台照常进行。")
+                }
             }
             }
             if page == .appearance {

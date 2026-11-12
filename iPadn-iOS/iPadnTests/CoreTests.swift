@@ -914,6 +914,16 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(InstalledAppsView.isUpdate(latest, installed: "10.1", versionID: nil))
     }
 
+    func testAppLockSettingsDecode() throws {
+        XCTAssertFalse(ToolSettings().appLock)
+        let saved = try JSONDecoder().decode(ToolSettings.self, from: Data(#"{"appLock":true,"appLockDelay":99999}"#.utf8))
+        XCTAssertTrue(saved.appLock)
+        XCTAssertEqual(saved.appLockDelay, 3600)
+        let old = try JSONDecoder().decode(ToolSettings.self, from: Data("{}".utf8))
+        XCTAssertFalse(old.appLock)
+        XCTAssertEqual(old.appLockDelay, 0)
+    }
+
     func testReviewFeedParses() {
         let review = #"{"author":{"name":{"label":"Ann"}},"updated":{"label":"2026-11-01T08:30:00-07:00"},"im:rating":{"label":"4"},"im:version":{"label":"2.1"},"id":{"label":"123"},"title":{"label":"Nice"},"content":{"label":"Works well"}}"#
         let appEntry = #"{"im:name":{"label":"Some App"},"id":{"label":"https://apps.apple.com/app/id1"}}"#
