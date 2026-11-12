@@ -992,6 +992,16 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(grouped.first { $0.reasons.contains("Nearby") }?.reasons, ["Nearby", "Concerts"])
     }
 
+    func testChartFeedParses() {
+        let entry = { (id: String) in #"{"im:name":{"label":"App"},"id":{"label":"https://apps.apple.com/app/id\#(id)","attributes":{"im:id":"\#(id)","im:bundleId":"a.b"}},"category":{"attributes":{"im:id":"6014"}}}"# }
+        let list = Data(#"{"feed":{"entry":[\#(entry("111")),\#(entry("222")),\#(entry("111"))]}}"#.utf8)
+        XCTAssertEqual(ChartService.parse(list), ["111", "222"])
+        XCTAssertEqual(ChartService.parse(Data(#"{"feed":{"entry":\#(entry("333"))}}"#.utf8)), ["333"])
+        XCTAssertTrue(ChartService.parse(Data(#"{"feed":{}}"#.utf8)).isEmpty)
+        XCTAssertEqual(AppChart.paid.feed(.iPadOS), "toppaidipadapplications")
+        XCTAssertNil(AppChart.free.feed(.tvOS))
+    }
+
     func testRegionLocalesFindTheirScript() {
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh_CN")), "免费")
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh-Hans_CN")), "免费")
