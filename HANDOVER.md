@@ -46,7 +46,9 @@
 - #44、#46 已回复并关闭。#41（iOS 18 卡顿）已回复，请对方提供机型、卡顿页面和录屏，仍开着。#54（iPhone duo 适配）未处理，含义不明，需要先问清楚。
 - LiveContainer + 美区账号下载 401：仍在等用户的诊断信息。
 
-### 待排查：原生安装后 WQFiles / AppsManager 无法备份数据（2026-11-12 用户转述）
+### 已结案：原生安装后 WQFiles / AppsManager 无法备份数据（2026-11-12 用户转述）
+- **结论（报告者最终确认）：与 iPadn 无关。** 原生安装的应用经 App Store 更新后也能正常备份，只有 HashPhotos 一个应用不行；它即使彻底删除、重启后从 App Store 安装，不打开时能备份，打开一次后就不行。原因是 WQFiles 无法备份 0 KB 文件：HashPhotos 运行时会生成 0 KB 文件，同一文件夹下其他文件都能备份，删除这些 0 KB 文件后整个应用数据就能备份。AppsManager 另有自身问题（App Store 安装的应用也会路径错误、备份只有几 KB）。
+- 原生安装每次换数据容器 UUID 是系统行为，数据会迁移，不影响备份，无需处理。下面是排查过程记录。
 - 现象：用 iPadn 原生安装的应用，WQFiles 无法备份，AppsManager-iOS27（基于 Apps Manager 1.8.4 的修改版）看不到它的数据大小；App Store 安装的可以。卸载（保留数据）后从 App Store 重新安装，仍然不行。报告者的 iPadn、WQFiles、AppsManager 都装在 LiveContainer 里；iOS 27.0.1。诊断日志没有相关信息。
 - 已查（2026-11-12，本机 iPhone，用电脑上的 installation_proxy 装 OneDrive 26.1.4 测试后已删除）：
   - 所有用户应用（163 个）`IsHostBackupEligible` 都是 True，原生安装的也是，签名、购买记录与 App Store 安装一致。
