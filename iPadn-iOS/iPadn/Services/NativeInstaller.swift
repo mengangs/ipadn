@@ -12,6 +12,8 @@ enum NativeInstaller {
     /// What the system has installed for one bundle ID.
     struct InstalledApp: Decodable, Equatable {
         var installed = false
+        var bundleID: String?
+        var name: String?
         var version: String?
         var build: String?
         var signer: String?
@@ -22,7 +24,8 @@ enum NativeInstaller {
         /// Installed from an install link, which the App Store does not recognise.
         var manifestInstall: Bool?
         private enum CodingKeys: String, CodingKey {
-            case installed, version, build, signer, placeholder
+            case installed, version, build, signer, placeholder, name
+            case bundleID = "bundle_id"
             case storeItemID = "store_item_id", storeVersionID = "store_version_id"
             case hasPurchaseRecord = "has_purchase_record", manifestInstall = "manifest_install"
         }
@@ -67,7 +70,11 @@ enum NativeInstaller {
     private static let cancelFunction = symbol("iPadnNativeCancel", as: CancelFunction.self)
     private static let freeFunction = symbol("iPadnNativeFree", as: FreeFunction.self)
     private static let pairFunction = symbol("iPadnNativePair", as: PairFunction.self)
+    private static let listFunction = symbol("iPadnNativeList", as: LookupFunction.self)
     private static let pairCancelFunction = symbol("iPadnNativePairCancel", as: CancelFunction.self)
+
+    /// This build can list the apps installed on the device.
+    static var listingIsAvailable: Bool { isAvailable && listFunction != nil }
 
     /// This build can create a pairing file on the device.
     static var pairingIsAvailable: Bool { isAvailable && pairFunction != nil && pairCancelFunction != nil }
@@ -172,6 +179,7 @@ enum NativeInstaller {
         let message: String?
         let upgraded: Bool?
         let app: InstalledApp?
+        let apps: [InstalledApp]?
         let after: InstalledApp?
     }
     private static func decode(_ pointer: UnsafeMutablePointer<CChar>?) throws -> Reply {
@@ -212,6 +220,25 @@ enum NativeInstaller {
             guard let app = reply.app else { throw Failure(stage: "reply", detail: "missing app") }
             return app
         }.value
+    }
+
+    /// Every app the user installed on this device. Reads only; nothing changes.
+    static func installedApps() async throws -> [InstalledApp] {
+        try begin(); defer { end() }
+        let port = await RemotePairingPort.resolve()
+        let body = try request(bundleID: "*", package: nil, port: port)
+        InstallLog.shared.add("native list (port \(port))")
+        return try await Task.detached(priority: .userInitiated) {
+            guard let listFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
+            let reply = try decode(body.withCString { listFunction($0) })
+            guard let apps = reply.apps else { throw Failure(stage: "reply", detail: "missing apps") }
+            return apps
+        }.value
+    }
+    /// The parsed result of a list reply. Internal so tests can cover it.
+    static func listResult(from data: Data) throws -> [InstalledApp] {
+        guard let apps = try parse(data).apps else { throw Failure(stage: "reply", detail: "missing apps") }
+        return apps
     }
 
     private final class ProgressBox: @unchecked Sendable {

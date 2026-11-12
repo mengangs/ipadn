@@ -897,6 +897,23 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try AppBackup.decode(try future.encoded()))
     }
 
+    func testInstalledAppListIsReadAndGrouped() throws {
+        let reply = #"{"ok":true,"apps":[{"installed":true,"bundle_id":"com.netflix.Netflix","name":"Netflix","version":"26.4.0","store_item_id":"363590051","has_purchase_record":true,"manifest_install":false},{"installed":true,"bundle_id":"com.spotify.client","name":"Spotify","version":"9.1.98","store_item_id":"324684580","has_purchase_record":false,"manifest_install":true},{"installed":true,"bundle_id":"com.example.tool","name":null,"version":"1.0"}]}"#
+        let apps = try NativeInstaller.listResult(from: Data(reply.utf8))
+        XCTAssertEqual(apps.map(\.bundleID), ["com.netflix.Netflix", "com.spotify.client", "com.example.tool"])
+        XCTAssertEqual(apps[0].name, "Netflix")
+        XCTAssertTrue(apps[0].recognisedByAppStore)
+        XCTAssertFalse(apps[1].recognisedByAppStore, "installed from a link: the App Store shows a cloud")
+        XCTAssertThrowsError(try NativeInstaller.listResult(from: Data(#"{"ok":false,"stage":"list","message":"timed out"}"#.utf8)))
+        var latest = StoreApp(id: "1", name: "A", version: "10.0.10.105")
+        XCTAssertFalse(InstalledAppsView.isUpdate(latest, installed: "10.0.10", versionID: nil), "a build number is not an update")
+        latest.version = "10.1"
+        XCTAssertTrue(InstalledAppsView.isUpdate(latest, installed: "10.0.10", versionID: nil))
+        latest.externalVersionID = "888"
+        XCTAssertFalse(InstalledAppsView.isUpdate(latest, installed: "10.0.10", versionID: "888"), "same store version")
+        XCTAssertFalse(InstalledAppsView.isUpdate(latest, installed: "10.1", versionID: nil))
+    }
+
     func testRegionLocalesFindTheirScript() {
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh_CN")), "免费")
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh-Hans_CN")), "免费")

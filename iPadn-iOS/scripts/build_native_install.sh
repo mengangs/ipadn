@@ -24,7 +24,7 @@ cp "$CARGO_TARGET_DIR/$target/release/libipadn_native.a" "$output/libipadn_nativ
 
 # The app resolves iPadnNative* with dlsym, so the archive is force-loaded and
 # its globals kept through dead stripping.
-for symbol in iPadnNativeInstall iPadnNativeLookup iPadnNativeCancel iPadnNativeFree iPadnNativePair iPadnNativePairCancel; do
+for symbol in iPadnNativeInstall iPadnNativeLookup iPadnNativeList iPadnNativeCancel iPadnNativeFree iPadnNativePair iPadnNativePairCancel; do
   grep -aq "_$symbol" "$output/libipadn_native.a" || { echo "missing symbol $symbol" >&2; exit 1; }
 done
 cp "$project_root/NativeInstall/LICENSE-idevice.txt" "$output/idevice-MIT.txt"

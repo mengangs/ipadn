@@ -205,7 +205,11 @@ async fn lookup(session: &mut Session, bundle_id: &str) -> Result<Json, IdeviceE
     let Some(plist::Value::Dictionary(app)) = result.remove(bundle_id) else {
         return Ok(json!({ "installed": false }));
     };
+    Ok(describe(&app))
+}
 
+/// What iPadn reports about one installed app.
+fn describe(app: &plist::Dictionary) -> Json {
     let text = |key: &str| app.get(key).and_then(|value| value.as_string()).map(str::to_string);
     let metadata = match app.get("iTunesMetadata") {
         Some(plist::Value::Data(data)) => plist::from_bytes::<plist::Dictionary>(data).ok(),
@@ -222,8 +226,10 @@ async fn lookup(session: &mut Session, bundle_id: &str) -> Result<Json, IdeviceE
                 .or_else(|| value.as_string().map(str::to_string))
         })
     };
-    Ok(json!({
+    json!({
         "installed": true,
+        "bundle_id": text("CFBundleIdentifier"),
+        "name": text("CFBundleDisplayName").or_else(|| text("CFBundleName")),
         "version": text("CFBundleShortVersionString"),
         "build": text("CFBundleVersion"),
         "signer": text("SignerIdentity"),
@@ -232,7 +238,52 @@ async fn lookup(session: &mut Session, bundle_id: &str) -> Result<Json, IdeviceE
         "store_version_id": number("softwareVersionExternalIdentifier"),
         "has_purchase_record": metadata.contains_key("com.apple.iTunesStore.downloadInfo"),
         "manifest_install": metadata.contains_key("enterpriseInstallURL"),
-    }))
+    })
+}
+
+/// Every app the user installed, with the same details as `lookup`.
+async fn list(session: &mut Session) -> Result<Json, IdeviceError> {
+    let mut client =
+        InstallationProxyClient::connect_rsd(&mut session.adapter, &mut session.handshake).await?;
+    let attributes = [
+        "CFBundleIdentifier",
+        "CFBundleDisplayName",
+        "CFBundleName",
+        "CFBundleShortVersionString",
+        "CFBundleVersion",
+        "SignerIdentity",
+        "IsPlaceholder",
+        "iTunesMetadata",
+    ];
+    let mut options = plist::Dictionary::new();
+    options.insert("ApplicationType".into(), "User".into());
+    options.insert(
+        "ReturnAttributes".into(),
+        plist::Value::Array(attributes.into_iter().map(Into::into).collect()),
+    );
+    let mut message = plist::Dictionary::new();
+    message.insert("Command".into(), "Lookup".into());
+    message.insert("ClientOptions".into(), plist::Value::Dictionary(options));
+
+    let mut reply = exchange(&mut client, &plist::Value::Dictionary(message)).await?;
+    if let Some(error) = reply.get("Error").and_then(|value| value.as_string()) {
+        return Err(IdeviceError::UnexpectedResponse(error.to_string()));
+    }
+    let Some(plist::Value::Dictionary(result)) = reply.remove("LookupResult") else {
+        return Err(IdeviceError::UnexpectedResponse("missing LookupResult".into()));
+    };
+    let apps: Vec<Json> = result
+        .iter()
+        .filter_map(|(bundle_id, value)| {
+            let plist::Value::Dictionary(app) = value else { return None };
+            let mut entry = describe(app);
+            if entry["bundle_id"].is_null() {
+                entry["bundle_id"] = json!(bundle_id);
+            }
+            Some(entry)
+        })
+        .collect();
+    Ok(json!(apps))
 }
 
 async fn upload(session: &mut Session, path: &str, progress: Progress) -> Result<(), Failure> {
@@ -295,6 +346,13 @@ async fn checked_lookup(session: &mut Session, bundle_id: &str) -> Result<Json, 
         .await
         .map_err(|_| failure("lookup", "timed out"))?
         .map_err(fail("lookup"))
+}
+
+async fn checked_list(session: &mut Session) -> Result<Json, Failure> {
+    tokio::time::timeout(LOOKUP_TIMEOUT, list(session))
+        .await
+        .map_err(|_| failure("list", "timed out"))?
+        .map_err(fail("list"))
 }
 
 async fn install(request: &Request, progress: Progress) -> Result<Json, Failure> {
@@ -396,6 +454,19 @@ pub unsafe extern "C" fn iPadnNativeLookup(request: *const c_char) -> *mut c_cha
         let mut session = connect(&request).await?;
         let app = checked_lookup(&mut session, &request.bundle_id).await?;
         Ok(json!({ "ok": true, "app": app }))
+    })
+}
+
+/// Connects and reports every app the user installed.
+///
+/// # Safety
+/// `request` must be a valid NUL-terminated string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn iPadnNativeList(request: *const c_char) -> *mut c_char {
+    run(request, |request: Request| async move {
+        let mut session = connect(&request).await?;
+        let apps = checked_list(&mut session).await?;
+        Ok(json!({ "ok": true, "apps": apps }))
     })
 }
 
