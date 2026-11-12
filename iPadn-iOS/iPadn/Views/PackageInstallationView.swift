@@ -120,7 +120,7 @@ struct PackageInstallationView: View {
             : store.settings.localInstallation ? AppText.text("需先在安装方式中创建证书、安装描述文件并开启信任。")
             : AppText.text("需要已配置的代理规则。")
         if InstallLog.insideLiveContainer && store.settings.automaticInstallation {
-            text += "\n" + AppText.text("在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。")
+            text += "\n" + AppText.text("在 LiveContainer 中运行时，请在 LiveContainer 里长按 iPadn，打开设置中的「修复文件导入」，一键安装才能弹出系统安装窗口；仍不行时可以改用「本机证书」。")
         }
         text += proxied ? proxyHint : ""
         text += "\n" + AppText.text("这种方式安装的应用 App Store 无法识别和更新，也不能覆盖设备上已有的 App Store 版本；需要这两项时请改用「原生安装」或导出到电脑安装。")

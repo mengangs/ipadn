@@ -1101,8 +1101,15 @@ final class ToolStore: ObservableObject {
             Task { do { try await downloads.importFile(url) } catch { errorMessage = error.localizedDescription } }
         } else if url.scheme == "ipadn" {
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            if let id = components?.queryItems?.first(where: { $0.name == "id" })?.value { tab = 0; search(id) }
-            else if let address = components?.queryItems?.first(where: { $0.name == "url" })?.value,
+            let items = components?.queryItems ?? []
+            if url.host == "open", let value = items.first(where: { $0.name == "tab" })?.value, let target = Int(value), (0...3).contains(target) {
+                // Widget shortcuts: a tab, optionally checking downloaded apps for updates.
+                tab = target
+                if items.contains(where: { $0.name == "check" && $0.value == "updates" }) {
+                    Task { await checkForUpdates(force: true) }
+                }
+            } else if let id = items.first(where: { $0.name == "id" })?.value { tab = 0; search(id) }
+            else if let address = items.first(where: { $0.name == "url" })?.value,
                     let download = URL(string: address) {
                 do { try downloads.enqueueURL(download); tab = 1 } catch { errorMessage = error.localizedDescription }
             }

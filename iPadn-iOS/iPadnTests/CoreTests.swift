@@ -1021,6 +1021,30 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(app.updatesBlocked)
     }
 
+    func testWiFiTransferOnlyAnswersTheLocalNetwork() {
+        for address in ["192.168.0.12", "10.1.2.3", "172.16.0.1", "172.31.255.255", "169.254.1.1", "fe80::1", "fd12::3", "::ffff:192.168.1.5"] {
+            XCTAssertTrue(WiFiTransferServer.isPrivate(address), address)
+        }
+        for address in ["8.8.8.8", "172.32.0.1", "100.64.0.1", "2001:db8::1", "::ffff:1.1.1.1", "nonsense"] {
+            XCTAssertFalse(WiFiTransferServer.isPrivate(address), address)
+        }
+        XCTAssertEqual(WiFiTransferServer.escape("<a href=\"x\">&'"), "&lt;a href=&quot;x&quot;&gt;&amp;&#39;")
+        XCTAssertEqual(WiFiTransferServer.asciiName("网易云_1.0.ipa"), "____1.0.ipa")
+        let id = UUID()
+        XCTAssertEqual(WiFiTransferView.publicName(id.uuidString + "-App_1.0.ipa", id: id), "App_1.0.ipa")
+        XCTAssertEqual(WiFiTransferView.publicName("Other.ipa", id: id), "Other.ipa")
+    }
+
+    func testChartFeedParses() {
+        let entry = { (id: String) in #"{"im:name":{"label":"App"},"id":{"label":"https://apps.apple.com/app/id\#(id)","attributes":{"im:id":"\#(id)","im:bundleId":"a.b"}},"category":{"attributes":{"im:id":"6014"}}}"# }
+        let list = Data(#"{"feed":{"entry":[\#(entry("111")),\#(entry("222")),\#(entry("111"))]}}"#.utf8)
+        XCTAssertEqual(ChartService.parse(list), ["111", "222"])
+        XCTAssertEqual(ChartService.parse(Data(#"{"feed":{"entry":\#(entry("333"))}}"#.utf8)), ["333"])
+        XCTAssertTrue(ChartService.parse(Data(#"{"feed":{}}"#.utf8)).isEmpty)
+        XCTAssertEqual(AppChart.paid.feed(.iPadOS), "toppaidipadapplications")
+        XCTAssertNil(AppChart.free.feed(.tvOS))
+    }
+
     func testRegionLocalesFindTheirScript() {
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh_CN")), "免费")
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh-Hans_CN")), "免费")

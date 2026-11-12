@@ -90,6 +90,8 @@ jobs:
           bash scripts/build_unsigned_ipa.sh 2>&1 | tee build/build.log
           IPADN_REQUIRE_MACPKG=1 IPADN_REQUIRE_NATIVE=1 python3 scripts/verify_ipa.py build/iPadn-unsigned.ipa
           shasum -a 256 build/iPadn-unsigned.ipa > build/iPadn-unsigned.ipa.sha256
+          # The lite variant (no app extension), checked on every build.
+          python3 scripts/make_lite_ipa.py build/iPadn-unsigned.ipa build/iPadn-lite-unsigned.ipa
           python3 - <<'PY'
           import json, os, subprocess, plistlib, zipfile
           from pathlib import Path
@@ -115,6 +117,7 @@ jobs:
           path: |
             iPadn-iOS/build/iPadn-unsigned.ipa
             iPadn-iOS/build/iPadn-unsigned.ipa.sha256
+            iPadn-iOS/build/iPadn-lite-unsigned.ipa
             iPadn-iOS/build/build-info.json
           if-no-files-found: error
           retention-days: 14
@@ -255,20 +258,30 @@ jobs:
           asset = ipa.with_name('iPadn-' + version + '-unsigned.ipa')
           ipa.rename(asset)
           (root / (asset.name + '.sha256')).write_text(digest + '  ' + asset.name + '\n')
+          # Lite: the same build without the app extension (Live Activities and
+          # the widget), so it needs one App ID instead of two.
+          import subprocess
+          lite = root / ('iPadn-' + version + '-lite-unsigned.ipa')
+          subprocess.run(['python3', 'iPadn-iOS/scripts/make_lite_ipa.py', str(asset), str(lite)], check=True)
+          lite_digest = hashlib.sha256(lite.read_bytes()).hexdigest()
+          (root / (lite.name + '.sha256')).write_text(lite_digest + '  ' + lite.name + '\n')
           notes = Path('RELEASE_NOTES.md').read_text()
+          notes += '\n两个安装包：`' + asset.name + '` 是标准版（含实时活动和桌面小组件，需要 2 个 App ID）；`' + lite.name + '` 是精简版（不含扩展，只需 1 个 App ID），适合 App ID 数量受限的签名方式。\n'
           notes += '\n验证：设备 Release 编译与 IPA 检查通过；' + str(tests['passedTests']) + ' 项测试通过，' + str(tests['failedTests']) + ' 项失败，' + str(tests['skippedTests']) + ' 项跳过。\n'
           (root / 'notes.md').write_text(notes)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('tag=v' + version + '\n')
               output.write('asset=' + str(asset) + '\n')
+              output.write('lite=' + str(lite) + '\n')
           PY
       - name: Publish tested unsigned IPA
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           RELEASE_ASSET: ${{ steps.release.outputs.asset }}
+          RELEASE_LITE: ${{ steps.release.outputs.lite }}
         run: |
-          gh release create "$RELEASE_TAG" "$RELEASE_ASSET" "$RELEASE_ASSET.sha256" release/build-info.json \
+          gh release create "$RELEASE_TAG" "$RELEASE_ASSET" "$RELEASE_ASSET.sha256" "$RELEASE_LITE" "$RELEASE_LITE.sha256" release/build-info.json \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "iPadn $RELEASE_TAG" \
             --notes-file release/notes.md --latest
       - name: Update the AltStore source
