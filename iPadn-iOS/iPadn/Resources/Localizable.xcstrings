@@ -77343,76 +77343,6 @@
         }
       }
     },
-    "开启「仅使用 Wi‑Fi 下载」后，只有蜂窝数据时下载会暂停排队，连上 Wi‑Fi 后自动继续。「下载完成后自动安装」会在 iPadn 打开时弹出安装并开始安装。": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "开启「仅使用 Wi‑Fi 下载」后，只有蜂窝数据时下载会暂停排队，连上 Wi‑Fi 后自动继续。「下载完成后自动安装」会在 iPadn 打开时弹出安装并开始安装。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "With “Download over Wi‑Fi only”, downloads wait in the queue while only cellular data is available and continue on Wi‑Fi. “Install when downloaded” opens the installer and starts installing while iPadn is open."
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "開啟「僅使用 Wi‑Fi 下載」後，只有行動數據時下載會暫停排隊，連上 Wi‑Fi 後自動繼續。「下載完成後自動安裝」會在 iPadn 開啟時彈出安裝並開始安裝。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「Wi‑Fi接続時のみダウンロード」をオンにすると、モバイルデータ通信しかないときはダウンロードが待機し、Wi‑Fiにつながると自動で再開します。「ダウンロード後に自動インストール」は、iPadnを開いているときにインストール画面を表示してインストールを始めます。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "“Wi‑Fi에서만 다운로드”를 켜면 셀룰러 데이터만 있을 때 다운로드가 대기열에서 기다리고 Wi‑Fi에 연결되면 자동으로 계속됩니다. “다운로드 후 자동 설치”는 iPadn이 열려 있을 때 설치 화면을 띄우고 설치를 시작합니다."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "При включённом параметре «Загружать только по Wi‑Fi» загрузки ждут в очереди, пока доступна только сотовая сеть, и продолжаются по Wi‑Fi. «Устанавливать после загрузки» открывает установку и начинает её, пока iPadn открыто."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Con «Descargar solo con Wi‑Fi», las descargas esperan en la cola mientras solo haya datos móviles y continúan con Wi‑Fi. «Instalar al terminar la descarga» abre el instalador y empieza a instalar mientras iPadn está abierta."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Avec « Télécharger en Wi‑Fi uniquement », les téléchargements attendent dans la file tant que seules les données cellulaires sont disponibles et reprennent en Wi‑Fi. « Installer une fois téléchargé » ouvre l’installation et la lance tant qu’iPadn est ouverte."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mit „Nur über WLAN laden“ warten Downloads in der Warteschlange, solange nur Mobilfunk verfügbar ist, und laufen im WLAN weiter. „Nach dem Laden installieren“ öffnet die Installation und startet sie, während iPadn geöffnet ist."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Com “Baixar só por Wi‑Fi”, os downloads esperam na fila enquanto só houver dados celulares e continuam no Wi‑Fi. “Instalar ao terminar o download” abre o instalador e começa a instalar enquanto o iPadn estiver aberto."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "عند تشغيل «التنزيل عبر Wi‑Fi فقط» تنتظر التنزيلات في القائمة ما دامت البيانات الخلوية وحدها متاحة، وتستمر عند الاتصال بشبكة Wi‑Fi. يفتح «التثبيت بعد اكتمال التنزيل» شاشة التثبيت ويبدأ التثبيت ما دام iPadn مفتوحًا."
-          }
-        }
-      }
-    },
     "等待 Wi‑Fi": {
       "localizations": {
         "zh-Hans": {
@@ -80209,6 +80139,426 @@
           "stringUnit": {
             "state": "translated",
             "value": "يعمل ما دامت هذه الصفحة مفتوحة. في الخلفية يستمر ما دام النظام يسمح بذلك؛ وإذا أوقف النظام iPadn مؤقتًا، يُستأنف على العنوان نفسه عند عودتك. يتوقف عند مغادرة الصفحة أو بعد 10 دقائق من الخمول."
+          }
+        }
+      }
+    },
+    "开启「仅使用 Wi‑Fi 下载」后，只有蜂窝数据时下载会暂停排队，连上 Wi‑Fi 后自动继续。「下载完成后自动安装」使用原生安装时会在后台直接安装，不需要确认（LocalDevVPN 需保持连接）；其他安装方式会在 iPadn 打开时弹出安装。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启「仅使用 Wi‑Fi 下载」后，只有蜂窝数据时下载会暂停排队，连上 Wi‑Fi 后自动继续。「下载完成后自动安装」使用原生安装时会在后台直接安装，不需要确认（LocalDevVPN 需保持连接）；其他安装方式会在 iPadn 打开时弹出安装。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "With “Download over Wi‑Fi only”, downloads wait in the queue while only cellular data is available and continue on Wi‑Fi. With native installation, “Install when downloaded” installs in the background without asking (keep LocalDevVPN connected); other methods open the installer while iPadn is open."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開啟「僅使用 Wi‑Fi 下載」後，只有行動數據時下載會暫停排隊，連上 Wi‑Fi 後自動繼續。「下載完成後自動安裝」使用原生安裝時會在背景直接安裝，不需要確認（LocalDevVPN 需保持連線）；其他安裝方式會在 iPadn 開啟時彈出安裝。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「Wi‑Fi接続時のみダウンロード」をオンにすると、モバイルデータ通信しかないときはダウンロードが待機し、Wi‑Fiにつながると自動で再開します。「ダウンロード後に自動インストール」は、ネイティブインストールなら確認なしでバックグラウンドでインストールします（LocalDevVPNの接続を保ってください）。ほかの方法ではiPadnを開いているときにインストール画面を表示します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“Wi‑Fi에서만 다운로드”를 켜면 셀룰러 데이터만 있을 때 다운로드가 대기열에서 기다리고 Wi‑Fi에 연결되면 자동으로 계속됩니다. “다운로드 후 자동 설치”는 네이티브 설치일 때 확인 없이 백그라운드에서 설치하며(LocalDevVPN 연결 유지 필요), 다른 방식은 iPadn이 열려 있을 때 설치 화면을 띄웁니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "При включённом «Загружать только по Wi‑Fi» загрузки ждут в очереди, пока доступна только сотовая сеть, и продолжаются по Wi‑Fi. «Устанавливать после загрузки» при нативной установке устанавливает в фоне без подтверждения (держите LocalDevVPN подключённым); другие способы открывают установку, пока iPadn открыто."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Con «Descargar solo con Wi‑Fi», las descargas esperan en la cola mientras solo haya datos móviles y continúan con Wi‑Fi. Con la instalación nativa, «Instalar al terminar la descarga» instala en segundo plano sin preguntar (mantén LocalDevVPN conectado); otros métodos abren el instalador mientras iPadn está abierta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avec « Télécharger en Wi‑Fi uniquement », les téléchargements attendent dans la file tant que seules les données cellulaires sont disponibles et reprennent en Wi‑Fi. Avec l’installation native, « Installer une fois téléchargé » installe en arrière-plan sans demander (gardez LocalDevVPN connecté) ; les autres méthodes ouvrent l’installation quand iPadn est ouverte."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit „Nur über WLAN laden“ warten Downloads in der Warteschlange, solange nur Mobilfunk verfügbar ist, und laufen im WLAN weiter. Mit nativer Installation installiert „Nach dem Laden installieren“ im Hintergrund ohne Rückfrage (LocalDevVPN verbunden lassen); andere Methoden öffnen die Installation, während iPadn geöffnet ist."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Com “Baixar só por Wi‑Fi”, os downloads esperam na fila enquanto só houver dados celulares e continuam no Wi‑Fi. Com a instalação nativa, “Instalar ao terminar o download” instala em segundo plano sem perguntar (mantenha o LocalDevVPN conectado); outros métodos abrem o instalador enquanto o iPadn estiver aberto."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "عند تشغيل «التنزيل عبر Wi‑Fi فقط» تنتظر التنزيلات في القائمة ما دامت البيانات الخلوية وحدها متاحة، وتستمر عند الاتصال بشبكة Wi‑Fi. مع التثبيت الأصلي يثبّت «التثبيت بعد اكتمال التنزيل» في الخلفية دون سؤال (أبقِ LocalDevVPN متصلًا)؛ أما الطرق الأخرى فتفتح شاشة التثبيت ما دام iPadn مفتوحًا."
+          }
+        }
+      }
+    },
+    "正在自动安装 %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在自动安装 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installing %@ automatically"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在自動安裝 %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を自動インストール中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 자동 설치 중"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Автоустановка %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalando %@ automáticamente"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installation automatique de %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wird automatisch installiert"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalando %@ automaticamente"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ تثبيت %@ تلقائيًا"
+          }
+        }
+      }
+    },
+    "已自动安装 %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已自动安装 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installed %@ automatically"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已自動安裝 %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を自動インストールしました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@을(를) 자동 설치했습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ установлено автоматически"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ se instaló automáticamente"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ installé automatiquement"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ automatisch installiert"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ instalado automaticamente"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تم تثبيت %@ تلقائيًا"
+          }
+        }
+      }
+    },
+    "已自动安装": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已自动安装"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installed automatically"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已自動安裝"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動インストールしました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동 설치됨"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Установлено автоматически"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalado automáticamente"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installé automatiquement"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatisch installiert"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalado automaticamente"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تم التثبيت تلقائيًا"
+          }
+        }
+      }
+    },
+    "自动安装未完成": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动安装未完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic install not finished"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動安裝未完成"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動インストールが完了していません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동 설치가 완료되지 않았습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Автоустановка не завершена"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La instalación automática no terminó"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installation automatique inachevée"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatische Installation nicht abgeschlossen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalação automática não concluída"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لم يكتمل التثبيت التلقائي"
+          }
+        }
+      }
+    },
+    "打开 iPadn 继续安装 %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 iPadn 继续安装 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open iPadn to finish installing %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開啟 iPadn 繼續安裝 %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPadnを開いて%@のインストールを続けてください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPadn을 열어 %@ 설치를 계속하세요"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Откройте iPadn, чтобы завершить установку %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abre iPadn para terminar de instalar %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrez iPadn pour terminer l’installation de %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Öffne iPadn, um %@ fertig zu installieren"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abra o iPadn para terminar de instalar %@"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "افتح iPadn لإكمال تثبيت %@"
           }
         }
       }
