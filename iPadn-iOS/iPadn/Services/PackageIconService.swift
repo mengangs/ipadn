@@ -106,24 +106,11 @@ enum PackageIconService {
                 smallFallback = smallFallback ?? data
             }
         }
-        // Some packages contain only a compiled asset catalog. Read it as resources;
-        // no executable from the IPA is extracted or loaded.
-        let assetName = plistString(phone["CFBundleIconName"] ?? pad["CFBundleIconName"])
-        if !assetName.isEmpty, let car = archive[prefix + "Assets.car"],
-           car.type == .file, car.uncompressedSize <= 64_000_000 {
-            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".bundle")
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            defer { try? FileManager.default.removeItem(at: folder) }
-            // Stream the catalog to disk instead of holding up to 64 MB in memory.
-            _ = try archive.extract(car, to: folder.appendingPathComponent("Assets.car"))
-            let resourceInfo = ["CFBundleIdentifier": "app.local.iPadn.icon." + UUID().uuidString, "CFBundlePackageType": "BNDL"]
-            try PropertyListSerialization.data(fromPropertyList: resourceInfo, format: .binary, options: 0)
-                .write(to: folder.appendingPathComponent("Info.plist"))
-            if let bundle = Bundle(url: folder), let image = UIImage(named: assetName, in: bundle, compatibleWith: nil),
-               Int(image.size.width * image.scale) >= minimumPixels {
-                return image.pngData()
-            }
-        }
+        // A package's compiled asset catalog (Assets.car) is never handed to
+        // UIImage(named:in:): a catalog it can't decode (NetEase Cloud Music's,
+        // for one) raises an Objective-C assertion that ends the app, and the
+        // downloads list scans icons on every launch. Packages without PNG
+        // icons show the store artwork instead.
         return minimumPixels > 0 ? nil : smallFallback
     }
 

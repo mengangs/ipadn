@@ -590,13 +590,28 @@ final class DownloadManager: NSObject, ObservableObject {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
+    /// Packages whose icon scan has started but not finished.
+    private static let iconScanKey = "packageIconScansInProgress"
     func loadPackageIcons() async {
         guard !iconsLoading else { return }
         iconsLoading = true
         defer { iconsLoading = false }
+        // A scan that ended the app last time is not tried again: the list
+        // would otherwise end the app on every launch.
+        var interrupted = Set(UserDefaults.standard.stringArray(forKey: Self.iconScanKey) ?? [])
         for job in jobs where job.status == .completed && job.rawFormat == nil {
             guard let file = fileURL(job), !Task.isCancelled else { continue }
+            if job.packageIconScanned != true, interrupted.remove(job.id.uuidString) != nil,
+               let index = jobs.firstIndex(where: { $0.id == job.id }) {
+                jobs[index].packageIconScanned = true
+                if jobs[index].app.iconURL == nil { jobs[index].app.iconURL = jobs[index].asset?.app.iconURL }
+                persist()
+                UserDefaults.standard.set(Array(interrupted), forKey: Self.iconScanKey)
+                continue
+            }
             if job.packageIconScanned != true {
+                interrupted.insert(job.id.uuidString)
+                UserDefaults.standard.set(Array(interrupted), forKey: Self.iconScanKey)
                 // With store artwork available, only keep a package icon that is
                 // sharp at list size (64 pt at 3x).
                 let minimum = job.displayApp(packageIcon: nil).iconURL == nil ? 0 : 180
@@ -608,6 +623,8 @@ final class DownloadManager: NSObject, ObservableObject {
                     continue
                 }
                 jobs[index].packageIconScanned = true
+                interrupted.remove(job.id.uuidString)
+                UserDefaults.standard.set(Array(interrupted), forKey: Self.iconScanKey)
                 // Never erase the catalog icon because IPA icon extraction failed.
                 if jobs[index].app.iconURL == nil {
                     jobs[index].app.iconURL = jobs[index].asset?.app.iconURL
