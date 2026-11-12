@@ -83,8 +83,18 @@ struct PackageInfoView: View {
                     Section {
                         ForEach(otherVersions(of: job)) { other in
                             NavigationLink { compare(job, other) } label: {
-                                LabeledContent(AppText.text("与版本 \(other.app.version.isEmpty ? "–" : other.app.version) 对比"),
-                                               value: other.createdAt.formatted(date: .abbreviated, time: .omitted))
+                                // Several downloads can share a version number; the
+                                // version ID and date tell them apart.
+                                LabeledContent {
+                                    Text(verbatim: other.createdAt.formatted(date: .abbreviated, time: .omitted))
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(verbatim: AppText.text("与版本 \(other.app.version.isEmpty ? "–" : other.app.version) 对比"))
+                                        if let id = other.app.externalVersionID, !id.isEmpty {
+                                            Text(verbatim: AppText.text("版本 ID \(id)")).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
                             }
                             .accessibilityIdentifier("package-info.compare." + other.id.uuidString)
                         }

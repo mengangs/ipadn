@@ -140,6 +140,7 @@ struct SignerWebView: UIViewRepresentable {
 
 struct RootView: View {
     @EnvironmentObject private var store: ToolStore
+    @EnvironmentObject private var tabs: TabState
     @EnvironmentObject private var signer: SAPSigner
     @EnvironmentObject private var downloads: DownloadManager
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -150,7 +151,7 @@ struct RootView: View {
         Group {
             if sizeClass == .regular {
                 NavigationSplitView {
-                    List(selection: Binding<Int?>(get: { store.tab }, set: { if let value = $0 { store.tab = value } })) {
+                    List(selection: Binding<Int?>(get: { tabs.selection }, set: { if let value = $0 { tabs.selection = value } })) {
                         Section {
                             ForEach(0..<destinations.count, id: \.self) { index in
                                 Label(destinations[index].title, systemImage: destinations[index].symbol).tag(index)
@@ -167,14 +168,14 @@ struct RootView: View {
                                 page(index).frame(maxWidth: 900).frame(maxWidth: .infinity)
                                     .background(Color(.systemGroupedBackground))
                             }
-                            .opacity(store.tab == index ? 1 : 0)
-                            .allowsHitTesting(store.tab == index)
-                            .accessibilityHidden(store.tab != index)
+                            .opacity(tabs.selection == index ? 1 : 0)
+                            .allowsHitTesting(tabs.selection == index)
+                            .accessibilityHidden(tabs.selection != index)
                         }
                     }
                 }
             } else {
-                TabView(selection: $store.tab) {
+                TabView(selection: $tabs.selection) {
                     NavigationStack { SearchView() }.tabItem { Label("搜索", systemImage: "magnifyingglass") }.tag(0)
                     NavigationStack { DownloadsView() }.tabItem { Label("下载", systemImage: "arrow.down.circle.fill") }
                         .badge(downloads.jobs.filter { DownloadFilter.active.includes($0.status) }.count).tag(1)
@@ -186,7 +187,7 @@ struct RootView: View {
             }
         }
         .preferredColorScheme(store.settings.appearance == "system" ? nil : store.settings.appearance == "dark" ? .dark : .light)
-        .compatibleSelectionFeedback(trigger: store.tab)
+        .compatibleSelectionFeedback(trigger: tabs.selection)
         .sheet(item: $store.verificationRequest) { request in
             ExistingAccountVerificationView(accountID: request.accountID) {
                 // Runs after the sheet has closed, so a retry can present again.
@@ -264,7 +265,7 @@ struct RootView: View {
         .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("知道了", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
-        .dismissRevealsWhenTabChanges(store.tab)
+        .dismissRevealsWhenTabChanges(tabs.selection)
         .transaction { transaction in
             if reduceMotion { transaction.animation = nil; transaction.disablesAnimations = true }
         }

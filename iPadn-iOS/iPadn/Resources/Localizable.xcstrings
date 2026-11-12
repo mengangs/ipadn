@@ -65244,7 +65244,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Update All"
+            "value": "Update all"
           }
         },
         "zh-Hant": {
@@ -66504,7 +66504,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apps on This Device"
+            "value": "Apps on this device"
           }
         },
         "zh-Hant": {
@@ -67554,7 +67554,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apps on This Device reads the apps installed on this phone through Native Install. Pair once in Installation settings to use it."
+            "value": "Apps on this device reads the apps installed on this phone through Native Install. Pair once in Installation settings to use it."
           }
         },
         "zh-Hant": {
@@ -67694,7 +67694,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Apps on This Device reads installed apps through LocalDevVPN. Open LocalDevVPN and tap Connect; iPadn reads the list when you come back."
+            "value": "Apps on this device reads installed apps through LocalDevVPN. Open LocalDevVPN and tap Connect; iPadn reads the list when you come back."
           }
         },
         "zh-Hant": {
@@ -67834,7 +67834,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "App Lock"
+            "value": "App lock"
           }
         },
         "zh-Hant": {
@@ -68394,7 +68394,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turn on App Lock"
+            "value": "Turn on app lock"
           }
         },
         "zh-Hant": {
@@ -68464,7 +68464,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turn off App Lock"
+            "value": "Turn off app lock"
           }
         },
         "zh-Hant": {
@@ -68674,7 +68674,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "After 1 Minute"
+            "value": "After 1 minute"
           }
         },
         "zh-Hant": {
@@ -68744,7 +68744,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "After 5 Minutes"
+            "value": "After 5 minutes"
           }
         },
         "zh-Hant": {
@@ -68814,7 +68814,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "After 15 Minutes"
+            "value": "After 15 minutes"
           }
         },
         "zh-Hant": {
@@ -68884,7 +68884,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This device has no passcode, so App Lock can’t be used."
+            "value": "This device has no passcode, so app lock can’t be used."
           }
         },
         "zh-Hant": {
@@ -69304,7 +69304,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "All Reviews"
+            "value": "All reviews"
           }
         },
         "zh-Hant": {
@@ -69444,7 +69444,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Load More"
+            "value": "Load more"
           }
         },
         "zh-Hant": {
@@ -74344,7 +74344,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Compare Versions"
+            "value": "Compare versions"
           }
         },
         "zh-Hant": {
@@ -74764,7 +74764,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Package Size"
+            "value": "Package size"
           }
         },
         "zh-Hant": {
@@ -75114,7 +75114,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Download App"
+            "value": "Download app"
           }
         },
         "zh-Hant": {
@@ -75254,7 +75254,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "App ID or Store Link"
+            "value": "App ID or store link"
           }
         },
         "zh-Hant": {
@@ -75464,7 +75464,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Check Downloaded Apps for Updates"
+            "value": "Check downloaded apps for updates"
           }
         },
         "zh-Hant": {
@@ -75674,7 +75674,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Download All Updates"
+            "value": "Download all updates"
           }
         },
         "zh-Hant": {
@@ -75814,7 +75814,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Get Download Progress"
+            "value": "Get download progress"
           }
         },
         "zh-Hant": {
@@ -76304,7 +76304,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pause All Downloads"
+            "value": "Pause all downloads"
           }
         },
         "zh-Hant": {
@@ -76514,7 +76514,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Resume All Downloads"
+            "value": "Resume all downloads"
           }
         },
         "zh-Hant": {
@@ -76934,7 +76934,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show Downloads in Live Activity"
+            "value": "Show downloads in Live Activity"
           }
         },
         "zh-Hant": {
@@ -77144,7 +77144,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show Original"
+            "value": "Show original"
           }
         },
         "zh-Hant": {
@@ -77214,7 +77214,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Download over Wi‑Fi Only"
+            "value": "Download over Wi‑Fi only"
           }
         },
         "zh-Hant": {
@@ -77284,7 +77284,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Install When Downloaded"
+            "value": "Install when downloaded"
           }
         },
         "zh-Hant": {
@@ -77354,7 +77354,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "With “Download over Wi‑Fi Only”, downloads wait in the queue while only cellular data is available and continue on Wi‑Fi. “Install When Downloaded” opens the installer and starts installing while iPadn is open."
+            "value": "With “Download over Wi‑Fi only”, downloads wait in the queue while only cellular data is available and continue on Wi‑Fi. “Install when downloaded” opens the installer and starts installing while iPadn is open."
           }
         },
         "zh-Hant": {
@@ -77564,7 +77564,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Download over Cellular"
+            "value": "Download over cellular"
           }
         },
         "zh-Hant": {
@@ -77634,7 +77634,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Block App Store Updates"
+            "value": "Block App Store updates"
           }
         },
         "zh-Hant": {
@@ -78264,7 +78264,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wi‑Fi Transfer"
+            "value": "Wi‑Fi transfer"
           }
         },
         "zh-Hant": {
@@ -78404,7 +78404,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Copy Address"
+            "value": "Copy address"
           }
         },
         "zh-Hant": {
@@ -78474,7 +78474,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stop Sharing"
+            "value": "Stop sharing"
           }
         },
         "zh-Hant": {
@@ -78614,7 +78614,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Start Sharing"
+            "value": "Start sharing"
           }
         },
         "zh-Hant": {
@@ -78754,7 +78754,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Downloads by Other Devices"
+            "value": "Downloads by other devices"
           }
         },
         "zh-Hant": {
