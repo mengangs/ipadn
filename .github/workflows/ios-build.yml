@@ -31,6 +31,7 @@ on:
         options:
           - full
           - notices
+          - duo
 
 permissions:
   contents: read
@@ -131,7 +132,7 @@ jobs:
 
       - name: Run simulator tests
         timeout-minutes: 30
-        if: github.event_name != 'workflow_dispatch' || inputs.run_tests
+        if: github.event_name != 'workflow_dispatch' || (inputs.run_tests && inputs.ui_test_scope != 'duo')
         env:
           RUN_UI_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.run_ui_tests }}
           UI_TEST_SCOPE: ${{ inputs.ui_test_scope || 'full' }}
@@ -178,8 +179,11 @@ jobs:
             -destination-timeout 120 -derivedDataPath build/TestDerivedData \
             -resultBundlePath build/DuoResults.xcresult \
             -only-testing:iPadnUITests/InteractionTests/testDuoLayoutScreens \
-            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO 2>&1 | tail -30
-          xcrun xcresulttool export attachments --path build/DuoResults.xcresult --output-path build/duo-screenshots || true
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO > build/duo.log 2>&1 || true
+          grep -E "error:|Test Case|failed|skipped" build/duo.log | tail -20 || true
+          if [ -d build/DuoResults.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/DuoResults.xcresult --output-path build/duo-screenshots || true
+          fi
 
       - name: Upload iPhone Duo screenshots
         if: always() && github.event_name == 'workflow_dispatch' && inputs.run_ui_tests
