@@ -39,6 +39,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         if !LocalResources.isPreview { UpdateCheckScheduler.register() }
+        #if DEBUG
+        // Device tests: open an iPadn link at launch, e.g. --open-url=ipadn://download?url=…
+        if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--open-url=") }),
+           let url = URL(string: String(argument.dropFirst("--open-url=".count))) {
+            Task { @MainActor in try? await Task.sleep(for: .seconds(2)); AppContainer.shared.handleURL(url) }
+        }
+        #endif
         return true
     }
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
@@ -86,6 +93,8 @@ struct iPadnApp: App {
                 .onAppear { configureLock(launching: true) }
                 .task { if !LocalResources.isPreview { await AppLock.shared.unlock() } }
                 .compatibleOnChange(of: lockSettings) { _ in configureLock(launching: false) }
+                .onReceive(store.downloads.$pendingAutoInstalls) { _ in AutoInstall.presentNext(store) }
+                .onReceive(AppLock.shared.$locked) { locked in if !locked { AutoInstall.presentNext(store) } }
                 .task {
                     guard !LocalResources.isPreview, store.settings.appUpdateCheck else { return }
                     await store.checkAppUpdate()
@@ -93,6 +102,7 @@ struct iPadnApp: App {
         }
         .onChange(of: scenePhase) { phase in
             if !LocalResources.isPreview { AppLock.shared.sceneChanged(to: phase) }
+            if phase == .active { AutoInstall.presentNext(store) }
             guard phase == .background, !LocalResources.isPreview else { return }
             // Session cookies kept in memory must survive the app being closed.
             store.apple.saveLiveCookies()
