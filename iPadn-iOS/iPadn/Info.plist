@@ -69,7 +69,6 @@
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>app.local.iPadn.update-check</string>
-		<string>app.local.iPadn.work.*</string>
 	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>

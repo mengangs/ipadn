@@ -94,27 +94,6 @@ final class DownloadManager: NSObject, ObservableObject {
     /// download to the end of its silent installation, iPadn keeps running.
     private let installKeepAlive = BackgroundKeepAlive(name: "iPadn auto install")
     private var keepingAlive = false
-    /// Progress for the system's view of the keep-alive: the download up to
-    /// 80 %, then the installation.
-    private func autoInstallStatus() -> (fraction: Double, subtitle: String) {
-        if let install = autoInstalling {
-            return (0.85 + install.fraction * 0.15, AppText.text("正在自动安装 \(install.name)"))
-        }
-        if let job = jobs.first(where: { $0.status == .processing }) {
-            return (0.8, AppText.text("正在准备 \(job.app.name)"))
-        }
-        let running = jobs.filter { $0.status == .running }
-        guard let lead = running.first else { return (0, AppText.text("自动安装")) }
-        var written: Int64 = 0, expected: Int64 = 0
-        for job in running {
-            let bytes = progress(for: job.id).bytes
-            written += bytes?.written ?? job.downloaded
-            expected += max(bytes?.expected ?? 0, job.expected, job.app.size)
-        }
-        let fraction = expected > 0 ? Double(written) / Double(expected) : 0
-        return (fraction * 0.8, AppText.text("正在下载 \(lead.app.name)"))
-    }
-
     private func updateInstallKeepAlive() {
         let busy = silentInstall && (silentRunning || !silentQueue.isEmpty || jobs.contains { job in
             [.running, .queued, .processing].contains(job.status)
@@ -123,11 +102,7 @@ final class DownloadManager: NSObject, ObservableObject {
         guard busy != keepingAlive else { return }
         keepingAlive = busy
         InstallLog.shared.add(busy ? "keeping iPadn running for the automatic install" : "automatic install keep-alive ended")
-        if busy {
-            installKeepAlive.start(title: AppText.text("自动安装")) { [weak self] in self?.autoInstallStatus() ?? (0, "") }
-        } else {
-            installKeepAlive.stop()
-        }
+        if busy { installKeepAlive.start() } else { installKeepAlive.stop() }
     }
     /// A line for iPadn's top notice while it is open (notifications only
     /// appear in the background).
@@ -137,6 +112,8 @@ final class DownloadManager: NSObject, ObservableObject {
     @Published private(set) var autoInstalling: AutoInstallProgress?
     /// The app just installed automatically (Live Activity "Installed").
     @Published private(set) var autoInstalled: String?
+    /// The automatic installation that did not finish (Live Activity "Not installed").
+    @Published private(set) var autoInstallFailed: String?
     /// A finished download about to be installed silently.
     func waitsForSilentInstall(_ id: UUID) -> Bool { silentInstall && waitingInstalls.contains(id.uuidString) }
     /// Finished downloads still waiting to be installed automatically. Kept
@@ -1067,6 +1044,7 @@ final class DownloadManager: NSObject, ObservableObject {
                 let name = [job.app.name, job.app.version].filter { !$0.isEmpty }.joined(separator: " ")
                 autoInstallNotice = AppText.text("正在自动安装 \(name)")
                 autoInstalled = nil
+                autoInstallFailed = nil
                 autoInstalling = AutoInstallProgress(id: id, name: name, fraction: 0)
                 defer { autoInstalling = nil }
                 do {
@@ -1088,6 +1066,7 @@ final class DownloadManager: NSObject, ObservableObject {
                     notify(title: AppText.text("已自动安装"), body: name)
                 } catch {
                     autoInstallNotice = nil
+                    autoInstallFailed = name
                     InstallLog.shared.add("silent install not finished: \(error.localizedDescription.prefix(160))")
                     if UIApplication.shared.applicationState == .active {
                         // In front and still failing (e.g. LocalDevVPN not connected): the sheet explains.

@@ -80773,212 +80773,72 @@
         }
       }
     },
-    "自动安装": {
+    "安装未完成": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "自动安装"
+            "value": "安装未完成"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Auto install"
+            "value": "Not installed"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "自動安裝"
+            "value": "安裝未完成"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "自動インストール"
+            "value": "インストール未完了"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "자동 설치"
+            "value": "설치 안 됨"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Автоустановка"
+            "value": "Не установлено"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Instalación automática"
+            "value": "No instalada"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Installation automatique"
+            "value": "Non installée"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Automatische Installation"
+            "value": "Nicht installiert"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Instalação automática"
+            "value": "Não instalado"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "التثبيت التلقائي"
-          }
-        }
-      }
-    },
-    "正在下载 %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在下载 %@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Downloading %@"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在下載 %@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ をダウンロード中"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 다운로드 중"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Загрузка %@"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Descargando %@"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Téléchargement de %@"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ wird geladen"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Baixando %@"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "جارٍ تنزيل %@"
-          }
-        }
-      }
-    },
-    "正在准备 %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在准备 %@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Preparing %@"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在準備 %@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ を準備中"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ 준비 중"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Подготовка %@"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Preparando %@"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Préparation de %@"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ wird vorbereitet"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Preparando %@"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "جارٍ تجهيز %@"
+            "value": "لم يكتمل التثبيت"
           }
         }
       }

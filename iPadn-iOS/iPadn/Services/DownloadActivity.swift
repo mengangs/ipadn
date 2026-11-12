@@ -32,7 +32,8 @@ final class DownloadActivity {
             activity = existing.first
             for old in existing.dropFirst() { Task { await old.end(nil, dismissalPolicy: .immediate) } }
             subscription = manager.$jobs.map { _ in () }
-                .merge(with: manager.$autoInstalling.map { _ in () }, manager.$autoInstalled.map { _ in () })
+                .merge(with: manager.$autoInstalling.map { _ in () }, manager.$autoInstalled.map { _ in () },
+                       manager.$autoInstallFailed.map { _ in () })
                 .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
                 .sink { [weak self] _ in self?.refresh() }
         }
@@ -56,14 +57,24 @@ final class DownloadActivity {
             if let current { send(state, to: current) }
             else if UIApplication.shared.applicationState == .active, ActivityAuthorizationInfo().areActivitiesEnabled {
                 activity = try? Activity.request(attributes: DownloadActivityAttributes(),
-                                                 content: ActivityContent(state: state, staleDate: nil))
+                                                 content: ActivityContent(state: state, staleDate: Self.staleDate(state)))
                 lastSent = state; lastSentAt = Date()
             }
             startTimer()
             return
         }
+        // The install did not finish: say so and end with it, rather than stay on "Installing".
+        if active.isEmpty, let current, let failed = manager.autoInstallFailed,
+           (lastSent as? DownloadActivityAttributes.ContentState)?.phase == 4 || current.content.state.phase == 4 {
+            stopTimer()
+            activity = nil; lastSent = nil; shownIDs = []
+            finish(current, with: DownloadActivityAttributes.ContentState(phase: 6, name: failed, count: 0, written: 0, expected: 0,
+                                                                          updated: Date(), estimatedEnd: nil))
+            return
+        }
         if active.isEmpty, let current, let installed = manager.autoInstalled,
-           (current.content.state.phase == 4 || shownIDs.contains(where: manager.waitsForSilentInstall)) {
+           ((lastSent as? DownloadActivityAttributes.ContentState)?.phase == 4 || current.content.state.phase == 4
+            || shownIDs.contains(where: manager.waitsForSilentInstall)) {
             stopTimer()
             activity = nil; lastSent = nil; shownIDs = []
             let done = DownloadActivityAttributes.ContentState(phase: 5, name: installed, count: 0, written: 1000, expected: 1000,
@@ -101,7 +112,7 @@ final class DownloadActivity {
                   ActivityAuthorizationInfo().areActivitiesEnabled {
             // Only the app in front may start one.
             activity = try? Activity.request(attributes: DownloadActivityAttributes(),
-                                             content: ActivityContent(state: state, staleDate: nil))
+                                             content: ActivityContent(state: state, staleDate: Self.staleDate(state)))
             lastSent = state; lastSentAt = Date()
         }
         startTimer()
@@ -137,7 +148,7 @@ final class DownloadActivity {
         if changed { activityLog.notice("LA update phase \(state.phase) \(state.name, privacy: .public) bg=\(UIApplication.shared.applicationState != .active)") }
         // Starting to install: the Dynamic Island opens briefly to say so.
         let alert = changed && state.phase == 4 && last?.phase != 4 ? Self.alert(state) : nil
-        Task { await activity.update(ActivityContent(state: state, staleDate: nil), alertConfiguration: alert) }
+        Task { await activity.update(ActivityContent(state: state, staleDate: Self.staleDate(state)), alertConfiguration: alert) }
     }
 
     /// Shows the final state (downloaded or installed) in the Dynamic Island
@@ -155,11 +166,18 @@ final class DownloadActivity {
         }
     }
 
+    /// Updates come every few seconds while iPadn runs; much later, it no longer does.
+    @available(iOS 16.2, *)
+    private static func staleDate(_ state: DownloadActivityAttributes.ContentState) -> Date? {
+        [0, 1, 4].contains(state.phase) ? Date().addingTimeInterval(90) : nil
+    }
+
     @available(iOS 16.2, *)
     private static func alert(_ state: DownloadActivityAttributes.ContentState) -> AlertConfiguration {
         let title: LocalizedStringResource = switch state.phase {
         case 2: "下载完成"
         case 4: "正在安装"
+        case 6: "安装未完成"
         default: "已安装"
         }
         return AlertConfiguration(title: title, body: LocalizedStringResource(String.LocalizationValue(state.name)), sound: .default)

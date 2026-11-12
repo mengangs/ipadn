@@ -1,6 +1,5 @@
 import ActivityKit
 import AVFoundation
-import BackgroundTasks
 import Foundation
 import UIKit
 import UserNotifications
@@ -45,14 +44,7 @@ final class OnDevicePairing: ObservableObject {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         // iPadn must keep answering while Settings is in front; a background
         // task alone ends within seconds, which stops the pairing.
-        keepAlive.start(title: AppText.text("在本机配对")) { [weak self] in
-            switch self?.phase {
-            case .connected: return (0.4, AppText.text("设备已连接，正在开始配对…"))
-            case .code(let code): return (0.7, AppText.text("输入配对码") + " " + code)
-            case .finished: return (1, AppText.text("配对完成"))
-            default: return (0.1, AppText.text("隐私与安全性 › 开发者模式 › 与 iPadn 配对"))
-            }
-        }
+        keepAlive.start()
         startActivity()
         InstallLog.shared.add("on-device pairing started (live activity: \(activity == nil ? "off" : "on"))")
         Task {
@@ -160,94 +152,21 @@ final class OnDevicePairing: ObservableObject {
     }
 }
 
-/// Keeps iPadn running in the background while the user pairs in Settings,
-/// and from a download to its automatic installation. Runs only during those.
-/// iOS 26 and later: a continued processing task, which the system shows with
-/// its progress and the user can stop. Earlier, or when the system declines
-/// one: silence played mixed with other audio.
+/// Keeps iPadn running in the background by playing silence mixed with other
+/// audio: while the user pairs in Settings, and from a download to its
+/// automatic installation. Runs only during those.
 @MainActor
 final class BackgroundKeepAlive {
-    typealias Status = () -> (fraction: Double, subtitle: String)
     private let name: String
     private var player: AVAudioPlayer?
     private var background = UIBackgroundTaskIdentifier.invalid
-    private var running = false
-    private var title = ""
-    private var status: Status?
-    /// The BGContinuedProcessingTask (iOS 26 and later).
-    private var task: AnyObject?
-    private var timer: Timer?
-    private var lastSubtitle = ""
 
     init(name: String) { self.name = name }
 
-    /// `status` is asked every couple of seconds for the progress (0...1) and
-    /// a line saying what is happening.
-    func start(title: String, status: @escaping Status) {
-        guard !running else { return }
-        running = true
-        self.title = title
-        self.status = status
+    func start() {
         background = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
             MainActor.assumeIsolated { self?.endBackgroundTask() }
         }
-        if #available(iOS 26.0, *), UIApplication.shared.applicationState == .active, startContinuedTask() { return }
-        startAudio()
-    }
-
-    @available(iOS 26.0, *)
-    private func startContinuedTask() -> Bool {
-        // One identifier per run: a handler can't be registered for the wildcard itself.
-        let identifier = "app.local.iPadn.work.\(UUID().uuidString)"
-        let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { [weak self] task in
-            MainActor.assumeIsolated {
-                guard let task = task as? BGContinuedProcessingTask else { return }
-                guard let self, self.running else { task.setTaskCompleted(success: true); return }
-                self.task = task
-                task.progress.totalUnitCount = 1000
-                task.expirationHandler = { [weak self] in
-                    DispatchQueue.main.async { MainActor.assumeIsolated { self?.continuedTaskEnded() } }
-                }
-                self.report()
-            }
-        }
-        guard registered else { return false }
-        let request = BGContinuedProcessingTaskRequest(identifier: identifier, title: title, subtitle: status?().subtitle ?? "")
-        request.strategy = .fail
-        do {
-            try BGTaskScheduler.shared.submit(request)
-        } catch {
-            InstallLog.shared.add("continued task unavailable, using audio: \(error.localizedDescription)")
-            return false
-        }
-        InstallLog.shared.add("\(name): continued processing task")
-        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.report() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
-        return true
-    }
-
-    private func report() {
-        guard #available(iOS 26.0, *), let task = task as? BGContinuedProcessingTask, let now = status?() else { return }
-        task.progress.completedUnitCount = Int64(min(1, max(0, now.fraction)) * 1000)
-        if now.subtitle != lastSubtitle {
-            lastSubtitle = now.subtitle
-            task.updateTitle(title, subtitle: now.subtitle)
-        }
-    }
-
-    /// Stopped by the user from the system's progress, or by the system.
-    private func continuedTaskEnded() {
-        guard #available(iOS 26.0, *), let task = task as? BGContinuedProcessingTask else { return }
-        InstallLog.shared.add("\(name): continued task ended by the system")
-        timer?.invalidate(); timer = nil
-        self.task = nil
-        task.setTaskCompleted(success: false)
-    }
-
-    private func startAudio() {
         do {
             let session = AVAudioSession.sharedInstance()
             // Mixing leaves the user's music alone and adds no Now Playing entry.
@@ -264,15 +183,6 @@ final class BackgroundKeepAlive {
     }
 
     func stop() {
-        guard running else { return }
-        running = false
-        status = nil; lastSubtitle = ""
-        timer?.invalidate(); timer = nil
-        if #available(iOS 26.0, *), let task = task as? BGContinuedProcessingTask {
-            task.progress.completedUnitCount = task.progress.totalUnitCount
-            task.setTaskCompleted(success: true)
-        }
-        task = nil
         player?.stop(); player = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
         endBackgroundTask()
