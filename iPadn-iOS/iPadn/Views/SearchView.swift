@@ -87,7 +87,6 @@ struct SearchView: View {
     }
 
     @ViewBuilder private var suggestions: some View {
-        DiscoverSection()
         if !store.searchHistory.isEmpty {
             ForEach(Array(store.searchHistory.prefix(8))) { item in
                 Section {
@@ -133,6 +132,8 @@ struct SearchView: View {
                 }
             }
         }
+        // The charts come after what the user searched and follows.
+        DiscoverSection()
     }
 
     private func chip(_ title: String, symbol: String) -> some View {
