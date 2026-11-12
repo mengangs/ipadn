@@ -17959,6 +17959,76 @@
         }
       }
     },
+    "在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In LiveContainer, one-tap install may not show the system install prompt. Use “Local certificate” instead."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 LiveContainer 中執行時，一鍵安裝可能不會彈出系統安裝視窗，可以改用「本機憑證」。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LiveContainer では、ワンタップインストールでシステムのインストール画面が表示されない場合があります。「ローカル証明書」を使用してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LiveContainer에서는 원탭 설치 시 시스템 설치 창이 나타나지 않을 수 있습니다. ‘로컬 인증서’를 사용하십시오."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В LiveContainer установка в одно касание может не показать системный запрос установки. Используйте «Локальный сертификат»."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En LiveContainer, la instalación con un toque puede no mostrar el aviso del sistema. Usa “Certificado local”."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dans LiveContainer, l’installation en un geste peut ne pas afficher l’invite du système. Utilisez plutôt « Certificat local »."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In LiveContainer zeigt die Installation per Tipp eventuell keine Systemabfrage. Verwende stattdessen „Lokales Zertifikat“."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No LiveContainer, a instalação com um toque pode não mostrar o aviso do sistema. Use “Certificado local”."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "في LiveContainer قد لا يظهر طلب التثبيت من النظام عند التثبيت بلمسة واحدة. استخدم «شهادة محلية» بدلًا من ذلك."
+          }
+        }
+      }
+    },
     "在 Safari 中安装": {
       "localizations": {
         "en": {
@@ -77553,6 +77623,356 @@
         }
       }
     },
+    "阻止 App Store 更新": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "阻止 App Store 更新"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Block App Store Updates"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "阻止 App Store 更新"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Storeのアップデートを止める"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store 업데이트 차단"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Блокировать обновления App Store"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bloquear actualizaciones de App Store"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bloquer les mises à jour App Store"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store-Updates blockieren"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bloquear atualizações da App Store"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حظر تحديثات App Store"
+          }
+        }
+      }
+    },
+    "开启后，App Store 会把这个应用当作最新版本，不再提示或自动更新。想恢复更新时，关闭此项再安装一次即可。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启后，App Store 会把这个应用当作最新版本，不再提示或自动更新。想恢复更新时，关闭此项再安装一次即可。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The App Store then treats this app as up to date and won’t offer or install updates. To get updates again, turn this off and install once more."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開啟後，App Store 會把這個 App 當作最新版本，不再提示或自動更新。想恢復更新時，關閉此項再安裝一次即可。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オンにすると、App StoreはこのAppを最新版として扱い、アップデートの通知や自動アップデートを行いません。元に戻すには、これをオフにしてもう一度インストールしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "켜면 App Store가 이 앱을 최신 버전으로 간주하여 업데이트를 알리거나 자동 업데이트하지 않습니다. 다시 업데이트를 받으려면 이 항목을 끄고 한 번 더 설치하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store будет считать приложение последней версией и не будет предлагать или устанавливать обновления. Чтобы вернуть обновления, выключите это и установите ещё раз."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store tratará la app como actualizada y no ofrecerá ni instalará actualizaciones. Para volver a recibirlas, desactiva esto e instala de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’App Store considère alors l’app comme à jour et ne propose ni n’installe de mises à jour. Pour les retrouver, désactivez cette option et installez à nouveau."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der App Store hält die App dann für aktuell und bietet keine Updates an. Um wieder Updates zu bekommen, deaktiviere dies und installiere erneut."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A App Store passa a tratar o app como atualizado e não oferece nem instala atualizações. Para voltar a recebê-las, desative isto e instale novamente."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "سيعامل App Store هذا التطبيق على أنه محدّث ولن يعرض التحديثات أو يثبتها. لاستعادة التحديثات، أوقف هذا الخيار وثبّت مرة أخرى."
+          }
+        }
+      }
+    },
+    "这个安装包没有购买记录，无法阻止 App Store 更新。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个安装包没有购买记录，无法阻止 App Store 更新。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This package has no purchase record, so App Store updates can’t be blocked."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個安裝包沒有購買記錄，無法阻止 App Store 更新。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このパッケージには購入記録がないため、App Storeのアップデートを止められません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 패키지에는 구입 기록이 없어 App Store 업데이트를 차단할 수 없습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В пакете нет записи о покупке, поэтому обновления App Store заблокировать нельзя."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este paquete no tiene registro de compra, así que no se pueden bloquear las actualizaciones."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce paquet n’a pas d’enregistrement d’achat ; impossible de bloquer les mises à jour."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieses Paket hat keinen Kaufnachweis, daher können Updates nicht blockiert werden."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este pacote não tem registro de compra, então as atualizações não podem ser bloqueadas."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا تحتوي هذه الحزمة على سجل شراء، لذا لا يمكن حظر التحديثات."
+          }
+        }
+      }
+    },
+    "已阻止 App Store 更新这个应用。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已阻止 App Store 更新这个应用。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store updates are blocked for this app."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已阻止 App Store 更新這個 App。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このAppのApp Storeアップデートを止めました。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 앱의 App Store 업데이트를 차단했습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Обновления App Store для приложения заблокированы."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se bloquearon las actualizaciones de App Store para esta app."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les mises à jour App Store de cette app sont bloquées."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store-Updates für diese App sind blockiert."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As atualizações da App Store deste app foram bloqueadas."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تم حظر تحديثات App Store لهذا التطبيق."
+          }
+        }
+      }
+    },
+    "已装 %@ · 已阻止更新": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已装 %@ · 已阻止更新"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installed %@ · Updates blocked"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已裝 %@ · 已阻止更新"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール済み %@ · アップデート停止中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치됨 %@ · 업데이트 차단됨"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Установлено %@ · обновления заблокированы"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalada %@ · actualizaciones bloqueadas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installée %@ · mises à jour bloquées"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installiert %@ · Updates blockiert"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalado %@ · atualizações bloqueadas"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "المثبّت %@ · التحديثات محظورة"
+          }
+        }
+      }
+    },
     "在 LiveContainer 中运行时，请在 LiveContainer 里长按 iPadn，打开设置中的「修复文件导入」，一键安装才能弹出系统安装窗口；仍不行时可以改用「本机证书」。": {
       "localizations": {
         "zh-Hans": {
@@ -77829,76 +78249,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "إصلاح منتقي الملفات"
-          }
-        }
-      }
-    },
-    "在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In LiveContainer, one-tap install may not show the system install prompt. Use “Local certificate” instead."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在 LiveContainer 中執行時，一鍵安裝可能不會彈出系統安裝視窗，可以改用「本機憑證」。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "LiveContainer では、ワンタップインストールでシステムのインストール画面が表示されない場合があります。「ローカル証明書」を使用してください。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "LiveContainer에서는 원탭 설치 시 시스템 설치 창이 나타나지 않을 수 있습니다. ‘로컬 인증서’를 사용하십시오."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "В LiveContainer установка в одно касание может не показать системный запрос установки. Используйте «Локальный сертификат»."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "En LiveContainer, la instalación con un toque puede no mostrar el aviso del sistema. Usa “Certificado local”."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dans LiveContainer, l’installation en un geste peut ne pas afficher l’invite du système. Utilisez plutôt « Certificat local »."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In LiveContainer zeigt die Installation per Tipp eventuell keine Systemabfrage. Verwende stattdessen „Lokales Zertifikat“."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No LiveContainer, a instalação com um toque pode não mostrar o aviso do sistema. Use “Certificado local”."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "في LiveContainer قد لا يظهر طلب التثبيت من النظام عند التثبيت بلمسة واحدة. استخدم «شهادة محلية» بدلًا من ذلك."
           }
         }
       }

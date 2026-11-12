@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import UIKit
+import ZIPFoundation
 
 // Swift side of NativeInstall (Rust + idevice). It reaches this device's own
 // installation service, the one desktop tools use over USB, through a loopback
@@ -31,6 +32,8 @@ enum NativeInstaller {
         }
         /// The App Store can show "Open" and offer updates for this copy.
         var recognisedByAppStore: Bool { installed && storeItemID != nil && hasPurchaseRecord == true && manifestInstall != true }
+        /// Installed with "Block App Store Updates".
+        var updatesBlocked: Bool { storeVersionID == String(NativeInstaller.blockedVersionID) }
     }
     struct Outcome: Equatable {
         let upgraded: Bool
@@ -163,13 +166,31 @@ enum NativeInstaller {
     }
     private static func end() { gate.lock(); running = false; gate.unlock() }
 
-    private static func request(bundleID: String, package: URL?, port: UInt16) throws -> String {
+    /// The App Store compares this version ID in the installed purchase record
+    /// with the newest release; one above every real ID reads as up to date.
+    static let blockedVersionID = 2_000_000_000
+
+    /// The package's purchase record with the version ID raised, for the
+    /// system to keep instead of the package's own (issue #46). nil when the
+    /// package has none.
+    static func blockedMetadata(of package: URL) throws -> Data? {
+        let archive = try Archive(url: package, accessMode: .read)
+        guard let entry = archive["iTunesMetadata.plist"], entry.uncompressedSize < 4 * 1024 * 1024 else { return nil }
+        var data = Data()
+        _ = try archive.extract(entry) { data.append($0) }
+        guard var record = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { return nil }
+        record["softwareVersionExternalIdentifier"] = blockedVersionID
+        return try PropertyListSerialization.data(fromPropertyList: record, format: .binary, options: 0)
+    }
+
+    private static func request(bundleID: String, package: URL?, port: UInt16, metadata: Data? = nil) throws -> String {
         guard isAvailable else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
         guard hasPairingFile else { throw ToolError.message(AppText.text("请先在安装方式中导入配对文件。")) }
         guard !bundleID.isEmpty else { throw ToolError.message(AppText.text("安装包信息不完整，无法安装。")) }
         var body: [String: Any] = ["pairing_file": pairingFileURL.path, "host": deviceAddress,
                                    "port": Int(port), "bundle_id": bundleID, "hostname": "iPadn"]
         if let package { body["ipa"] = package.path }
+        if let metadata { body["metadata"] = metadata.base64EncodedString() }
         return String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
     }
 
@@ -248,10 +269,18 @@ enum NativeInstaller {
 
     /// Installs `package`, replacing an installed copy in place. The package
     /// stays on this device; it is handed to the system installer directly.
-    static func install(package: URL, bundleID: String, progress: @escaping @Sendable (Phase) -> Void) async throws -> Outcome {
+    static func install(package: URL, bundleID: String, blockUpdates: Bool = false,
+                        progress: @escaping @Sendable (Phase) -> Void) async throws -> Outcome {
         try begin(); defer { end() }
         let port = await RemotePairingPort.resolve()
-        let body = try request(bundleID: bundleID, package: package, port: port)
+        var metadata: Data?
+        if blockUpdates {
+            guard let record = try blockedMetadata(of: package) else {
+                throw ToolError.message(AppText.text("这个安装包没有购买记录，无法阻止 App Store 更新。"))
+            }
+            metadata = record
+        }
+        let body = try request(bundleID: bundleID, package: package, port: port, metadata: metadata)
         InstallLog.shared.add("native install started (port \(port))")
         // Sending the package takes a while; keep running if the user leaves.
         let background = await UIApplication.shared.beginBackgroundTask(withName: "iPadn native installation") { cancel() }

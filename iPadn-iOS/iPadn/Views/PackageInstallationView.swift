@@ -24,6 +24,8 @@ struct PackageInstallationView: View {
     private let proxied = LocalHostRecord.proxyOrVPNActive
     /// How far a native installation has got; nil when none is running.
     @State private var nativePhase: NativeInstaller.Phase?
+    /// Native installation only: keep the App Store from offering updates.
+    @State private var blockUpdates = false
     private var native: Bool { store.settings.usesNativeInstallation }
     var body: some View {
         NavigationStack {
@@ -75,6 +77,15 @@ struct PackageInstallationView: View {
                     }
                 } else if let message {
                     Section { Label(message, systemImage: "checkmark.circle.fill").font(.subheadline).foregroundStyle(.primary) }
+                }
+                if native {
+                    Section {
+                        Toggle("阻止 App Store 更新", isOn: $blockUpdates)
+                            .disabled(nativePhase != nil)
+                            .accessibilityIdentifier("installation.block-updates")
+                    } footer: {
+                        Text("开启后，App Store 会把这个应用当作最新版本，不再提示或自动更新。想恢复更新时，关闭此项再安装一次即可。")
+                    }
                 }
                 Section {
                     NavigationLink { InstallationSettingsView() } label: {
@@ -131,13 +142,16 @@ struct PackageInstallationView: View {
             defer { busy = false; nativePhase = nil }
             do {
                 guard let file = manager.fileURL(job) else { throw ToolError.message("找不到安装包文件，请重新下载。") }
-                let outcome = try await NativeInstaller.install(package: file, bundleID: job.app.bundleID) { phase in
+                let outcome = try await NativeInstaller.install(package: file, bundleID: job.app.bundleID, blockUpdates: blockUpdates) { phase in
                     Task { @MainActor in if nativePhase != nil { nativePhase = phase } }
                 }
                 UX.feedback()
                 message = outcome.after?.recognisedByAppStore == false
                     ? AppText.text("安装完成，但系统没有保留这个安装包的购买记录，App Store 可能无法识别它。")
                     : outcome.upgraded ? AppText.text("已覆盖安装，原有数据保留。") : AppText.text("安装完成。")
+                if blockUpdates, outcome.after?.updatesBlocked == true {
+                    message = (message ?? "") + "\n" + AppText.text("已阻止 App Store 更新这个应用。")
+                }
             } catch is CancellationError {
                 message = nil
             } catch { issue = error.localizedDescription }

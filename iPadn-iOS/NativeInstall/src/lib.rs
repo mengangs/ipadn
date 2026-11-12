@@ -76,6 +76,11 @@ pub(crate) struct Request {
     ipa: Option<String>,
     #[serde(default)]
     hostname: Option<String>,
+    /// A replacement purchase record (iTunesMetadata.plist, base64). The
+    /// system keeps it instead of the package's own; iPadn uses it to mark
+    /// the installed version as the newest so the App Store offers no update.
+    #[serde(default)]
+    metadata: Option<String>,
 }
 
 /// A failure tagged with the step it happened in, so the app can explain it.
@@ -373,6 +378,13 @@ async fn install(request: &Request, progress: Progress) -> Result<Json, Failure>
     let upgrade = before["installed"] == json!(true);
     let mut options = plist::Dictionary::new();
     options.insert("CFBundleIdentifier".into(), request.bundle_id.clone().into());
+    if let Some(encoded) = request.metadata.as_deref() {
+        use base64::Engine;
+        let record = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .map_err(fail("request"))?;
+        options.insert("iTunesMetadata".into(), plist::Value::Data(record));
+    }
     let options = Some(plist::Value::Dictionary(options));
     let mut client =
         InstallationProxyClient::connect_rsd(&mut session.adapter, &mut session.handshake)
