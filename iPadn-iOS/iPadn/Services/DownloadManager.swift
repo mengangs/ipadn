@@ -44,6 +44,9 @@ final class DownloadManager: NSObject, ObservableObject {
     @Published private(set) var removingIDs = Set<UUID>()
     private var loadingJobs = false
     private var startupTask: Task<Void, Never>?
+    /// Returns once the saved download list has been read (Shortcuts may
+    /// run before the app ever showed it).
+    func loaded() async { await startupTask?.value }
     func progress(for id: UUID) -> DownloadProgressState {
         if let progress = rowProgress[id] { return progress }
         let progress = DownloadProgressState(); rowProgress[id] = progress

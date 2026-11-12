@@ -891,6 +891,15 @@ final class ToolStore: ObservableObject {
     }
 
     /// Whether a download of this app is already on its way.
+    /// The newest finished download of each app with a newer store version.
+    var updatableJobs: [DownloadJob] {
+        var seen = Set<String>()
+        return downloads.jobs.filter { job in
+            guard job.status == .completed, let key = job.updateKey, availableUpdates[key] != nil else { return false }
+            return seen.insert(key).inserted
+        }
+    }
+
     private func updateInProgress(_ key: String) -> Bool {
         downloads.jobs.contains { $0.updateKey == key && [.queued, .running, .pausing, .paused, .processing].contains($0.status) }
     }

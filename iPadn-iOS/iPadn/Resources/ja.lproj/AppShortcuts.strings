@@ -1,2 +1,4 @@
 "在 ${applicationName} 搜索应用" = "${applicationName} で App を検索";
 "用 ${applicationName} 导入安装包" = "${applicationName} でパッケージを読み込む";
+"用 ${applicationName} 检查更新" = "${applicationName}でアップデートを確認";
+"${applicationName} 的下载进度" = "${applicationName}のダウンロード状況";
