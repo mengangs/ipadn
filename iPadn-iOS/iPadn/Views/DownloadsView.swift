@@ -27,6 +27,8 @@ struct DownloadsView: View {
     @State private var editRowsShown = false
     /// The same entrance for the cards when edit mode ends.
     @State private var cardsShown = true
+    /// A mode change is running; taps wait so two changes never overlap.
+    @State private var switchingMode = false
     @State private var actionBusy = false
     private var filteredJobs: [DownloadJob] {
         manager.jobs.filter { filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
@@ -168,9 +170,7 @@ struct DownloadsView: View {
         // Cards and the compact edit list are two layouts; they swap with a
         // shared zoom and fade so the change reads as one motion.
         .id(editMode.isEditing)
-        .transition(reduceMotion ? .opacity : .asymmetric(
-            insertion: .opacity,
-            removal: .modifier(active: DrawerFold(progress: 0), identity: DrawerFold(progress: 1))))
+        .transition(reduceMotion ? .opacity : .identity)
         }
         .task(id: manager.jobs.filter { $0.status == .completed }.map { $0.id.uuidString }.joined()) {
             await manager.loadPackageIcons()
@@ -182,14 +182,8 @@ struct DownloadsView: View {
         .environment(\.editMode, $editMode)
         .toolbar {
             ToolbarItemGroup(placement: .compatibleTopBarLeading) {
-                Button(editMode.isEditing ? "完成" : "编辑") {
-                    editRowsShown = false
-                    cardsShown = !editMode.isEditing
-                    withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 0.88)) {
-                        editMode = editMode.isEditing ? .inactive : .active
-                    }
-                }
-                .disabled(manager.jobs.isEmpty)
+                Button(editMode.isEditing ? "完成" : "编辑") { toggleEditMode() }
+                .disabled(manager.jobs.isEmpty || switchingMode)
                 .accessibilityIdentifier("downloads.edit")
                 if !manager.jobs.isEmpty {
                     Menu {
@@ -240,6 +234,7 @@ struct DownloadsView: View {
             if !mode.isEditing { selection.removeAll() }
             // Cards are back on screen: pull them out one after another.
             if !mode.isEditing && !cardsShown { DispatchQueue.main.async { cardsShown = true } }
+            if !mode.isEditing { editRowsShown = false }
         }
         .compatibleOnChange(of: filter) { _ in selection.removeAll() }
         .compatibleOnChange(of: term) { _ in selection.removeAll() }
@@ -358,6 +353,26 @@ struct DownloadsView: View {
         UX.feedback()
         perform { try await store.downloadAllUpdates(of: jobs); filter = .all; term = "" }
     }
+    /// Like a drawer: the current rows slide up and in, the list swaps while
+    /// nothing is showing, then the other layout's rows slide down and out.
+    private func toggleEditMode() {
+        guard !switchingMode else { return }
+        let entering = !editMode.isEditing
+        guard !reduceMotion else {
+            withAnimation(.easeInOut(duration: 0.2)) { editMode = entering ? .active : .inactive }
+            return
+        }
+        switchingMode = true
+        if entering { cardsShown = false } else { editRowsShown = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            // The list itself swaps without a transition; this animation only
+            // moves the bottom bar and the toolbar title.
+            if entering { editRowsShown = false } else { cardsShown = false }
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { editMode = entering ? .active : .inactive }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { switchingMode = false }
+        }
+    }
+
     /// A compact row for edit mode: selection mark, icon, name and state.
     private func editRow(_ job: DownloadJob) -> some View {
         let app = job.displayApp(packageIcon: manager.packageIconURL(job))
@@ -657,8 +672,9 @@ private struct TaskSizeRows: View {
     }
 }
 
-/// A row that slides down out of the list's top edge, a few hundredths of a
-/// second after the one above it, like a drawer being pulled out.
+/// A row that slides down out of the list's top edge a few hundredths of a
+/// second after the one above it, like a drawer pulled out; hidden again, all
+/// rows slide back up together.
 private struct DrawerRow: ViewModifier {
     let shown: Bool
     let index: Int
@@ -668,17 +684,7 @@ private struct DrawerRow: ViewModifier {
             .opacity(shown ? 1 : 0)
             .offset(y: shown ? 0 : -travel)
             .scaleEffect(x: 1, y: shown ? 1 : 0.9, anchor: .top)
-            .animation(.spring(response: 0.46, dampingFraction: 0.82).delay(0.05 + Double(min(index, 10)) * 0.035), value: shown)
-    }
-}
-
-/// The leaving list folds up toward the header, like a drawer pushed shut.
-private struct DrawerFold: ViewModifier {
-    let progress: CGFloat
-    func body(content: Content) -> some View {
-        content
-            .scaleEffect(x: 1, y: 0.82 + 0.18 * progress, anchor: .top)
-            .offset(y: -24 * (1 - progress))
-            .opacity(Double(progress))
+            .animation(shown ? .spring(response: 0.46, dampingFraction: 0.82).delay(0.03 + Double(min(index, 10)) * 0.035)
+                             : .easeIn(duration: 0.18), value: shown)
     }
 }
