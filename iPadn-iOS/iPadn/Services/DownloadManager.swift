@@ -647,6 +647,31 @@ final class DownloadManager: NSObject, ObservableObject {
         job.localFilename.flatMap(LocalResources.packageURL)
     }
 
+    /// The file to hand to the share sheet: named after the app and version
+    /// ("OneDrive 26.1.4.ipa") rather than the internal UUID. A hard link, so
+    /// it costs no space; the stored file itself is never renamed.
+    func exportURL(_ job: DownloadJob) -> URL? {
+        guard let file = fileURL(job) else { return nil }
+        let illegal = CharacterSet(charactersIn: "/\\:?%*|\"<>").union(.newlines).union(.controlCharacters)
+        let clean = { (s: String) in s.components(separatedBy: illegal).joined(separator: " ").trimmingCharacters(in: .whitespaces) }
+        let name = clean(job.app.name), version = clean(job.storeVersion)
+        let base = [name, version].filter { !$0.isEmpty }.joined(separator: " ")
+        guard !base.isEmpty else { return file }
+        let ext = file.pathExtension
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Share", isDirectory: true)
+            .appendingPathComponent(job.id.uuidString, isDirectory: true)
+        let target = folder.appendingPathComponent(String(base.prefix(120))).appendingPathExtension(ext)
+        do {
+            try? FileManager.default.removeItem(at: folder)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            do { try FileManager.default.linkItem(at: file, to: target) }
+            catch { try FileManager.default.copyItem(at: file, to: target) }
+            return target
+        } catch {
+            return file
+        }
+    }
+
     func packageIconURL(_ job: DownloadJob) -> URL? {
         let url = PackageIconService.cacheURL(job.id)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil

@@ -241,9 +241,9 @@ struct DownloadsView: View {
         DownloadTaskRow(snapshot: job, progress: manager.progress(for: job.id), update: update, kept: store.keepsVersion(job), editing: editing, inspecting: { inspecting = job }, primary: { primary(job) }, updating: { downloadUpdate(job) })
     }
     private func shareAction(_ job: DownloadJob) -> [RevealAction] {
-        guard job.status == .completed, let file = manager.fileURL(job) else { return [] }
-        return [RevealAction(title: "分享", systemImage: "square.and.arrow.up", tint: .accentColor, role: nil) {
-            share = SharedFile(url: file)
+        guard job.status == .completed, manager.fileURL(job) != nil else { return [] }
+        return [RevealAction(title: "分享", systemImage: "square.and.arrow.up", tint: .blue, role: nil) {
+            if let file = manager.exportURL(job) { share = SharedFile(url: file) }
         }]
     }
     private func downloadUpdate(_ job: DownloadJob) {
@@ -347,7 +347,7 @@ struct DownloadsView: View {
                                     }
                                     Button("任务详情", systemImage: "info.circle") { inspecting = job }
                                     if let file = manager.fileURL(job) {
-                                        Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: file) }
+                                        Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: manager.exportURL(job) ?? file) }
                                         if job.rawFormat == nil {
                                             Button("安装", systemImage: "square.and.arrow.down") { installing = job }
                                         }
@@ -464,7 +464,7 @@ struct DownloadsView: View {
         case .failed:
             if job.asset != nil { perform { try await store.refreshDownload(job) } } else { manager.resume(job.id) }
         case .completed:
-            if job.rawFormat != nil, let file = manager.fileURL(job) {
+            if job.rawFormat != nil, let file = manager.exportURL(job) {
                 share = SharedFile(url: file)
             } else { installing = job }
         default: break
