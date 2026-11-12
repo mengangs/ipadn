@@ -992,6 +992,35 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(grouped.first { $0.reasons.contains("Nearby") }?.reasons, ["Nearby", "Concerts"])
     }
 
+    func testBlockedMetadataRaisesTheVersionID() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let record: [String: Any] = ["itemId": 477537958, "softwareVersionExternalIdentifier": 894270367, "bundleShortVersionString": "26.1.4"]
+        let package = folder.appendingPathComponent("Demo.ipa")
+        let archive = try Archive(url: package, accessMode: .create)
+        let data = try PropertyListSerialization.data(fromPropertyList: record, format: .xml, options: 0)
+        try archive.addEntry(with: "iTunesMetadata.plist", type: .file, uncompressedSize: Int64(data.count)) { position, size in
+            data.subdata(in: Int(position)..<Int(position) + size)
+        }
+        let blocked = try XCTUnwrap(NativeInstaller.blockedMetadata(of: package))
+        let result = try XCTUnwrap(PropertyListSerialization.propertyList(from: blocked, format: nil) as? [String: Any])
+        XCTAssertEqual(result["softwareVersionExternalIdentifier"] as? Int, NativeInstaller.blockedVersionID)
+        XCTAssertEqual(result["itemId"] as? Int, 477537958)
+        XCTAssertEqual(result["bundleShortVersionString"] as? String, "26.1.4")
+
+        let empty = folder.appendingPathComponent("Empty.ipa")
+        let bare = try Archive(url: empty, accessMode: .create)
+        try bare.addEntry(with: "Payload/", type: .directory, uncompressedSize: Int64(0)) { _, _ in Data() }
+        XCTAssertNil(try NativeInstaller.blockedMetadata(of: empty))
+
+        var app = NativeInstaller.InstalledApp(installed: true)
+        app.storeVersionID = String(NativeInstaller.blockedVersionID)
+        XCTAssertTrue(app.updatesBlocked)
+        app.storeVersionID = "894270367"
+        XCTAssertFalse(app.updatesBlocked)
+    }
+
     func testRegionLocalesFindTheirScript() {
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh_CN")), "免费")
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh-Hans_CN")), "免费")

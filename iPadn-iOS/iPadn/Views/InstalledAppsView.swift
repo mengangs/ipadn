@@ -32,7 +32,9 @@ struct InstalledAppsView: View {
 
     func group(of app: NativeInstaller.InstalledApp) -> Group {
         if app.manifestInstall == true { return .link }
-        if let latest = listing(app), let installed = app.version, Self.isUpdate(latest, installed: installed, versionID: app.storeVersionID) { return .update }
+        // Blocked on purpose: the App Store offers nothing, so neither does this list.
+        if !app.updatesBlocked, let latest = listing(app), let installed = app.version,
+           Self.isUpdate(latest, installed: installed, versionID: app.storeVersionID) { return .update }
         return app.storeItemID != nil ? .store : .other
     }
 
@@ -167,6 +169,7 @@ struct InstalledAppsView: View {
         let installed = app.version ?? ""
         let subtitle = kind == .update
             ? AppText.text("已装 \(installed)，商店最新 \(latest?.version ?? "")")
+            : app.updatesBlocked ? AppText.text("已装 \(installed) · 已阻止更新")
             : (installed.isEmpty ? (app.bundleID ?? "") : AppText.text("已装 \(installed)"))
         let shown = StoreApp(id: app.storeItemID ?? app.bundleID ?? "", name: latest?.name ?? app.name ?? app.bundleID ?? "",
                              bundleID: app.bundleID ?? "", version: installed, iconURL: latest?.iconURL)
