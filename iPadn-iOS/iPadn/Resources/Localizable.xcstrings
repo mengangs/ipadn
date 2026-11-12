@@ -77343,6 +77343,76 @@
         }
       }
     },
+    "开启「仅使用 Wi‑Fi 下载」后，只有蜂窝数据时下载会暂停排队，连上 Wi‑Fi 后自动继续。「下载完成后自动安装」会在 iPadn 打开时弹出安装并开始安装。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启「仅使用 Wi‑Fi 下载」后，只有蜂窝数据时下载会暂停排队，连上 Wi‑Fi 后自动继续。「下载完成后自动安装」会在 iPadn 打开时弹出安装并开始安装。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "With “Download over Wi‑Fi only”, downloads wait in the queue while only cellular data is available and continue on Wi‑Fi. “Install when downloaded” opens the installer and starts installing while iPadn is open."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開啟「僅使用 Wi‑Fi 下載」後，只有行動數據時下載會暫停排隊，連上 Wi‑Fi 後自動繼續。「下載完成後自動安裝」會在 iPadn 開啟時彈出安裝並開始安裝。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「Wi‑Fi接続時のみダウンロード」をオンにすると、モバイルデータ通信しかないときはダウンロードが待機し、Wi‑Fiにつながると自動で再開します。「ダウンロード後に自動インストール」は、iPadnを開いているときにインストール画面を表示してインストールを始めます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“Wi‑Fi에서만 다운로드”를 켜면 셀룰러 데이터만 있을 때 다운로드가 대기열에서 기다리고 Wi‑Fi에 연결되면 자동으로 계속됩니다. “다운로드 후 자동 설치”는 iPadn이 열려 있을 때 설치 화면을 띄우고 설치를 시작합니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "При включённом параметре «Загружать только по Wi‑Fi» загрузки ждут в очереди, пока доступна только сотовая сеть, и продолжаются по Wi‑Fi. «Устанавливать после загрузки» открывает установку и начинает её, пока iPadn открыто."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Con «Descargar solo con Wi‑Fi», las descargas esperan en la cola mientras solo haya datos móviles y continúan con Wi‑Fi. «Instalar al terminar la descarga» abre el instalador y empieza a instalar mientras iPadn está abierta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avec « Télécharger en Wi‑Fi uniquement », les téléchargements attendent dans la file tant que seules les données cellulaires sont disponibles et reprennent en Wi‑Fi. « Installer une fois téléchargé » ouvre l’installation et la lance tant qu’iPadn est ouverte."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit „Nur über WLAN laden“ warten Downloads in der Warteschlange, solange nur Mobilfunk verfügbar ist, und laufen im WLAN weiter. „Nach dem Laden installieren“ öffnet die Installation und startet sie, während iPadn geöffnet ist."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Com “Baixar só por Wi‑Fi”, os downloads esperam na fila enquanto só houver dados celulares e continuam no Wi‑Fi. “Instalar ao terminar o download” abre o instalador e começa a instalar enquanto o iPadn estiver aberto."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "عند تشغيل «التنزيل عبر Wi‑Fi فقط» تنتظر التنزيلات في القائمة ما دامت البيانات الخلوية وحدها متاحة، وتستمر عند الاتصال بشبكة Wi‑Fi. يفتح «التثبيت بعد اكتمال التنزيل» شاشة التثبيت ويبدأ التثبيت ما دام iPadn مفتوحًا."
+          }
+        }
+      }
+    },
     "等待 Wi‑Fi": {
       "localizations": {
         "zh-Hans": {
@@ -80139,6 +80209,146 @@
           "stringUnit": {
             "state": "translated",
             "value": "يعمل ما دامت هذه الصفحة مفتوحة. في الخلفية يستمر ما دام النظام يسمح بذلك؛ وإذا أوقف النظام iPadn مؤقتًا، يُستأنف على العنوان نفسه عند عودتك. يتوقف عند مغادرة الصفحة أو بعد 10 دقائق من الخمول."
+          }
+        }
+      }
+    },
+    "在搜索页显示「发现」": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在搜索页显示「发现」"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Discover on the search page"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在搜尋頁顯示「探索」"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索ページに「見つける」を表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검색 페이지에 “발견” 표시"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показывать «Обзор» на странице поиска"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar Descubrir en la búsqueda"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher Découvrir dans la recherche"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "„Entdecken“ auf der Suchseite zeigen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar Descobrir na busca"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "عرض «استكشاف» في صفحة البحث"
+          }
+        }
+      }
+    },
+    "长按可删除单条记录。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "长按可删除单条记录。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch and hold a search to delete it."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "長按可刪除單筆記錄。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "長押しすると個別に削除できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "길게 누르면 개별 기록을 삭제할 수 있습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нажмите и удерживайте запрос, чтобы удалить его."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mantén pulsada una búsqueda para eliminarla."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touchez longuement une recherche pour la supprimer."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Halte eine Suche gedrückt, um sie zu löschen."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toque e segure uma busca para apagá-la."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "المس مطولًا عملية بحث لحذفها."
           }
         }
       }
