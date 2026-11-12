@@ -38,21 +38,26 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 | | |
 | --- | --- |
-| 🔍 **Search** | Search by app name, App ID or App Store link, and switch storefront region and platform (iPhone / iPad / Apple TV / Mac). App pages show screenshots and other apps by the same developer. |
+| 🔍 **Search & discover** | Search by app name, App ID or App Store link, and switch storefront region and platform (iPhone / iPad / Apple TV / Mac). Discover on the search page shows Top Free, Top Paid and Top Grossing for any region, by category. App pages show screenshots, customer reviews and other apps by the same developer. |
+| 🌐 **Translation** | Descriptions and release notes in another language can be replaced with the system translation (iOS 17.4 or later). |
 | 🕘 **Older versions** | See each version's number, date and release notes and download older versions, or enter a version ID directly. Downloaded apps can “Keep this version” to stop update reminders. |
-| ⬇️ **Downloads** | Background downloads you can pause, resume and retry, with live speed and time remaining. |
+| ⬇️ **Downloads** | Background downloads you can pause, resume and retry, with live speed and time remaining, also on the Lock Screen and in the Dynamic Island. Download over Wi‑Fi only and install automatically when a download finishes if you like. Task details show the permissions, extensions and languages a package declares. |
 | 🔔 **Update alerts** | Downloaded apps with a newer version are marked in the list, and background checks send a notification. |
 | ⬆️ **iPadn updates** | New iPadn releases appear in Settings with a notification; read what's new, download the new package and hand it to your signing tool. |
 | 👀 **Follow apps** | Get notified about new versions, price drops, free promotions or removals, with a price history. |
 | 🌏 **Regional prices** | Compare app and in-app purchase prices (including subscriptions) across regions, converted to your chosen currency and sorted from lowest. You pick the regions. |
 | 📲 **One-tap install** | Tap “Install” when a download finishes. No profile or certificate needed, with live progress. |
-| 🧩 **Native install** | Installs through the system's own installation service, with the same result as installing from a computer: the App Store recognizes and updates the app, and an App Store copy can be replaced in place with its data kept. From iOS 27, pairing is done on the device without a computer. |
+| 🧩 **Native install** | Installs through the system's own installation service, with the same result as installing from a computer: the App Store recognizes and updates the app, and an App Store copy can be replaced in place with its data kept. You can also block App Store updates for the app. From iOS 27, pairing is done on the device without a computer. |
+| 📱 **Apps on this device** | Lists the apps installed on your phone and updates every app with a newer App Store version in one go. |
+| 💻 **Wi‑Fi transfer** | Download finished packages in a browser on a computer on the same Wi‑Fi, only while the page is open. |
 | 💻 **Mac apps** | Download PKG installers of Mac App Store apps and install them on a Mac. |
 | 🛍️ **Purchases** | Sync every app you've acquired, find them by name or date, and download several at once. Find removed apps that can still be downloaded and back them all up; export the list as a spreadsheet. |
 | 📦 **Removed apps** | If you acquired an app once, you can find it by App ID and download it even after it's removed from sale. |
 | 👥 **Multiple accounts** | Save several Apple Accounts (email or phone number) and switch with one tap. |
 | 🎮 **Apple Arcade** | Accounts subscribed to Apple Arcade can download Arcade games. |
-| 🧰 **Pro mode** | Browse and extract files inside a package, and view account tokens and the device identifier (off by default). |
+| 🔒 **App lock** | Lock iPadn with Face ID, Touch ID or your passcode; its content is hidden in the app switcher too. |
+| 🧭 **Widgets & Shortcuts** | Home Screen and Lock Screen widgets open Search, Downloads, Purchased or the update check; Shortcuts actions download apps, check for updates, report download progress, follow apps and more. |
+| 🧰 **Pro mode** | Browse and extract files inside a package, compare two downloaded versions of an app, and view account tokens and the device identifier (off by default). |
 
 The interface follows the App Store's design. Appearance follows the system and the icon is dark by default (both can be changed in Settings), with Dynamic Type, the iPad sidebar and alternate app icons.
 
@@ -62,7 +67,7 @@ The interface follows the App Store's design. Appearance follows the system and 
 
 > Requires **iOS / iPadOS 16** or later.
 
-1. Download the latest `iPadn-<version>-unsigned.ipa` from [Releases](https://github.com/mengangs/ipadn/releases/latest).
+1. Download the latest `iPadn-<version>-unsigned.ipa` from [Releases](https://github.com/mengangs/ipadn/releases/latest). If your signing tool or free account has few App IDs left, use the lite package `iPadn-<version>-lite-unsigned.ipa` instead: it needs one App ID but has no Dynamic Island progress or widgets.
 2. Sign it with your usual signing tool and install it on your device.
 3. Open iPadn and sign in to your Apple Account under Account. If two-factor authentication is on, enter the 6-digit code shown on your trusted device.
 
@@ -147,12 +152,13 @@ The first Mac download fetches about 47 MB of extra components, which are reused
 After turning on Pro mode under Account › Settings:
 
 - Download task details offer “Browse package contents”, where you can view and extract any file and preview text and images.
+- Package info can compare a download with other downloaded versions of the same app: version, permissions, extensions, frameworks and more.
 - Settings shows “Account & device identifier”, with account tokens and the option to change the device identifier. Tokens give direct access to your Apple Account, so never share them; after changing the device identifier, accounts may need to sign in again.
 
 ## Your data
 
 - Account details are stored only on your device; verification codes are never saved.
-- Downloaded packages stay on your device and are never uploaded anywhere.
+- Downloaded packages stay on your device and are never uploaded anywhere. Wi‑Fi transfer runs only while its page is open, uses an address with a random key, answers only devices on your local network and stops when you leave the page.
 - Price comparison fetches reference exchange rates from open.er-api.com; requests contain no account information.
 - Removing an account doesn't delete downloaded packages. Deleting a download task also deletes its file, after a confirmation.
 
@@ -168,6 +174,12 @@ Apple only lets you download apps your account holds a license for. A version ma
 <summary><b>Nothing happens after tapping “Install”?</b></summary>
 
 Make sure the device is online, and tap “Install” in the system prompt. If no prompt appears, tap “Install in Safari”, or switch to “Local certificate” in Installation settings (especially inside LiveContainer). If it still doesn't work, share the package with another installation tool, or export diagnostics under Settings › Maintenance and send them to us.
+</details>
+
+<details>
+<summary><b>In LiveContainer, files can't be imported or exported, or one-tap install does nothing?</b></summary>
+
+In LiveContainer, long-press iPadn and turn on “Fix File Picker” in its settings. Importing and exporting packages and diagnostics then works, and one-tap install can show the system install prompt.
 </details>
 
 <details>

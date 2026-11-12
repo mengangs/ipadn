@@ -1,15 +1,15 @@
 # iPadn 项目全面交接与问题排查文档 (HANDOVER.md)
 
-> **更新时间**：2026-11-12
+> **更新时间**：2026-11-12（2.0.0）
 > **代码仓库**：`https://github.com/mengangs/ipadn.git` (`main` 分支)  
 > **本地工作区**：`D:\iOS-Dev\projects\ipadn` (映射到 WSL2: `/mnt/d/iOS-Dev/projects/ipadn`)  
 > **目标产品**：iOS 原生应用 `iPadn` (`app.local.iPadn`)
 
 ---
 
-## 2026-11-12 未发布（main，下一版）
+## 2026-11-12 iPadn 2.0.0（build 28）
 
-已合并进 `main`、尚未发版（用户要几轮优化后一起发）。版本号仍是 1.9.2（build 27），发版前需要升版本并写 `RELEASE_NOTES.md`。第三批功能已全部完成并合并；main 上的完整 CI（含全部 UI 测试）在合并 #58–#63 后通过，#64–#68 各自的分支 CI 均通过。
+用户确认以 2.0.0 发布（大版本更新）。包含下面第一、二、三批的全部内容，以及 #69、#70。发版流程：`release/2.0.0` 分支升版本（`generate_project.py` 的 `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`）、写 `RELEASE_NOTES.md`、更新两份 README，完整 CI 通过后合并，推送 `v2.0.0` 标签触发发布（同时发布标准版和精简版 IPA，并更新 AltStore 源）。本地 `Config/xtool/*.plist` 的版本号要手动同步（不在 git 中）。
 
 ### 第一、二批
 - **#42 一键全部更新**：下载页两个以上可更新时显示「全部更新」（`ToolStore.downloadAllUpdates`）。
@@ -34,10 +34,16 @@
 - **#65 Wi‑Fi 传输**（账号页）：同一 Wi‑Fi 下电脑浏览器下载已完成的安装包。只在页面打开且前台时运行，离开/后台/闲置 10 分钟停止；地址含 128 位随机密钥，20 次错误请求停止；只应答局域网地址；只读（`WiFiTransferServer`）。本地网络权限说明已更新。
 - **#66 桌面小组件 + 精简版**：扩展里加快捷入口小组件（小、中、锁屏圆形），通过 `ipadn://open?tab=…[&check=updates]` 打开，无 App Group、不读应用数据。发版同时发布 `iPadn-<版本>-lite-unsigned.ipa`（`scripts/make_lite_ipa.py` 去掉扩展，只需 1 个 App ID）；每次 CI 构建也会生成精简版。
 - **#67 LiveContainer 提示**（来自 issue #44）：在 LiveContainer 中运行时，下载页提示在 LiveContainer 里长按 iPadn 打开「修复文件导入」（Fix File Picker），之后才能导入导出和弹出系统安装窗口。DEBUG 可用 `--livecontainer` 显示。
+- **#69**：「下载完成后自动安装」此前从不弹出安装页——`.onReceive($pendingAutoInstalls)` 在 `@Published` 值写入前触发（willSet），读到的仍是空队列；改为 `AutoInstall.presentSoon` 下一轮主队列再取，并从 key window 弹出。真机验证：下载 OneDrive 26.1.3 后自动弹出并原生安装完成。另加：榜单页右上角地区菜单；版本对比在大小显示相同时隐藏大小行。
+- **#70 流畅度与打磨**（issue #41）：选中的标签页原是 `ToolStore` 的 `@Published tab`，28 个视图观察 ToolStore，每次切换都让四个标签页全部失效重建；改为单独的 `TabState`（`store.tab` 仍可读写），只有 `RootView` 观察。iPhone 15 Pro 实测每次切换 CPU：搜索 0.45→0.24 s、已购 0.35→0.26 s、账号 0.31→0.24 s、下载 0.60→0.54 s。版本对比行显示版本 ID；近期新增英文文案统一为句首大写（sentence case）；VisualTests 改用 `drawHierarchy`（`layer.render` 截下载/已购/账号页是黑屏）。
 - **#68 阻止 App Store 更新**（来自 issue #46，未用系统漏洞）：原生安装页开关，开启后通过安装器的 `iTunesMetadata` 选项传入改过的购买记录（`softwareVersionExternalIdentifier` = 2000000000），安装包本身不改；关掉再装一次即可恢复更新。本机应用页标记「已阻止更新」。真机验证：版本号改旧 → App Store 显示「更新」，改高 → 显示「打开」，应用正常启动；用户在 iPadn 里实测有效。
 
+### 2026-11-12 真机测试与性能测量（iPhone 15 Pro，iOS 27）
+- 全部新功能已在真机走过一遍：发现与榜单地区切换、评论、简介翻译、版本默认 5 个、自动安装、版本对比、Wi‑Fi 传输（电脑下载、访问记录、离开页面即停止）、编辑模式、本机应用、灵动岛进度、安装包信息、LiveContainer 提示；小组件和阻止更新由用户实测。快捷指令和 AltStore 源按用户要求暂不测。未测：仅 Wi‑Fi 下载（无法切到蜂窝）、更新说明翻译（测试应用无更新说明）。
+- 性能：空闲 0% CPU、不重绘，内存约 112 MB；榜单（100 行）、本机应用（163 行）、详情页滚动都在测量工具的 60 FPS 上限（系统设置 App 也是 60）。行的侧滑用 UIKit 手势，不受 iOS 18 `DragGesture` 滚动问题影响。测量脚本：`.build/native-pair/perf*.py`（`dvt sysmon` 读 CPU、`dvt graphics` 读 FPS；测量时手机不能被人使用，否则数据和点按都会乱）。
+
 ### Issues
-- #44、#46 已回复并关闭。仍开着：#54（iPhone duo 适配）、#41（iOS 18 卡顿）。
+- #44、#46 已回复并关闭。#41（iOS 18 卡顿）已回复，请对方提供机型、卡顿页面和录屏，仍开着。#54（iPhone duo 适配）未处理，含义不明，需要先问清楚。
 - LiveContainer + 美区账号下载 401：仍在等用户的诊断信息。
 
 ### 待排查：原生安装后 WQFiles / AppsManager 无法备份数据（2026-11-12 用户转述）
@@ -50,6 +56,8 @@
 - 初步怀疑：这些工具在 iOS 27 上借漏洞直接扫描数据目录，可能找到旧的空目录或同一应用的多个目录；「卸载保留数据」会保留同一个目录，所以从 App Store 重装也不变。尚未证实。
 - 已请报告者提供：AppsManager 里该应用显示的数据路径截图；一个之前没装过、直接原生安装的应用能否备份；把出问题的应用彻底删除（不是保留数据卸载）后从 App Store 安装能否恢复。
 - 可能方向：确认 App Store 更新是否保留容器路径；看安装选项能否保留原容器或带上与 App Store 相同的标记。
+- **报告者回复（2026-11-12）**：①之前原生安装过、彻底删除后从 App Store 安装：WQFiles、WQManager 能备份，AppsManager 不能（路径和 WQFiles 不同、提示路径打不开，重装 AppsManager 也一样）；②手机上没装过、直接原生安装：WQFiles、WQManager 正常，AppsManager 能看到数据大小和目录，但备份只有几 KB。
+- 结论：AppsManager 自身有问题（App Store 安装的也不行），与 iPadn 无关；WQFiles 只在「原生安装覆盖已有应用」时失败，与覆盖安装换新数据目录一致。已请对方试：覆盖安装后重启手机再用 WQFiles 备份——能恢复说明是 WQFiles 缓存旧路径，否则是旧目录残留，需要继续找保留容器的办法。临时办法：彻底删除后再装（会清空数据）。
 
 - **决定不做**：分享扩展（多占 App ID、LiveContainer 不支持、跳转不可靠）；带实时数据的小组件（需要 App Group，签名工具支持不一）。
 - **CI 偶发失败**：`testLargeDownloadListsLaunchAndScroll`、`testSignerCancelResumesPendingJavaScript`、`testHistoryDeletionCanBeUndone`、模拟器 "Failed to terminate" / "Failed to get background assertion"、构建时从 GitHub 克隆依赖失败、macOS 运行机排不上队，重跑即可。
