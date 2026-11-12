@@ -78813,76 +78813,6 @@
         }
       }
     },
-    "只在这个页面打开且 iPadn 在前台时运行；离开页面、切到后台或闲置 10 分钟会自动停止。": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "只在这个页面打开且 iPadn 在前台时运行；离开页面、切到后台或闲置 10 分钟会自动停止。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Runs only while this page is open and iPadn is in front; leaving the page, going to the background or 10 idle minutes stop it."
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "只在這個頁面開啟且 iPadn 在前景時執行；離開頁面、切到背景或閒置 10 分鐘會自動停止。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このページを開いていて、iPadnが前面にあるときだけ動作します。ページを離れる、バックグラウンドに移る、10分間操作がない場合は自動で停止します。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이 페이지가 열려 있고 iPadn이 앞에 있을 때만 작동하며, 페이지를 떠나거나 백그라운드로 가거나 10분간 사용하지 않으면 자동으로 중지됩니다."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Работает, только пока открыта эта страница и iPadn на экране; уход со страницы, переход в фон или 10 минут простоя останавливают передачу."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Solo funciona con esta página abierta e iPadn en primer plano; salir de la página, pasar a segundo plano o 10 minutos sin uso lo detienen."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fonctionne uniquement quand cette page est ouverte et iPadn au premier plan ; quitter la page, passer en arrière-plan ou 10 minutes d’inactivité l’arrêtent."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Läuft nur, solange diese Seite offen und iPadn im Vordergrund ist; Verlassen der Seite, Hintergrund oder 10 Minuten Leerlauf beenden es."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Só funciona com esta página aberta e o iPadn em primeiro plano; sair da página, ir para o segundo plano ou 10 minutos ocioso param a transferência."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "يعمل فقط عندما تكون هذه الصفحة مفتوحة وiPadn في المقدمة؛ ويتوقف عند مغادرة الصفحة أو الانتقال إلى الخلفية أو بعد 10 دقائق من الخمول."
-          }
-        }
-      }
-    },
     "地址里带有随机密钥，每次开启都不同；多次错误访问会自动停止。": {
       "localizations": {
         "zh-Hans": {
@@ -79159,76 +79089,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "الأمان"
-          }
-        }
-      }
-    },
-    "iPadn 切到后台，传输已停止。": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn 切到后台，传输已停止。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn went to the background, so sharing stopped."
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn 切到背景，傳輸已停止。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadnがバックグラウンドに移ったため、共有を停止しました。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn이 백그라운드로 전환되어 공유가 중지되었습니다."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn ушло в фон, передача остановлена."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn pasó a segundo plano y se dejó de compartir."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn est passée en arrière-plan, le partage s’est arrêté."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPadn ist im Hintergrund, die Freigabe wurde beendet."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "O iPadn foi para o segundo plano e a transferência parou."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "انتقل iPadn إلى الخلفية فتوقفت المشاركة."
           }
         }
       }
@@ -80279,6 +80139,76 @@
           "stringUnit": {
             "state": "translated",
             "value": "منطقة التصنيف: %@"
+          }
+        }
+      }
+    },
+    "只在这个页面打开时运行。切到后台后会在系统允许的时间内继续运行，被系统暂停后回到 iPadn 会在原地址自动恢复；离开页面或闲置 10 分钟会停止。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只在这个页面打开时运行。切到后台后会在系统允许的时间内继续运行，被系统暂停后回到 iPadn 会在原地址自动恢复；离开页面或闲置 10 分钟会停止。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runs while this page is open. In the background it keeps going as long as iOS allows; if iOS pauses iPadn, it resumes at the same address when you return. Leaving the page or 10 idle minutes stop it."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只在這個頁面開啟時執行。切到背景後會在系統允許的時間內繼續執行，被系統暫停後回到 iPadn 會在原位址自動恢復；離開頁面或閒置 10 分鐘會停止。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページを開いている間だけ動作します。バックグラウンドではシステムが許す間は動作を続け、システムに一時停止されても iPadn に戻ると同じアドレスで自動的に再開します。ページを離れるか10分間操作がないと停止します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 페이지가 열려 있는 동안 작동합니다. 백그라운드에서는 시스템이 허용하는 동안 계속 작동하며, 시스템에 의해 일시 정지되어도 iPadn으로 돌아오면 같은 주소로 자동 재개됩니다. 페이지를 떠나거나 10분간 사용하지 않으면 중지됩니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Работает, пока открыта эта страница. В фоне продолжает работать, сколько позволяет система; если система приостановит iPadn, при возврате передача возобновится по тому же адресу. Уход со страницы или 10 минут простоя останавливают её."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Funciona mientras esta página está abierta. En segundo plano sigue funcionando mientras el sistema lo permita; si el sistema pausa iPadn, se reanuda en la misma dirección al volver. Salir de la página o 10 minutos sin uso la detienen."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fonctionne tant que cette page est ouverte. En arrière-plan, le partage continue tant que le système le permet ; si le système suspend iPadn, il reprend à la même adresse à votre retour. Quitter la page ou 10 minutes d’inactivité l’arrêtent."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Läuft, solange diese Seite offen ist. Im Hintergrund läuft die Freigabe weiter, solange das System es erlaubt; pausiert das System iPadn, geht sie bei der Rückkehr unter derselben Adresse weiter. Verlassen der Seite oder 10 Minuten Leerlauf beenden sie."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Funciona enquanto esta página estiver aberta. Em segundo plano continua enquanto o sistema permitir; se o sistema pausar o iPadn, a transferência retoma no mesmo endereço quando você voltar. Sair da página ou 10 minutos ocioso param a transferência."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يعمل ما دامت هذه الصفحة مفتوحة. في الخلفية يستمر ما دام النظام يسمح بذلك؛ وإذا أوقف النظام iPadn مؤقتًا، يُستأنف على العنوان نفسه عند عودتك. يتوقف عند مغادرة الصفحة أو بعد 10 دقائق من الخمول."
           }
         }
       }

@@ -2,7 +2,9 @@ import SwiftUI
 import UIKit
 
 /// Lets a computer on the same Wi-Fi download finished packages in a browser.
-/// The server runs only while this page is open and iPadn is in front.
+/// The server runs while this page is open. In the background it keeps going
+/// as long as iOS allows; when iOS suspends iPadn it restarts on return, at
+/// the same address, so an address sent from another app keeps working.
 struct WiFiTransferView: View {
     @EnvironmentObject private var manager: DownloadManager
     @Environment(\.scenePhase) private var scenePhase
@@ -13,6 +15,13 @@ struct WiFiTransferView: View {
     @State private var stoppedReason: String?
     @State private var lastActivity = Date()
     @State private var starting = false
+    /// The address of this page visit: kept across a suspension, new when
+    /// the page is opened again.
+    @State private var sessionKey: String?
+    @State private var sessionPort: UInt16?
+    @State private var background: UIBackgroundTaskIdentifier = .invalid
+    /// iOS ended the background time: start again when iPadn is back.
+    @State private var resumeOnReturn = false
     private static let idleLimit: TimeInterval = 600
 
     private var items: [WiFiTransferServer.Item] {
@@ -74,7 +83,7 @@ struct WiFiTransferView: View {
                 }
             }
             Section {
-                Label("只在这个页面打开且 iPadn 在前台时运行；离开页面、切到后台或闲置 10 分钟会自动停止。", systemImage: "clock")
+                Label("只在这个页面打开时运行。切到后台后会在系统允许的时间内继续运行，被系统暂停后回到 iPadn 会在原地址自动恢复；离开页面或闲置 10 分钟会停止。", systemImage: "clock")
                 Label("地址里带有随机密钥，每次开启都不同；多次错误访问会自动停止。", systemImage: "key")
                 Label("只能下载已完成的安装包，不能上传或修改；只接受局域网内的设备。", systemImage: "lock")
                 Label("传输不加密，请只在信任的网络中使用。", systemImage: "exclamationmark.shield")
@@ -83,9 +92,22 @@ struct WiFiTransferView: View {
         }
         .toolPage().navigationTitle("Wi‑Fi 传输").navigationBarTitleDisplayMode(.inline)
         .task { await start() }
-        .onDisappear { stop(nil) }
+        .onDisappear { stop(nil, forget: true) }
         .compatibleOnChange(of: scenePhase) { phase in
-            if phase == .background, server != nil { stop(AppText.text("iPadn 切到后台，传输已停止。")) }
+            switch phase {
+            case .background:
+                guard server != nil, background == .invalid else { return }
+                // Keep serving while iOS allows, e.g. while the address is sent from another app.
+                background = UIApplication.shared.beginBackgroundTask(withName: "iPadn Wi-Fi transfer") {
+                    resumeOnReturn = server != nil
+                    stop(nil)
+                    endBackgroundTime()
+                }
+            case .active:
+                endBackgroundTime()
+                if resumeOnReturn { resumeOnReturn = false; Task { await start() } }
+            default: break
+            }
         }
         .compatibleOnChange(of: items.map(\.id)) { _ in server?.update(items: items) }
         .task(id: address) {
@@ -108,7 +130,7 @@ struct WiFiTransferView: View {
         }
         starting = true
         defer { starting = false }
-        let next = WiFiTransferServer()
+        let next = WiFiTransferServer(key: sessionKey)
         next.onAccess = { access in
             accesses.append(access); lastActivity = Date()
             if accesses.count > 50 { accesses.removeFirst(accesses.count - 50) }
@@ -117,7 +139,18 @@ struct WiFiTransferView: View {
             if server === next { server = nil; address = nil; stoppedReason = reason }
         }
         do {
-            let port = try await next.start(items: items)
+            var reused: UInt16?
+            if let previous = sessionPort {
+                // After a suspension the old listener can hold the port a moment longer.
+                for attempt in 0..<5 where reused == nil {
+                    if attempt > 0 { try? await Task.sleep(for: .milliseconds(400)) }
+                    reused = try? await next.start(items: items, port: previous)
+                }
+            }
+            // Still taken: same key, new port.
+            let port: UInt16
+            if let reused { port = reused } else { port = try await next.start(items: items) }
+            sessionKey = next.key; sessionPort = port
             server = next
             address = next.url(host: host, port: port)
             lastActivity = Date()
@@ -127,7 +160,15 @@ struct WiFiTransferView: View {
         }
     }
 
-    private func stop(_ reason: String?) {
+    private func endBackgroundTime() {
+        guard background != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(background)
+        background = .invalid
+    }
+
+    /// `forget` drops the address: the next start gets a new key and port.
+    private func stop(_ reason: String?, forget: Bool = false) {
+        if forget { sessionKey = nil; sessionPort = nil; resumeOnReturn = false; endBackgroundTime() }
         guard let current = server else { return }
         server = nil; address = nil; stoppedReason = reason
         current.onStop = nil
