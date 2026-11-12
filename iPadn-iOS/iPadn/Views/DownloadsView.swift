@@ -25,6 +25,8 @@ struct DownloadsView: View {
     @State private var editMode: EditMode = .inactive
     /// Drives the compact rows' staggered entrance in edit mode.
     @State private var editRowsShown = false
+    /// The same entrance for the cards when edit mode ends.
+    @State private var cardsShown = true
     @State private var actionBusy = false
     private var filteredJobs: [DownloadJob] {
         manager.jobs.filter { filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
@@ -68,10 +70,7 @@ struct DownloadsView: View {
                     ForEach(Array(visible.enumerated()), id: \.element.id) { index, job in
                         editRow(job)
                             // Rows settle in one after another, a few hundredths apart.
-                            .opacity(editRowsShown || reduceMotion ? 1 : 0)
-                            .offset(y: editRowsShown || reduceMotion ? 0 : 10)
-                            .animation(.spring(response: 0.4, dampingFraction: 0.86).delay(0.06 + Double(min(index, 10)) * 0.03),
-                                       value: editRowsShown)
+                            .modifier(DrawerRow(shown: editRowsShown || reduceMotion, index: index, travel: 18))
                     }
                     .onMove(perform: filter == .all && term.isEmpty ? { manager.move(from: $0, to: $1) } : nil)
                 } header: {
@@ -86,7 +85,7 @@ struct DownloadsView: View {
                 }
                 .onAppear { DispatchQueue.main.async { editRowsShown = true } }
             } else {
-                ForEach(visible) { job in
+                ForEach(Array(visible.enumerated()), id: \.element.id) { index, job in
                     Section {
                         // One row in both modes, so entering edit mode slides the
                         // selection mark in and the share button out.
@@ -109,6 +108,7 @@ struct DownloadsView: View {
                                     .accessibilityIdentifier("download.select." + job.id.uuidString)
                             }
                         }
+                        .modifier(DrawerRow(shown: cardsShown || reduceMotion, index: index, travel: 28))
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
                         .revealDelete(id: "download." + job.id.uuidString,
@@ -169,8 +169,8 @@ struct DownloadsView: View {
         // shared zoom and fade so the change reads as one motion.
         .id(editMode.isEditing)
         .transition(reduceMotion ? .opacity : .asymmetric(
-            insertion: .opacity.combined(with: .scale(scale: 1.03)),
-            removal: .opacity.combined(with: .scale(scale: 0.97))))
+            insertion: .opacity,
+            removal: .modifier(active: DrawerFold(progress: 0), identity: DrawerFold(progress: 1))))
         }
         .task(id: manager.jobs.filter { $0.status == .completed }.map { $0.id.uuidString }.joined()) {
             await manager.loadPackageIcons()
@@ -184,6 +184,7 @@ struct DownloadsView: View {
             ToolbarItemGroup(placement: .compatibleTopBarLeading) {
                 Button(editMode.isEditing ? "完成" : "编辑") {
                     editRowsShown = false
+                    cardsShown = !editMode.isEditing
                     withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 0.88)) {
                         editMode = editMode.isEditing ? .inactive : .active
                     }
@@ -235,7 +236,11 @@ struct DownloadsView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .compatibleOnChange(of: editMode) { mode in if !mode.isEditing { selection.removeAll() } }
+        .compatibleOnChange(of: editMode) { mode in
+            if !mode.isEditing { selection.removeAll() }
+            // Cards are back on screen: pull them out one after another.
+            if !mode.isEditing && !cardsShown { DispatchQueue.main.async { cardsShown = true } }
+        }
         .compatibleOnChange(of: filter) { _ in selection.removeAll() }
         .compatibleOnChange(of: term) { _ in selection.removeAll() }
         .sheet(isPresented: $showingActions, onDismiss: {
@@ -649,5 +654,31 @@ private struct TaskSizeRows: View {
                 .accessibilityIdentifier("download.detail.downloaded")
             if total > 0 { LabeledContent("大小", value: total.byteLabel) }
         }
+    }
+}
+
+/// A row that slides down out of the list's top edge, a few hundredths of a
+/// second after the one above it, like a drawer being pulled out.
+private struct DrawerRow: ViewModifier {
+    let shown: Bool
+    let index: Int
+    let travel: CGFloat
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown ? 0 : -travel)
+            .scaleEffect(x: 1, y: shown ? 1 : 0.9, anchor: .top)
+            .animation(.spring(response: 0.46, dampingFraction: 0.82).delay(0.05 + Double(min(index, 10)) * 0.035), value: shown)
+    }
+}
+
+/// The leaving list folds up toward the header, like a drawer pushed shut.
+private struct DrawerFold: ViewModifier {
+    let progress: CGFloat
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(x: 1, y: 0.82 + 0.18 * progress, anchor: .top)
+            .offset(y: -24 * (1 - progress))
+            .opacity(Double(progress))
     }
 }
