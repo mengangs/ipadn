@@ -23,6 +23,8 @@ struct DownloadsView: View {
     @State private var inspecting: DownloadJob?
     @State private var selection = Set<UUID>()
     @State private var editMode: EditMode = .inactive
+    /// Drives the compact rows' staggered entrance in edit mode.
+    @State private var editRowsShown = false
     @State private var actionBusy = false
     private var filteredJobs: [DownloadJob] {
         manager.jobs.filter { filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
@@ -43,6 +45,7 @@ struct DownloadsView: View {
         // Filter once per render; rows and headers read this copy.
         let visible = filteredJobs
         let updates = updateTargets
+        ZStack {
         List {
             if !manager.jobs.isEmpty {
                 Section {
@@ -62,15 +65,26 @@ struct DownloadsView: View {
                 }
             } else if editMode.isEditing {
                 Section {
-                    ForEach(visible) { job in editRow(job) }
-                        .onMove(perform: filter == .all && term.isEmpty ? { manager.move(from: $0, to: $1) } : nil)
+                    ForEach(Array(visible.enumerated()), id: \.element.id) { index, job in
+                        editRow(job)
+                            // Rows settle in one after another, a few hundredths apart.
+                            .opacity(editRowsShown || reduceMotion ? 1 : 0)
+                            .offset(y: editRowsShown || reduceMotion ? 0 : 10)
+                            .animation(.spring(response: 0.4, dampingFraction: 0.86).delay(0.06 + Double(min(index, 10)) * 0.03),
+                                       value: editRowsShown)
+                    }
+                    .onMove(perform: filter == .all && term.isEmpty ? { manager.move(from: $0, to: $1) } : nil)
                 } header: {
                     Text(headerSummary(visible: visible, updates: updates))
                 } footer: {
                     if filter == .all && term.isEmpty && visible.count > 1 {
+                        // Shown with the rows, not before them.
                         Text("拖动右侧的把手调整顺序，等待中的任务按这个顺序下载。")
+                            .opacity(editRowsShown || reduceMotion ? 1 : 0)
+                            .animation(.easeOut(duration: 0.25).delay(0.15), value: editRowsShown)
                     }
                 }
+                .onAppear { DispatchQueue.main.async { editRowsShown = true } }
             } else {
                 ForEach(visible) { job in
                     Section {
@@ -151,6 +165,13 @@ struct DownloadsView: View {
                 }
             }
         }
+        // Cards and the compact edit list are two layouts; they swap with a
+        // shared zoom and fade so the change reads as one motion.
+        .id(editMode.isEditing)
+        .transition(reduceMotion ? .opacity : .asymmetric(
+            insertion: .opacity.combined(with: .scale(scale: 1.03)),
+            removal: .opacity.combined(with: .scale(scale: 0.97))))
+        }
         .task(id: manager.jobs.filter { $0.status == .completed }.map { $0.id.uuidString }.joined()) {
             await manager.loadPackageIcons()
             if store.settings.updateNotifications { await store.checkForUpdates() }
@@ -162,7 +183,10 @@ struct DownloadsView: View {
         .toolbar {
             ToolbarItemGroup(placement: .compatibleTopBarLeading) {
                 Button(editMode.isEditing ? "完成" : "编辑") {
-                    withAnimation(.compatibleSnappy(duration: 0.3)) { editMode = editMode.isEditing ? .inactive : .active }
+                    editRowsShown = false
+                    withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.42, dampingFraction: 0.88)) {
+                        editMode = editMode.isEditing ? .inactive : .active
+                    }
                 }
                 .disabled(manager.jobs.isEmpty)
                 .accessibilityIdentifier("downloads.edit")
@@ -208,6 +232,7 @@ struct DownloadsView: View {
                         .disabled(selection.isEmpty)
                         .accessibilityIdentifier("downloads.delete-selected")
                 }.padding(18).background(.regularMaterial)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .compatibleOnChange(of: editMode) { mode in if !mode.isEditing { selection.removeAll() } }
