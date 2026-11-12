@@ -290,6 +290,14 @@ struct ToolSettings: Codable, Equatable {
     var compatibleDownloadMode = false
     /// Shows tools for advanced users: package contents, tokens, device ID.
     var proMode = false
+    /// Face ID, Touch ID or the passcode before iPadn's content shows.
+    var appLock = false
+    /// Seconds away from iPadn before the lock asks again.
+    var appLockDelay = 0
+    /// Downloads wait while only cellular data is available.
+    var wifiOnlyDownloads = false
+    /// Opens the install sheet and starts installing when a download finishes.
+    var autoInstall = false
     /// Download progress on the Lock Screen and in the Dynamic Island.
     var downloadLiveActivity = true
     var useSignerCache = true
@@ -317,7 +325,9 @@ struct ToolSettings: Codable, Equatable {
         case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
         case useSignerCache, appearance, plistServer, versionSources, localInstallation, localInstallHost
         case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency, appUpdateCheck, targetPrices
-        case appearanceSchema, compatibleDownloadMode, nativeInstallation, versionSourcesSchema, downloadLiveActivity
+        case appearanceSchema, compatibleDownloadMode, nativeInstallation, versionSourcesSchema, appLock, appLockDelay
+        case wifiOnlyDownloads, autoInstall
+        case downloadLiveActivity
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -329,6 +339,10 @@ struct ToolSettings: Codable, Equatable {
         notifications = try values.decodeIfPresent(Bool.self, forKey: .notifications) ?? notifications
         updateNotifications = try values.decodeIfPresent(Bool.self, forKey: .updateNotifications) ?? updateNotifications
         proMode = try values.decodeIfPresent(Bool.self, forKey: .proMode) ?? proMode
+        appLock = try values.decodeIfPresent(Bool.self, forKey: .appLock) ?? appLock
+        appLockDelay = min(3600, max(0, try values.decodeIfPresent(Int.self, forKey: .appLockDelay) ?? appLockDelay))
+        wifiOnlyDownloads = try values.decodeIfPresent(Bool.self, forKey: .wifiOnlyDownloads) ?? wifiOnlyDownloads
+        autoInstall = try values.decodeIfPresent(Bool.self, forKey: .autoInstall) ?? autoInstall
         downloadLiveActivity = try values.decodeIfPresent(Bool.self, forKey: .downloadLiveActivity) ?? downloadLiveActivity
         watchNotifications = try values.decodeIfPresent(Bool.self, forKey: .watchNotifications) ?? watchNotifications
         targetPrices = try values.decodeIfPresent(Bool.self, forKey: .targetPrices) ?? targetPrices
