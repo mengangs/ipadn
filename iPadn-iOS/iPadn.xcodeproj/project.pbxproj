@@ -1989,6 +1989,16 @@
 			isa = PBXBuildFile;
 			fileRef = A6453BEED269FDBE2052F83D;
 		};
+		72EDFAA7189C9AA8FE6814A9 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = ShortcutsWidget.swift;
+			sourceTree = "<group>";
+		};
+		D6C16E84972F929976EB9BFC = {
+			isa = PBXBuildFile;
+			fileRef = 72EDFAA7189C9AA8FE6814A9;
+		};
 		947188B458A1FB28E930E1FF = {
 			isa = PBXFileReference;
 			lastKnownFileType = text.plist.xml;
@@ -2021,6 +2031,7 @@
 				5DADD55B273D7BFE271F15A5,
 				22BBF0B88BEA14A3FDE85551,
 				A6453BEED269FDBE2052F83D,
+				72EDFAA7189C9AA8FE6814A9,
 				947188B458A1FB28E930E1FF,
 				747698A3D65DB53772BB4CD9,
 			);
@@ -2036,6 +2047,7 @@
 				12F6806C5D9416C0ED1FF953,
 				C7ABAF1B8A596D9B74056CBE,
 				286B99F3F2D6620776189450,
+				D6C16E84972F929976EB9BFC,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
