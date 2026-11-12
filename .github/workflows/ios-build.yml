@@ -41,7 +41,7 @@ concurrency:
 
 jobs:
   build:
-    # Xcode 27.1 builds with the iOS 27.1 SDK, which iPhone Duo needs to show
+    # Xcode 27 builds with an iOS 27.1+ SDK, which iPhone Duo needs to show
     # iPadn full screen on its inner display.
     runs-on: xcode-27
     timeout-minutes: 55
@@ -68,7 +68,11 @@ jobs:
 
       - name: Select Xcode and report SDK
         run: |
-          if [ -d /Applications/Xcode_27.1.app ]; then
+          # 27.2 matches the newest simulators on the image (a newer runtime
+          # than the SDK makes UI tests hang); its SDK is newer than 27.1.
+          if [ -d /Applications/Xcode_27.2.app ]; then
+            sudo xcode-select -s /Applications/Xcode_27.2.app/Contents/Developer
+          elif [ -d /Applications/Xcode_27.1.app ]; then
             sudo xcode-select -s /Applications/Xcode_27.1.app/Contents/Developer
           elif [ -d /Applications/Xcode_26.0.1.app ]; then
             sudo xcode-select -s /Applications/Xcode_26.0.1.app/Contents/Developer
@@ -164,7 +168,7 @@ jobs:
 
       - name: iPhone Duo screenshots
         # Layout check on the foldable; collects screenshots, never fails the build.
-        if: github.event_name == 'workflow_dispatch' && inputs.run_ui_tests
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.run_ui_tests
         continue-on-error: true
         timeout-minutes: 15
         run: |
