@@ -914,6 +914,62 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(InstalledAppsView.isUpdate(latest, installed: "10.1", versionID: nil))
     }
 
+    func testAppLockSettingsDecode() throws {
+        XCTAssertFalse(ToolSettings().appLock)
+        let saved = try JSONDecoder().decode(ToolSettings.self, from: Data(#"{"appLock":true,"appLockDelay":99999}"#.utf8))
+        XCTAssertTrue(saved.appLock)
+        XCTAssertEqual(saved.appLockDelay, 3600)
+        let old = try JSONDecoder().decode(ToolSettings.self, from: Data("{}".utf8))
+        XCTAssertFalse(old.appLock)
+        XCTAssertEqual(old.appLockDelay, 0)
+    }
+
+    func testReviewFeedParses() {
+        let review = #"{"author":{"name":{"label":"Ann"}},"updated":{"label":"2026-11-01T08:30:00-07:00"},"im:rating":{"label":"4"},"im:version":{"label":"2.1"},"id":{"label":"123"},"title":{"label":"Nice"},"content":{"label":"Works well"}}"#
+        let appEntry = #"{"im:name":{"label":"Some App"},"id":{"label":"https://apps.apple.com/app/id1"}}"#
+        let list = ReviewService.parse(Data(#"{"feed":{"entry":[\#(appEntry),\#(review)]}}"#.utf8))
+        XCTAssertEqual(list.count, 1)
+        XCTAssertEqual(list.first?.author, "Ann")
+        XCTAssertEqual(list.first?.rating, 4)
+        XCTAssertEqual(list.first?.version, "2.1")
+        XCTAssertEqual(list.first?.title, "Nice")
+        XCTAssertEqual(list.first?.body, "Works well")
+        XCTAssertNotNil(list.first?.date)
+        XCTAssertEqual(ReviewService.parse(Data(#"{"feed":{"entry":\#(review)}}"#.utf8)).map(\.id), ["123"])
+        XCTAssertTrue(ReviewService.parse(Data(#"{"feed":{"author":{}}}"#.utf8)).isEmpty)
+        XCTAssertTrue(ReviewService.parse(Data("not json".utf8)).isEmpty)
+    }
+
+    func testPackageInfoReadsDeclarations() {
+        let info = PackageInfoService.describe([
+            "CFBundleDisplayName": "Demo", "CFBundleIdentifier": "com.example.demo",
+            "CFBundleShortVersionString": "2.1", "CFBundleVersion": "210", "MinimumOSVersion": "16.0",
+            "NSCameraUsageDescription": "Scan codes", "NSLocationWhenInUseUsageDescription": "Nearby stores",
+            "NSSomethingNew": "not a permission",
+            "CFBundleURLTypes": [["CFBundleURLSchemes": ["demo", "demo-auth"]], ["CFBundleURLSchemes": ["demo"]]],
+            "UIBackgroundModes": ["remote-notification", "audio"],
+        ])
+        XCTAssertEqual(info.name, "Demo")
+        XCTAssertEqual(info.permissions.map(\.key), ["NSCameraUsageDescription", "NSLocationWhenInUseUsageDescription"])
+        XCTAssertEqual(info.permissions.first?.reason, "Scan codes")
+        XCTAssertEqual(info.urlSchemes, ["demo", "demo-auth"])
+        XCTAssertEqual(info.backgroundModes, ["audio", "remote-notification"])
+        XCTAssertTrue(PackageInfoService.isExtensionInfo("PlugIns/Widget.appex/Info.plist"))
+        XCTAssertFalse(PackageInfoService.isExtensionInfo("PlugIns/Widget.appex/en.lproj/Info.plist"))
+        XCTAssertEqual(PackageInfoService.languages(in: ["en.lproj/Main.strings", "zh-Hans.lproj/x", "Base.lproj/y", "Assets.car"]), ["en", "zh-Hans"])
+        XCTAssertNil(PackageInfoService.permissionName("NSSomethingNewUsageDescription"))
+        XCTAssertNotNil(PackageInfoService.extensionKind("com.apple.widgetkit-extension"))
+        let grouped = PackageInfoService.groupedPermissions([
+            .init(key: "NSBluetoothAlwaysUsageDescription", reason: "Speakers"),
+            .init(key: "NSBluetoothPeripheralUsageDescription", reason: "Speakers"),
+            .init(key: "NSLocationAlwaysUsageDescription", reason: "Nearby"),
+            .init(key: "NSLocationAlwaysAndWhenInUseUsageDescription", reason: "Concerts"),
+        ])
+        XCTAssertEqual(grouped.count, 2, "same-meaning keys share one row")
+        XCTAssertEqual(grouped.first { $0.reasons.contains("Speakers") }?.reasons, ["Speakers"])
+        XCTAssertEqual(grouped.first { $0.reasons.contains("Nearby") }?.reasons, ["Nearby", "Concerts"])
+    }
+
     func testRegionLocalesFindTheirScript() {
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh_CN")), "免费")
         XCTAssertEqual(AppText.text("免费", in: Locale(identifier: "zh-Hans_CN")), "免费")

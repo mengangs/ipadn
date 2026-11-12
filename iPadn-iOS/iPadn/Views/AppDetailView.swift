@@ -24,7 +24,7 @@ struct AppDetailView: View {
     @State private var metadataLoading = Set<String>()
     @State private var metadataFailures = 0
     @State private var metadataStopped = false
-    /// Long histories start with the newest ten versions.
+    /// Long histories start with the newest five versions.
     @State private var showAllVersions = false
     /// Release notes by version number, from the App Store page's version history.
     @State private var releaseNotes: [String: ReleaseNote] = [:]
@@ -106,6 +106,7 @@ struct AppDetailView: View {
                         }
                     } header: { sectionTitle("简介") }
                 }
+                if !app.isDelisted { ReviewsCard(app: app) }
                 if !app.isDelisted {
                     CardSection {
                         if store.isFavorite(app) { PriceHistorySection(app: app) }
@@ -282,6 +283,8 @@ struct AppDetailView: View {
                 .zoomTransition(shot.id, in: screenshotZoom)
         }
     }
+    /// Versions shown before “Show all”.
+    static let collapsedVersions = 5
     private func sectionTitle(_ text: LocalizedStringKey) -> some View {
         Text(text).font(.title3.weight(.bold)).foregroundStyle(.primary).textCase(nil)
     }
@@ -403,8 +406,8 @@ struct AppDetailView: View {
                 SearchInput(text: $versionSearch, placeholder: "筛选版本号或版本 ID")
             }
             let matches = filtered
-            // A search shows every match; otherwise ten until expanded.
-            let limit = showAllVersions || !versionSearch.isEmpty ? matches.count : 10
+            // A search shows every match; otherwise five until expanded.
+            let limit = showAllVersions || !versionSearch.isEmpty ? matches.count : Self.collapsedVersions
             if versions.isEmpty && versionsLoading {
                 // Placeholders where the rows will be, instead of a spinner row
                 // that appears and disappears.
@@ -419,7 +422,7 @@ struct AppDetailView: View {
                     }
             }
             if !versions.isEmpty && matches.isEmpty { Text("没有匹配的版本。").font(.subheadline).foregroundStyle(.secondary) }
-            if versionSearch.isEmpty && matches.count > 10 {
+            if versionSearch.isEmpty && matches.count > Self.collapsedVersions {
                 Button {
                     withAnimation(.compatibleSnappy) { showAllVersions.toggle() }
                 } label: {

@@ -3,14 +3,14 @@ import UIKit
 
 /// Opens the install sheet for downloads that just finished (Settings ›
 /// Downloads › Install When Downloaded), one at a time, above whatever page
-/// or sheet is showing, once iPadn is in front.
+/// or sheet is showing, once iPadn is in front and unlocked.
 @MainActor
 enum AutoInstall {
     private static weak var showing: UIViewController?
 
     static func presentNext(_ store: ToolStore) {
         guard !LocalResources.isPreview, showing == nil,
-              UIApplication.shared.applicationState == .active,
+              UIApplication.shared.applicationState == .active, !AppLock.shared.locked,
               let id = store.downloads.pendingAutoInstalls.first else { return }
         guard let job = store.downloads.jobs.first(where: { $0.id == id && $0.status == .completed }) else {
             store.downloads.pendingAutoInstalls.removeAll { $0 == id }
