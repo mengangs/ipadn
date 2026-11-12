@@ -92,6 +92,45 @@ final class DownloadManager: NSObject, ObservableObject {
     /// A line for iPadn's top notice while it is open (notifications only
     /// appear in the background).
     @Published var autoInstallNotice: String?
+    /// The automatic installation in progress, for the Live Activity.
+    struct AutoInstallProgress: Equatable { var id: UUID; var name: String; var fraction: Double }
+    @Published private(set) var autoInstalling: AutoInstallProgress?
+    /// The app just installed automatically (Live Activity "Installed").
+    @Published private(set) var autoInstalled: String?
+    /// A finished download about to be installed silently.
+    func waitsForSilentInstall(_ id: UUID) -> Bool { silentInstall && waitingInstalls.contains(id.uuidString) }
+    /// Finished downloads still waiting to be installed automatically. Kept
+    /// across launches: iOS can end iPadn in the background mid-install.
+    private static let autoInstallKey = "autoInstallWaiting"
+    private var waitingInstalls: [String] {
+        get { UserDefaults.standard.stringArray(forKey: Self.autoInstallKey) ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: Self.autoInstallKey) }
+    }
+    private func markWaiting(_ id: UUID, _ waiting: Bool) {
+        var list = waitingInstalls.filter { $0 != id.uuidString }
+        if waiting { list.append(id.uuidString) }
+        waitingInstalls = list
+    }
+
+    /// iPadn is in front: install what is still waiting, silently with
+    /// native installation, otherwise through the install sheet.
+    func resumeAutoInstalls() {
+        Task { @MainActor in
+            await loaded()
+            resumeWaitingInstalls()
+        }
+    }
+    private func resumeWaitingInstalls() {
+        guard autoInstall else { waitingInstalls = []; return }
+        for value in waitingInstalls {
+            guard let id = UUID(uuidString: value), jobs.contains(where: { $0.id == id && $0.status == .completed }) else {
+                if let id = UUID(uuidString: value) { markWaiting(id, false) } else { waitingInstalls = waitingInstalls.filter { $0 != value } }
+                continue
+            }
+            if silentInstall { installSilently(id) }
+            else if !pendingAutoInstalls.contains(id) { pendingAutoInstalls.append(id) }
+        }
+    }
     /// The system download service could not write into iPadn's container
     /// (seen with some re-signed builds). Kept per app build: a new install
     /// or signature may behave differently, so it is checked again then.
@@ -822,6 +861,7 @@ final class DownloadManager: NSObject, ObservableObject {
                 self.persist()
                 // Only downloaded app packages; imported files and Mac packages are not installed here.
                 let installs = self.autoInstall && job.rawFormat == nil && job.protectedMacPackage != true && job.sourceURL != nil
+                if installs { self.markWaiting(id, true) }
                 if installs && self.silentInstall {
                     self.installSilently(id)
                 } else {
@@ -975,18 +1015,42 @@ final class DownloadManager: NSObject, ObservableObject {
             defer { silentRunning = false }
             while !silentQueue.isEmpty {
                 let id = silentQueue.removeFirst()
-                guard let job = jobs.first(where: { $0.id == id && $0.status == .completed }), let file = fileURL(job) else { continue }
+                guard let job = jobs.first(where: { $0.id == id && $0.status == .completed }), let file = fileURL(job) else {
+                    markWaiting(id, false); continue
+                }
                 let name = [job.app.name, job.app.version].filter { !$0.isEmpty }.joined(separator: " ")
                 autoInstallNotice = AppText.text("正在自动安装 \(name)")
+                autoInstalled = nil
+                autoInstalling = AutoInstallProgress(id: id, name: name, fraction: 0)
+                defer { autoInstalling = nil }
                 do {
-                    _ = try await NativeInstaller.install(package: file, bundleID: job.app.bundleID) { _ in }
+                    _ = try await NativeInstaller.install(package: file, bundleID: job.app.bundleID) { phase in
+                        // Sending the package is most of the wait; the system's own step follows.
+                        let fraction: Double
+                        switch phase {
+                        case .uploading(let done): fraction = done * 0.7
+                        case .installing(let done): fraction = 0.7 + done * 0.3
+                        default: fraction = 0
+                        }
+                        Task { @MainActor in
+                            if self.autoInstalling?.id == id { self.autoInstalling?.fraction = fraction }
+                        }
+                    }
+                    markWaiting(id, false)
+                    autoInstalled = name
                     autoInstallNotice = AppText.text("已自动安装 \(name)")
                     notify(title: AppText.text("已自动安装"), body: name)
                 } catch {
                     autoInstallNotice = nil
-                    InstallLog.shared.add("silent install fell back to the sheet: \(error.localizedDescription.prefix(160))")
-                    notify(title: AppText.text("自动安装未完成"), body: AppText.text("打开 iPadn 继续安装 \(name)"))
-                    if !pendingAutoInstalls.contains(id) { pendingAutoInstalls.append(id) }
+                    InstallLog.shared.add("silent install not finished: \(error.localizedDescription.prefix(160))")
+                    if UIApplication.shared.applicationState == .active {
+                        // In front and still failing (e.g. LocalDevVPN not connected): the sheet explains.
+                        markWaiting(id, false)
+                        if !pendingAutoInstalls.contains(id) { pendingAutoInstalls.append(id) }
+                    } else {
+                        // In the background iOS may simply have run out of time: retried when iPadn is back.
+                        notify(title: AppText.text("自动安装未完成"), body: AppText.text("打开 iPadn 继续安装 \(name)"))
+                    }
                 }
             }
         }

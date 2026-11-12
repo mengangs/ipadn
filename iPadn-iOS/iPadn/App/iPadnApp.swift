@@ -105,7 +105,7 @@ struct iPadnApp: App {
         }
         .onChange(of: scenePhase) { phase in
             if !LocalResources.isPreview { AppLock.shared.sceneChanged(to: phase) }
-            if phase == .active { AutoInstall.presentNext(store) }
+            if phase == .active { store.downloads.resumeAutoInstalls(); AutoInstall.presentNext(store) }
             guard phase == .background, !LocalResources.isPreview else { return }
             // Session cookies kept in memory must survive the app being closed.
             store.apple.saveLiveCookies()

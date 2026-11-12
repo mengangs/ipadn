@@ -8,11 +8,14 @@ private extension DownloadActivityAttributes.ContentState {
         case 0: return String(localized: "正在下载")
         case 1: return String(localized: "正在准备安装包")
         case 2: return String(localized: "下载完成")
+        case 4: return String(localized: "正在安装")
+        case 5: return String(localized: "已安装")
         default: return String(localized: "等待下载")
         }
     }
+    var finished: Bool { phase == 2 || phase == 5 }
     var fraction: Double {
-        guard expected > 0 else { return phase == 2 ? 1 : 0 }
+        guard expected > 0 else { return finished ? 1 : 0 }
         return min(1, max(0, Double(written) / Double(expected)))
     }
     /// The bar's interval: it shows `fraction` at `updated` and reaches the
@@ -23,13 +26,13 @@ private extension DownloadActivityAttributes.ContentState {
         return start...end
     }
     var bytes: String {
-        guard expected > 0 else { return "" }
+        guard expected > 0, phase != 4, phase != 5 else { return "" }
         let style = ByteCountFormatter()
         style.countStyle = .file
         return style.string(fromByteCount: written) + " / " + style.string(fromByteCount: expected)
     }
     var others: String? { count > 1 ? String(localized: "另有 \(count - 1) 个任务") : nil }
-    var tint: Color { phase == 2 ? .green : .accentColor }
+    var tint: Color { finished ? .green : .accentColor }
 }
 
 private struct DownloadBar: View {
@@ -50,7 +53,7 @@ private struct DownloadRing: View {
     let state: DownloadActivityAttributes.ContentState
     var body: some View {
         Group {
-            if state.phase == 2 {
+            if state.finished {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
             } else if let interval = state.interval {
                 ProgressView(timerInterval: interval, countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() }
@@ -71,10 +74,10 @@ private struct DownloadTrailing: View {
         if let interval = state.interval, interval.upperBound > .now {
             Text(timerInterval: Date.now...interval.upperBound, countsDown: true)
                 .monospacedDigit().multilineTextAlignment(.trailing)
-        } else if state.phase == 0 {
+        } else if state.phase == 0 || state.phase == 4 {
             Text(state.fraction, format: .percent.precision(.fractionLength(0))).monospacedDigit()
         } else {
-            Text(state.phase == 2 ? String(localized: "完成") : state.phase == 1 ? String(localized: "准备中") : String(localized: "等待"))
+            Text(state.finished ? String(localized: "完成") : state.phase == 1 ? String(localized: "准备中") : String(localized: "等待"))
         }
     }
 }
@@ -93,7 +96,7 @@ struct DownloadLiveActivity: Widget {
                     Spacer(minLength: 8)
                     DownloadTrailing(state: state).font(.subheadline.weight(.semibold)).frame(maxWidth: 80, alignment: .trailing)
                 }
-                if state.phase != 2 { DownloadBar(state: state) }
+                if !state.finished { DownloadBar(state: state) }
                 HStack {
                     Text(state.bytes)
                     Spacer()
@@ -121,7 +124,7 @@ struct DownloadLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 6) {
-                        if state.phase != 2 { DownloadBar(state: state) }
+                        if !state.finished { DownloadBar(state: state) }
                         HStack {
                             Text(state.bytes)
                             Spacer()

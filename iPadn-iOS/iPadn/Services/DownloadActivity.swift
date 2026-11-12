@@ -28,7 +28,8 @@ final class DownloadActivity {
             let existing = Activity<DownloadActivityAttributes>.activities
             activity = existing.first
             for old in existing.dropFirst() { Task { await old.end(nil, dismissalPolicy: .immediate) } }
-            subscription = manager.$jobs
+            subscription = manager.$jobs.map { _ in () }
+                .merge(with: manager.$autoInstalling.map { _ in () }, manager.$autoInstalled.map { _ in () })
                 .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
                 .sink { [weak self] _ in self?.refresh() }
         }
@@ -44,6 +45,31 @@ final class DownloadActivity {
             if let current { activity = nil; Task { await current.end(nil, dismissalPolicy: .immediate) } }
             return
         }
+        // Installing automatically after the download: the same activity follows it.
+        if active.isEmpty, let install = manager.autoInstalling {
+            let state = DownloadActivityAttributes.ContentState(
+                phase: 4, name: install.name, count: 1, written: Int64(install.fraction * 1000), expected: 1000,
+                updated: Date(), estimatedEnd: nil)
+            if let current { send(state, to: current) }
+            else if UIApplication.shared.applicationState == .active, ActivityAuthorizationInfo().areActivitiesEnabled {
+                activity = try? Activity.request(attributes: DownloadActivityAttributes(),
+                                                 content: ActivityContent(state: state, staleDate: nil))
+                lastSent = state; lastSentAt = Date()
+            }
+            startTimer()
+            return
+        }
+        if active.isEmpty, let current, let installed = manager.autoInstalled,
+           (current.content.state.phase == 4 || shownIDs.contains(where: manager.waitsForSilentInstall)) {
+            stopTimer()
+            activity = nil; lastSent = nil; shownIDs = []
+            let done = DownloadActivityAttributes.ContentState(phase: 5, name: installed, count: 0, written: 1000, expected: 1000,
+                                                               updated: Date(), estimatedEnd: nil)
+            Task { await current.end(ActivityContent(state: done, staleDate: nil), dismissalPolicy: .after(.now + 600)) }
+            return
+        }
+        // Downloaded and about to install silently: keep the activity for the install.
+        if active.isEmpty, activity != nil, shownIDs.contains(where: manager.waitsForSilentInstall) { return }
         if active.isEmpty {
             stopTimer()
             guard let current else { return }
@@ -75,13 +101,7 @@ final class DownloadActivity {
                                              content: ActivityContent(state: state, staleDate: nil))
             lastSent = state; lastSentAt = Date()
         }
-        if activity != nil, timer == nil {
-            let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refresh() }
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            self.timer = timer
-        }
+        startTimer()
     }
 
     @available(iOS 16.2, *)
@@ -108,9 +128,19 @@ final class DownloadActivity {
     private func send(_ state: DownloadActivityAttributes.ContentState, to activity: Activity<DownloadActivityAttributes>) {
         let last = lastSent as? DownloadActivityAttributes.ContentState
         let changed = last == nil || last!.phase != state.phase || last!.name != state.name || last!.count != state.count
-        guard changed || Date().timeIntervalSince(lastSentAt) >= 5 else { return }
+        let interval: TimeInterval = state.phase == 4 ? 1 : 5
+        guard changed || Date().timeIntervalSince(lastSentAt) >= interval else { return }
         lastSent = state; lastSentAt = Date()
         Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+    }
+
+    private func startTimer() {
+        guard activity != nil, timer == nil else { return }
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     private func stopTimer() { timer?.invalidate(); timer = nil }
