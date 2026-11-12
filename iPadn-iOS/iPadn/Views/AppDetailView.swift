@@ -29,6 +29,9 @@ struct AppDetailView: View {
     /// Release notes by version number, from the App Store page's version history.
     @State private var releaseNotes: [String: ReleaseNote] = [:]
     @State private var expandedNotes = Set<String>()
+    /// Translations chosen in the system sheet, by version ID.
+    @State private var translatedNotes: [String: String] = [:]
+    @State private var translatedDescription: String?
     /// The rows on screen belong to the previous region, platform or source
     /// and are replaced as soon as the new list arrives.
     @State private var versionsStale = false
@@ -100,9 +103,21 @@ struct AppDetailView: View {
                 if store.settings.store.platform == .macOS { macSection }
                 if !app.description.isEmpty {
                     CardSection {
-                        Text(app.description).font(.subheadline).lineLimit(showDescription ? nil : 4).textSelection(.enabled)
-                        if !showDescription {
-                            Button("更多") { withAnimation { showDescription = true } }.font(.subheadline)
+                        Text(translatedDescription ?? app.description).font(.subheadline)
+                            .lineLimit(showDescription ? nil : 4).textSelection(.enabled)
+                        let translates = TranslateButton.offered(for: app.description, translation: translatedDescription)
+                        if !showDescription || translates {
+                            HStack {
+                                if !showDescription {
+                                    Button("更多") { withAnimation { showDescription = true } }
+                                }
+                                Spacer()
+                                if translates {
+                                    TranslateButton(text: app.description, translation: $translatedDescription)
+                                        .accessibilityIdentifier("detail.description.translate")
+                                }
+                            }
+                            .font(.subheadline).buttonStyle(.borderless)
                         }
                     } header: { sectionTitle("简介") }
                 }
@@ -490,9 +505,15 @@ struct AppDetailView: View {
                 .buttonStyle(.borderless)
                 .accessibilityIdentifier("detail.version.notes." + version.id)
                 if expanded {
-                    Text(note.text).font(.footnote).foregroundStyle(.secondary)
+                    Text(translatedNotes[version.id] ?? note.text).font(.footnote).foregroundStyle(.secondary)
                         .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity)
+                    if TranslateButton.offered(for: note.text, translation: translatedNotes[version.id]) {
+                        TranslateButton(text: note.text, translation: Binding(
+                            get: { translatedNotes[version.id] }, set: { translatedNotes[version.id] = $0 }))
+                            .font(.caption.weight(.medium)).buttonStyle(.borderless)
+                            .accessibilityIdentifier("detail.version.translate." + version.id)
+                    }
                 }
             }
         }
