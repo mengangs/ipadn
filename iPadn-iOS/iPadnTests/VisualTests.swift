@@ -43,7 +43,11 @@ final class VisualTests: XCTestCase {
             .environment(\.horizontalSizeClass, regular ? .regular : .compact)
             .tint(UX.tint).frame(width: size.width, height: size.height)
         let controller = UIHostingController(rootView: content)
-        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        // A window in the test host's scene, so the system composites
+        // everything (tab pages, materials) and drawHierarchy can see it.
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow()
+        window.frame = CGRect(origin: .zero, size: size)
         window.overrideUserInterfaceStyle = dark ? .dark : .light
         window.rootViewController = controller
         window.isHidden = false
@@ -53,8 +57,12 @@ final class VisualTests: XCTestCase {
         try await Task.sleep(nanoseconds: 1_000_000_000)
         controller.view.layoutIfNeeded()
         let format = UIGraphicsImageRendererFormat(); format.scale = 2
+        // layer.render(in:) leaves out what the system composites (other
+        // tabs' pages, blur); drawHierarchy captures the screen as shown.
         let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
-            controller.view.layer.render(in: context.cgContext)
+            if !controller.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true) {
+                controller.view.layer.render(in: context.cgContext)
+            }
         }
         XCTAssertEqual(image.size.width, size.width)
         let attachment = XCTAttachment(image: image)
