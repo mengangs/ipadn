@@ -26,22 +26,23 @@ struct PackageInfoView: View {
                         }
                     }
                 }
+                let permissions = PackageInfoService.groupedPermissions(info.permissions)
                 Section {
-                    if info.permissions.isEmpty {
+                    if permissions.isEmpty {
                         Text("这个安装包没有声明需要用户授权的权限。").foregroundStyle(.secondary)
                     }
-                    ForEach(info.permissions) { permission in
+                    ForEach(permissions, id: \.name) { permission in
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(PackageInfoService.permissionName(permission.key) ?? permission.key)
-                            if !permission.reason.isEmpty {
-                                Text(permission.reason).font(.footnote).foregroundStyle(.secondary)
+                            Text(verbatim: permission.name)
+                            ForEach(permission.reasons, id: \.self) { reason in
+                                Text(verbatim: reason).font(.footnote).foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
                         .padding(.vertical, 2)
                     }
                 } header: {
-                    Text("权限") + Text(verbatim: info.permissions.isEmpty ? "" : " · \(info.permissions.count)")
+                    Text("权限") + Text(verbatim: permissions.isEmpty ? "" : " · \(permissions.count)")
                 } footer: {
                     if !info.permissions.isEmpty { Text("说明文字由开发者填写，申请时系统会显示给你。") }
                 }

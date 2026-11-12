@@ -112,6 +112,22 @@ enum PackageInfoService {
         return result
     }
 
+    /// Permissions under their readable names, one row per name: several keys
+    /// mean the same thing (old and new Bluetooth or location keys).
+    static func groupedPermissions(_ permissions: [PackageInfo.Permission]) -> [(name: String, reasons: [String])] {
+        var groups: [(name: String, reasons: [String])] = []
+        for permission in permissions {
+            let name = permissionName(permission.key) ?? permission.key
+            let reason = permission.reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let index = groups.firstIndex(where: { $0.name == name }) {
+                if !reason.isEmpty && !groups[index].reasons.contains(reason) { groups[index].reasons.append(reason) }
+            } else {
+                groups.append((name, reason.isEmpty ? [] : [reason]))
+            }
+        }
+        return groups.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
     /// A readable name for a privacy permission key; nil for keys without one.
     static func permissionName(_ key: String) -> String? {
         let names: [String: String] = [

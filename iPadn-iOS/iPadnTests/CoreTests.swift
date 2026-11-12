@@ -933,6 +933,15 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(PackageInfoService.languages(in: ["en.lproj/Main.strings", "zh-Hans.lproj/x", "Base.lproj/y", "Assets.car"]), ["en", "zh-Hans"])
         XCTAssertNil(PackageInfoService.permissionName("NSSomethingNewUsageDescription"))
         XCTAssertNotNil(PackageInfoService.extensionKind("com.apple.widgetkit-extension"))
+        let grouped = PackageInfoService.groupedPermissions([
+            .init(key: "NSBluetoothAlwaysUsageDescription", reason: "Speakers"),
+            .init(key: "NSBluetoothPeripheralUsageDescription", reason: "Speakers"),
+            .init(key: "NSLocationAlwaysUsageDescription", reason: "Nearby"),
+            .init(key: "NSLocationAlwaysAndWhenInUseUsageDescription", reason: "Concerts"),
+        ])
+        XCTAssertEqual(grouped.count, 2, "same-meaning keys share one row")
+        XCTAssertEqual(grouped.first { $0.reasons.contains("Speakers") }?.reasons, ["Speakers"])
+        XCTAssertEqual(grouped.first { $0.reasons.contains("Nearby") }?.reasons, ["Nearby", "Concerts"])
     }
 
     func testRegionLocalesFindTheirScript() {
