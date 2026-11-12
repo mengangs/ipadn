@@ -17959,76 +17959,6 @@
         }
       }
     },
-    "在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In LiveContainer, one-tap install may not show the system install prompt. Use “Local certificate” instead."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在 LiveContainer 中執行時，一鍵安裝可能不會彈出系統安裝視窗，可以改用「本機憑證」。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "LiveContainer では、ワンタップインストールでシステムのインストール画面が表示されない場合があります。「ローカル証明書」を使用してください。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "LiveContainer에서는 원탭 설치 시 시스템 설치 창이 나타나지 않을 수 있습니다. ‘로컬 인증서’를 사용하십시오."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "В LiveContainer установка в одно касание может не показать системный запрос установки. Используйте «Локальный сертификат»."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "En LiveContainer, la instalación con un toque puede no mostrar el aviso del sistema. Usa “Certificado local”."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dans LiveContainer, l’installation en un geste peut ne pas afficher l’invite du système. Utilisez plutôt « Certificat local »."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In LiveContainer zeigt die Installation per Tipp eventuell keine Systemabfrage. Verwende stattdessen „Lokales Zertifikat“."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No LiveContainer, a instalação com um toque pode não mostrar o aviso do sistema. Use “Certificado local”."
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "في LiveContainer قد لا يظهر طلب التثبيت من النظام عند التثبيت بلمسة واحدة. استخدم «شهادة محلية» بدلًا من ذلك."
-          }
-        }
-      }
-    },
     "在 Safari 中安装": {
       "localizations": {
         "en": {
@@ -77619,6 +77549,356 @@
           "stringUnit": {
             "state": "translated",
             "value": "التنزيل عبر البيانات الخلوية"
+          }
+        }
+      }
+    },
+    "在 LiveContainer 中运行时，请在 LiveContainer 里长按 iPadn，打开设置中的「修复文件导入」，一键安装才能弹出系统安装窗口；仍不行时可以改用「本机证书」。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 LiveContainer 中运行时，请在 LiveContainer 里长按 iPadn，打开设置中的「修复文件导入」，一键安装才能弹出系统安装窗口；仍不行时可以改用「本机证书」。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In LiveContainer, long-press iPadn and turn on “Fix File Picker” in its settings so one-tap install can show the system install prompt; if it still doesn’t, use “Local Certificate”."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 LiveContainer 中執行時，請在 LiveContainer 裡長按 iPadn，開啟設定中的「修復檔案匯入」，一鍵安裝才能彈出系統安裝視窗；仍不行時可以改用「本機憑證」。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LiveContainerで実行している場合は、LiveContainerでiPadnを長押しし、設定の「ファイル選択を修正」をオンにすると、ワンタップインストールでシステムのインストール画面が表示されます。それでも表示されない場合は「ローカル証明書」を使ってください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LiveContainer에서 실행 중이라면 LiveContainer에서 iPadn을 길게 누르고 설정의 “파일 선택기 문제 해결”을 켜야 원탭 설치 시 시스템 설치 창이 나타납니다. 그래도 안 되면 “로컬 인증서”를 사용하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В LiveContainer нажмите и удерживайте iPadn и включите в настройках «Исправить выбор файлов», чтобы установка в одно касание показывала системный запрос; если не помогает, используйте «Локальный сертификат»."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En LiveContainer, mantén pulsada iPadn y activa «Corregir selector de archivos» en sus ajustes para que la instalación con un toque muestre el aviso del sistema; si aun así no aparece, usa «Certificado local»."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dans LiveContainer, touchez longuement iPadn et activez « Corriger le sélecteur de fichiers » dans ses réglages pour que l’installation en un geste affiche la fenêtre du système ; sinon, utilisez « Certificat local »."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Halte iPadn in LiveContainer gedrückt und aktiviere in den Einstellungen „Dateiauswahl reparieren“, damit die Ein-Tipp-Installation den Systemdialog zeigt; klappt es dann nicht, nutze „Lokales Zertifikat“."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No LiveContainer, mantenha o iPadn pressionado e ative “Corrigir Seletor de Arquivo” nos ajustes para que a instalação com um toque mostre o aviso do sistema; se ainda não aparecer, use “Certificado local”."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "في LiveContainer، اضغط مطولًا على iPadn وشغّل «إصلاح منتقي الملفات» في إعداداته لكي يظهر التثبيت بلمسة واحدة نافذة تثبيت النظام؛ وإن لم يظهر، استخدم «الشهادة المحلية»."
+          }
+        }
+      }
+    },
+    "在 LiveContainer 中使用": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 LiveContainer 中使用"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Using iPadn in LiveContainer"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 LiveContainer 中使用"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LiveContainerで使う"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LiveContainer에서 사용"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Работа в LiveContainer"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar en LiveContainer"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser dans LiveContainer"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In LiveContainer verwenden"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar no LiveContainer"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الاستخدام في LiveContainer"
+          }
+        }
+      }
+    },
+    "在 LiveContainer 里长按 iPadn，打开设置中的「%@」。之后才能导入、导出安装包和诊断日志，一键安装也能弹出系统安装窗口。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 LiveContainer 里长按 iPadn，打开设置中的「%@」。之后才能导入、导出安装包和诊断日志，一键安装也能弹出系统安装窗口。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In LiveContainer, long-press iPadn and turn on “%@” in its settings. Then importing and exporting packages and diagnostics works, and one-tap install can show the system install prompt."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 LiveContainer 裡長按 iPadn，開啟設定中的「%@」。之後才能匯入、匯出安裝包和診斷日誌，一鍵安裝也能彈出系統安裝視窗。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LiveContainerでiPadnを長押しし、設定の「%@」をオンにしてください。これでパッケージや診断ログの読み込み・書き出しができ、ワンタップインストールでもシステムのインストール画面が表示されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LiveContainer에서 iPadn을 길게 누르고 설정의 “%@”을(를) 켜세요. 그러면 패키지와 진단 로그를 가져오고 내보낼 수 있고, 원탭 설치에서도 시스템 설치 창이 나타납니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В LiveContainer нажмите и удерживайте iPadn и включите в настройках «%@». После этого заработают импорт и экспорт пакетов и журналов, а установка в одно касание сможет показать системный запрос."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En LiveContainer, mantén pulsada iPadn y activa «%@» en sus ajustes. Así podrás importar y exportar paquetes y diagnósticos, y la instalación con un toque mostrará el aviso del sistema."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dans LiveContainer, touchez longuement iPadn et activez « %@ » dans ses réglages. L’import et l’export des paquets et diagnostics fonctionnent alors, et l’installation en un geste peut afficher la fenêtre du système."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Halte iPadn in LiveContainer gedrückt und aktiviere in den Einstellungen „%@“. Dann funktionieren Import und Export von Paketen und Diagnosen, und die Ein-Tipp-Installation kann den Systemdialog zeigen."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No LiveContainer, mantenha o iPadn pressionado e ative “%@” nos ajustes. Assim é possível importar e exportar pacotes e diagnósticos, e a instalação com um toque mostra o aviso do sistema."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "في LiveContainer، اضغط مطولًا على iPadn وشغّل «%@» في إعداداته. بعدها يعمل استيراد الحزم والسجلات وتصديرها، ويمكن للتثبيت بلمسة واحدة إظهار نافذة تثبيت النظام."
+          }
+        }
+      }
+    },
+    "修复文件导入": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修复文件导入"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fix File Picker"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修復檔案匯入"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイル選択を修正"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 선택기 문제 해결"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Исправить выбор файлов"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Corregir selector de archivos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Corriger le sélecteur de fichiers"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dateiauswahl reparieren"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Corrigir Seletor de Arquivo"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إصلاح منتقي الملفات"
+          }
+        }
+      }
+    },
+    "在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In LiveContainer, one-tap install may not show the system install prompt. Use “Local certificate” instead."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 LiveContainer 中运行时，一键安装可能不会弹出系统安装窗口，可以改用「本机证书」。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 LiveContainer 中執行時，一鍵安裝可能不會彈出系統安裝視窗，可以改用「本機憑證」。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LiveContainer では、ワンタップインストールでシステムのインストール画面が表示されない場合があります。「ローカル証明書」を使用してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LiveContainer에서는 원탭 설치 시 시스템 설치 창이 나타나지 않을 수 있습니다. ‘로컬 인증서’를 사용하십시오."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В LiveContainer установка в одно касание может не показать системный запрос установки. Используйте «Локальный сертификат»."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En LiveContainer, la instalación con un toque puede no mostrar el aviso del sistema. Usa “Certificado local”."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dans LiveContainer, l’installation en un geste peut ne pas afficher l’invite du système. Utilisez plutôt « Certificat local »."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In LiveContainer zeigt die Installation per Tipp eventuell keine Systemabfrage. Verwende stattdessen „Lokales Zertifikat“."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No LiveContainer, a instalação com um toque pode não mostrar o aviso do sistema. Use “Certificado local”."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "في LiveContainer قد لا يظهر طلب التثبيت من النظام عند التثبيت بلمسة واحدة. استخدم «شهادة محلية» بدلًا من ذلك."
           }
         }
       }
