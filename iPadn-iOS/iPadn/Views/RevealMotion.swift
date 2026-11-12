@@ -116,8 +116,10 @@ struct ItemListRevealButtonGeometry {
                     opacity = 1
                 } else {
                     center += distance - p.openDistance
+                    // Stays solid while the row overshoots and settles after a
+                    // quick swipe; it only gives way once the primary takes over.
                     scale = 1 - consolidation
-                    opacity = (1 - min(1, distance / max(1, p.confirmationDistance)) * 0.7) * (1 - consolidation)
+                    opacity = 1 - consolidation
                 }
             }
             return ItemListRevealButtonGeometry(center: center, width: width, scale: scale, opacity: opacity < 0.01 ? 0 : opacity)
