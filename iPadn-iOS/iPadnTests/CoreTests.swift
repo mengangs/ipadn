@@ -914,6 +914,22 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(InstalledAppsView.isUpdate(latest, installed: "10.1", versionID: nil))
     }
 
+    func testReviewFeedParses() {
+        let review = #"{"author":{"name":{"label":"Ann"}},"updated":{"label":"2026-11-01T08:30:00-07:00"},"im:rating":{"label":"4"},"im:version":{"label":"2.1"},"id":{"label":"123"},"title":{"label":"Nice"},"content":{"label":"Works well"}}"#
+        let appEntry = #"{"im:name":{"label":"Some App"},"id":{"label":"https://apps.apple.com/app/id1"}}"#
+        let list = ReviewService.parse(Data(#"{"feed":{"entry":[\#(appEntry),\#(review)]}}"#.utf8))
+        XCTAssertEqual(list.count, 1)
+        XCTAssertEqual(list.first?.author, "Ann")
+        XCTAssertEqual(list.first?.rating, 4)
+        XCTAssertEqual(list.first?.version, "2.1")
+        XCTAssertEqual(list.first?.title, "Nice")
+        XCTAssertEqual(list.first?.body, "Works well")
+        XCTAssertNotNil(list.first?.date)
+        XCTAssertEqual(ReviewService.parse(Data(#"{"feed":{"entry":\#(review)}}"#.utf8)).map(\.id), ["123"])
+        XCTAssertTrue(ReviewService.parse(Data(#"{"feed":{"author":{}}}"#.utf8)).isEmpty)
+        XCTAssertTrue(ReviewService.parse(Data("not json".utf8)).isEmpty)
+    }
+
     func testPackageInfoReadsDeclarations() {
         let info = PackageInfoService.describe([
             "CFBundleDisplayName": "Demo", "CFBundleIdentifier": "com.example.demo",

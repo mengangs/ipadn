@@ -106,6 +106,7 @@ struct AppDetailView: View {
                         }
                     } header: { sectionTitle("简介") }
                 }
+                if !app.isDelisted { ReviewsCard(app: app) }
                 if !app.isDelisted {
                     CardSection {
                         if store.isFavorite(app) { PriceHistorySection(app: app) }
