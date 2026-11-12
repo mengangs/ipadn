@@ -82,7 +82,7 @@ struct DownloadsView: View {
                         // Shown with the rows, not before them.
                         Text("拖动右侧的把手调整顺序，等待中的任务按这个顺序下载。")
                             .opacity(editRowsShown || reduceMotion ? 1 : 0)
-                            .animation(.easeOut(duration: 0.25).delay(0.15), value: editRowsShown)
+                            .animation(.easeOut(duration: 0.18).delay(0.08), value: editRowsShown)
                     }
                 }
                 .onAppear { DispatchQueue.main.async { editRowsShown = true } }
@@ -365,12 +365,12 @@ struct DownloadsView: View {
         }
         switchingMode = true
         if entering { cardsShown = false } else { editRowsShown = false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             // The list itself swaps without a transition; this animation only
             // moves the bottom bar and the toolbar title.
             if entering { editRowsShown = false } else { cardsShown = false }
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) { editMode = entering ? .active : .inactive }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { switchingMode = false }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { editMode = entering ? .active : .inactive }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { switchingMode = false }
         }
     }
 
@@ -685,7 +685,7 @@ private struct DrawerRow: ViewModifier {
             .opacity(shown ? 1 : 0)
             .offset(y: shown ? 0 : -travel)
             .scaleEffect(x: 1, y: shown ? 1 : 0.9, anchor: .top)
-            .animation(shown ? .spring(response: 0.46, dampingFraction: 0.82).delay(0.03 + Double(min(index, 10)) * 0.035)
-                             : .easeIn(duration: 0.18), value: shown)
+            .animation(shown ? .spring(response: 0.32, dampingFraction: 0.84).delay(0.01 + Double(min(index, 10)) * 0.02)
+                             : .easeIn(duration: 0.12), value: shown)
     }
 }
