@@ -66493,6 +66493,76 @@
         }
       }
     },
+    "拖动右侧的把手调整顺序，等待中的任务按这个顺序下载。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拖动右侧的把手调整顺序，等待中的任务按这个顺序下载。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drag the handles to change the order. Waiting tasks download in this order."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拖動右側的把手調整順序，等待中的任務按這個順序下載。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右側のハンドルをドラッグして順序を変更します。待機中のタスクはこの順序でダウンロードされます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오른쪽 핸들을 드래그해 순서를 바꿉니다. 대기 중인 작업은 이 순서로 다운로드됩니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перетаскивайте маркеры справа, чтобы изменить порядок. Ожидающие задачи загружаются в этом порядке."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrastra los controles de la derecha para cambiar el orden. Las tareas en espera se descargan en este orden."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Faites glisser les poignées pour changer l’ordre. Les tâches en attente sont téléchargées dans cet ordre."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ziehe die Griffe rechts, um die Reihenfolge zu ändern. Wartende Aufgaben werden in dieser Reihenfolge geladen."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arraste as alças à direita para mudar a ordem. As tarefas em espera são baixadas nessa ordem."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "اسحب المقابض لتغيير الترتيب. تُنزَّل المهام المنتظرة بهذا الترتيب."
+          }
+        }
+      }
+    },
     "本机应用": {
       "localizations": {
         "zh-Hans": {
