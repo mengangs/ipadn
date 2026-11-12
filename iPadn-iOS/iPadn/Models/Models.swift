@@ -253,6 +253,14 @@ struct DownloadJob: Codable, Identifiable {
     var updateKey: String? { updatePlatform.map { "\($0.rawValue)|\(app.id)" } }
     /// The version as the store names it. A finished IPA reports its own
     /// Info.plist version, which some apps number differently from the store.
+    /// A version older than the newest one Apple listed when it was
+    /// downloaded. Its own icon may differ from today's store artwork.
+    var isOlderVersion: Bool {
+        guard let mine = app.externalVersionID.flatMap(UInt64.init),
+              let newest = asset?.externalVersionIDs.compactMap(UInt64.init).max() else { return false }
+        return mine < newest
+    }
+
     var storeVersion: String {
         let ticket = asset?.app.version ?? ""
         return ticket.isEmpty ? app.version : ticket

@@ -362,14 +362,10 @@ final class AppleService: ObservableObject {
         }
         let artwork = song["artwork-urls"] as? [String: Any]
         let defaultArt = artwork?["default"] as? [String: Any]
-        // The purchase record names the icon of the version being downloaded;
-        // without it an older version would show today's store icon.
-        let versionIcon = StoreService.icon(plistString(metadata["softwareIcon57x57URL"]))
-            ?? StoreService.icon(plistString(defaultArt?["url"]))
         let assetInfo = song["asset-info"] as? [String: Any]
         let app = StoreApp(id: plistString(song["songId"]).isEmpty ? appID : plistString(song["songId"]),
             name: plistString(metadata["bundleDisplayName"]), bundleID: plistString(metadata["softwareVersionBundleId"]),
-            version: plistString(metadata["bundleShortVersionString"]), iconURL: versionIcon,
+            version: plistString(metadata["bundleShortVersionString"]), iconURL: StoreService.icon(plistString(defaultArt?["url"])),
             size: (assetInfo?["file-size"] as? NSNumber)?.int64Value ?? 0,
             minimumOS: plistString(metadata["minimumOSVersion"] ?? metadata["minimumOsVersion"]), externalVersionID: externalID)
         // The server order is positional: SC_Info/Manifest.plist.SinfPaths

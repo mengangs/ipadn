@@ -65,6 +65,7 @@ final class DownloadManager: NSObject, ObservableObject {
     private var iconsLoading = false
     private var catalogArtworkAttempted = Set<UUID>()
     private var iconSizeChecked = Set<UUID>()
+    private var olderIconRetried = Set<UUID>()
     private var removalAfterCancel = Set<UUID>()
     private let persistQueue = DispatchQueue(label: "iPadn.download-jobs", qos: .utility)
     private var artworkCountry = "CN"
@@ -397,7 +398,8 @@ final class DownloadManager: NSObject, ObservableObject {
             throw ToolError.message(AppText.text("此安装包已有下载任务"))
         }
         var macApp = app
-        if !offer.displayVersion.isEmpty { macApp.version = offer.displayVersion }
+        // The offer's version is the Mac build's; the listing may describe the iPhone app.
+        if !offer.displayVersion.isEmpty, offer.displayVersion != app.version { macApp.version = offer.displayVersion; macApp.size = 0 }
         let job = DownloadJob(app: macApp, sourceURL: offer.downloadURL, packageIconScanned: true,
                               rawFormat: "pkg", protectedMacPackage: offer.protectedByApple ? true : nil)
         if offer.protectedByApple, let dpInfo = offer.dpInfo {
@@ -669,12 +671,16 @@ final class DownloadManager: NSObject, ObservableObject {
                 UserDefaults.standard.set(Array(interrupted), forKey: Self.iconScanKey)
                 continue
             }
-            if job.packageIconScanned != true {
+            // Older versions scanned before they could keep a small icon get one more look.
+            let rescan = job.packageIconScanned == true && job.isOlderVersion && packageIconURL(job) == nil
+                && olderIconRetried.insert(job.id).inserted
+            if job.packageIconScanned != true || rescan {
                 interrupted.insert(job.id.uuidString)
                 UserDefaults.standard.set(Array(interrupted), forKey: Self.iconScanKey)
                 // With store artwork available, only keep a package icon that is
-                // sharp at list size (64 pt at 3x).
-                let minimum = job.displayApp(packageIcon: nil).iconURL == nil ? 0 : 180
+                // sharp at list size (64 pt at 3x). An older version keeps its own
+                // icon at any size: the store shows today's, which may look different.
+                let minimum = job.displayApp(packageIcon: nil).iconURL == nil || job.isOlderVersion ? 0 : 180
                 _ = await Task.detached(priority: .utility) {
                     try? PackageIconService.save(from: file, id: job.id, minimumPixels: minimum)
                 }.value
@@ -694,7 +700,7 @@ final class DownloadManager: NSObject, ObservableObject {
             // Icons cached before small package PNGs were rejected: fall back to
             // the sharper store artwork.
             if iconSizeChecked.insert(job.id).inserted, let cached = packageIconURL(job),
-               job.displayApp(packageIcon: nil).iconURL != nil,
+               job.displayApp(packageIcon: nil).iconURL != nil, !job.isOlderVersion,
                PackageIconService.pixelWidth(cached) < 180 {
                 try? FileManager.default.removeItem(at: cached)
                 objectWillChange.send()
