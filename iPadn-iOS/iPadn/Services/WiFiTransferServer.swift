@@ -24,7 +24,9 @@ final class WiFiTransferServer: @unchecked Sendable {
 
     private let queue = DispatchQueue(label: "iPadn.wifi-transfer")
     private var listener: NWListener?
-    private let key: String
+    /// The random part of the address; kept by the page so a restart after
+    /// iPadn was suspended answers at the same address.
+    let key: String
     private var items: [Item] = []
     private var misses = 0
     private static let missLimit = 20
@@ -33,18 +35,22 @@ final class WiFiTransferServer: @unchecked Sendable {
     var onAccess: (@MainActor (Access) -> Void)?
     var onStop: (@MainActor (String?) -> Void)?
 
-    init() {
+    init(key: String? = nil) {
+        if let key { self.key = key; return }
         var bytes = [UInt8](repeating: 0, count: 16)
         _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        key = bytes.map { String(format: "%02x", $0) }.joined()
+        self.key = bytes.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Starts listening on every interface and returns the port.
-    func start(items: [Item]) async throws -> UInt16 {
+    /// Starts listening on every interface, on `port` when given (to keep an
+    /// address the user already shared), and returns the port.
+    func start(items: [Item], port: UInt16? = nil) async throws -> UInt16 {
         self.items = items
         let parameters = NWParameters.tcp
         parameters.includePeerToPeer = false
-        let listener = try NWListener(using: parameters, on: .any)
+        let fixed = port.flatMap(NWEndpoint.Port.init(rawValue:))
+        if fixed != nil { parameters.allowLocalEndpointReuse = true }
+        let listener = try NWListener(using: parameters, on: fixed ?? .any)
         self.listener = listener
         return try await withCheckedThrowingContinuation { continuation in
             var resumed = false
@@ -56,6 +62,13 @@ final class WiFiTransferServer: @unchecked Sendable {
                 case .failed(let error):
                     if !resumed { resumed = true; continuation.resume(throwing: error) }
                     else { self?.stop(reason: error.localizedDescription) }
+                case .waiting(let error):
+                    // A port still held by the previous listener waits instead
+                    // of failing; give up so the caller can retry or move on.
+                    guard !resumed else { return }
+                    resumed = true
+                    listener.cancel()
+                    continuation.resume(throwing: error)
                 default: break
                 }
             }
