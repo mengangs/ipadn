@@ -148,8 +148,9 @@ jobs:
             fi
           fi
           killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
+          simulator_id="$(python3 scripts/boot_test_simulator.py)"
           xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
-            -configuration Debug -destination "platform=iOS Simulator,name=iPhone 18 Pro" \
+            -configuration Debug -destination "platform=iOS Simulator,id=$simulator_id" \
             -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
             -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 \
             -destination-timeout 120 -derivedDataPath build/TestDerivedData \
