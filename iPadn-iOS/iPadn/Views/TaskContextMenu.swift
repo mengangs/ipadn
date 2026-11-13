@@ -8,7 +8,6 @@ struct TaskContextAttachment: UIViewRepresentable {
     let requested: Bool
     let name: String
     let items: [TaskMenuItem]
-    let opened: () -> Void
     let closed: () -> Void
 
     final class Anchor: UIView {
@@ -16,19 +15,12 @@ struct TaskContextAttachment: UIViewRepresentable {
         override func didMoveToWindow() { super.didMoveToWindow(); moved?() }
     }
 
-    @MainActor final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+    @MainActor final class Coordinator {
         var parent: TaskContextAttachment
         weak var anchor: Anchor?
         weak var cell: UIView?
-        private let press = UILongPressGestureRecognizer()
         private var presentation: TaskContextPresentation?
-        init(_ parent: TaskContextAttachment) {
-            self.parent = parent
-            super.init()
-            press.minimumPressDuration = 0.4
-            press.addTarget(self, action: #selector(pressed))
-            press.delegate = self
-        }
+        init(_ parent: TaskContextAttachment) { self.parent = parent }
         func install() {
             guard let anchor, anchor.window != nil else { detach(); return }
             var ancestor = anchor.superview
@@ -37,9 +29,7 @@ struct TaskContextAttachment: UIViewRepresentable {
                     if cell !== view {
                         detach()
                         cell = view
-                        view.addGestureRecognizer(press)
                     }
-                    press.isEnabled = parent.enabled
                     if !parent.enabled { presentation?.dismiss(animated: false) }
                     return
                 }
@@ -48,12 +38,7 @@ struct TaskContextAttachment: UIViewRepresentable {
         }
         func detach() {
             presentation?.dismiss(animated: false)
-            cell?.removeGestureRecognizer(press)
             cell = nil
-        }
-        @objc private func pressed() {
-            guard press.state == .began else { return }
-            show()
         }
         func show() {
             guard parent.enabled, presentation == nil, let cell, let window = cell.window,
@@ -64,15 +49,8 @@ struct TaskContextAttachment: UIViewRepresentable {
                 self?.parent.closed()
             }
             presentation = controller
-            parent.opened()
             UX.feedback()
             controller.show()
-        }
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
-                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-            // The list must win a drag. A recognized long press cancels the
-            // row button's touch; releasing it cannot open the details sheet.
-            false
         }
     }
 
@@ -106,6 +84,7 @@ struct TaskContextAttachment: UIViewRepresentable {
     private weak var window: UIWindow?
     private weak var source: UIView?
     private let overlay = TaskMenuOverlay()
+    private let overlayController = UIViewController()
     private let backdrop = UIVisualEffectView()
     private let snapshot: UIView
     private let actions: UIHostingController<TaskMenuActions>
@@ -144,11 +123,15 @@ struct TaskContextAttachment: UIViewRepresentable {
     }
 
     func show() {
-        guard let window, let source else { return }
-        sourceFrame = source.convert(source.bounds, to: window)
+        guard let window, let source, let root = window.rootViewController else { return }
         sourceAlpha = source.alpha
-        overlay.frame = window.bounds
+        overlay.frame = root.view.bounds
         overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        overlayController.view = overlay
+        root.addChild(overlayController)
+        root.view.addSubview(overlay)
+        overlayController.didMove(toParent: root)
+        sourceFrame = source.convert(source.bounds, to: overlay)
         backdrop.frame = overlay.bounds
         backdrop.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         backdrop.isUserInteractionEnabled = false
@@ -160,14 +143,13 @@ struct TaskContextAttachment: UIViewRepresentable {
         snapshot.frame = sourceFrame
         overlay.addSubview(snapshot)
         actions.overrideUserInterfaceStyle = source.traitCollection.userInterfaceStyle
-        if let root = window.rootViewController { root.addChild(actions) }
+        overlayController.addChild(actions)
         overlay.addSubview(actions.view)
-        actions.didMove(toParent: actions.parent)
+        actions.didMove(toParent: overlayController)
         overlay.menuView = actions.view
         overlay.accessibilityViewIsModal = true
-        window.addSubview(overlay)
 
-        let safe = window.bounds.inset(by: window.safeAreaInsets).insetBy(dx: 12, dy: 12)
+        let safe = overlay.bounds.inset(by: window.safeAreaInsets).insetBy(dx: 12, dy: 12)
         let width = min(sourceFrame.width, safe.width, 380)
         // Measure the menu before constraining its scroll view's viewport.
         let measurement = UIHostingController(rootView: TaskMenuButtons(items: actions.rootView.items, choose: { _ in }))
@@ -226,16 +208,20 @@ struct TaskContextAttachment: UIViewRepresentable {
         closed()
         let overlay = self.overlay
         let actions = self.actions
+        let overlayController = self.overlayController
         actions.willMove(toParent: nil)
+        overlayController.willMove(toParent: nil)
         if animated && !UIAccessibility.isReduceMotionEnabled {
             overlay.isUserInteractionEnabled = false
             UIView.animate(withDuration: 0.15, animations: { overlay.alpha = 0 }) { _ in
                 overlay.removeFromSuperview()
                 actions.removeFromParent()
+                overlayController.removeFromParent()
             }
         } else {
             overlay.removeFromSuperview()
             actions.removeFromParent()
+            overlayController.removeFromParent()
         }
         UIAccessibility.post(notification: .screenChanged, argument: nil)
     }
@@ -246,6 +232,13 @@ struct TaskContextAttachment: UIViewRepresentable {
     }
     func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         !actions.view.frame.contains(touch.location(in: overlay))
+    }
+    func gestureRecognizer(_ recognizer: UIGestureRecognizer,
+                           shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+        // SwiftUI's button press recognizers otherwise begin before a window
+        // tap can finish. Give the closing tap priority over presses, but never
+        // make the list's native scrolling wait for it.
+        recognizer === outsideTap && !(other is UIPanGestureRecognizer)
     }
     func gestureRecognizer(_ recognizer: UIGestureRecognizer,
                            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {

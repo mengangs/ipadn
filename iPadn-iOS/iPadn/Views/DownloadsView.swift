@@ -339,8 +339,11 @@ struct DownloadsView: View {
                             .background {
                                 TaskContextAttachment(enabled: !edit && !actionBusy, requested: menuJob?.id == job.id,
                                                       name: job.app.name, items: menuItems(job, latest: updates[job.id]),
-                                                      opened: { menuJob = job }, closed: { menuJob = nil })
+                                                      closed: { menuJob = nil })
                             }
+                            .simultaneousGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                                if !edit && !actionBusy { menuJob = job }
+                            })
                             .accessibilityAction(named: Text("更多操作")) { if !edit && !actionBusy { menuJob = job } }
                             // Outside the card background, so the whole card slides.
                             .modifier(DrawerRow(shown: cardsShown || reduceMotion, index: index, travel: 28))
