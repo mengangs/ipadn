@@ -58,6 +58,10 @@ final class InteractionTests: XCTestCase {
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail"]
         app.launch()
         let version = app.staticTexts["detail.version.number.123456788"]
+        for _ in 0..<4 {
+            if version.exists && version.isHittable { break }
+            app.swipeUp()
+        }
         XCTAssertTrue(version.waitForExistence(timeout: 10))
         version.press(forDuration: 0.8)
         let copyID = app.buttons["detail.version.copy-id.123456788"]

@@ -38,10 +38,10 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 | | |
 | --- | --- |
-| 🔍 **Search & discover** | Search by app name, App ID or App Store link, and switch storefront region and platform (iPhone / iPad / Apple TV / Mac). Discover on the search page shows Top Free, Top Paid and Top Grossing for any region, by category. App pages show screenshots, customer reviews and other apps by the same developer. |
+| 🔍 **Search & discover** | Search by app name, App ID or App Store link, and switch storefront region and platform (iPhone / iPad / Apple TV / Mac). Recent searches appear as chips. Discover can be turned off in Settings; when enabled it shows Top Free, Top Paid and Top Grossing for any region, by category. App pages show screenshots, customer reviews and other apps by the same developer. |
 | 🌐 **Translation** | Descriptions and release notes in another language can be replaced with the system translation (iOS 17.4 or later). |
-| 🕘 **Older versions** | See each version's number, date and release notes and download older versions, or enter a version ID directly. Downloaded apps can “Keep this version” to stop update reminders. |
-| ⬇️ **Downloads** | Background downloads you can pause, resume and retry, with live speed and time remaining, also on the Lock Screen and in the Dynamic Island. Download over Wi‑Fi only and install automatically when a download finishes if you like. Task details show the permissions, extensions and languages a package declares. |
+| 🕘 **Older versions** | See each version's number, date, IPA package size and release notes and download older versions, or enter a version ID directly. Long-press a row to copy its version number or ID; accessibility text sizes use a vertical layout. Unavailable sizes show “—”, never the latest version's size. Downloaded apps can “Keep this version” to stop update reminders. |
+| ⬇️ **Downloads** | Background downloads you can pause, resume and retry, with live speed and time remaining, also on the Lock Screen and in the Dynamic Island. Download over Wi‑Fi only and install automatically when a download finishes if you like. Swipe cards to delete or share; tap elsewhere to close the actions. Exported filenames include the app name and version. Deletion offers a five-second Undo countdown, and completion changes the progress ring to a checkmark and Install. Long-press uses the system menu; tap the selected tab again to scroll to the top. Task details show the permissions, extensions and languages a package declares. |
 | 🔔 **Update alerts** | Downloaded apps with a newer version are marked in the list, and background checks send a notification. |
 | ⬆️ **iPadn updates** | New iPadn releases appear in Settings with a notification; read what's new, download the new package and hand it to your signing tool. |
 | 👀 **Follow apps** | Get notified about new versions, price drops, free promotions or removals, with a price history. |
@@ -101,7 +101,9 @@ The source is updated automatically after every release and only lists packages 
 
 ## Installing a downloaded app
 
-Tap “Install” on the download card and confirm in the system prompt. Don't leave iPadn until the installation finishes.
+For a manual install, tap “Install” on the download card and follow the selected method. Web installation methods require confirmation in the system prompt; keep iPadn open until they finish.
+
+With “Install When Downloaded” enabled and Native install selected, completed downloads install sequentially without another confirmation. Pair beforehand and keep LocalDevVPN connected. Silent audio keeps the app running from downloading through installation; Lock Screen and Dynamic Island activities can show downloading, processing and installation states (standard package, with Live Activities enabled). iOS still controls background execution, so work cannot be guaranteed after the system terminates the app; reopening iPadn resumes pending work. Other methods still need iPadn in the foreground and their installation page and system prompts.
 
 Choose the install method under Account › Settings › Installation settings:
 
