@@ -32,6 +32,8 @@ struct DownloadsView: View {
     /// A mode change is running; taps wait so two changes never overlap.
     @State private var switchingMode = false
     @State private var actionBusy = false
+    /// The task whose lifted card and actions are showing.
+    @State private var menuJob: DownloadJob?
     private var filteredJobs: [DownloadJob] {
         manager.jobs.filter { filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
     }
@@ -230,6 +232,15 @@ struct DownloadsView: View {
             PackageInstallationView(job: job).sheetNotice().environmentObject(store).environmentObject(manager)
         }
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
+        .overlay {
+            if let job = menuJob {
+                TaskPreviewMenu(items: menuItems(job, latest: updateTargets[job.id]), dismiss: { withAnimation(UX.motion(reduceMotion)) { menuJob = nil } }) {
+                    taskContent(job, update: updateTargets[job.id])
+                        .padding(.horizontal, 16).padding(.vertical, 12)
+                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                }
+            }
+        }
     }
     /// Row-header count: the active filter, then how many have updates.
     private func headerSummary(visible: [DownloadJob], updates: [UUID: StoreApp]) -> String {
@@ -238,7 +249,11 @@ struct DownloadsView: View {
         return text
     }
     private func taskContent(_ job: DownloadJob, update: StoreApp?, editing: Bool = false) -> some View {
-        DownloadTaskRow(snapshot: job, progress: manager.progress(for: job.id), update: update, kept: store.keepsVersion(job), editing: editing, inspecting: { inspecting = job }, primary: { primary(job) }, updating: { downloadUpdate(job) })
+        DownloadTaskRow(snapshot: job, progress: manager.progress(for: job.id), update: update, kept: store.keepsVersion(job), editing: editing,
+                         // A long press that opened the card must not also press the button under the finger.
+                         inspecting: { if menuJob == nil { inspecting = job } },
+                         primary: { if menuJob == nil { primary(job) } },
+                         updating: { if menuJob == nil { downloadUpdate(job) } })
     }
     private func shareAction(_ job: DownloadJob) -> [RevealAction] {
         guard job.status == .completed, manager.fileURL(job) != nil else { return [] }
@@ -330,40 +345,13 @@ struct DownloadsView: View {
                             .revealActions(id: "download." + job.id.uuidString,
                                            enabled: !edit && !actionBusy && job.status != .processing && job.status != .pausing,
                                            [.delete { askDelete([job.id]) }] + shareAction(job))
-                            .contextMenu {
-                                if !edit {
-                                    if let latest = updates[job.id] {
-                                        Button("下载新版本 \(latest.version)", systemImage: "arrow.down.circle") { downloadUpdate(job) }
-                                    }
-                                    if job.status == .completed && job.updateKey != nil {
-                                        if store.keepsVersion(job) {
-                                            Button("恢复更新提醒", systemImage: "bell") { store.keepVersion(false, of: job); UX.feedback() }
-                                        } else {
-                                            Button("保留此版本", systemImage: "pin") {
-                                                store.keepVersion(true, of: job); UX.feedback()
-                                                store.infoMessage = AppText.text("已保留此版本，不再提醒更新")
-                                            }
-                                        }
-                                    }
-                                    Button("任务详情", systemImage: "info.circle") { inspecting = job }
-                                    if let file = manager.fileURL(job) {
-                                        Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: manager.exportURL(job) ?? file) }
-                                        if job.rawFormat == nil {
-                                            Button("安装", systemImage: "square.and.arrow.down") { installing = job }
-                                        }
-                                        Button("复制本机链接", systemImage: "link") {
-                                            perform {
-                                                let url = try await store.installation.localURL(file: file)
-                                                UIPasteboard.general.string = url.absoluteString
-                                                store.infoMessage = AppText.text("已复制链接")
-                                            }
-                                        }
-                                    }
-                                    if job.status != .processing && job.status != .pausing {
-                                        Button("删除任务及文件", systemImage: "trash", role: .destructive) { askDelete([job.id]) }
-                                    }
-                                }
-                            }
+                            // Long press lifts the task out over a blurred list, with its actions below.
+                            .simultaneousGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                                guard !edit, !actionBusy else { return }
+                                UX.feedback()
+                                withAnimation(UX.motion(reduceMotion)) { menuJob = job }
+                            })
+                            .accessibilityAction(named: Text("更多操作")) { if !edit { menuJob = job } }
                             // Outside the card background, so the whole card slides.
                             .modifier(DrawerRow(shown: cardsShown || reduceMotion, index: index, travel: 28))
                         } header: {
@@ -450,6 +438,41 @@ struct DownloadsView: View {
             if imported > 0 { filter = .all; term = ""; store.infoMessage = AppText.text("已导入 \(imported) 个安装包") }
             if !failures.isEmpty { store.errorMessage = failures.joined(separator: "\n") }
         }
+    }
+    /// The actions for a task, shared by the long-press menu.
+    private func menuItems(_ job: DownloadJob, latest: StoreApp?) -> [TaskMenuItem] {
+        var items: [TaskMenuItem] = []
+        if let latest {
+            items.append(TaskMenuItem(id: "update", title: AppText.text("下载新版本 \(latest.version)"), symbol: "arrow.down.circle") { downloadUpdate(job) })
+        }
+        if job.status == .completed && job.updateKey != nil {
+            if store.keepsVersion(job) {
+                items.append(TaskMenuItem(id: "unkeep", title: AppText.text("恢复更新提醒"), symbol: "bell") { store.keepVersion(false, of: job); UX.feedback() })
+            } else {
+                items.append(TaskMenuItem(id: "keep", title: AppText.text("保留此版本"), symbol: "pin") {
+                    store.keepVersion(true, of: job); UX.feedback()
+                    store.infoMessage = AppText.text("已保留此版本，不再提醒更新")
+                })
+            }
+        }
+        items.append(TaskMenuItem(id: "detail", title: AppText.text("任务详情"), symbol: "info.circle") { inspecting = job })
+        if let file = manager.fileURL(job) {
+            items.append(TaskMenuItem(id: "export", title: AppText.text("导出文件"), symbol: "square.and.arrow.up") { share = SharedFile(url: manager.exportURL(job) ?? file) })
+            if job.rawFormat == nil {
+                items.append(TaskMenuItem(id: "install", title: AppText.text("安装"), symbol: "square.and.arrow.down") { installing = job })
+            }
+            items.append(TaskMenuItem(id: "link", title: AppText.text("复制本机链接"), symbol: "link") {
+                perform {
+                    let url = try await store.installation.localURL(file: file)
+                    UIPasteboard.general.string = url.absoluteString
+                    store.infoMessage = AppText.text("已复制链接")
+                }
+            })
+        }
+        if job.status != .processing && job.status != .pausing {
+            items.append(TaskMenuItem(id: "delete", title: AppText.text("删除任务及文件"), symbol: "trash", destructive: true) { askDelete([job.id]) })
+        }
+        return items
     }
     private func packageDisplayApp(_ job: DownloadJob) -> StoreApp {
         var app = job.app
@@ -706,8 +729,8 @@ private struct TaskSizeRows: View {
             if total > 0 { LabeledContent("大小", value: total.byteLabel) }
         }
     }
-}
-
+}
+
 /// A row that slides down out of the list's top edge a few hundredths of a
 /// second after the one above it, like a drawer pulled out; hidden again, all
 /// rows slide back up together.
@@ -722,5 +745,63 @@ private struct DrawerRow: ViewModifier {
             .scaleEffect(x: 1, y: shown ? 1 : 0.9, anchor: .top)
             .animation(shown ? .spring(response: 0.32, dampingFraction: 0.84).delay(0.01 + Double(min(index, 10)) * 0.02)
                              : .easeIn(duration: 0.12), value: shown)
+    }
+}
+
+/// One action on the long-press card.
+struct TaskMenuItem: Identifiable {
+    let id: String
+    let title: String
+    let symbol: String
+    var destructive = false
+    let action: () -> Void
+}
+
+/// Telegram's long-press menu: the task lifts out of the list over a blurred
+/// backdrop, and its actions sit in a card below it. Tapping outside closes it.
+private struct TaskPreviewMenu<Preview: View>: View {
+    let items: [TaskMenuItem]
+    let dismiss: () -> Void
+    @ViewBuilder let preview: () -> Preview
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+    var body: some View {
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial).ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture(perform: dismiss)
+                .accessibilityHidden(true)
+            VStack(spacing: 14) {
+                preview()
+                    .allowsHitTesting(false)
+                    .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+                    .scaleEffect(shown || reduceMotion ? 1 : 0.94)
+                VStack(spacing: 0) {
+                    ForEach(items) { item in
+                        Button {
+                            dismiss()
+                            item.action()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Text(item.title)
+                                Spacer(minLength: 8)
+                                Image(systemName: item.symbol)
+                            }
+                            .font(.body)
+                            .foregroundStyle(item.destructive ? Color.red : Color.primary)
+                            .frame(minHeight: 44).padding(.horizontal, 16)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("download.menu." + item.id)
+                        if item.id != items.last?.id { Divider().padding(.leading, 16) }
+                    }
+                }
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .padding(.horizontal, 16)
+            .opacity(shown ? 1 : 0)
+        }
+        .onAppear { withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) { shown = true } }
     }
 }

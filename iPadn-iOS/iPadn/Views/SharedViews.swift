@@ -184,6 +184,7 @@ struct RootView: View {
                 }
                 .toolbarBackground(.visible, for: .tabBar)
                 .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+                .background { TabReselectScroll(selected: tabs.selection) }
             }
         }
         .preferredColorScheme(store.settings.appearance == "system" ? nil : store.settings.appearance == "dark" ? .dark : .light)
@@ -302,6 +303,73 @@ struct UndoCountdown: View {
         }
         .frame(width: 24, height: 24)
         .accessibilityHidden(true)
+    }
+}
+
+/// Tapping the tab you are already on scrolls its list back to the top, as in
+/// Telegram. It watches the tab bar's taps and changes nothing about the tabs.
+struct TabReselectScroll: UIViewRepresentable {
+    let selected: Int
+    final class Anchor: UIView {
+        var moved: (() -> Void)?
+        override func didMoveToWindow() { super.didMoveToWindow(); moved?() }
+    }
+    final class Coordinator: NSObject {
+        var selected = 0
+        weak var anchor: Anchor?
+        private weak var watched: UITabBar?
+        func install() {
+            guard let window = anchor?.window, let bar = Self.tabBar(in: window), bar !== watched else { return }
+            let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+            tap.cancelsTouchesInView = false
+            bar.addGestureRecognizer(tap)
+            watched = bar
+        }
+        @objc private func tapped(_ gesture: UITapGestureRecognizer) {
+            guard let bar = gesture.view as? UITabBar else { return }
+            let point = gesture.location(in: bar)
+            // Tab buttons are the bar's controls, left to right in tab order.
+            let buttons = bar.subviews.compactMap { $0 as? UIControl }.sorted { $0.frame.minX < $1.frame.minX }
+            // The selection changes on touch-up, which the tab bar handles, so
+            // `selected` still holds the tab that was showing before this tap.
+            guard let index = buttons.firstIndex(where: { $0.frame.contains(point) }), index == selected else { return }
+            Self.scrollToTop(in: bar.window)
+        }
+        private static func tabBar(in view: UIView) -> UITabBar? {
+            if let bar = view as? UITabBar { return bar }
+            for sub in view.subviews { if let bar = tabBar(in: sub) { return bar } }
+            return nil
+        }
+        /// The visible, scrollable list with the most area on screen.
+        private static func scrollToTop(in window: UIWindow?) {
+            guard let window else { return }
+            var best: UIScrollView?
+            var bestArea: CGFloat = 0
+            var stack: [UIView] = [window]
+            while let view = stack.popLast() {
+                if let scroll = view as? UIScrollView, !scroll.isHidden, scroll.alpha > 0.01,
+                   scroll.contentSize.height > scroll.bounds.height {
+                    let visible = scroll.convert(scroll.bounds, to: window).intersection(window.bounds)
+                    let area = visible.width * visible.height
+                    if area > bestArea { best = scroll; bestArea = area }
+                }
+                stack.append(contentsOf: view.subviews)
+            }
+            guard let scroll = best else { return }
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: -scroll.adjustedContentInset.top), animated: true)
+        }
+    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeUIView(context: Context) -> Anchor {
+        let view = Anchor()
+        view.isUserInteractionEnabled = false
+        context.coordinator.anchor = view
+        view.moved = { [weak coordinator = context.coordinator] in coordinator?.install() }
+        return view
+    }
+    func updateUIView(_ view: Anchor, context: Context) {
+        context.coordinator.selected = selected
+        context.coordinator.install()
     }
 }
 
