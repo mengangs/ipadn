@@ -34,7 +34,7 @@ final class OnDevicePairing: ObservableObject {
     private var service: NetService?
     // ActivityKit is unavailable on iOS 16.0. Access the handle only in guarded methods.
     private var activity: Any?
-    private let keepAlive = PairingKeepAlive()
+    private let keepAlive = BackgroundKeepAlive(name: "iPadn pairing")
     private var running = false
 
     func start() {
@@ -152,15 +152,19 @@ final class OnDevicePairing: ObservableObject {
     }
 }
 
-/// Keeps iPadn running in the background while the user pairs in Settings,
-/// by playing silence mixed with other audio. Runs only during a pairing.
+/// Keeps iPadn running in the background by playing silence mixed with other
+/// audio: while the user pairs in Settings, and from a download to its
+/// automatic installation. Runs only during those.
 @MainActor
-final class PairingKeepAlive {
+final class BackgroundKeepAlive {
+    private let name: String
     private var player: AVAudioPlayer?
     private var background = UIBackgroundTaskIdentifier.invalid
 
+    init(name: String) { self.name = name }
+
     func start() {
-        background = UIApplication.shared.beginBackgroundTask(withName: "iPadn pairing") { [weak self] in
+        background = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
             MainActor.assumeIsolated { self?.endBackgroundTask() }
         }
         do {

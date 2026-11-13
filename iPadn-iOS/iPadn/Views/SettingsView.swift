@@ -73,8 +73,14 @@ struct SettingsView: View {
                     }
                 Toggle("仅使用 Wi‑Fi 下载", isOn: $store.settings.wifiOnlyDownloads)
                     .accessibilityIdentifier("settings.wifi-only")
-                Toggle("下载完成后自动安装", isOn: $store.settings.autoInstall)
-                    .accessibilityIdentifier("settings.auto-install")
+                Toggle(isOn: $store.settings.autoInstall) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("下载完成后自动安装")
+                        Text("只有原生安装能在后台自动完成，其他安装方式需要打开 iPadn 后确认。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("settings.auto-install")
                 Toggle("实时活动显示下载进度", isOn: $store.settings.downloadLiveActivity)
                     .accessibilityIdentifier("settings.download-activity")
                 Toggle("兼容下载模式", isOn: $store.settings.compatibleDownloadMode)
@@ -86,7 +92,7 @@ struct SettingsView: View {
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("关闭「新版本提醒」后，下载页不再显示新版本提示，也不发送通知。")
-                    Text("开启「仅使用 Wi‑Fi 下载」后，只有蜂窝数据时下载会暂停排队，连上 Wi‑Fi 后自动继续。「下载完成后自动安装」会在 iPadn 打开时弹出安装并开始安装。")
+                    Text("开启「仅使用 Wi‑Fi 下载」后，只有蜂窝数据时下载会暂停排队，连上 Wi‑Fi 后自动继续。「下载完成后自动安装」使用原生安装时会在后台直接安装，不需要确认（LocalDevVPN 需保持连接）；其他安装方式会在 iPadn 打开时弹出安装。")
                     Text("下载时在锁定屏幕和灵动岛显示进度。iPadn 在后台时按测得的速度估算进度，回到 iPadn 后更新为实际进度。")
                     if store.downloads.backgroundDownloadsUnavailable && !store.settings.compatibleDownloadMode {
                         Text("当前签名下系统后台下载无法保存文件，已自动改用应用内下载，下载时请保持 iPadn 在前台。更换签名后可以点按「重新尝试后台下载」。")

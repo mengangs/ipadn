@@ -184,6 +184,7 @@ struct RootView: View {
                 }
                 .toolbarBackground(.visible, for: .tabBar)
                 .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+                .background { TabReselectScroll(selected: tabs.selection) }
             }
         }
         .preferredColorScheme(store.settings.appearance == "system" ? nil : store.settings.appearance == "dark" ? .dark : .light)
@@ -205,9 +206,9 @@ struct RootView: View {
         .overlay(alignment: .top) {
             if let message = store.undoNotice?.message ?? store.infoMessage {
                 Group {
-                    if store.undoNotice != nil {
+                    if let notice = store.undoNotice {
                     HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        UndoCountdown(start: notice.created, duration: UndoNotice.duration)
                         Text(message).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
                             Button("撤销") { withAnimation(UX.motion(reduceMotion)) { store.undoLastAction() } }
@@ -247,7 +248,7 @@ struct RootView: View {
         .task(id: store.undoNotice?.id) {
             guard let notice = store.undoNotice else { return }
             UIAccessibility.post(notification: .announcement, argument: AppText.text("\(notice.message)，可以撤销"))
-            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            do { try await Task.sleep(for: .seconds(UndoNotice.duration)) } catch { return }
             if store.undoNotice?.id == notice.id { store.undoNotice = nil }
         }
         .task(id: store.infoMessage) {
@@ -277,6 +278,123 @@ struct RootView: View {
         case 3: AccountsView()
         default: SearchView()
         }
+    }
+}
+
+/// Telegram's undo countdown: a ring that runs down with the seconds left
+/// inside it, so it's clear how long Undo stays offered.
+struct UndoCountdown: View {
+    let start: Date
+    let duration: TimeInterval
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+            let left = max(0, duration - context.date.timeIntervalSince(start))
+            ZStack {
+                Circle().stroke(Color.primary.opacity(0.12), lineWidth: 2)
+                Circle().trim(from: 0, to: left / duration)
+                    .stroke(Color.primary, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text("\(Int(left.rounded(.up)))")
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .compatibleCountdownTransition()
+                    .animation(.easeOut(duration: 0.2), value: Int(left.rounded(.up)))
+            }
+        }
+        .frame(width: 24, height: 24)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Tapping the tab you are already on scrolls its list back to the top, as in
+/// Telegram. It watches the tab bar's taps and changes nothing about the tabs.
+struct TabReselectScroll: UIViewRepresentable {
+    let selected: Int
+    final class Anchor: UIView {
+        var moved: (() -> Void)?
+        override func didMoveToWindow() { super.didMoveToWindow(); moved?() }
+    }
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        weak var anchor: Anchor?
+        private weak var watched: UITabBar?
+        private var tap: UITapGestureRecognizer?
+        private var selectedAtTouch: Int?
+        func install() {
+            guard let window = anchor?.window, let bar = Self.tabBar(in: window) else { detach(); return }
+            guard bar !== watched else { return }
+            detach()
+            let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+            tap.cancelsTouchesInView = false
+            tap.delegate = self
+            bar.addGestureRecognizer(tap)
+            self.tap = tap
+            watched = bar
+        }
+        func detach() {
+            if let tap { watched?.removeGestureRecognizer(tap) }
+            tap = nil; watched = nil; selectedAtTouch = nil
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let bar = watched else { return false }
+            // Capture BEFORE UIKit changes selection, not when the tap ends.
+            // Comparing item indices also avoids assuming LTR button positions.
+            selectedAtTouch = bar.items?.firstIndex { $0 === bar.selectedItem }
+            var view = touch.view
+            while let current = view, current !== bar {
+                if current is UIControl { return true }
+                view = current.superview
+            }
+            return false
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+        @objc private func tapped(_ gesture: UITapGestureRecognizer) {
+            guard let bar = gesture.view as? UITabBar, let before = selectedAtTouch else { return }
+            selectedAtTouch = nil
+            DispatchQueue.main.async { [weak bar] in
+                guard let bar, bar.items?.firstIndex(where: { $0 === bar.selectedItem }) == before else { return }
+                Self.scrollToTop(in: bar.window)
+            }
+        }
+        private static func tabBar(in view: UIView) -> UITabBar? {
+            if let bar = view as? UITabBar { return bar }
+            for sub in view.subviews { if let bar = tabBar(in: sub) { return bar } }
+            return nil
+        }
+        /// The visible, scrollable list with the most area on screen.
+        private static func scrollToTop(in window: UIWindow?) {
+            guard let window else { return }
+            var best: UIScrollView?
+            var bestArea: CGFloat = 0
+            var stack: [UIView] = [window]
+            while let view = stack.popLast() {
+                guard !view.isHidden, view.alpha > 0.01, view.layer.opacity > 0.01 else { continue }
+                if let scroll = view as? UIScrollView,
+                   scroll.contentSize.height > scroll.bounds.height {
+                    let visible = scroll.convert(scroll.bounds, to: window).intersection(window.bounds)
+                    let area = visible.width * visible.height
+                    if area > bestArea { best = scroll; bestArea = area }
+                }
+                stack.append(contentsOf: view.subviews)
+            }
+            guard let scroll = best else { return }
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: -scroll.adjustedContentInset.top), animated: true)
+        }
+    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeUIView(context: Context) -> Anchor {
+        let view = Anchor()
+        view.isUserInteractionEnabled = false
+        context.coordinator.anchor = view
+        view.moved = { [weak coordinator = context.coordinator] in coordinator?.install() }
+        return view
+    }
+    func updateUIView(_ view: Anchor, context: Context) {
+        context.coordinator.install()
+    }
+    static func dismantleUIView(_ view: Anchor, coordinator: Coordinator) {
+        view.moved = nil
+        coordinator.detach()
     }
 }
 

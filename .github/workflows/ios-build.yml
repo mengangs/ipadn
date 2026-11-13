@@ -45,7 +45,9 @@ jobs:
     # Xcode 27 builds with an iOS 27.1+ SDK, which iPhone Duo needs to show
     # iPadn full screen on its inner display.
     runs-on: xcode-27
-    timeout-minutes: 55
+    # Device build + simulator compile + full execution + optional Duo capture
+    # have independent budgets; compile must not eat the UI execution window.
+    timeout-minutes: 85
     defaults:
       run:
         working-directory: iPadn-iOS
@@ -130,6 +132,20 @@ jobs:
           retention-days: 14
           compression-level: 0
 
+      - name: Build simulator test runner
+        timeout-minutes: 20
+        if: github.event_name != 'workflow_dispatch' || (inputs.run_tests && inputs.ui_test_scope != 'duo')
+        run: |
+          set -o pipefail
+          killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
+          simulator_id="$(python3 scripts/boot_test_simulator.py)"
+          echo "IPADN_TEST_SIMULATOR_ID=$simulator_id" >> "$GITHUB_ENV"
+          xcodebuild build-for-testing -project iPadn.xcodeproj -scheme iPadn \
+            -configuration Debug -destination "platform=iOS Simulator,id=$simulator_id" \
+            -destination-timeout 120 -derivedDataPath build/TestDerivedData \
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \
+            2>&1 | tee build/test-build.log
+
       - name: Run simulator tests
         timeout-minutes: 30
         if: github.event_name != 'workflow_dispatch' || (inputs.run_tests && inputs.ui_test_scope != 'duo')
@@ -147,9 +163,8 @@ jobs:
               test_targets+=(-only-testing:iPadnUITests)
             fi
           fi
-          killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
-          xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
-            -configuration Debug -destination "platform=iOS Simulator,name=iPhone 18 Pro" \
+          xcodebuild test-without-building -project iPadn.xcodeproj -scheme iPadn \
+            -configuration Debug -destination "platform=iOS Simulator,id=$IPADN_TEST_SIMULATOR_ID" \
             -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
             -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 \
             -destination-timeout 120 -derivedDataPath build/TestDerivedData \
@@ -167,38 +182,27 @@ jobs:
           print('Executed tests:', result['passedTests'], 'passed;', result['skippedTests'], 'skipped')
           PY
 
-      - name: iPhone Duo screenshots
-        # Layout check on the foldable; collects screenshots, never fails the build.
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.run_ui_tests
-        continue-on-error: true
-        timeout-minutes: 15
-        run: |
-          set -o pipefail
-          xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
-            -configuration Debug -destination "platform=iOS Simulator,name=iPhone Duo" \
-            -destination-timeout 120 -derivedDataPath build/TestDerivedData \
-            -resultBundlePath build/DuoResults.xcresult \
-            -only-testing:iPadnUITests/InteractionTests/testDuoLayoutScreens \
-            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO > build/duo.log 2>&1 || true
-          grep -E "error:|Test Case|failed|skipped" build/duo.log | tail -20 || true
-          if [ -d build/DuoResults.xcresult ]; then
-            xcrun xcresulttool export attachments --path build/DuoResults.xcresult --output-path build/duo-screenshots || true
-          fi
-
-      - name: Upload iPhone Duo screenshots
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.run_ui_tests
+      - name: Upload build and test diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: iPadn-duo-screenshots
-          path: iPadn-iOS/build/duo-screenshots
+          name: iPadn-build-diagnostics
+          path: |
+            iPadn-iOS/build/*.log
+            iPadn-iOS/build/test-summary.json
+            iPadn-iOS/build/ipa-verification.json
+            iPadn-iOS/build/TestResults.xcresult
+            iPadn-iOS/build/verification.json
           if-no-files-found: warn
           retention-days: 14
 
       - name: Export simulator screenshots
         if: always()
         run: |
-          if [ -d build/TestResults.xcresult ]; then
+          if [ -f build/TestResults.xcresult/Info.plist ]; then
             xcrun xcresulttool export attachments --path build/TestResults.xcresult --output-path build/test-attachments
+          else
+            echo "::notice::No complete result bundle to export; raw test logs are in diagnostics."
           fi
 
       - name: Upload simulator screenshots
@@ -221,17 +225,32 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload build and test diagnostics
-        if: always()
+      - name: iPhone Duo screenshots
+        # Layout check on the foldable; collects screenshots, never fails the build.
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.run_ui_tests
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          set -o pipefail
+          simulator_id="$(python3 scripts/boot_test_simulator.py --name 'iPhone Duo')"
+          xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
+            -configuration Debug -destination "platform=iOS Simulator,id=$simulator_id" \
+            -destination-timeout 120 -derivedDataPath build/TestDerivedData \
+            -resultBundlePath build/DuoResults.xcresult \
+            -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 \
+            -only-testing:iPadnUITests/InteractionTests/testDuoLayoutScreens \
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO > build/duo.log 2>&1 || true
+          grep -E "error:|Test Case|failed|skipped" build/duo.log | tail -20 || true
+          if [ -d build/DuoResults.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/DuoResults.xcresult --output-path build/duo-screenshots || true
+          fi
+
+      - name: Upload iPhone Duo screenshots
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.run_ui_tests
         uses: actions/upload-artifact@v4
         with:
-          name: iPadn-build-diagnostics
-          path: |
-            iPadn-iOS/build/*.log
-            iPadn-iOS/build/test-summary.json
-            iPadn-iOS/build/ipa-verification.json
-            iPadn-iOS/build/TestResults.xcresult
-            iPadn-iOS/build/verification.json
+          name: iPadn-duo-screenshots
+          path: iPadn-iOS/build/duo-screenshots
           if-no-files-found: warn
           retention-days: 14
 

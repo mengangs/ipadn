@@ -4,6 +4,7 @@ import UIKit
 struct AppDetailView: View {
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var apple: AppleService
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let app: StoreApp
     /// Start the primary download as soon as the page opens (search "获取").
     var autoStart = false
@@ -19,13 +20,17 @@ struct AppDetailView: View {
     @AppStorage("storage_officialVersions") private var official = true
     /// Shown above a public list when Apple's could not be used.
     @State private var versionNote: String?
-    /// Version number and date per version ID, read from Apple as rows appear.
+    /// Version number, date and IPA size per version ID, read as rows appear.
     @State private var metadata: [String: VersionMetadata] = [:]
-    @State private var metadataLoading = Set<String>()
+    @State private var metadataLoading: [String: UUID] = [:]
     @State private var metadataFailures = 0
     @State private var metadataStopped = false
     /// Long histories start with the newest five versions.
     @State private var showAllVersions = false
+    @State private var versionPageLimit = 20
+    @State private var dateFrom = Calendar.current.date(byAdding: .year, value: -1, to: Date()) ?? Date()
+    @State private var dateThrough = Date()
+    @StateObject private var dateQuery = VersionDateQuery()
     /// Release notes by version number, from the App Store page's version history.
     @State private var releaseNotes: [String: ReleaseNote] = [:]
     @State private var expandedNotes = Set<String>()
@@ -73,11 +78,13 @@ struct AppDetailView: View {
     private var iconURL: URL? { app.iconURL ?? store.localArtwork(app.id) }
     private var storeURL: URL { URL(string: "https://apps.apple.com/\(store.settings.store.country.lowercased())/app/id\(app.id)")! }
     private var filtered: [AppVersion] {
-        versionSearch.isEmpty ? versions : versions.filter {
+        let source = dateQuery.range == nil ? versions : dateQuery.matches
+        return versionSearch.isEmpty ? source : source.filter {
             displayVersion($0).localizedCaseInsensitiveContains(versionSearch) || $0.id.contains(versionSearch)
         }
     }
-    private func displayVersion(_ version: AppVersion) -> String { metadata[version.id]?.version ?? version.version }
+    private func versionInfo(_ id: String) -> VersionMetadata? { metadata[id] ?? dateQuery.values[id] }
+    private func displayVersion(_ version: AppVersion) -> String { versionInfo(version.id)?.version ?? version.version }
     /// Lists from Apple carry only version IDs; each row then reads its own
     /// number and date. Other lists use what is already known.
     /// Apple's list needs a signed-in account; otherwise the public list is shown.
@@ -169,6 +176,7 @@ struct AppDetailView: View {
             .padding(.top, 8).padding(.bottom, 24)
         }
         .toolPage()
+        .onChange(of: versionSearch) { _ in versionPageLimit = 20 }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -244,7 +252,7 @@ struct AppDetailView: View {
                 .environmentObject(apple)
             }
         }
-        .onDisappear { downloadTask?.cancel(); macOfficialTask?.cancel() }
+        .onDisappear { downloadTask?.cancel(); macOfficialTask?.cancel(); dateQuery.cancel() }
         .task {
             // Getting the app needs the signing runtime; load it while the page is read.
             if apple.active != nil, store.settings.useSignerCache { store.signer.prewarm() }
@@ -258,6 +266,11 @@ struct AppDetailView: View {
             // Coming back to the page (e.g. from the Downloads tab) keeps the
             // loaded list; only a new key or 刷新 fetches again.
             guard versionsKey != loadedVersionsKey else { return }
+            dateQuery.clear()
+            metadata = [:]
+            metadataLoading = [:]
+            metadataFailures = 0; metadataStopped = false
+            versionPageLimit = 20
             let forced = reloadID != loadedReloadID
             // A different region, platform or account lists different versions.
             // The old rows stay (dimmed) until the new list replaces them, so the
@@ -420,9 +433,11 @@ struct AppDetailView: View {
             if versions.count > 6 {
                 SearchInput(text: $versionSearch, placeholder: "筛选版本号或版本 ID")
             }
+            dateRangeControls
             let matches = filtered
-            // A search shows every match; otherwise five until expanded.
-            let limit = showAllVersions || !versionSearch.isEmpty ? matches.count : Self.collapsedVersions
+            // Searching and date queries are paged too, never an eager full history.
+            let expanded = showAllVersions || !versionSearch.isEmpty || dateQuery.range != nil
+            let limit = expanded ? versionPageLimit : Self.collapsedVersions
             if versions.isEmpty && versionsLoading {
                 // Placeholders where the rows will be, instead of a spinner row
                 // that appears and disappears.
@@ -432,17 +447,31 @@ struct AppDetailView: View {
                 versionRow(version)
                     .opacity(versionsStale ? 0.4 : 1)
                     .disabled(versionsStale)
-                    .task(id: "\(version.id)-\(readsMetadata)-\(versionsStale)") {
-                        if !versionsStale { await loadMetadata(version) }
+                    .task(id: "\(version.id)-\(versionsKey)-\(readsMetadata)-\(versionsStale)") {
+                        // Fast scrolling should not queue tickets for rows already gone.
+                        do { try await Task.sleep(nanoseconds: 180_000_000) } catch { return }
+                        if !Task.isCancelled && !versionsStale { await loadMetadata(version) }
                     }
             }
-            if !versions.isEmpty && matches.isEmpty { Text("没有匹配的版本。").font(.subheadline).foregroundStyle(.secondary) }
-            if versionSearch.isEmpty && matches.count > Self.collapsedVersions {
+            if !versions.isEmpty && matches.isEmpty && !dateQuery.running {
+                Text(dateQuery.range != nil && dateQuery.incomplete ? LocalizedStringKey("尚未找到匹配版本，结果不完整。") : LocalizedStringKey("没有匹配的版本。"))
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            if expanded && matches.count > limit {
+                Button("加载更多版本") { versionPageLimit += 20 }
+                    .accessibilityIdentifier("detail.versions.more")
+                    .task {
+                        // Lazy footer prefetches just the next batch as it appears.
+                        do { try await Task.sleep(nanoseconds: 200_000_000) } catch { return }
+                        if !Task.isCancelled && versionPageLimit == limit { versionPageLimit += 20 }
+                    }
+            }
+            if versionSearch.isEmpty && dateQuery.range == nil && matches.count > Self.collapsedVersions {
                 Button {
-                    withAnimation(.compatibleSnappy) { showAllVersions.toggle() }
+                    withAnimation(.compatibleSnappy) { showAllVersions.toggle(); versionPageLimit = 20 }
                 } label: {
                     HStack {
-                        Text(showAllVersions ? "收起" : "显示全部 \(matches.count) 个版本")
+                        Text(showAllVersions ? LocalizedStringKey("收起") : LocalizedStringKey("展开版本列表（\(matches.count) 个版本）"))
                         Spacer()
                         Image(systemName: "chevron.down").rotationEffect(.degrees(showAllVersions ? 180 : 0))
                     }
@@ -470,70 +499,173 @@ struct AppDetailView: View {
         }
     }
 
+    @ViewBuilder private var dateRangeControls: some View {
+        DisclosureGroup("按日期范围筛选") {
+            DatePicker("开始日期", selection: $dateFrom, displayedComponents: .date)
+                .accessibilityIdentifier("detail.versions.date.from")
+            DatePicker("结束日期", selection: $dateThrough, displayedComponents: .date)
+                .accessibilityIdentifier("detail.versions.date.through")
+            HStack {
+                Button("查询") { startDateQuery() }
+                    .disabled(versionsLoading || versionsStale || versions.isEmpty ||
+                              VersionDateRange(from: dateFrom, through: dateThrough) == nil)
+                    .accessibilityIdentifier("detail.versions.date.search")
+                Spacer()
+                if dateQuery.running { Button("取消查询") { dateQuery.cancel() } }
+                if dateQuery.range != nil {
+                    Button("清除筛选") { dateQuery.clear(); versionPageLimit = 20 }
+                        .accessibilityIdentifier("detail.versions.date.clear")
+                }
+            }
+            Text("首次查询需逐个读取版本日期，可取消；只为显示的结果加载图标。包内日期可能与商店发布日期不同。")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        if let range = dateQuery.range {
+            Text("查询范围：\(range.start.formatted(date: .abbreviated, time: .omitted)) — \(range.endExclusive.addingTimeInterval(-1).formatted(date: .abbreviated, time: .omitted))")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("已检查 \(dateQuery.checked) / \(dateQuery.total) 个版本，找到 \(dateQuery.matches.count) 个")
+                .font(.footnote.monospacedDigit())
+                .accessibilityIdentifier("detail.versions.date.progress")
+            if dateQuery.incomplete {
+                Text("结果尚不完整：\(dateQuery.unknown) 个日期未知，\(dateQuery.total - dateQuery.checked) 个尚未检查。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if dateQuery.stoppedForAccount {
+                Text("账号验证失效，查询已停止。请重新登录后重试。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func startDateQuery() {
+        guard let range = VersionDateRange(from: dateFrom, through: dateThrough) else { return }
+        versionPageLimit = 20
+        var cached = dateQuery.values.merging(metadata) { _, row in row }
+        if !readsMetadata {
+            for version in versions where cached[version.id] == nil {
+                cached[version.id] = VersionMetadata(version: version.version, released: nil)
+            }
+        }
+        dateQuery.start(versions: versions, range: range, cached: cached,
+                        notes: releaseNotes.compactMapValues(\.date)) { version in
+            guard readsMetadata else { throw RemoteZip.Failure.notFound }
+            return try await store.versionMetadata(app: app, versionID: version.id, includingIcon: false)
+        }
+    }
+
     private func versionRow(_ version: AppVersion) -> some View {
         let name = displayVersion(version)
         let known = name != AppVersion.unknown
-        let reading = !known && metadataLoading.contains(version.id)
+        let reading = !known && metadataLoading[version.id] != nil
         let note = known ? releaseNotes[name] : nil
-        let date = (metadata[version.id]?.released ?? note?.date)?.formatted(.dateTime.year().month().day())
+        let info = versionInfo(version.id)
+        let date = (info?.released ?? note?.date)?.formatted(.dateTime.year().month().day())
+        let estimatedDate = info?.released != nil && info?.releaseDateIsEstimated != false
         let expanded = expandedNotes.contains(version.id)
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(known ? "版本 \(name)" : reading ? "版本 0.0.0" : "未知版本")
-                        .font(.body.weight(.medium))
-                        .redacted(reason: reading ? .placeholder : [])
-                    Text([date, AppText.text("版本 ID \(version.id)")].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-                .animation(.easeOut(duration: 0.2), value: name)
-                Spacer(minLength: 8)
-                RowCapsule(title: "下载", enabled: !downloadLoading && !macOfficialLoading) { download(versionID: version.id) }
-                    .accessibilityLabel(known ? AppText.text("下载版本 \(name)") : AppText.text("下载版本 ID \(version.id)"))
+        let size = info?.packageSize.map { $0.byteLabel }
+        let readingSize = size == nil && metadataLoading[version.id] != nil
+        let headerLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 12))
+        let factsLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 12))
+        return HStack(alignment: .top, spacing: 12) {
+            if store.settings.store.platform.supportsIPA {
+                VersionHistoryIcon(app: app, versionID: version.id, available: info?.iconAvailable,
+                                   loading: metadataLoading[version.id] != nil, context: versionsKey)
             }
-            if let note, !note.text.isEmpty {
-                Button {
-                    withAnimation(.compatibleSnappy) {
-                        if expanded { expandedNotes.remove(version.id) } else { expandedNotes.insert(version.id) }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(expanded ? "收起更新说明" : "更新说明")
-                        Image(systemName: "chevron.down").rotationEffect(.degrees(expanded ? 180 : 0))
-                    }
-                    .font(.caption.weight(.medium))
-                    .contentShape(Rectangle())
+            VStack(alignment: .leading, spacing: 6) {
+                headerLayout {
+                    Text(known ? "版本 \(name)" : reading ? "版本 0.0.0" : "未知版本")
+                        .font(.body.weight(.semibold))
+                        .redacted(reason: reading ? .placeholder : [])
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("detail.version.number." + version.id)
+                    RowCapsule(title: "下载", enabled: !downloadLoading && !macOfficialLoading) { download(versionID: version.id) }
+                        .fixedSize()
+                        .accessibilityLabel(known ? AppText.text("下载版本 \(name)") : AppText.text("下载版本 ID \(version.id)"))
                 }
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("detail.version.notes." + version.id)
-                if expanded {
-                    Text(translatedNotes[version.id] ?? note.text).font(.footnote).foregroundStyle(.secondary)
-                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                        .transition(.opacity)
-                    if TranslateButton.offered(for: note.text, translation: translatedNotes[version.id]) {
-                        TranslateButton(text: note.text, translation: Binding(
-                            get: { translatedNotes[version.id] }, set: { translatedNotes[version.id] = $0 }))
-                            .font(.caption.weight(.medium)).buttonStyle(.borderless)
-                            .accessibilityIdentifier("detail.version.translate." + version.id)
+                factsLayout {
+                    if let date {
+                        Text(estimatedDate ? LocalizedStringKey("包内日期：\(date)") : LocalizedStringKey("\(date)"))
+                            .accessibilityIdentifier("detail.version.date." + version.id)
+                    }
+                    if store.settings.store.platform.supportsIPA {
+                        Text(verbatim: "IPA · " + (size ?? (readingSize ? "000 MB" : "—")))
+                            .redacted(reason: readingSize ? .placeholder : [])
+                            .accessibilityLabel(Text("安装包大小") + Text(verbatim: " " + (size ?? "—")))
+                            .accessibilityIdentifier("detail.version.size." + version.id)
+                    }
+                }
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text("版本 ID \(version.id)")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("detail.version.id." + version.id)
+                if let note, !note.text.isEmpty {
+                    Button {
+                        withAnimation(.compatibleSnappy) {
+                            if expanded { expandedNotes.remove(version.id) } else { expandedNotes.insert(version.id) }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(expanded ? "收起更新说明" : "更新说明")
+                            Image(systemName: "chevron.down").rotationEffect(.degrees(expanded ? 180 : 0))
+                        }
+                        .font(.caption.weight(.medium))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityIdentifier("detail.version.notes." + version.id)
+                    if expanded {
+                        Text(translatedNotes[version.id] ?? note.text).font(.footnote).foregroundStyle(.secondary)
+                            .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            .transition(.opacity)
+                        if TranslateButton.offered(for: note.text, translation: translatedNotes[version.id]) {
+                            TranslateButton(text: note.text, translation: Binding(
+                                get: { translatedNotes[version.id] }, set: { translatedNotes[version.id] = $0 }))
+                                .font(.caption.weight(.medium)).buttonStyle(.borderless)
+                                .accessibilityIdentifier("detail.version.translate." + version.id)
+                        }
                     }
                 }
             }
         }
         .padding(.vertical, 2)
-        .contextMenu { Button("复制版本 ID", systemImage: "doc.on.doc") { copy(version.id) } }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .contextMenu {
+            if known {
+                Button("复制版本号", systemImage: "number") { copy(name) }
+                    .accessibilityIdentifier("detail.version.copy-number." + version.id)
+            }
+            Button("复制版本 ID", systemImage: "doc.on.doc") { copy(version.id) }
+                .accessibilityIdentifier("detail.version.copy-id." + version.id)
+        }
     }
 
     private func loadMetadata(_ version: AppVersion) async {
-        guard readsMetadata, metadata[version.id] == nil, !metadataLoading.contains(version.id) else { return }
-        metadataLoading.insert(version.id)
-        defer { metadataLoading.remove(version.id) }
+        // The store itself validates size/icon completeness and file eviction.
+        // Even a cached row may need its independently stored icon restored.
+        guard readsMetadata, metadataLoading[version.id] == nil else { return }
+        let context = versionsKey
+        let requestID = UUID()
+        metadataLoading[version.id] = requestID
+        defer { if metadataLoading[version.id] == requestID { metadataLoading[version.id] = nil } }
         do {
-            metadata[version.id] = try await store.versionMetadata(app: app, versionID: version.id)
+            let value = try await store.versionMetadata(app: app, versionID: version.id) { partial in
+                guard !Task.isCancelled, context == versionsKey else { return }
+                // Publish the number/date/size before the icon's extra range reads.
+                metadata[version.id] = partial
+            }
+            guard !Task.isCancelled, context == versionsKey else { return }
+            metadata[version.id] = value
             metadataFailures = 0
         } catch {
             // Scrolled away: not a failure.
-            if Task.isCancelled || error is CancellationError { return }
+            if Task.isCancelled || error is CancellationError || context != versionsKey { return }
             // Never prompt from a list row; the next download asks to sign in.
             if error is AppleAuthError || error is AppleLoginError { metadataStopped = true; return }
             metadataFailures += 1
@@ -1102,5 +1234,43 @@ private extension View {
     @ViewBuilder func measureLegacyWidth(_ width: Binding<CGFloat>) -> some View {
         if #available(iOS 17, *) { self }
         else { onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width.wrappedValue = $0 } }
+    }
+}
+
+/// Row-local decoded images are released offscreen; disk cache is version-keyed.
+private struct VersionHistoryIcon: View {
+    @EnvironmentObject private var store: ToolStore
+    let app: StoreApp
+    let versionID: String
+    let available: Bool?
+    let loading: Bool
+    let context: String
+    @State private var image: UIImage?
+    @State private var loadedImageKey: String?
+
+    var body: some View {
+        ZStack {
+            if let image { Image(uiImage: image).resizable().scaledToFit() }
+            else {
+                RoundedRectangle(cornerRadius: 11).fill(Color.secondary.opacity(0.10))
+                if loading { ProgressView().controlSize(.small) }
+                else { Image(systemName: "app.dashed").font(.title2).foregroundStyle(.secondary) }
+            }
+        }
+        .frame(width: 48, height: 48)
+        .clipShape(RoundedRectangle(cornerRadius: 11))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(image == nil ? Text("未获取该版本图标") : Text("该版本应用图标"))
+        .accessibilityIdentifier((image == nil ? "detail.version.icon-missing." : "detail.version.icon.") + versionID)
+        .task(id: "\(context)-\(versionID)-\(available == true)") {
+            let key = "\(context)-\(versionID)"
+            if loadedImageKey != key { image = nil }
+            guard available == true else { image = nil; loadedImageKey = nil; return }
+            let decoded = await store.cachedVersionImage(app: app, versionID: versionID)
+            guard !Task.isCancelled else { return }
+            image = decoded
+            loadedImageKey = key
+        }
+        .onDisappear { image = nil; loadedImageKey = nil }
     }
 }

@@ -29,7 +29,7 @@ final class DownloadManager: NSObject, ObservableObject {
     static var sessionID: String {
         (Bundle.main.bundleIdentifier ?? "app.local.iPadn") + ".background.downloads"
     }
-    @Published private(set) var jobs: [DownloadJob] = []
+    @Published private(set) var jobs: [DownloadJob] = [] { didSet { updateInstallKeepAlive() } }
     @Published var storageError: String?
     @Published private(set) var discoveryWarning: String?
     /// The last save failed (for example, the disk is full); cleared by the next successful save.
@@ -84,6 +84,74 @@ final class DownloadManager: NSObject, ObservableObject {
     @Published private(set) var waitingForWiFi = false
     /// Finished downloads waiting for the install sheet to open.
     @Published var pendingAutoInstalls: [UUID] = []
+    /// Install When Downloaded with native installation: no prompt is needed,
+    /// so finished downloads install by themselves, also in the background.
+    private var silentInstall = false
+    private var silentQueue: [UUID] = []
+    private var silentRunning = false { didSet { updateInstallKeepAlive() } }
+    /// iOS suspends iPadn soon after it leaves the screen, which would stop the
+    /// install (and the Live Activity) until iPadn is opened again. From the
+    /// download to the end of its silent installation, iPadn keeps running.
+    private let installKeepAlive = BackgroundKeepAlive(name: "iPadn auto install")
+    private var keepingAlive = false
+    private func updateInstallKeepAlive() {
+        let busy = silentInstall && (silentRunning || !silentQueue.isEmpty || jobs.contains { job in
+            [.running, .queued, .processing].contains(job.status)
+                && job.rawFormat == nil && job.protectedMacPackage != true && job.sourceURL != nil
+        })
+        guard busy != keepingAlive else { return }
+        keepingAlive = busy
+        InstallLog.shared.add(busy ? "keeping iPadn running for the automatic install" : "automatic install keep-alive ended")
+        if busy { installKeepAlive.start() } else { installKeepAlive.stop() }
+    }
+    /// A line for iPadn's top notice while it is open (notifications only
+    /// appear in the background).
+    @Published var autoInstallNotice: String?
+    /// The automatic installation in progress, for the Live Activity.
+    struct AutoInstallProgress: Equatable { var id: UUID; var name: String; var fraction: Double }
+    @Published private(set) var autoInstalling: AutoInstallProgress?
+    /// The app just installed automatically (Live Activity "Installed").
+    @Published private(set) var autoInstalled: String?
+    /// The automatic installation that did not finish (Live Activity "Not installed").
+    @Published private(set) var autoInstallFailed: String?
+    /// A finished download about to be installed silently.
+    func waitsForSilentInstall(_ id: UUID) -> Bool { silentInstall && waitingInstalls.contains(id.uuidString) }
+    /// Finished downloads still waiting to be installed automatically. Kept
+    /// across launches: iOS can end iPadn in the background mid-install.
+    private static let autoInstallKey = "autoInstallWaiting"
+    private var waitingInstalls: [String] {
+        get { LocalResources.defaults.stringArray(forKey: Self.autoInstallKey) ?? [] }
+        set { LocalResources.defaults.set(newValue, forKey: Self.autoInstallKey) }
+    }
+    private func markWaiting(_ id: UUID, _ waiting: Bool) {
+        var list = waitingInstalls.filter { $0 != id.uuidString }
+        if waiting { list.append(id.uuidString) }
+        waitingInstalls = list
+    }
+
+    /// iPadn is in front: install what is still waiting, silently with
+    /// native installation, otherwise through the install sheet.
+    func resumeAutoInstalls() {
+        Task { @MainActor in
+            await loaded()
+            resumeWaitingInstalls()
+        }
+    }
+    private func resumeWaitingInstalls() {
+        guard autoInstall else { waitingInstalls = []; return }
+        for value in waitingInstalls {
+            guard let id = UUID(uuidString: value), jobs.contains(where: { $0.id == id && $0.status == .completed }) else {
+                if let id = UUID(uuidString: value) { markWaiting(id, false) } else { waitingInstalls = waitingInstalls.filter { $0 != value } }
+                continue
+            }
+            if silentInstall { installSilently(id) }
+            else {
+                // Other install methods ask once; cancelling that sheet is the answer.
+                markWaiting(id, false)
+                if !pendingAutoInstalls.contains(id) { pendingAutoInstalls.append(id) }
+            }
+        }
+    }
     /// The system download service could not write into iPadn's container
     /// (seen with some re-signed builds). Kept per app build: a new install
     /// or signature may behave differently, so it is checked again then.
@@ -222,6 +290,20 @@ final class DownloadManager: NSObject, ObservableObject {
         tasks = activeTasks
         restoring = activeTasks.isEmpty
     }
+    /// Isolated UI-test fixture: exercise the real row's processing/completed
+    /// transitions without a URLSession, file writes, notifications or install.
+    func completePreviewDownload(_ id: UUID) {
+        guard LocalResources.isPreview,
+              ProcessInfo.processInfo.arguments.contains("--completion-preview"),
+              let index = jobs.firstIndex(where: { $0.id == id && $0.status == .running }) else { return }
+        jobs[index].status = .processing
+        Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+            guard let self, let index = self.jobs.firstIndex(where: { $0.id == id && $0.status == .processing }) else { return }
+            self.jobs[index].downloaded = self.jobs[index].expected
+            self.jobs[index].status = .completed
+        }
+    }
     #endif
 
     override init() {
@@ -253,7 +335,9 @@ final class DownloadManager: NSObject, ObservableObject {
         artworkCountry = settings.store.country
         compatibleDownloadMode = settings.compatibleDownloadMode
         autoInstall = settings.autoInstall
-        if !autoInstall { pendingAutoInstalls.removeAll() }
+        silentInstall = settings.autoInstall && settings.usesNativeInstallation
+        updateInstallKeepAlive()
+        if !autoInstall { pendingAutoInstalls.removeAll(); silentQueue.removeAll() }
         wifiOnly = settings.wifiOnlyDownloads
         if wifiOnly { startPathMonitor() }
         applyNetworkRule()
@@ -647,6 +731,31 @@ final class DownloadManager: NSObject, ObservableObject {
         job.localFilename.flatMap(LocalResources.packageURL)
     }
 
+    /// The file to hand to the share sheet: named after the app and version
+    /// ("OneDrive 26.1.4.ipa") rather than the internal UUID. A hard link, so
+    /// it costs no space; the stored file itself is never renamed.
+    func exportURL(_ job: DownloadJob) -> URL? {
+        guard let file = fileURL(job) else { return nil }
+        let illegal = CharacterSet(charactersIn: "/\\:?%*|\"<>").union(.newlines).union(.controlCharacters)
+        let clean = { (s: String) in s.components(separatedBy: illegal).joined(separator: " ").trimmingCharacters(in: .whitespaces) }
+        let name = clean(job.app.name), version = clean(job.storeVersion)
+        let base = [name, version].filter { !$0.isEmpty }.joined(separator: " ")
+        guard !base.isEmpty else { return file }
+        let ext = file.pathExtension
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Share", isDirectory: true)
+            .appendingPathComponent(job.id.uuidString, isDirectory: true)
+        let target = folder.appendingPathComponent(String(base.prefix(120))).appendingPathExtension(ext)
+        do {
+            try? FileManager.default.removeItem(at: folder)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            do { try FileManager.default.linkItem(at: file, to: target) }
+            catch { try FileManager.default.copyItem(at: file, to: target) }
+            return target
+        } catch {
+            return file
+        }
+    }
+
     func packageIconURL(_ job: DownloadJob) -> URL? {
         let url = PackageIconService.cacheURL(job.id)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
@@ -810,11 +919,16 @@ final class DownloadManager: NSObject, ObservableObject {
                 try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
                 try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
                 if job.protectedMacPackage == true { MacPackageSecrets.delete(id) }
-                self.persist(); self.notify(title: AppText.text("安装包已准备好"), body: result.1.name + " " + result.1.version)
+                self.persist()
                 // Only downloaded app packages; imported files and Mac packages are not installed here.
-                if self.autoInstall, job.rawFormat == nil, job.protectedMacPackage != true, job.sourceURL != nil,
-                   !self.pendingAutoInstalls.contains(id) {
-                    self.pendingAutoInstalls.append(id)
+                let installs = self.autoInstall && job.rawFormat == nil && job.protectedMacPackage != true && job.sourceURL != nil
+                // Kept across launches only for the silent install, which iOS can interrupt.
+                if installs && self.silentInstall { self.markWaiting(id, true) }
+                if installs && self.silentInstall {
+                    self.installSilently(id)
+                } else {
+                    self.notify(title: AppText.text("安装包已准备好"), body: result.1.name + " " + result.1.version)
+                    if installs, !self.pendingAutoInstalls.contains(id) { self.pendingAutoInstalls.append(id) }
                 }
                 Task { await self.loadPackageIcons() }
             } catch is CancellationError {
@@ -951,6 +1065,63 @@ final class DownloadManager: NSObject, ObservableObject {
         guard notifications else { return }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
+    /// Installs finished downloads one at a time through native installation,
+    /// without the install sheet. One that can't finish (no connection, iOS
+    /// ended the background time) gets the sheet when iPadn is open again.
+    private func installSilently(_ id: UUID) {
+        // Returning to the foreground resumes waiting installs. The active
+        // install has already left the queue, but must not be enqueued again.
+        guard autoInstalling?.id != id, !silentQueue.contains(id) else { return }
+        silentQueue.append(id)
+        guard !silentRunning else { return }
+        silentRunning = true
+        Task { @MainActor in
+            defer { silentRunning = false }
+            while !silentQueue.isEmpty {
+                let id = silentQueue.removeFirst()
+                guard let job = jobs.first(where: { $0.id == id && $0.status == .completed }), let file = fileURL(job) else {
+                    markWaiting(id, false); continue
+                }
+                let name = [job.app.name, job.app.version].filter { !$0.isEmpty }.joined(separator: " ")
+                autoInstallNotice = AppText.text("正在自动安装 \(name)")
+                autoInstalled = nil
+                autoInstallFailed = nil
+                autoInstalling = AutoInstallProgress(id: id, name: name, fraction: 0)
+                defer { autoInstalling = nil }
+                do {
+                    _ = try await NativeInstaller.install(package: file, bundleID: job.app.bundleID) { phase in
+                        // Sending the package is most of the wait; the system's own step follows.
+                        let fraction: Double
+                        switch phase {
+                        case .uploading(let done): fraction = done * 0.7
+                        case .installing(let done): fraction = 0.7 + done * 0.3
+                        default: fraction = 0
+                        }
+                        Task { @MainActor in
+                            if self.autoInstalling?.id == id { self.autoInstalling?.fraction = fraction }
+                        }
+                    }
+                    markWaiting(id, false)
+                    autoInstalled = name
+                    autoInstallNotice = AppText.text("已自动安装 \(name)")
+                    notify(title: AppText.text("已自动安装"), body: name)
+                } catch {
+                    autoInstallNotice = nil
+                    autoInstallFailed = name
+                    InstallLog.shared.add("silent install not finished: \(error.localizedDescription.prefix(160))")
+                    if UIApplication.shared.applicationState == .active {
+                        // In front and still failing (e.g. LocalDevVPN not connected): the sheet explains.
+                        markWaiting(id, false)
+                        if !pendingAutoInstalls.contains(id) { pendingAutoInstalls.append(id) }
+                    } else {
+                        // In the background iOS may simply have run out of time: retried when iPadn is back.
+                        notify(title: AppText.text("自动安装未完成"), body: AppText.text("打开 iPadn 继续安装 \(name)"))
+                    }
+                }
+            }
+        }
+    }
+
     private func notify(title: String, body: String) {
         guard notifications else { return }
         let content = UNMutableNotificationContent(); content.title = title; content.body = body; content.sound = .default

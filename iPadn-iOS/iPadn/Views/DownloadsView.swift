@@ -238,9 +238,13 @@ struct DownloadsView: View {
         return text
     }
     private func taskContent(_ job: DownloadJob, update: StoreApp?, editing: Bool = false) -> some View {
-        DownloadTaskRow(snapshot: job, progress: manager.progress(for: job.id), update: update, kept: store.keepsVersion(job), editing: editing, inspecting: { inspecting = job }, primary: { primary(job) }, exporting: {
-            if let file = manager.fileURL(job) { share = SharedFile(url: file) }
-        }, updating: { downloadUpdate(job) })
+        DownloadTaskRow(snapshot: job, progress: manager.progress(for: job.id), update: update, kept: store.keepsVersion(job), editing: editing, inspecting: { inspecting = job }, primary: { primary(job) }, updating: { downloadUpdate(job) })
+    }
+    private func shareAction(_ job: DownloadJob) -> [RevealAction] {
+        guard job.status == .completed, manager.fileURL(job) != nil else { return [] }
+        return [RevealAction(title: "分享", systemImage: "square.and.arrow.up", tint: .blue, role: nil) {
+            if let file = manager.exportURL(job) { share = SharedFile(url: file) }
+        }]
     }
     private func downloadUpdate(_ job: DownloadJob) {
         UX.feedback()
@@ -300,7 +304,7 @@ struct DownloadsView: View {
                     ForEach(Array(visible.enumerated()), id: \.element.id) { index, job in
                         Section {
                             // One row in both modes, so entering edit mode slides the
-                            // selection mark in and the share button out.
+                            // selection mark in.
                             HStack(spacing: 12) {
                                 if edit {
                                     Image(systemName: selection.contains(job.id) ? "checkmark.circle.fill" : "circle")
@@ -322,8 +326,10 @@ struct DownloadsView: View {
                             }
                             .accessibilityElement(children: .contain)
                             .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
-                            .revealDelete(id: "download." + job.id.uuidString,
-                                          enabled: !edit && !actionBusy && job.status != .processing && job.status != .pausing) { askDelete([job.id]) }
+                            // Swipe for Delete (full swipe) and, with a file, Share: the row keeps its room for the version.
+                            .revealActions(id: "download." + job.id.uuidString,
+                                           enabled: !edit && !actionBusy && job.status != .processing && job.status != .pausing,
+                                           [.delete { askDelete([job.id]) }] + shareAction(job))
                             .contextMenu {
                                 if !edit {
                                     if let latest = updates[job.id] {
@@ -341,7 +347,7 @@ struct DownloadsView: View {
                                     }
                                     Button("任务详情", systemImage: "info.circle") { inspecting = job }
                                     if let file = manager.fileURL(job) {
-                                        Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: file) }
+                                        Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: manager.exportURL(job) ?? file) }
                                         if job.rawFormat == nil {
                                             Button("安装", systemImage: "square.and.arrow.down") { installing = job }
                                         }
@@ -452,13 +458,19 @@ struct DownloadsView: View {
     }
     private func primary(_ job: DownloadJob) {
         UX.feedback()
+        #if DEBUG
+        if LocalResources.isPreview, ProcessInfo.processInfo.arguments.contains("--completion-preview"), job.status == .running {
+            manager.completePreviewDownload(job.id)
+            return
+        }
+        #endif
         switch job.status {
         case .running, .queued: manager.pause(job.id)
         case .paused: manager.resume(job.id)
         case .failed:
             if job.asset != nil { perform { try await store.refreshDownload(job) } } else { manager.resume(job.id) }
         case .completed:
-            if job.rawFormat != nil, let file = manager.fileURL(job) {
+            if job.rawFormat != nil, let file = manager.exportURL(job) {
                 share = SharedFile(url: file)
             } else { installing = job }
         default: break
@@ -490,12 +502,15 @@ struct DownloadTaskRow: View {
     var update: StoreApp? = nil
     /// Kept at this version: no update reminders.
     var kept = false
-    /// In edit mode the share button steps aside to leave the row room.
     var editing = false
     var inspecting: () -> Void
     var primary: () -> Void
-    var exporting: () -> Void
     var updating: () -> Void = {}
+    /// The status seen last, so finishing in front of the user can be shown.
+    @State private var seenStatus: DownloadStatus?
+    /// Just finished: the ring closes into a check before Install appears.
+    @State private var celebrating = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var displayedApp: StoreApp {
         job.displayApp(packageIcon: manager.packageIconURL(job))
     }
@@ -592,30 +607,20 @@ struct DownloadTaskRow: View {
             RowCapsule(title: "取消") { manager.cancelProcessing(job.id) }
                 .accessibilityLabel("取消处理")
         case .pausing, .processing:
-            ProgressView().frame(width: 44, height: 44)
+            SpinningRing()
+                .accessibilityLabel(job.status == .pausing ? job.status.title : AppText.text("正在处理"))
         case .paused:
             RowCapsule(title: "继续", action: primary)
         case .failed:
             RowCapsule(title: "重试", action: primary)
+        case .completed where celebrating:
+            CompletionRing()
         case .completed:
-            HStack(spacing: 8) {
-                if job.rawFormat == nil {
-                    Button("安装", action: primary)
-                        .buttonStyle(CapsuleButtonStyle(filled: true))
-                        .accessibilityIdentifier("download.install." + job.app.id)
-                }
-                if !editing {
-                    Button(action: exporting) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.body.weight(.semibold))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(RevealRowButtonStyle())
-                    .accessibilityLabel("分享")
-                    .accessibilityIdentifier("download.export." + job.app.id)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
+            // Share moved into the row's swipe actions.
+            if job.rawFormat == nil {
+                Button("安装", action: primary)
+                    .buttonStyle(CapsuleButtonStyle(filled: true))
+                    .accessibilityIdentifier("download.install." + job.app.id)
             }
         }
     }
@@ -624,7 +629,7 @@ struct DownloadTaskRow: View {
             HStack(spacing: 10) {
                 Button(action: inspecting) { appHeading }.buttonStyle(RevealRowButtonStyle())
                 trailingControl
-                    .id(controlKey)
+                    .id(controlKey + (celebrating ? "-done" : ""))
                     .transition(.statusSwap)
             }
             if job.status == .running || job.status == .paused, job.expected > 0 {
@@ -658,7 +663,17 @@ struct DownloadTaskRow: View {
         }
         .padding(.vertical, 8)
         .animation(.compatibleSnappy, value: controlKey)
+        .animation(.compatibleSnappy, value: celebrating)
         .animation(.easeOut(duration: 0.2), value: update?.version)
+        .onAppear { seenStatus = job.status }
+        .compatibleOnChange(of: job.status) { status in
+            let before = seenStatus
+            seenStatus = status
+            // Finished while on screen: show it, then offer Install.
+            guard status == .completed, before == .running || before == .processing, !reduceMotion else { return }
+            celebrating = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { celebrating = false }
+        }
     }
 }
 
@@ -697,8 +712,8 @@ private struct TaskSizeRows: View {
             if total > 0 { LabeledContent("大小", value: total.byteLabel) }
         }
     }
-}
-
+}
+
 /// A row that slides down out of the list's top edge a few hundredths of a
 /// second after the one above it, like a drawer pulled out; hidden again, all
 /// rows slide back up together.

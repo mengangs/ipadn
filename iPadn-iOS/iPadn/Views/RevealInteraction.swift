@@ -96,6 +96,27 @@ final class ItemListRevealTouchGestureRecognizer: UIGestureRecognizer {
     }
 }
 
+/// Covers the window while a row is open. A tap anywhere outside that row
+/// closes it and goes no further, so the control under the finger doesn't
+/// also fire (Telegram does the same). The open row itself gets its touches.
+private final class RevealDismissOverlay: UIView {
+    /// The open row's frame in window coordinates; touches there pass through.
+    var rowFrame: () -> CGRect? = { nil }
+    var onTap: () -> Void = {}
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if let row = rowFrame(), row.contains(point) { return nil }
+        return super.hitTest(point, with: event)
+    }
+    @objc private func tapped() { onTap() }
+}
+
 private struct RevealGestureAttachment: UIViewRepresentable {
     let enabled: Bool
     let offset: CGFloat
@@ -111,6 +132,24 @@ private struct RevealGestureAttachment: UIViewRepresentable {
         weak var host: UIView?
         let recognizer = ItemListRevealTouchGestureRecognizer()
         let closeTap = UITapGestureRecognizer()
+        private var dismissOverlay: RevealDismissOverlay?
+        /// Inset-grouped Lists also mask the UIKit cell/hosting ancestors.
+        /// Our moving card supplies its own rounded mask; temporarily remove
+        /// only those ancestor masks, never the scroll view's viewport.
+        private final class SavedClipping {
+            weak var view: UIView?
+            let clips: Bool
+            let mask: CALayer?
+            init(_ view: UIView) {
+                self.view = view; clips = view.clipsToBounds; mask = view.layer.mask
+            }
+            func restore() {
+                guard let view else { return }
+                view.clipsToBounds = clips
+                if view.layer.mask == nil { view.layer.mask = mask }
+            }
+        }
+        private var savedClipping: [SavedClipping] = []
         init(_ parent: RevealGestureAttachment) {
             self.parent = parent
             super.init()
@@ -167,13 +206,50 @@ private struct RevealGestureAttachment: UIViewRepresentable {
         private func updateEnabledState() {
             if recognizer.isEnabled != parent.enabled { recognizer.isEnabled = parent.enabled }
             let canClose = parent.enabled && abs(parent.offset) > 1
+            updateClipping(revealing: abs(parent.offset) > 1)
             if closeTap.isEnabled != canClose { closeTap.isEnabled = canClose }
+            if canClose, let window = anchor?.window { showDismissOverlay(in: window) }
+            else if !canClose { hideDismissOverlay() }
+        }
+        private func updateClipping(revealing: Bool) {
+            guard revealing else { restoreClipping(); return }
+            var ancestor = anchor?.superview
+            while let view = ancestor, !(view is UIScrollView), !(view is UIWindow) {
+                if !savedClipping.contains(where: { $0.view === view }) {
+                    savedClipping.append(SavedClipping(view))
+                }
+                view.clipsToBounds = false
+                view.layer.mask = nil
+                ancestor = view.superview
+            }
+        }
+        private func restoreClipping() {
+            for state in savedClipping.reversed() { state.restore() }
+            savedClipping.removeAll()
         }
         func detach() {
             recognizer.isEnabled = false; closeTap.isEnabled = false
+            restoreClipping()
+            hideDismissOverlay()
             host?.removeGestureRecognizer(recognizer); host?.removeGestureRecognizer(closeTap); host = nil
         }
         @objc private func closeRow() { parent.close() }
+        private func showDismissOverlay(in window: UIWindow) {
+            guard dismissOverlay == nil else { return }
+            let overlay = RevealDismissOverlay(frame: window.bounds)
+            overlay.rowFrame = { [weak self] in
+                guard let self, let window = self.anchor?.window else { return nil }
+                let row: UIView? = (self.host === window || self.host == nil) ? self.anchor?.superview : self.host
+                return row?.convert(row?.bounds ?? .zero, to: window)
+            }
+            overlay.onTap = { [weak self] in self?.parent.close() }
+            window.addSubview(overlay)
+            dismissOverlay = overlay
+        }
+        private func hideDismissOverlay() {
+            dismissOverlay?.removeFromSuperview()
+            dismissOverlay = nil
+        }
         /// UIKit reports touches left to right, while SwiftUI mirrors offsets
         /// and edges in a right-to-left layout; these map touches into the
         /// layout's direction so a swipe follows the finger in Arabic too.
@@ -236,12 +312,20 @@ private final class RevealCoordinator: ObservableObject {
 /// motion model supplies resistance, velocity transfer and interruptible springs.
 @MainActor
 private final class RevealDriver: NSObject, ObservableObject {
+    /// One revealed button: its center measured from the row's outer edge.
+    struct ButtonFrame: Equatable {
+        var center: CGFloat
+        var width: CGFloat
+        var scale: CGFloat
+        var opacity: Double
+    }
     private struct Presentation: Equatable {
         var offset: CGFloat = 0
         var scale: CGFloat = 0
         var opacity: Double = 0
         var actionWidth: CGFloat = 52
         var rounding: CGFloat = 0
+        var buttons: [ButtonFrame] = []
     }
     @Published private var presentation = Presentation()
     @Published private(set) var blocksPress = false
@@ -270,15 +354,16 @@ private final class RevealDriver: NSObject, ObservableObject {
     var actionOpacity: Double { presentation.opacity }
     var actionWidth: CGFloat { presentation.actionWidth }
     var rounding: CGFloat { presentation.rounding }
+    var buttons: [ButtonFrame] { presentation.buttons }
 
-    func begin(width: CGFloat, direction: CGFloat, reduced: Bool, actionWidth: CGFloat) {
+    func begin(width: CGFloat, direction: CGFloat, reduced: Bool, actionWidth: CGFloat, count: Int = 1) {
         #if DEBUG
         frameCallbacks = 0; presentations = 0; delayedFrames = 0; worstInterval = 0
         #endif
         pressReset?.cancel(); blocksPress = true
         self.direction = direction; self.reduced = reduced
         var parameters = ItemListRevealMotionParameters()
-        parameters.width = Double(width); parameters.count = 1
+        parameters.width = Double(width); parameters.count = max(1, count)
         parameters.buttonWidth = Double(actionWidth); parameters.isDestructive = true
         parameters.displayScale = Double(UIScreen.main.scale)
         motion.configure(parameters)
@@ -312,11 +397,14 @@ private final class RevealDriver: NSObject, ObservableObject {
         }
     }
     private func render() {
-        let geometry = motion.buttonGeometry.first
+        let all = motion.buttonGeometry
+        let geometry = all.first
         let next = Presentation(offset: CGFloat(max(0, motion.body.value)) * direction,
                                 scale: CGFloat(geometry?.scale ?? 0), opacity: geometry?.opacity ?? 0,
                                 actionWidth: CGFloat(geometry?.width ?? 52),
-                                rounding: min(1, max(0, CGFloat(motion.surface.value))))
+                                rounding: min(1, max(0, CGFloat(motion.surface.value))),
+                                buttons: all.map { ButtonFrame(center: CGFloat($0.center), width: CGFloat($0.width),
+                                                               scale: CGFloat($0.scale), opacity: $0.opacity) })
         guard next != presentation else { return }
         #if DEBUG
         if measuresFrames { presentations += 1 }
@@ -347,7 +435,10 @@ private final class RevealDriver: NSObject, ObservableObject {
         }
         #endif
         lastTime = link.timestamp
-        motion.advance(by: min(0.05, max(0, dt))); render()
+        // These springs use an analytic solution, not Euler integration.
+        // Consume real elapsed time: capping it makes a dropped frame slow
+        // dismissal down and leaves the row disabled long after the tap.
+        motion.advance(by: dt); render()
         if !dragging && motion.isAtRest { stop() }
     }
     private func stop() {
@@ -362,6 +453,20 @@ private final class RevealDriver: NSObject, ObservableObject {
 }
 
 enum RevealActionStyle { case compact, round }
+
+/// A button revealed by swiping a row. The first is the primary one: at the
+/// outer edge, and what a full swipe does (Telegram's chat list does the same).
+struct RevealAction {
+    var title: LocalizedStringKey
+    var systemImage: String
+    var tint: Color
+    var role: ButtonRole?
+    var action: () -> Void
+
+    static func delete(_ title: LocalizedStringKey = "删除", action: @escaping () -> Void) -> RevealAction {
+        RevealAction(title: title, systemImage: "trash.fill", tint: .red, role: .destructive, action: action)
+    }
+}
 enum RevealRowGrouping { case standalone, first, middle }
 
 private struct RevealSuppressesPressKey: EnvironmentKey {
@@ -395,9 +500,10 @@ private struct RevealDeleteModifier: ViewModifier {
     let grouping: RevealRowGrouping
     /// Leading inset of the hairline under a grouped row; nil draws none.
     let separatorInset: CGFloat?
-    let title: LocalizedStringKey
     let style: RevealActionStyle
-    let action: () -> Void
+    let actions: [RevealAction]
+    private var primary: RevealAction { actions[0] }
+    private var title: LocalizedStringKey { primary.title }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
     @ScaledMetric(relativeTo: .caption) private var actionSize: CGFloat = 52
@@ -425,9 +531,27 @@ private struct RevealDeleteModifier: ViewModifier {
             .padding(.horizontal, 20).padding(.vertical, 12)
             .frame(maxWidth: .infinity, minHeight: style == .compact ? compactHeight * (60.0 / 36) : actionSize * (76.0 / 52), alignment: .leading)
             .background(Color(.secondarySystemGroupedBackground), in: cardShape(rounding: driver.rounding))
+            // Clip the surface before translating it, so its background, content
+            // and rounded edge move as one. A stationary clip here would shear
+            // the translated card at the original row's boundaries.
+            .clipShape(cardShape(rounding: driver.rounding))
             .offset(x: driver.offset)
             .overlay(alignment: driver.offset >= 0 ? .leading : .trailing) {
-                if abs(driver.offset) > 1 {
+                if abs(driver.offset) > 1 && actions.count > 1 {
+                    // Several buttons, each where the shared motion model puts it.
+                    GeometryReader { box in
+                        ForEach(Array(actions.enumerated()), id: \.offset) { index, item in
+                            if index < driver.buttons.count {
+                                let frame = driver.buttons[index]
+                                actionButton(item, frame: frame)
+                                    .position(x: driver.offset < 0 ? box.size.width - frame.center : frame.center,
+                                              y: box.size.height / 2)
+                            }
+                        }
+                    }
+                    .frame(width: max(0, abs(driver.offset)))
+                    .clipped() // Only the revealed controls have a stationary viewport.
+                } else if abs(driver.offset) > 1 {
                     Button(role: .destructive, action: commit) {
                         Group {
                             if style == .compact {
@@ -449,9 +573,9 @@ private struct RevealDeleteModifier: ViewModifier {
                             .frame(maxHeight: .infinity)
                             .contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityLabel(title).accessibilityElement(children: .ignore)
+                        .clipped()
                 }
             }
-            .clipped()
             .padding(.vertical, 2)
             .background {
                 if grouping != .standalone {
@@ -482,7 +606,7 @@ private struct RevealDeleteModifier: ViewModifier {
                     case .began:
                         direction = driver.offset == 0 ? initialDirection : (driver.offset > 0 ? 1 : -1)
                         coordinator.active = id
-                        driver.begin(width: width, direction: direction, reduced: reduceMotion, actionWidth: actionSize)
+                        driver.begin(width: width, direction: direction, reduced: reduceMotion, actionWidth: actionSize, count: actions.count)
                         driver.change(translation: translation, velocity: velocity, distanceFromEdge: direction > 0 ? width - location.x : location.x)
                     case .changed:
                         driver.change(translation: translation, velocity: velocity, distanceFromEdge: direction > 0 ? width - location.x : location.x)
@@ -500,12 +624,35 @@ private struct RevealDeleteModifier: ViewModifier {
             .compatibleOnChange(of: enabled) { enabled in if !enabled { driver.close(immediately: true) } }
             .compatibleOnChange(of: reduceMotion) { _ in driver.close(immediately: true) }
             .onDisappear { driver.close(immediately: true) }
-            .accessibilityAction(named: Text(title)) { if enabled { commit() } }
+            .accessibilityActions {
+                ForEach(Array(actions.enumerated()), id: \.offset) { _, item in
+                    Button(item.title) { if enabled { commit(item) } }
+                }
+            }
     }
-    private func commit() {
+    private func actionButton(_ item: RevealAction, frame: RevealDriver.ButtonFrame) -> some View {
+        Button(role: item.role) { commit(item) } label: {
+            VStack(spacing: 6 * actionSize / 52) {
+                Image(systemName: item.systemImage).font(.system(size: 22 * actionSize / 52, weight: .regular)).foregroundStyle(.white)
+                    .frame(width: frame.width, height: actionSize)
+                    .background(item.tint, in: Capsule())
+                Text(item.title).font(.caption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+            }
+            .scaleEffect(reduceMotion ? 1 : frame.scale)
+            .opacity(reduceMotion ? 1 : frame.opacity)
+            .frame(width: frame.width + 10)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(item.title)
+        .accessibilityElement(children: .ignore)
+    }
+    private func commit() { commit(primary) }
+    private func commit(_ item: RevealAction) {
         guard enabled else { return }
         coordinator.active = nil; driver.close()
-        action()
+        item.action()
     }
 }
 
@@ -517,7 +664,11 @@ extension View {
             }
     }
     func revealDelete(id: String, enabled: Bool = true, grouping: RevealRowGrouping = .standalone, separatorInset: CGFloat? = nil, style: RevealActionStyle = .round, title: LocalizedStringKey = "删除", action: @escaping () -> Void) -> some View {
-        modifier(RevealDeleteModifier(id: id, enabled: enabled, grouping: grouping, separatorInset: grouping == .standalone ? nil : separatorInset, title: title, style: style, action: action))
+        revealActions(id: id, enabled: enabled, grouping: grouping, separatorInset: separatorInset, style: style, [.delete(title, action: action)])
+    }
+    /// Swipe to reveal several buttons; the first is the primary (full swipe).
+    func revealActions(id: String, enabled: Bool = true, grouping: RevealRowGrouping = .standalone, separatorInset: CGFloat? = nil, style: RevealActionStyle = .round, _ actions: [RevealAction]) -> some View {
+        modifier(RevealDeleteModifier(id: id, enabled: enabled, grouping: grouping, separatorInset: grouping == .standalone ? nil : separatorInset, style: style, actions: actions))
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)

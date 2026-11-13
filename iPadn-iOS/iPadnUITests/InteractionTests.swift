@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class InteractionTests: XCTestCase {
     /// The assertions here read Chinese copy, so the app runs in Chinese even
@@ -31,6 +32,142 @@ final class InteractionTests: XCTestCase {
         XCTAssertEqual(copyID.frame.midY, version.frame.midY, accuracy: 12)
         copyID.tap()
         attach("21-app-id-inline", app: app)
+    }
+
+    func testVersionHistoryShowsAnIconOnEachRowWithoutOpeningDetails() throws {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail", "--version-icons-preview"]
+        app.launch()
+        let first = app.descendants(matching: .any)["detail.version.icon.123456789"].firstMatch
+        let second = app.descendants(matching: .any)["detail.version.icon.123456788"].firstMatch
+        for _ in 0..<4 { if second.exists && second.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        XCTAssertTrue(second.waitForExistence(timeout: 5))
+        let image = app.screenshot()
+        let a = try screenshotPixel(image, at: CGPoint(x: first.frame.midX, y: first.frame.minY + 8), appFrame: app.frame)
+        let b = try screenshotPixel(image, at: CGPoint(x: second.frame.midX, y: second.frame.minY + 8), appFrame: app.frame)
+        XCTAssertNotEqual(Array(a.prefix(3)), Array(b.prefix(3)), "Each row must render its own cached image")
+        XCTAssertTrue(app.buttons["detail.versions.refresh"].exists)
+        attach("history-version-icons-inline", app: app)
+    }
+
+    func testMissingHistoricalIconNeverUsesCurrentStoreArtwork() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail", "--version-icons-preview", "--version-icon-missing-preview"]
+        app.launch()
+        let missing = app.descendants(matching: .any)["detail.version.icon-missing.123456788"].firstMatch
+        for _ in 0..<4 { if missing.exists && missing.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(missing.waitForExistence(timeout: 10))
+        XCTAssertEqual(missing.label, "未获取该版本图标")
+        XCTAssertFalse(app.descendants(matching: .any)["detail.version.icon.123456788"].firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["detail.version.size.123456788"].exists)
+        attach("history-version-icon-unavailable", app: app)
+    }
+
+    func testVersionHistoryDateRangeIncludesMatchesAndClearRestoresAllVersions() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail", "--version-dates-preview"]
+        app.launch()
+        let controls = app.buttons["按日期范围筛选"]
+        for _ in 0..<4 { if controls.exists && controls.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(controls.waitForExistence(timeout: 10))
+        controls.tap()
+        let search = app.buttons["detail.versions.date.search"]
+        for _ in 0..<3 { if search.exists && search.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertTrue(search.isEnabled)
+        search.tap()
+        let progress = app.staticTexts["detail.versions.date.progress"]
+        XCTAssertTrue(progress.waitForExistence(timeout: 5))
+        XCTAssertEqual(progress.label, "已检查 3 / 3 个版本，找到 2 个")
+        // Collapse the controls to bring both result rows into one viewport.
+        controls.tap()
+        let included = app.staticTexts["detail.version.number.123456788"]
+        for _ in 0..<3 { if included.exists && included.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(included.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["detail.version.number.123456787"].exists)
+        attach("history-date-range-results", app: app)
+        for _ in 0..<4 { if controls.isHittable { break }; app.swipeDown() }
+        controls.tap()
+        let clear = app.buttons["detail.versions.date.clear"]
+        for _ in 0..<3 { if clear.exists && clear.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(clear.waitForExistence(timeout: 5))
+        clear.tap()
+        controls.tap()
+        let restored = app.staticTexts["detail.version.number.123456787"]
+        for _ in 0..<4 { if restored.exists && restored.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(restored.waitForExistence(timeout: 5))
+        XCTAssertFalse(progress.exists)
+    }
+
+    func testVersionHistoryShowsEachPackagesOwnSize() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail"]
+        app.launch()
+        let newest = app.staticTexts["detail.version.size.123456789"]
+        let older = app.staticTexts["detail.version.size.123456788"]
+        // The screenshot strip may put the history below the first viewport.
+        for _ in 0..<4 {
+            if older.exists && older.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(newest.waitForExistence(timeout: 10))
+        XCTAssertTrue(older.waitForExistence(timeout: 5))
+        XCTAssertTrue(newest.label.contains("128"), newest.label)
+        XCTAssertTrue(older.label.contains("96"), older.label)
+        XCTAssertNotEqual(newest.label, older.label, "Old versions must not reuse the latest listing's size")
+        attach("version-history-package-sizes", app: app)
+    }
+
+    func testVersionHistoryNativeMenuCopiesTheSelectedVersionID() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail"]
+        app.launch()
+        let version = app.staticTexts["detail.version.number.123456788"]
+        for _ in 0..<4 {
+            if version.exists && version.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(version.waitForExistence(timeout: 10))
+        version.press(forDuration: 0.8)
+        let copyID = app.buttons["detail.version.copy-id.123456788"]
+        let copyNumber = app.buttons["detail.version.copy-number.123456788"]
+        XCTAssertTrue(copyID.waitForExistence(timeout: 5))
+        XCTAssertTrue(copyNumber.exists)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: copyID)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 5), .completed)
+        version.press(forDuration: 0.8)
+        XCTAssertTrue(copyID.waitForExistence(timeout: 5))
+        copyID.tap()
+        app.buttons["手动指定版本 ID"].tap()
+        let field = app.textFields["内部版本 ID"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.press(forDuration: 0.8)
+        let paste = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "粘贴")).firstMatch
+        XCTAssertTrue(paste.waitForExistence(timeout: 5))
+        paste.tap()
+        XCTAssertEqual(field.value as? String, "123456788", "Copy the selected old version, not the latest one")
+    }
+
+    func testVersionHistorySeparatesFactsAtLargeTextSizes() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail", "--large-text"]
+        app.launch()
+        let size = app.staticTexts["detail.version.size.123456789"]
+        for _ in 0..<4 {
+            if size.exists && size.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(size.waitForExistence(timeout: 10))
+        let date = app.staticTexts["detail.version.date.123456789"]
+        let identifier = app.staticTexts["detail.version.id.123456789"]
+        XCTAssertTrue(date.exists)
+        XCTAssertTrue(identifier.exists)
+        XCTAssertGreaterThanOrEqual(size.frame.minY, date.frame.maxY - 1)
+        XCTAssertGreaterThanOrEqual(identifier.frame.minY, size.frame.maxY - 1)
+        attach("version-history-large-text", app: app)
     }
 
     func testDownloadPlatformBadgeAlignsWithFileSize() {
@@ -74,14 +211,10 @@ final class InteractionTests: XCTestCase {
         app.buttons["download.filter.menu"].tap()
         app.buttons["download.filter.已完成"].tap()
         let install = app.buttons["安装"].firstMatch
-        let share = app.buttons["分享"].firstMatch
         if !install.waitForExistence(timeout: 10) { print(app.debugDescription) }
         XCTAssertTrue(install.exists)
-        XCTAssertTrue(share.exists)
-        // Compact trailing actions on the task card: 安装 capsule, then share.
-        XCTAssertEqual(install.frame.midY, share.frame.midY, accuracy: 4)
-        XCTAssertLessThan(install.frame.maxX, share.frame.minX)
-        XCTAssertGreaterThanOrEqual(share.frame.height, 44)
+        // Share lives in the row's swipe actions now; the card keeps only 安装.
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "download.export.")).firstMatch.exists)
         attach("17-completed-actions", app: app)
         install.tap()
         let settings = app.buttons["installation.settings"]
@@ -214,7 +347,14 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(input.waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["search.submit"].exists)
         XCTAssertFalse(app.buttons["清空输入"].exists)
-        input.tap(); input.typeText("Test")
+        let focused = NSPredicate(format: "hasKeyboardFocus == true")
+        for _ in 0..<3 {
+            input.tap()
+            if XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: focused, object: input)], timeout: 2) == .completed {
+                break
+            }
+        }
+        input.typeText("Test")
         XCTAssertTrue(app.buttons["清空输入"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["切换或管理账号"].exists)
     }
@@ -260,7 +400,99 @@ final class InteractionTests: XCTestCase {
         XCTAssertFalse(row.exists)
     }
 
-    func testHistoryAccountSwipeAndImportPicker() {
+    func testWrappedSearchChipsRetainTheirOwnRoundedEdges() throws {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--history-wrap-preview"]
+        app.launch()
+        let first = app.buttons["history.效率工具"]
+        let lower = app.buttons["history.Apple Music"]
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        XCTAssertTrue(lower.waitForExistence(timeout: 5))
+        let upperFrame = first.frame, lowerFrame = lower.frame
+        XCTAssertGreaterThan(lowerFrame.minY, upperFrame.maxY, "The fixture must wrap to exercise both grouped-cell corners")
+        let screenshot = app.screenshot()
+        for (frame, fraction) in [(upperFrame, CGFloat(0.22)), (lowerFrame, CGFloat(0.78))] {
+            // Just inside each capsule arc, but outside the old cell mask.
+            // The neighboring transparent inset supplies the page color.
+            let inside = try screenshotPixel(screenshot, at: CGPoint(x: frame.minX + 4, y: frame.minY + frame.height * fraction), appFrame: app.frame)
+            let page = try screenshotPixel(screenshot, at: CGPoint(x: frame.minX - 4, y: frame.midY), appFrame: app.frame)
+            let gain = zip(inside.prefix(3), page.prefix(3)).reduce(0) { $0 + Int($1.0) - Int($1.1) }
+            XCTAssertGreaterThan(gain, 15, "Both left-hand capsule arcs must remain visible, not cut by the list cell")
+        }
+        attach("search-wrapped-capsule-edges", app: app)
+    }
+
+    func testInstalledAppWithoutStoreListingStillOpensLocalDetails() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--installed", "--installed-missing-preview"]
+        app.launch()
+        let row = app.buttons["installed.app.notion.id"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+        let bundleID = app.descendants(matching: .any)["installed.field.bundle-id"].firstMatch
+        XCTAssertTrue(bundleID.waitForExistence(timeout: 5))
+        XCTAssertEqual(bundleID.value as? String, "notion.id")
+        let version = app.descendants(matching: .any)["installed.field.version"].firstMatch
+        XCTAssertTrue(version.exists)
+        XCTAssertEqual(version.value as? String, "1.7.353")
+        XCTAssertTrue(app.staticTexts["当前地区未查到商店资料"].exists)
+        XCTAssertTrue(app.staticTexts["未查到资料不代表应用已下架，也不影响查看本机信息。"].exists)
+        XCTAssertTrue(app.buttons["installed.lookup.retry"].exists)
+        attach("installed-missing-store-local-info", app: app)
+    }
+
+    func testInstalledAppStoreFailureCanRetryWithoutLosingLocalDetails() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--installed", "--installed-failed-preview"]
+        app.launch()
+        let row = app.buttons["installed.app.com.netflix.Netflix"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+        XCTAssertTrue(app.staticTexts["商店查询失败"].waitForExistence(timeout: 5))
+        let bundleID = app.descendants(matching: .any)["installed.field.bundle-id"].firstMatch
+        XCTAssertTrue(bundleID.exists)
+        XCTAssertEqual(bundleID.value as? String, "com.netflix.Netflix")
+        XCTAssertFalse(app.staticTexts["当前地区未查到商店资料"].exists)
+        app.buttons["installed.lookup.retry"].tap()
+        let details = app.buttons["installed.store-details"]
+        XCTAssertTrue(details.waitForExistence(timeout: 5))
+        XCTAssertTrue(bundleID.exists, "Regrouping must not pop the local details page")
+        XCTAssertEqual(bundleID.value as? String, "com.netflix.Netflix")
+        details.tap()
+        XCTAssertTrue(app.buttons["app.copy-id"].waitForExistence(timeout: 10))
+        attach("installed-store-retry-restores-details", app: app)
+    }
+
+    func testInstalledAppWithoutStoreIDStillOpensLocalDetails() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--installed"]
+        app.launch()
+        let row = app.buttons["installed.app.com.example.tool"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        for _ in 0..<3 {
+            if row.isHittable { break }
+            app.swipeUp()
+        }
+        row.tap()
+        let bundleID = app.descendants(matching: .any)["installed.field.bundle-id"].firstMatch
+        XCTAssertTrue(bundleID.waitForExistence(timeout: 5))
+        XCTAssertEqual(bundleID.value as? String, "com.example.tool")
+        XCTAssertTrue(app.staticTexts["installed.lookup.no-id"].exists)
+        XCTAssertFalse(app.buttons["installed.lookup.retry"].exists)
+        attach("installed-local-only-info", app: app)
+    }
+
+    func testInstalledAppsUsesNeutralRecognitionHeading() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--installed"]
+        app.launch()
+        let heading = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "App Store 未识别的应用")).firstMatch
+        XCTAssertTrue(heading.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "App Store 不认的应用")).firstMatch.exists)
+        attach("installed-app-recognition-heading", app: app)
+    }
+
+    func testHistoryAndFavoriteActions() {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview"]
         app.launch()
@@ -289,6 +521,10 @@ final class InteractionTests: XCTestCase {
         // not detail.get. Copy ID is present in either authentication state.
         XCTAssertTrue(app.buttons["app.copy-id"].waitForExistence(timeout: 10))
         app.terminate()
+    }
+
+    func testAccountSwipeAndSourceSettings() {
+        let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--accounts"]
         app.launch()
         let account = app.buttons["account.demo@example.com"]
@@ -308,6 +544,13 @@ final class InteractionTests: XCTestCase {
         source.tap()
         XCTAssertTrue(app.textFields["来源名称"].waitForExistence(timeout: 5))
         app.terminate()
+    }
+
+    func testDownloadImportPickerCanBeCancelled() {
+        // The Files UI starts in a separate process. Keep its cold-start
+        // budget independent of the history and account/settings scenarios;
+        // all assertions stay covered under the same 120-second test cap.
+        let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads"]
         app.launch()
         let add = app.buttons["downloads.add"]
@@ -331,10 +574,11 @@ final class InteractionTests: XCTestCase {
         history.press(forDuration: 1.0)
         XCTAssertTrue(app.buttons["删除"].firstMatch.waitForExistence(timeout: 5))
         app.buttons["删除"].firstMatch.tap()
-        let undo = app.buttons["notice.undo"]
-        XCTAssertTrue(undo.waitForExistence(timeout: 5))
-        XCTAssertFalse(history.exists)
-        undo.tap()
+        // Undo expires after five seconds. Snapshotting the whole history
+        // before tapping can consume that window on a busy simulator.
+        // tap() already resolves/waits for the button; restoration is checked
+        // afterwards, without changing the app's real expiry duration.
+        app.buttons["notice.undo"].tap()
         XCTAssertTrue(history.waitForExistence(timeout: 5))
     }
 
@@ -380,23 +624,132 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["已选 1 项"].waitForExistence(timeout: 5), "Cancel must preserve the selected task")
     }
 
-    func testLargeDownloadListsLaunchAndScroll() {
+    // Keep every list size under its own unchanged per-test watchdog.
+    func testDownloadList100RowsLaunchesAndScrolls() { checkDownloadList(count: 100) }
+    func testDownloadList500RowsLaunchesAndScrolls() { checkDownloadList(count: 500) }
+    func testDownloadList1000RowsLaunchesAndScrolls() { checkDownloadList(count: 1000) }
+
+    private func checkDownloadList(count: Int) {
         let app = Self.launchableApp()
-        for count in [100, 500, 1000] {
-            app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--stress-records=\(count)"]
-            let started = Date()
-            app.launch()
-            XCTAssertTrue(app.buttons["downloads.edit"].waitForExistence(timeout: 15))
-            print("PERF downloads rows=\(count) launch-to-controls=\(Date().timeIntervalSince(started))s")
-            let first = app.descendants(matching: .any)["download.task.stress-0.paused"].firstMatch
-            XCTAssertTrue(first.waitForExistence(timeout: 5))
-            app.swipeUp()
-            XCTAssertFalse(first.isHittable, "The list must actually scroll, not just accept the gesture")
-            app.swipeDown()
-            XCTAssertTrue(app.buttons["downloads.edit"].exists)
-            attach("stress-\(count)", app: app)
-            app.terminate()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--stress-records=\(count)"]
+        let started = Date()
+        app.launch()
+        XCTAssertTrue(app.buttons["downloads.edit"].waitForExistence(timeout: 15))
+        print("PERF downloads rows=\(count) launch-to-controls=\(Date().timeIntervalSince(started))s")
+        let first = app.descendants(matching: .any)["download.task.stress-0.paused"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        app.swipeUp()
+        XCTAssertFalse(first.isHittable, "The list must actually scroll, not just accept the gesture")
+        app.swipeDown()
+        XCTAssertTrue(app.buttons["downloads.edit"].exists)
+        attach("stress-\(count)", app: app)
+        app.terminate()
+    }
+
+    func testDownloadCompletionOffersInstallAndCompletedRowsDoNotReplay() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--completion-preview"]
+        app.launch()
+        let pause = app.buttons["暂停"].firstMatch
+        XCTAssertTrue(pause.waitForExistence(timeout: 10))
+        pause.tap() // Preview-only: running -> processing -> completed; no real download.
+        let install = app.buttons["download.install.preview-1"]
+        XCTAssertTrue(install.waitForExistence(timeout: 8), "The completion check must give way to Install")
+        XCTAssertFalse(pause.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["download.task.preview-1.completed"].firstMatch.exists)
+        attach("completion-offers-install", app: app)
+        app.terminate()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads"]
+        app.launch()
+        XCTAssertTrue(app.buttons["download.install.1232780281"].waitForExistence(timeout: 10), "Previously completed rows must offer Install without replaying the celebration")
+    }
+
+    func testTabReselectScrollsToTopWithoutResettingOnTabSwitch() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--stress-records=100"]
+        app.launch()
+        let first = app.descendants(matching: .any)["download.task.stress-0.paused"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        app.swipeUp()
+        XCTAssertFalse(first.isHittable)
+        let tabs = app.tabBars.firstMatch
+        tabs.buttons["搜索"].tap()
+        tabs.buttons["下载"].tap()
+        XCTAssertFalse(first.isHittable, "Returning to Downloads must retain its scroll position")
+        tabs.buttons["下载"].tap()
+        let backAtTop = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: first)
+        XCTAssertEqual(XCTWaiter.wait(for: [backAtTop], timeout: 5), .completed, "Reselecting Downloads must scroll to the first task")
+    }
+
+    func testDownloadSwipeSurfaceScreenshotsInBothDirections() throws {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads"]
+        app.launch()
+        let row = app.descendants(matching: .any)["download.task.preview-2.paused"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        // Just outside the resting cell, but INSIDE the translated card after
+        // a right swipe. A native inset-grouped cell mask used to leave this
+        // pixel as page background, truncating the moving surface early.
+        let probe = CGPoint(x: app.frame.maxX - 3, y: row.frame.minY + 3)
+        let resting = try screenshotPixel(app.screenshot(), at: probe, appFrame: app.frame)
+        revealActions(on: row)
+        let delete = app.buttons["删除"].firstMatch
+        XCTAssertTrue(delete.waitForExistence(timeout: 5))
+        attach("download-card-surface-left", app: app)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: delete)
+        XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 5), .completed)
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: row.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.5)))
+        XCTAssertTrue(delete.waitForExistence(timeout: 5))
+        // Both edges are captured: the moving surface must keep its own
+        // rounded corners, rather than being clipped to the resting row.
+        attach("download-card-surface-right", app: app)
+        let translated = try screenshotPixel(app.screenshot(), at: probe, appFrame: app.frame)
+        let brightnessGain = zip(translated.prefix(3), resting.prefix(3)).reduce(0) { $0 + Int($1.0) - Int($1.1) }
+        XCTAssertGreaterThan(brightnessGain, 20, "The white card must extend beyond the resting cell's right boundary")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        let closedAgain = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: delete)
+        XCTAssertEqual(XCTWaiter.wait(for: [closedAgain], timeout: 5), .completed)
+        let restored = try screenshotPixel(app.screenshot(), at: probe, appFrame: app.frame)
+        for (before, after) in zip(resting, restored) {
+            XCTAssertLessThanOrEqual(abs(Int(before) - Int(after)), 2, "Closing must restore the resting card and page margin")
         }
+    }
+
+    /// Normalize to RGBA, independent of simulator pixel format and scale.
+    private func screenshotPixel(_ screenshot: XCUIScreenshot, at point: CGPoint, appFrame: CGRect) throws -> [UInt8] {
+        let image = try XCTUnwrap(screenshot.image.cgImage)
+        let sx = CGFloat(image.width) / appFrame.width, sy = CGFloat(image.height) / appFrame.height
+        let sample = try XCTUnwrap(image.cropping(to: CGRect(x: ((point.x - appFrame.minX) * sx).rounded(.down),
+                                                           y: ((point.y - appFrame.minY) * sy).rounded(.down), width: 1, height: 1)))
+        var rgba = [UInt8](repeating: 0, count: 4)
+        try rgba.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                                                 bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(sample, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        return rgba
+    }
+
+    func testNativeTaskMenuDismissesAndOpensDetails() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--stress-records=100"]
+        app.launch()
+        let first = app.descendants(matching: .any)["download.task.stress-0.paused"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        first.press(forDuration: 0.7)
+        let details = app.buttons["任务详情"].firstMatch
+        XCTAssertTrue(details.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.navigationBars["任务详情"].exists, "Long press must not also tap the row")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: details)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 5), .completed)
+        first.press(forDuration: 0.7)
+        XCTAssertTrue(details.waitForExistence(timeout: 5))
+        details.tap()
+        XCTAssertTrue(app.navigationBars["任务详情"].waitForExistence(timeout: 5))
     }
 
     private func revealActions(on element: XCUIElement) {

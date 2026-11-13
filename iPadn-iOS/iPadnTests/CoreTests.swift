@@ -914,6 +914,78 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(InstalledAppsView.isUpdate(latest, installed: "10.1", versionID: nil))
     }
 
+    @MainActor
+    func testInstalledStoreLookupSeparatesMissingFailureAndRecovery() async {
+        let listing = StoreApp(id: "1", name: "One", version: "2.0")
+        var attempt = 0
+        let catalog = InstalledAppCatalog { ids, country in
+            XCTAssertEqual(ids, ["1"])
+            XCTAssertEqual(country, "US")
+            attempt += 1
+            switch attempt {
+            case 1, 4: return ["1": listing, "99": StoreApp(id: "99", name: "Unrequested")]
+            case 2: throw URLError(.notConnectedToInternet)
+            default: return [:]
+            }
+        }
+        var installed = NativeInstaller.InstalledApp(installed: true)
+        installed.storeItemID = "1"
+        await catalog.load(ids: ["1", "1", "0", "bad"], country: "us")
+        XCTAssertEqual(catalog.state, .ready)
+        XCTAssertEqual(catalog.listing(for: installed), listing)
+        XCTAssertNil(catalog.listings["99"])
+        await catalog.load(ids: ["1"], country: "US")
+        guard case .failed = catalog.state else { return XCTFail("Network errors must not look like a missing listing") }
+        XCTAssertNil(catalog.listing(for: installed), "Failed refreshes must not offer stale store updates")
+        await catalog.load(ids: ["1"], country: "US")
+        XCTAssertEqual(catalog.state, .ready, "A successful empty response is distinct from failure")
+        XCTAssertNil(catalog.listing(for: installed))
+        await catalog.load(ids: ["1"], country: "US")
+        XCTAssertEqual(catalog.listing(for: installed), listing, "Retry can restore store details")
+    }
+
+    @MainActor
+    func testInstalledStoreLookupDiscardsSupersededRegionResults() async {
+        let started = expectation(description: "first region lookup started")
+        var pending: CheckedContinuation<[String: StoreApp], Error>?
+        let catalog = InstalledAppCatalog { _, country in
+            if country == "CN" {
+                return try await withCheckedThrowingContinuation { continuation in
+                    pending = continuation
+                    started.fulfill()
+                }
+            }
+            return ["1": StoreApp(id: "1", name: "US listing")]
+        }
+        let older = Task { await catalog.load(ids: ["1"], country: "CN") }
+        await fulfillment(of: [started], timeout: 5)
+        guard let pending else { older.cancel(); return XCTFail("The first lookup must be waiting before the region changes") }
+        await catalog.load(ids: ["1"], country: "US")
+        pending.resume(returning: ["1": StoreApp(id: "1", name: "Old CN listing")])
+        await older.value
+        XCTAssertEqual(catalog.country, "US")
+        XCTAssertEqual(catalog.listings["1"]?.name, "US listing")
+        XCTAssertEqual(catalog.state, .ready)
+    }
+
+    @MainActor
+    func testInstalledStoreLookupNoIDAndCancellationDoNotClaimDelisting() async {
+        var calls = 0
+        let catalog = InstalledAppCatalog { _, _ in
+            calls += 1
+            throw CancellationError()
+        }
+        await catalog.load(ids: ["0", "-1", "com.example.tool"], country: "US")
+        XCTAssertEqual(calls, 0, "Local-only apps must not send a bogus App ID")
+        XCTAssertEqual(catalog.state, .ready)
+        await catalog.load(ids: ["1"], country: "US")
+        XCTAssertEqual(catalog.state, .idle, "Cancellation is neither a failed query nor a confirmed missing listing")
+        var app = NativeInstaller.InstalledApp(installed: true)
+        XCTAssertNil(InstalledAppCatalog.storeID(app))
+        app.storeItemID = "001"
+        XCTAssertEqual(InstalledAppCatalog.storeID(app), "1")
+    }
+
     func testAppLockSettingsDecode() throws {
         XCTAssertFalse(ToolSettings().appLock)
         let saved = try JSONDecoder().decode(ToolSettings.self, from: Data(#"{"appLock":true,"appLockDelay":99999}"#.utf8))
@@ -1839,6 +1911,7 @@ final class CoreTests: XCTestCase {
         let reader = MemoryRangeReader(data: try Data(contentsOf: url))
         let metadata = try await RemoteZip.versionMetadata(reader)
         XCTAssertEqual(metadata.version, "4.5.6")
+        XCTAssertEqual(metadata.packageSize, Int64(reader.data.count), "Use the whole IPA length, not Info.plist's size")
         XCTAssertEqual(metadata.released, ISO8601DateFormatter().date(from: "2024-05-03T00:00:00Z"))
 
         // Without a recorded date, the archive timestamp is used.
@@ -1858,6 +1931,111 @@ final class CoreTests: XCTestCase {
             _ = try await RemoteZip.versionMetadata(MemoryRangeReader(data: Data(repeating: 0, count: 64)))
             XCTFail("A file without a ZIP directory must not produce a version")
         } catch {}
+    }
+
+    func testHistoricalIconsComeFromTheirOwnMainPackage() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func package(_ version: String, color: UIColor, includeIcon: Bool) throws -> MemoryRangeReader {
+            // The same version is inspected with and without icon reads.
+            // Each fixture creation must have its own file, even for the same version.
+            let url = root.appendingPathComponent(version + "-" + UUID().uuidString + ".ipa")
+            let archive = try Archive(url: url, accessMode: .create)
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1
+            let png = UIGraphicsImageRenderer(size: CGSize(width: 180, height: 180), format: format).pngData { c in
+                color.setFill(); c.fill(CGRect(x: 0, y: 0, width: 180, height: 180))
+            }
+            var files = [("Payload/Main.app/Info.plist", try HTTPClient.encodePlist([
+                "CFBundleShortVersionString": version,
+                "CFBundleIcons": ["CFBundlePrimaryIcon": ["CFBundleIconFiles": ["AppIcon60x60"]]]])),
+                ("Payload/Main.app/Alternate.png", png),
+                ("Payload/Main.app/PlugIns/Widget.appex/AppIcon60x60@3x.png", png)]
+            if includeIcon { files.append(("Payload/Main.app/AppIcon60x60@3x.png", png)) }
+            for (path, bytes) in files {
+                try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(bytes.count),
+                                     compressionMethod: .deflate, provider: { position, size in
+                    bytes.subdata(in: Int(position)..<Int(position) + size)
+                })
+            }
+            return MemoryRangeReader(data: try Data(contentsOf: url))
+        }
+        let partial = expectation(description: "version metadata published before icon extraction")
+        let old = try await RemoteZip.versionResources(package("1.0", color: .blue, includeIcon: true), onMetadata: { metadata in
+            XCTAssertEqual(metadata.version, "1.0")
+            XCTAssertNotNil(metadata.packageSize)
+            XCTAssertNil(metadata.iconAvailable)
+            partial.fulfill()
+        })
+        await fulfillment(of: [partial], timeout: 3)
+        let dateOnly = try await RemoteZip.versionResources(package("1.0", color: .blue, includeIcon: true), includingIcon: false)
+        XCTAssertNil(dateOnly.icon)
+        XCTAssertNil(dateOnly.metadata.iconAvailable, "Date scans must not mark an uninspected icon unavailable")
+        XCTAssertEqual(dateOnly.metadata.version, old.metadata.version)
+        let new = try await RemoteZip.versionResources(package("2.0", color: .red, includeIcon: true))
+        XCTAssertEqual(old.metadata.version, "1.0")
+        XCTAssertEqual(old.metadata.iconAvailable, true)
+        XCTAssertNotNil(UIImage(data: try XCTUnwrap(old.icon)))
+        XCTAssertNotEqual(old.icon, new.icon, "Different version packages must not share the current store icon")
+        let missing = try await RemoteZip.versionResources(package("3.0", color: .green, includeIcon: false))
+        XCTAssertEqual(missing.metadata.version, "3.0")
+        XCTAssertNotNil(missing.metadata.packageSize)
+        XCTAssertEqual(missing.metadata.iconAvailable, false)
+        XCTAssertNil(missing.icon, "Never substitute an alternate or extension icon")
+    }
+
+    func testVersionIconCacheMigrationAndFileEviction() async throws {
+        let store = VersionMetadataStore()
+        let key = "icon-migration-" + UUID().uuidString
+        let old = VersionMetadata(version: "1.0", packageSize: 123)
+        _ = try await store.load(key) { old }
+        XCTAssertNil(old.iconAvailable)
+        let missing = VersionMetadata(version: "1.0", packageSize: 123, iconAvailable: false)
+        let refreshed = try await store.load(key, requiringIcon: true) { missing }
+        XCTAssertEqual(refreshed.iconAvailable, false)
+        let hit = try await store.load(key, requiringIcon: true) { throw RemoteZip.Failure.unreadable }
+        XCTAssertEqual(hit, missing, "A checked missing icon must not request a ticket on every appearance")
+        let fileKey = key + "-file"
+        let fileURL = VersionMetadataStore.iconURL(fileKey)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let bytes = Data([137, 80, 78, 71])
+        try await store.saveIcon(bytes, key: fileKey)
+        let available = VersionMetadata(version: "2.0", packageSize: 456, iconAvailable: true)
+        _ = try await store.load(fileKey) { available }
+        let cached = await store.icon(fileKey)
+        XCTAssertEqual(cached, bytes)
+        XCTAssertNotEqual(fileURL, VersionMetadataStore.iconURL(key))
+        try FileManager.default.removeItem(at: fileURL)
+        let evicted = try await store.load(fileKey, requiringIcon: true) { missing }
+        XCTAssertEqual(evicted.iconAvailable, false, "Evicted files must be rechecked, not shown as available")
+    }
+
+    func testVersionMetadataSizeCacheMigration() async throws {
+        let legacy = try JSONDecoder().decode(VersionMetadata.self, from: Data(#"{"version":"1.2.3"}"#.utf8))
+        XCTAssertNil(legacy.packageSize)
+        let store = VersionMetadataStore()
+        let key = "size-migration-" + UUID().uuidString
+        _ = try await store.load(key) { legacy }
+        do {
+            _ = try await store.load(key, requiringPackageSize: true) { throw RemoteZip.Failure.unreadable }
+            XCTFail("A failed size lookup must still report failure")
+        } catch RemoteZip.Failure.unreadable {}
+        let retained = await store.cached(key)
+        XCTAssertEqual(retained, legacy, "A failed refresh must preserve old version/date metadata")
+        let updated = VersionMetadata(version: "1.2.3", released: nil, packageSize: 123_456_789)
+        let refreshed = try await store.load(key, requiringPackageSize: true) { updated }
+        XCTAssertEqual(refreshed, updated)
+        let hit = try await store.load(key, requiringPackageSize: true) {
+            throw RemoteZip.Failure.unreadable // A complete cache must not make another request.
+        }
+        XCTAssertEqual(hit.packageSize, 123_456_789)
+        let roundTrip = try JSONDecoder().decode(VersionMetadata.self, from: JSONEncoder().encode(hit))
+        XCTAssertEqual(roundTrip, hit)
+
+        let macKey = "mac-metadata-" + UUID().uuidString
+        _ = try await store.load(macKey) { legacy }
+        let macHit = try await store.load(macKey) { throw RemoteZip.Failure.unreadable }
+        XCTAssertEqual(macHit, legacy, "Mac metadata without an IPA size remains cacheable")
     }
 
     func testPhoneNumberLoginsNameTheirStore() {
