@@ -542,23 +542,26 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["已选 1 项"].waitForExistence(timeout: 5), "Cancel must preserve the selected task")
     }
 
-    func testLargeDownloadListsLaunchAndScroll() {
+    // Keep every list size under its own unchanged per-test watchdog.
+    func testDownloadList100RowsLaunchesAndScrolls() { checkDownloadList(count: 100) }
+    func testDownloadList500RowsLaunchesAndScrolls() { checkDownloadList(count: 500) }
+    func testDownloadList1000RowsLaunchesAndScrolls() { checkDownloadList(count: 1000) }
+
+    private func checkDownloadList(count: Int) {
         let app = Self.launchableApp()
-        for count in [100, 500, 1000] {
-            app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--stress-records=\(count)"]
-            let started = Date()
-            app.launch()
-            XCTAssertTrue(app.buttons["downloads.edit"].waitForExistence(timeout: 15))
-            print("PERF downloads rows=\(count) launch-to-controls=\(Date().timeIntervalSince(started))s")
-            let first = app.descendants(matching: .any)["download.task.stress-0.paused"].firstMatch
-            XCTAssertTrue(first.waitForExistence(timeout: 5))
-            app.swipeUp()
-            XCTAssertFalse(first.isHittable, "The list must actually scroll, not just accept the gesture")
-            app.swipeDown()
-            XCTAssertTrue(app.buttons["downloads.edit"].exists)
-            attach("stress-\(count)", app: app)
-            app.terminate()
-        }
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--stress-records=\(count)"]
+        let started = Date()
+        app.launch()
+        XCTAssertTrue(app.buttons["downloads.edit"].waitForExistence(timeout: 15))
+        print("PERF downloads rows=\(count) launch-to-controls=\(Date().timeIntervalSince(started))s")
+        let first = app.descendants(matching: .any)["download.task.stress-0.paused"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        app.swipeUp()
+        XCTAssertFalse(first.isHittable, "The list must actually scroll, not just accept the gesture")
+        app.swipeDown()
+        XCTAssertTrue(app.buttons["downloads.edit"].exists)
+        attach("stress-\(count)", app: app)
+        app.terminate()
     }
 
     func testDownloadCompletionOffersInstallAndCompletedRowsDoNotReplay() {

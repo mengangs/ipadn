@@ -13,7 +13,7 @@
 
 - 下载卡片侧滑可删除或分享，分享文件名包含应用名称与版本号。
 - 修复侧滑时卡片边缘被裁剪、快速滑动后分享按钮短暂变灰的问题；整张圆角卡片一起移动，收起后恢复原样。
-- 点侧滑操作以外的位置即可收起，不会顺带触发下面的按钮。
+- 点侧滑操作以外的位置即可收起，不会顺带触发下面的按钮。修正掉帧时弹簧动画推进过慢、收起后操作恢复延迟的问题。
 - 删除后的 5 秒撤销提示显示剩余秒数和进度环。
 - 下载完成时进度环转为勾号，再显示「安装」；任务长按保留原生系统菜单。
 - 再点当前标签页可回到列表顶部，切换其他标签仍保留原来的滚动位置。
@@ -43,7 +43,7 @@
 
 **Version history** now shows the remote IPA size of each individual version, using partial metadata reads rather than downloading the whole package or reusing the latest listing's size. Version, date, size and ID are separated, with a vertical layout for accessibility text sizes. Long-press a row to copy its version number or ID using the system menu. Old caches remain compatible; unavailable sizes show “—”. The remote raw IPA size can differ slightly from the processed local download.
 
-**Downloads** gain swipe-to-delete/share with app-and-version filenames, full-card movement without clipped edges, reliable Share appearance after fast swipes, and outside-tap dismissal without activating underlying controls. Undo retains its five-second window with a countdown ring. Completion transitions to a checkmark and Install. Task long-press keeps the native menu; tapping the selected tab scrolls to the top without resetting other tabs.
+**Downloads** gain swipe-to-delete/share with app-and-version filenames, full-card movement without clipped edges, reliable Share appearance after fast swipes, and outside-tap dismissal without activating underlying controls. Spring timing follows real elapsed time so dropped frames do not prolong closing animations. Undo retains its five-second window with a countdown ring. Completion transitions to a checkmark and Install. Task long-press keeps the native menu; tapping the selected tab scrolls to the top without resetting other tabs.
 
 **Automatic native installation** installs completed downloads sequentially without another confirmation when enabled. Pair beforehand and keep LocalDevVPN connected; other methods still need foreground confirmation. Silent audio keeps the app running from download through installation, with download/processing/install states in standard-package Live Activities. Background execution remains subject to iOS; reopening resumes pending work. Fixes duplicate queuing of an active installation on foreground return and isolates preview installation records from real data.
 

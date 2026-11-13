@@ -435,7 +435,10 @@ private final class RevealDriver: NSObject, ObservableObject {
         }
         #endif
         lastTime = link.timestamp
-        motion.advance(by: min(0.05, max(0, dt))); render()
+        // These springs use an analytic solution, not Euler integration.
+        // Consume real elapsed time: capping it makes a dropped frame slow
+        // dismissal down and leaves the row disabled long after the tap.
+        motion.advance(by: dt); render()
         if !dragging && motion.isAtRest { stop() }
     }
     private func stop() {
