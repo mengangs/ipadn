@@ -76,7 +76,7 @@ struct AppDetailView: View {
     /// Listing artwork, else what a download of this app brought along
     /// (delisted apps have no public listing to show).
     private var iconURL: URL? { app.iconURL ?? store.localArtwork(app.id) }
-    private var storeURL: URL { URL(string: "https://apps.apple.com/\(store.settings.store.country.lowercased())/app/id\(app.id)")! }
+    private var storeURL: URL? { URL(string: "https://apps.apple.com/\(store.settings.store.country.lowercased())/app/id\(app.id)") }
     private var filtered: [AppVersion] {
         let source = dateQuery.range == nil ? versions : dateQuery.matches
         return versionSearch.isEmpty ? source : source.filter {
@@ -163,7 +163,9 @@ struct AppDetailView: View {
                     }
                     if let developer = extras?.developer, !developer.isEmpty { LabeledContent("开发者", value: developer) }
                     if store.settings.store.platform != .macOS {
-                        Link(destination: storeURL) { Label("在 App Store 中查看", systemImage: "arrow.up.right.square") }
+                        if let storeURL {
+                            Link(destination: storeURL) { Label("在 App Store 中查看", systemImage: "arrow.up.right.square") }
+                        }
                     }
                 } header: { sectionTitle("信息") }
                 if !developerApps.isEmpty {
@@ -349,8 +351,10 @@ struct AppDetailView: View {
                 HStack(spacing: 12) {
                     primaryButton
                     Spacer(minLength: 0)
-                    ShareLink(item: storeURL) { Image(systemName: "square.and.arrow.up").font(.title3) }
-                        .buttonStyle(.borderless).accessibilityLabel("分享商店链接")
+                    if let storeURL {
+                        ShareLink(item: storeURL) { Image(systemName: "square.and.arrow.up").font(.title3) }
+                            .buttonStyle(.borderless).accessibilityLabel("分享商店链接")
+                    }
                 }
                 if let account = apple.active, store.settings.store.platform.supportsIPA || store.settings.store.platform == .macOS {
                     Text("使用 \(account.id)").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
