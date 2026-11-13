@@ -120,8 +120,8 @@ final class DownloadManager: NSObject, ObservableObject {
     /// across launches: iOS can end iPadn in the background mid-install.
     private static let autoInstallKey = "autoInstallWaiting"
     private var waitingInstalls: [String] {
-        get { UserDefaults.standard.stringArray(forKey: Self.autoInstallKey) ?? [] }
-        set { UserDefaults.standard.set(newValue, forKey: Self.autoInstallKey) }
+        get { LocalResources.defaults.stringArray(forKey: Self.autoInstallKey) ?? [] }
+        set { LocalResources.defaults.set(newValue, forKey: Self.autoInstallKey) }
     }
     private func markWaiting(_ id: UUID, _ waiting: Bool) {
         var list = waitingInstalls.filter { $0 != id.uuidString }
