@@ -428,6 +428,27 @@ final class InteractionTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [backAtTop], timeout: 5), .completed, "Reselecting Downloads must scroll to the first task")
     }
 
+    func testDownloadSwipeSurfaceScreenshotsInBothDirections() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads"]
+        app.launch()
+        let row = app.descendants(matching: .any)["download.task.preview-2.paused"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        revealActions(on: row)
+        let delete = app.buttons["删除"].firstMatch
+        XCTAssertTrue(delete.waitForExistence(timeout: 5))
+        attach("download-card-surface-left", app: app)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: delete)
+        XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 5), .completed)
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: row.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.5)))
+        XCTAssertTrue(delete.waitForExistence(timeout: 5))
+        // Both edges are captured: the moving surface must keep its own
+        // rounded corners, rather than being clipped to the resting row.
+        attach("download-card-surface-right", app: app)
+    }
+
     func testNativeTaskMenuDismissesAndOpensDetails() {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--stress-records=100"]

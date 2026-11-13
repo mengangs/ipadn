@@ -493,6 +493,10 @@ private struct RevealDeleteModifier: ViewModifier {
             .padding(.horizontal, 20).padding(.vertical, 12)
             .frame(maxWidth: .infinity, minHeight: style == .compact ? compactHeight * (60.0 / 36) : actionSize * (76.0 / 52), alignment: .leading)
             .background(Color(.secondarySystemGroupedBackground), in: cardShape(rounding: driver.rounding))
+            // Clip the surface before translating it, so its background, content
+            // and rounded edge move as one. A stationary clip here would shear
+            // the translated card at the original row's boundaries.
+            .clipShape(cardShape(rounding: driver.rounding))
             .offset(x: driver.offset)
             .overlay(alignment: driver.offset >= 0 ? .leading : .trailing) {
                 if abs(driver.offset) > 1 && actions.count > 1 {
@@ -508,6 +512,7 @@ private struct RevealDeleteModifier: ViewModifier {
                         }
                     }
                     .frame(width: max(0, abs(driver.offset)))
+                    .clipped() // Only the revealed controls have a stationary viewport.
                 } else if abs(driver.offset) > 1 {
                     Button(role: .destructive, action: commit) {
                         Group {
@@ -530,9 +535,9 @@ private struct RevealDeleteModifier: ViewModifier {
                             .frame(maxHeight: .infinity)
                             .contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityLabel(title).accessibilityElement(children: .ignore)
+                        .clipped()
                 }
             }
-            .clipped()
             .padding(.vertical, 2)
             .background {
                 if grouping != .standalone {
