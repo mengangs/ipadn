@@ -327,6 +327,38 @@ final class InteractionTests: XCTestCase {
         XCTAssertFalse(row.exists)
     }
 
+    func testWrappedSearchChipsRetainTheirOwnRoundedEdges() throws {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--history-wrap-preview"]
+        app.launch()
+        let first = app.buttons["history.效率工具"]
+        let lower = app.buttons["history.Apple Music"]
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        XCTAssertTrue(lower.waitForExistence(timeout: 5))
+        let upperFrame = first.frame, lowerFrame = lower.frame
+        XCTAssertGreaterThan(lowerFrame.minY, upperFrame.maxY, "The fixture must wrap to exercise both grouped-cell corners")
+        let screenshot = app.screenshot()
+        for (frame, fraction) in [(upperFrame, CGFloat(0.22)), (lowerFrame, CGFloat(0.78))] {
+            // Just inside each capsule arc, but outside the old cell mask.
+            // The neighboring transparent inset supplies the page color.
+            let inside = try screenshotPixel(screenshot, at: CGPoint(x: frame.minX + 4, y: frame.minY + frame.height * fraction), appFrame: app.frame)
+            let page = try screenshotPixel(screenshot, at: CGPoint(x: frame.minX - 4, y: frame.midY), appFrame: app.frame)
+            let gain = zip(inside.prefix(3), page.prefix(3)).reduce(0) { $0 + Int($1.0) - Int($1.1) }
+            XCTAssertGreaterThan(gain, 15, "Both left-hand capsule arcs must remain visible, not cut by the list cell")
+        }
+        attach("search-wrapped-capsule-edges", app: app)
+    }
+
+    func testInstalledAppsUsesNeutralRecognitionHeading() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--installed"]
+        app.launch()
+        let heading = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "App Store 未识别的应用")).firstMatch
+        XCTAssertTrue(heading.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "App Store 不认的应用")).firstMatch.exists)
+        attach("installed-app-recognition-heading", app: app)
+    }
+
     func testHistoryAndFavoriteActions() {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview"]

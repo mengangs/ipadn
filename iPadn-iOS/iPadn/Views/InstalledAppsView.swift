@@ -158,7 +158,7 @@ struct InstalledAppsView: View {
     private func title(_ kind: Group) -> LocalizedStringKey {
         switch kind {
         case .update: return "可更新"
-        case .link: return "App Store 不认的应用"
+        case .link: return "App Store 未识别的应用"
         case .store: return "来自 App Store"
         case .other: return "其他来源"
         }

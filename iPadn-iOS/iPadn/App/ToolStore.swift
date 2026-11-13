@@ -1239,7 +1239,10 @@ extension ToolStore {
                                  started: Date().addingTimeInterval(-30 * day), checked: Date())
         record.change = .priceDrop(from: 30, to: 18); record.changed = Date().addingTimeInterval(-3 * day)
         watch = [record.key: record]
-        searchHistory = (PreviewData.chinese ? ["效率工具", "照片编辑"] : ["Notion", "Spotify"]).map { SearchHistoryItem(term: $0, count: 1, lastUsed: Date()) }
+        let historyTerms = ProcessInfo.processInfo.arguments.contains("--history-wrap-preview")
+            ? ["效率工具", "照片编辑", "Apple Music", "@"]
+            : (PreviewData.chinese ? ["效率工具", "照片编辑"] : ["Notion", "Spotify"])
+        searchHistory = historyTerms.map { SearchHistoryItem(term: $0, count: 1, lastUsed: Date()) }
     }
 }
 #endif

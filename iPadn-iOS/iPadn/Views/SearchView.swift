@@ -102,7 +102,10 @@ struct SearchView: View {
                     }
                 }
                 .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
+                // A transparent inset-grouped cell still has a rounded mask.
+                // Keep each capsule inside it, aligned with the section text,
+                // so the first/last wrapped rows retain their own round ends.
+                .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
             } header: {
                 HStack {
                     Text("最近搜索").font(.title3.weight(.bold)).foregroundStyle(.primary).textCase(nil)

@@ -66703,18 +66703,18 @@
         }
       }
     },
-    "App Store 不认的应用": {
+    "App Store 未识别的应用": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "App Store 不认的应用"
+            "value": "App Store 未识别的应用"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Not Recognized by the App Store"
+            "value": "Not recognized by the App Store"
           }
         },
         "zh-Hant": {
