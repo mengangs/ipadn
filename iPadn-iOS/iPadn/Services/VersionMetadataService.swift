@@ -1,10 +1,13 @@
 import Foundation
 
-/// The version number and date of one App Store version, read from the
+/// The version number, date and package size of one App Store version, read from the
 /// package itself (ipatool's get-version-metadata).
 struct VersionMetadata: Codable, Hashable, Sendable {
     var version: String
     var released: Date?
+    /// Complete remote IPA length, not the extracted app or an individual ZIP entry.
+    /// Optional so caches written before size support remain readable.
+    var packageSize: Int64? = nil
 }
 
 /// Reads byte ranges of a remote file.
@@ -63,7 +66,9 @@ enum RemoteZip {
         let version = plistString(plist["CFBundleShortVersionString"] ?? plist["bundleShortVersionString"])
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !version.isEmpty else { throw Failure.unreadable }
-        return VersionMetadata(version: version, released: releaseDate(plist["releaseDate"] ?? plist["ReleaseDate"]) ?? entry.modified)
+        return VersionMetadata(version: version,
+                               released: releaseDate(plist["releaseDate"] ?? plist["ReleaseDate"]) ?? entry.modified,
+                               packageSize: size)
     }
 
     static func isMainInfoPlist(_ name: String) -> Bool {
@@ -250,13 +255,16 @@ actor VersionMetadataStore {
         return found
     }
 
-    func load(_ key: String, fetch: @Sendable () async throws -> VersionMetadata) async throws -> VersionMetadata {
-        if let value = cache[key] { return value }
+    func load(_ key: String, requiringPackageSize: Bool = false,
+              fetch: @Sendable () async throws -> VersionMetadata) async throws -> VersionMetadata {
+        // Old records retain their useful version/date, but are refreshed once
+        // when an IPA row also needs its size. Mac metadata need not have one.
+        if let value = cache[key], !requiringPackageSize || value.packageSize != nil { return value }
         await acquire()
         defer { release() }
         // A row scrolled away while waiting: skip its request.
         try Task.checkCancellation()
-        if let value = cache[key] { return value }
+        if let value = cache[key], !requiringPackageSize || value.packageSize != nil { return value }
         let value = try await fetch()
         cache[key] = value
         if cache.count > 5_000 { cache.removeAll(); cache[key] = value }

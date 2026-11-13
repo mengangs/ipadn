@@ -682,6 +682,13 @@ final class ToolStore: ObservableObject {
     }
 
     func cachedVersionMetadata(app: StoreApp, versionIDs: [String]) async -> [String: VersionMetadata] {
+        #if DEBUG
+        if visualPreview {
+            var result: [String: VersionMetadata] = [:]
+            for id in versionIDs { result[id] = try? await versionMetadata(app: app, versionID: id) }
+            return result
+        }
+        #endif
         let platform = settings.store.platform
         let keys = Dictionary(versionIDs.map { (VersionMetadataStore.key(platform: platform, appID: app.id, versionID: $0), $0) },
                               uniquingKeysWith: { first, _ in first })
@@ -693,12 +700,17 @@ final class ToolStore: ObservableObject {
     /// are cached and run one at a time.
     func versionMetadata(app: StoreApp, versionID: String) async throws -> VersionMetadata {
         #if DEBUG
-        if visualPreview { return VersionMetadata(version: "3.2.1", released: Date(timeIntervalSince1970: 1_714_694_400)) }
+        if visualPreview {
+            let newest = versionID == "123456789"
+            return VersionMetadata(version: newest ? "3.2.1" : "3.1.0",
+                                   released: Date(timeIntervalSince1970: 1_714_694_400),
+                                   packageSize: newest ? 128_000_000 : 96_000_000)
+        }
         #endif
         let platform = settings.store.platform
         let useCache = settings.useSignerCache
         let key = VersionMetadataStore.key(platform: platform, appID: app.id, versionID: versionID)
-        return try await metadataStore.load(key) { @MainActor [apple] in
+        return try await metadataStore.load(key, requiringPackageSize: platform.supportsIPA) { @MainActor [apple] in
             if platform == .macOS {
                 // A Mac package cannot be read in part; Apple's ticket names the version.
                 let offer = try await apple.macPackageOffer(app, versionID: versionID, useCache: useCache,

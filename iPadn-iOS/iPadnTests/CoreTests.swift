@@ -1839,6 +1839,7 @@ final class CoreTests: XCTestCase {
         let reader = MemoryRangeReader(data: try Data(contentsOf: url))
         let metadata = try await RemoteZip.versionMetadata(reader)
         XCTAssertEqual(metadata.version, "4.5.6")
+        XCTAssertEqual(metadata.packageSize, Int64(reader.data.count), "Use the whole IPA length, not Info.plist's size")
         XCTAssertEqual(metadata.released, ISO8601DateFormatter().date(from: "2024-05-03T00:00:00Z"))
 
         // Without a recorded date, the archive timestamp is used.
@@ -1858,6 +1859,34 @@ final class CoreTests: XCTestCase {
             _ = try await RemoteZip.versionMetadata(MemoryRangeReader(data: Data(repeating: 0, count: 64)))
             XCTFail("A file without a ZIP directory must not produce a version")
         } catch {}
+    }
+
+    func testVersionMetadataSizeCacheMigration() async throws {
+        let legacy = try JSONDecoder().decode(VersionMetadata.self, from: Data(#"{"version":"1.2.3"}"#.utf8))
+        XCTAssertNil(legacy.packageSize)
+        let store = VersionMetadataStore()
+        let key = "size-migration-" + UUID().uuidString
+        _ = try await store.load(key) { legacy }
+        do {
+            _ = try await store.load(key, requiringPackageSize: true) { throw RemoteZip.Failure.unreadable }
+            XCTFail("A failed size lookup must still report failure")
+        } catch RemoteZip.Failure.unreadable {}
+        let retained = await store.cached(key)
+        XCTAssertEqual(retained, legacy, "A failed refresh must preserve old version/date metadata")
+        let updated = VersionMetadata(version: "1.2.3", released: nil, packageSize: 123_456_789)
+        let refreshed = try await store.load(key, requiringPackageSize: true) { updated }
+        XCTAssertEqual(refreshed, updated)
+        let hit = try await store.load(key, requiringPackageSize: true) {
+            throw RemoteZip.Failure.unreadable // A complete cache must not make another request.
+        }
+        XCTAssertEqual(hit.packageSize, 123_456_789)
+        let roundTrip = try JSONDecoder().decode(VersionMetadata.self, from: JSONEncoder().encode(hit))
+        XCTAssertEqual(roundTrip, hit)
+
+        let macKey = "mac-metadata-" + UUID().uuidString
+        _ = try await store.load(macKey) { legacy }
+        let macHit = try await store.load(macKey) { throw RemoteZip.Failure.unreadable }
+        XCTAssertEqual(macHit, legacy, "Mac metadata without an IPA size remains cacheable")
     }
 
     func testPhoneNumberLoginsNameTheirStore() {

@@ -4,6 +4,7 @@ import UIKit
 struct AppDetailView: View {
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var apple: AppleService
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let app: StoreApp
     /// Start the primary download as soon as the page opens (search "获取").
     var autoStart = false
@@ -19,7 +20,7 @@ struct AppDetailView: View {
     @AppStorage("storage_officialVersions") private var official = true
     /// Shown above a public list when Apple's could not be used.
     @State private var versionNote: String?
-    /// Version number and date per version ID, read from Apple as rows appear.
+    /// Version number, date and IPA size per version ID, read as rows appear.
     @State private var metadata: [String: VersionMetadata] = [:]
     @State private var metadataLoading = Set<String>()
     @State private var metadataFailures = 0
@@ -477,21 +478,43 @@ struct AppDetailView: View {
         let note = known ? releaseNotes[name] : nil
         let date = (metadata[version.id]?.released ?? note?.date)?.formatted(.dateTime.year().month().day())
         let expanded = expandedNotes.contains(version.id)
+        let size = metadata[version.id]?.packageSize.map { $0.byteLabel }
+        let readingSize = size == nil && metadataLoading.contains(version.id)
+        let headerLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 12))
+        let factsLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 12))
         return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(known ? "版本 \(name)" : reading ? "版本 0.0.0" : "未知版本")
-                        .font(.body.weight(.medium))
-                        .redacted(reason: reading ? .placeholder : [])
-                    Text([date, AppText.text("版本 ID \(version.id)")].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-                .animation(.easeOut(duration: 0.2), value: name)
-                Spacer(minLength: 8)
+            headerLayout {
+                Text(known ? "版本 \(name)" : reading ? "版本 0.0.0" : "未知版本")
+                    .font(.body.weight(.semibold))
+                    .redacted(reason: reading ? .placeholder : [])
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("detail.version.number." + version.id)
                 RowCapsule(title: "下载", enabled: !downloadLoading && !macOfficialLoading) { download(versionID: version.id) }
+                    .fixedSize()
                     .accessibilityLabel(known ? AppText.text("下载版本 \(name)") : AppText.text("下载版本 ID \(version.id)"))
             }
+            factsLayout {
+                if let date {
+                    Text(verbatim: date)
+                        .accessibilityIdentifier("detail.version.date." + version.id)
+                }
+                if store.settings.store.platform.supportsIPA {
+                    Text(verbatim: "IPA · " + (size ?? (readingSize ? "000 MB" : "—")))
+                        .redacted(reason: readingSize ? .placeholder : [])
+                        .accessibilityLabel(Text("安装包大小") + Text(verbatim: " " + (size ?? "—")))
+                        .accessibilityIdentifier("detail.version.size." + version.id)
+                }
+            }
+            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            Text("版本 ID \(version.id)")
+                .font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("detail.version.id." + version.id)
             if let note, !note.text.isEmpty {
                 Button {
                     withAnimation(.compatibleSnappy) {
@@ -521,11 +544,21 @@ struct AppDetailView: View {
             }
         }
         .padding(.vertical, 2)
-        .contextMenu { Button("复制版本 ID", systemImage: "doc.on.doc") { copy(version.id) } }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .contextMenu {
+            if known {
+                Button("复制版本号", systemImage: "number") { copy(name) }
+                    .accessibilityIdentifier("detail.version.copy-number." + version.id)
+            }
+            Button("复制版本 ID", systemImage: "doc.on.doc") { copy(version.id) }
+                .accessibilityIdentifier("detail.version.copy-id." + version.id)
+        }
     }
 
     private func loadMetadata(_ version: AppVersion) async {
-        guard readsMetadata, metadata[version.id] == nil, !metadataLoading.contains(version.id) else { return }
+        let needsSize = store.settings.store.platform.supportsIPA && metadata[version.id]?.packageSize == nil
+        guard readsMetadata, metadata[version.id] == nil || needsSize, !metadataLoading.contains(version.id) else { return }
         metadataLoading.insert(version.id)
         defer { metadataLoading.remove(version.id) }
         do {

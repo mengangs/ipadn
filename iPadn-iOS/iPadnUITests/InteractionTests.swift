@@ -34,6 +34,72 @@ final class InteractionTests: XCTestCase {
         attach("21-app-id-inline", app: app)
     }
 
+    func testVersionHistoryShowsEachPackagesOwnSize() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail"]
+        app.launch()
+        let newest = app.staticTexts["detail.version.size.123456789"]
+        let older = app.staticTexts["detail.version.size.123456788"]
+        // The screenshot strip may put the history below the first viewport.
+        for _ in 0..<4 {
+            if older.exists && older.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(newest.waitForExistence(timeout: 10))
+        XCTAssertTrue(older.waitForExistence(timeout: 5))
+        XCTAssertTrue(newest.label.contains("128"), newest.label)
+        XCTAssertTrue(older.label.contains("96"), older.label)
+        XCTAssertNotEqual(newest.label, older.label, "Old versions must not reuse the latest listing's size")
+        attach("version-history-package-sizes", app: app)
+    }
+
+    func testVersionHistoryNativeMenuCopiesTheSelectedVersionID() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail"]
+        app.launch()
+        let version = app.staticTexts["detail.version.number.123456788"]
+        XCTAssertTrue(version.waitForExistence(timeout: 10))
+        version.press(forDuration: 0.8)
+        let copyID = app.buttons["detail.version.copy-id.123456788"]
+        let copyNumber = app.buttons["detail.version.copy-number.123456788"]
+        XCTAssertTrue(copyID.waitForExistence(timeout: 5))
+        XCTAssertTrue(copyNumber.exists)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: copyID)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 5), .completed)
+        version.press(forDuration: 0.8)
+        XCTAssertTrue(copyID.waitForExistence(timeout: 5))
+        copyID.tap()
+        app.buttons["手动指定版本 ID"].tap()
+        let field = app.textFields["内部版本 ID"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.press(forDuration: 0.8)
+        let paste = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "粘贴")).firstMatch
+        XCTAssertTrue(paste.waitForExistence(timeout: 5))
+        paste.tap()
+        XCTAssertEqual(field.value as? String, "123456788", "Copy the selected old version, not the latest one")
+    }
+
+    func testVersionHistorySeparatesFactsAtLargeTextSizes() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail", "--large-text"]
+        app.launch()
+        let size = app.staticTexts["detail.version.size.123456789"]
+        for _ in 0..<4 {
+            if size.exists && size.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(size.waitForExistence(timeout: 10))
+        let date = app.staticTexts["detail.version.date.123456789"]
+        let identifier = app.staticTexts["detail.version.id.123456789"]
+        XCTAssertTrue(date.exists)
+        XCTAssertTrue(identifier.exists)
+        XCTAssertGreaterThanOrEqual(size.frame.minY, date.frame.maxY - 1)
+        XCTAssertGreaterThanOrEqual(identifier.frame.minY, size.frame.maxY - 1)
+        attach("version-history-large-text", app: app)
+    }
+
     func testDownloadPlatformBadgeAlignsWithFileSize() {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads"]
