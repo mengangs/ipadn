@@ -356,8 +356,12 @@ final class InteractionTests: XCTestCase {
         let row = app.buttons["installed.app.notion.id"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.tap()
-        XCTAssertTrue(app.staticTexts["notion.id"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["1.7.353"].exists)
+        let bundleID = app.descendants(matching: .any)["installed.field.bundle-id"].firstMatch
+        XCTAssertTrue(bundleID.waitForExistence(timeout: 5))
+        XCTAssertEqual(bundleID.value as? String, "notion.id")
+        let version = app.descendants(matching: .any)["installed.field.version"].firstMatch
+        XCTAssertTrue(version.exists)
+        XCTAssertEqual(version.value as? String, "1.7.353")
         XCTAssertTrue(app.staticTexts["当前地区未查到商店资料"].exists)
         XCTAssertTrue(app.staticTexts["未查到资料不代表应用已下架，也不影响查看本机信息。"].exists)
         XCTAssertTrue(app.buttons["installed.lookup.retry"].exists)
@@ -372,12 +376,15 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.tap()
         XCTAssertTrue(app.staticTexts["商店查询失败"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["com.netflix.Netflix"].exists)
+        let bundleID = app.descendants(matching: .any)["installed.field.bundle-id"].firstMatch
+        XCTAssertTrue(bundleID.exists)
+        XCTAssertEqual(bundleID.value as? String, "com.netflix.Netflix")
         XCTAssertFalse(app.staticTexts["当前地区未查到商店资料"].exists)
         app.buttons["installed.lookup.retry"].tap()
         let details = app.buttons["installed.store-details"]
         XCTAssertTrue(details.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["com.netflix.Netflix"].exists, "Regrouping must not pop the local details page")
+        XCTAssertTrue(bundleID.exists, "Regrouping must not pop the local details page")
+        XCTAssertEqual(bundleID.value as? String, "com.netflix.Netflix")
         details.tap()
         XCTAssertTrue(app.buttons["app.copy-id"].waitForExistence(timeout: 10))
         attach("installed-store-retry-restores-details", app: app)
@@ -394,7 +401,9 @@ final class InteractionTests: XCTestCase {
             app.swipeUp()
         }
         row.tap()
-        XCTAssertTrue(app.staticTexts["com.example.tool"].waitForExistence(timeout: 5))
+        let bundleID = app.descendants(matching: .any)["installed.field.bundle-id"].firstMatch
+        XCTAssertTrue(bundleID.waitForExistence(timeout: 5))
+        XCTAssertEqual(bundleID.value as? String, "com.example.tool")
         XCTAssertTrue(app.staticTexts["installed.lookup.no-id"].exists)
         XCTAssertFalse(app.buttons["installed.lookup.retry"].exists)
         attach("installed-local-only-info", app: app)

@@ -363,13 +363,13 @@ private struct InstalledAppInfoView: View {
     var body: some View {
         Form {
             Section("本机信息") {
-                field("名称", app.name)
-                field("Bundle ID", app.bundleID)
-                field("版本", app.version)
-                field("构建号", app.build)
-                field("App ID", app.storeItemID)
-                field("商店版本 ID", app.storeVersionID)
-                field("签名标识", app.signer)
+                field("名称", app.name, id: "name")
+                field("Bundle ID", app.bundleID, id: "bundle-id")
+                field("版本", app.version, id: "version")
+                field("构建号", app.build, id: "build")
+                field("App ID", app.storeItemID, id: "app-id")
+                field("商店版本 ID", app.storeVersionID, id: "store-version-id")
+                field("签名标识", app.signer, id: "signer")
             }
             .accessibilityIdentifier("installed.local-info")
             Section {
@@ -406,12 +406,16 @@ private struct InstalledAppInfoView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    @ViewBuilder private func field(_ title: LocalizedStringKey, _ value: String?) -> some View {
+    @ViewBuilder private func field(_ title: LocalizedStringKey, _ value: String?, id: String) -> some View {
         if let value, !value.isEmpty {
             LabeledContent(title) {
                 Text(verbatim: value).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(title))
+            .accessibilityValue(Text(verbatim: value))
+            .accessibilityIdentifier("installed.field." + id)
         }
     }
 }
