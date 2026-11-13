@@ -28,13 +28,13 @@ enum PackageIconService {
         return props[kCGImagePropertyPixelWidth] as? Int ?? 0
     }
 
-    static func normalizedArtwork(_ data: Data) -> Data? {
+    static func normalizedArtwork(_ data: Data, maximumPixels: Int = 512) -> Data? {
         guard !data.isEmpty, data.count <= 6_000_000,
               let source = CGImageSourceCreateWithData(data as CFData, nil),
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                   kCGImageSourceCreateThumbnailFromImageAlways: true,
                   kCGImageSourceCreateThumbnailWithTransform: true,
-                  kCGImageSourceThumbnailMaxPixelSize: 512
+                  kCGImageSourceThumbnailMaxPixelSize: maximumPixels
               ] as CFDictionary) else { return nil }
         return UIImage(cgImage: image).pngData()
     }

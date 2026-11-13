@@ -34,6 +34,36 @@ final class InteractionTests: XCTestCase {
         attach("21-app-id-inline", app: app)
     }
 
+    func testVersionHistoryShowsAnIconOnEachRowWithoutOpeningDetails() throws {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail", "--version-icons-preview"]
+        app.launch()
+        let first = app.descendants(matching: .any)["detail.version.icon.123456789"].firstMatch
+        let second = app.descendants(matching: .any)["detail.version.icon.123456788"].firstMatch
+        for _ in 0..<4 { if second.exists && second.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        XCTAssertTrue(second.waitForExistence(timeout: 5))
+        let image = app.screenshot()
+        let a = try screenshotPixel(image, at: CGPoint(x: first.frame.midX, y: first.frame.minY + 8), appFrame: app.frame)
+        let b = try screenshotPixel(image, at: CGPoint(x: second.frame.midX, y: second.frame.minY + 8), appFrame: app.frame)
+        XCTAssertNotEqual(Array(a.prefix(3)), Array(b.prefix(3)), "Each row must render its own cached image")
+        XCTAssertTrue(app.buttons["detail.versions.refresh"].exists)
+        attach("history-version-icons-inline", app: app)
+    }
+
+    func testMissingHistoricalIconNeverUsesCurrentStoreArtwork() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail", "--version-icons-preview", "--version-icon-missing-preview"]
+        app.launch()
+        let missing = app.descendants(matching: .any)["detail.version.icon-missing.123456788"].firstMatch
+        for _ in 0..<4 { if missing.exists && missing.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(missing.waitForExistence(timeout: 10))
+        XCTAssertEqual(missing.label, "未获取该版本图标")
+        XCTAssertFalse(app.descendants(matching: .any)["detail.version.icon.123456788"].firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["detail.version.size.123456788"].exists)
+        attach("history-version-icon-unavailable", app: app)
+    }
+
     func testVersionHistoryShowsEachPackagesOwnSize() {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail"]

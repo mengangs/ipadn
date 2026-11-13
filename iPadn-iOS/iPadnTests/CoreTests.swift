@@ -1933,6 +1933,70 @@ final class CoreTests: XCTestCase {
         } catch {}
     }
 
+    func testHistoricalIconsComeFromTheirOwnMainPackage() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func package(_ version: String, color: UIColor, includeIcon: Bool) throws -> MemoryRangeReader {
+            let url = root.appendingPathComponent(version + ".ipa")
+            let archive = try Archive(url: url, accessMode: .create)
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1
+            let png = UIGraphicsImageRenderer(size: CGSize(width: 180, height: 180), format: format).pngData { c in
+                color.setFill(); c.fill(CGRect(x: 0, y: 0, width: 180, height: 180))
+            }
+            var files = [("Payload/Main.app/Info.plist", try HTTPClient.encodePlist([
+                "CFBundleShortVersionString": version,
+                "CFBundleIcons": ["CFBundlePrimaryIcon": ["CFBundleIconFiles": ["AppIcon60x60"]]]])),
+                ("Payload/Main.app/Alternate.png", png),
+                ("Payload/Main.app/PlugIns/Widget.appex/AppIcon60x60@3x.png", png)]
+            if includeIcon { files.append(("Payload/Main.app/AppIcon60x60@3x.png", png)) }
+            for (path, bytes) in files {
+                try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(bytes.count),
+                                     compressionMethod: .deflate, provider: { position, size in
+                    bytes.subdata(in: Int(position)..<Int(position) + size)
+                })
+            }
+            return MemoryRangeReader(data: try Data(contentsOf: url))
+        }
+        let old = try await RemoteZip.versionResources(package("1.0", color: .blue, includeIcon: true))
+        let new = try await RemoteZip.versionResources(package("2.0", color: .red, includeIcon: true))
+        XCTAssertEqual(old.metadata.version, "1.0")
+        XCTAssertEqual(old.metadata.iconAvailable, true)
+        XCTAssertNotNil(UIImage(data: try XCTUnwrap(old.icon)))
+        XCTAssertNotEqual(old.icon, new.icon, "Different version packages must not share the current store icon")
+        let missing = try await RemoteZip.versionResources(package("3.0", color: .green, includeIcon: false))
+        XCTAssertEqual(missing.metadata.version, "3.0")
+        XCTAssertNotNil(missing.metadata.packageSize)
+        XCTAssertEqual(missing.metadata.iconAvailable, false)
+        XCTAssertNil(missing.icon, "Never substitute an alternate or extension icon")
+    }
+
+    func testVersionIconCacheMigrationAndFileEviction() async throws {
+        let store = VersionMetadataStore()
+        let key = "icon-migration-" + UUID().uuidString
+        let old = VersionMetadata(version: "1.0", packageSize: 123)
+        _ = try await store.load(key) { old }
+        XCTAssertNil(old.iconAvailable)
+        let missing = VersionMetadata(version: "1.0", packageSize: 123, iconAvailable: false)
+        let refreshed = try await store.load(key, requiringIcon: true) { missing }
+        XCTAssertEqual(refreshed.iconAvailable, false)
+        let hit = try await store.load(key, requiringIcon: true) { throw RemoteZip.Failure.unreadable }
+        XCTAssertEqual(hit, missing, "A checked missing icon must not request a ticket on every appearance")
+        let fileKey = key + "-file"
+        let fileURL = VersionMetadataStore.iconURL(fileKey)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let bytes = Data([137, 80, 78, 71])
+        try await store.saveIcon(bytes, key: fileKey)
+        let available = VersionMetadata(version: "2.0", packageSize: 456, iconAvailable: true)
+        _ = try await store.load(fileKey) { available }
+        let cached = await store.icon(fileKey)
+        XCTAssertEqual(cached, bytes)
+        XCTAssertNotEqual(fileURL, VersionMetadataStore.iconURL(key))
+        try FileManager.default.removeItem(at: fileURL)
+        let evicted = try await store.load(fileKey, requiringIcon: true) { missing }
+        XCTAssertEqual(evicted.iconAvailable, false, "Evicted files must be rechecked, not shown as available")
+    }
+
     func testVersionMetadataSizeCacheMigration() async throws {
         let legacy = try JSONDecoder().decode(VersionMetadata.self, from: Data(#"{"version":"1.2.3"}"#.utf8))
         XCTAssertNil(legacy.packageSize)

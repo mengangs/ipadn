@@ -433,7 +433,7 @@ struct AppDetailView: View {
                 versionRow(version)
                     .opacity(versionsStale ? 0.4 : 1)
                     .disabled(versionsStale)
-                    .task(id: "\(version.id)-\(readsMetadata)-\(versionsStale)") {
+                    .task(id: "\(version.id)-\(versionsKey)-\(readsMetadata)-\(versionsStale)") {
                         if !versionsStale { await loadMetadata(version) }
                     }
             }
@@ -486,59 +486,65 @@ struct AppDetailView: View {
         let factsLayout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 12))
-        return VStack(alignment: .leading, spacing: 6) {
-            headerLayout {
-                Text(known ? "版本 \(name)" : reading ? "版本 0.0.0" : "未知版本")
-                    .font(.body.weight(.semibold))
-                    .redacted(reason: reading ? .placeholder : [])
+        return HStack(alignment: .top, spacing: 12) {
+            if store.settings.store.platform.supportsIPA {
+                VersionHistoryIcon(app: app, versionID: version.id, available: metadata[version.id]?.iconAvailable,
+                                   loading: metadataLoading.contains(version.id), context: versionsKey)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                headerLayout {
+                    Text(known ? "版本 \(name)" : reading ? "版本 0.0.0" : "未知版本")
+                        .font(.body.weight(.semibold))
+                        .redacted(reason: reading ? .placeholder : [])
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("detail.version.number." + version.id)
+                    RowCapsule(title: "下载", enabled: !downloadLoading && !macOfficialLoading) { download(versionID: version.id) }
+                        .fixedSize()
+                        .accessibilityLabel(known ? AppText.text("下载版本 \(name)") : AppText.text("下载版本 ID \(version.id)"))
+                }
+                factsLayout {
+                    if let date {
+                        Text(verbatim: date)
+                            .accessibilityIdentifier("detail.version.date." + version.id)
+                    }
+                    if store.settings.store.platform.supportsIPA {
+                        Text(verbatim: "IPA · " + (size ?? (readingSize ? "000 MB" : "—")))
+                            .redacted(reason: readingSize ? .placeholder : [])
+                            .accessibilityLabel(Text("安装包大小") + Text(verbatim: " " + (size ?? "—")))
+                            .accessibilityIdentifier("detail.version.size." + version.id)
+                    }
+                }
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text("版本 ID \(version.id)")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityIdentifier("detail.version.number." + version.id)
-                RowCapsule(title: "下载", enabled: !downloadLoading && !macOfficialLoading) { download(versionID: version.id) }
-                    .fixedSize()
-                    .accessibilityLabel(known ? AppText.text("下载版本 \(name)") : AppText.text("下载版本 ID \(version.id)"))
-            }
-            factsLayout {
-                if let date {
-                    Text(verbatim: date)
-                        .accessibilityIdentifier("detail.version.date." + version.id)
-                }
-                if store.settings.store.platform.supportsIPA {
-                    Text(verbatim: "IPA · " + (size ?? (readingSize ? "000 MB" : "—")))
-                        .redacted(reason: readingSize ? .placeholder : [])
-                        .accessibilityLabel(Text("安装包大小") + Text(verbatim: " " + (size ?? "—")))
-                        .accessibilityIdentifier("detail.version.size." + version.id)
-                }
-            }
-            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-            Text("版本 ID \(version.id)")
-                .font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("detail.version.id." + version.id)
-            if let note, !note.text.isEmpty {
-                Button {
-                    withAnimation(.compatibleSnappy) {
-                        if expanded { expandedNotes.remove(version.id) } else { expandedNotes.insert(version.id) }
+                    .accessibilityIdentifier("detail.version.id." + version.id)
+                if let note, !note.text.isEmpty {
+                    Button {
+                        withAnimation(.compatibleSnappy) {
+                            if expanded { expandedNotes.remove(version.id) } else { expandedNotes.insert(version.id) }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(expanded ? "收起更新说明" : "更新说明")
+                            Image(systemName: "chevron.down").rotationEffect(.degrees(expanded ? 180 : 0))
+                        }
+                        .font(.caption.weight(.medium))
+                        .contentShape(Rectangle())
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(expanded ? "收起更新说明" : "更新说明")
-                        Image(systemName: "chevron.down").rotationEffect(.degrees(expanded ? 180 : 0))
-                    }
-                    .font(.caption.weight(.medium))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("detail.version.notes." + version.id)
-                if expanded {
-                    Text(translatedNotes[version.id] ?? note.text).font(.footnote).foregroundStyle(.secondary)
-                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                        .transition(.opacity)
-                    if TranslateButton.offered(for: note.text, translation: translatedNotes[version.id]) {
-                        TranslateButton(text: note.text, translation: Binding(
-                            get: { translatedNotes[version.id] }, set: { translatedNotes[version.id] = $0 }))
-                            .font(.caption.weight(.medium)).buttonStyle(.borderless)
-                            .accessibilityIdentifier("detail.version.translate." + version.id)
+                    .buttonStyle(.borderless)
+                    .accessibilityIdentifier("detail.version.notes." + version.id)
+                    if expanded {
+                        Text(translatedNotes[version.id] ?? note.text).font(.footnote).foregroundStyle(.secondary)
+                            .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                            .transition(.opacity)
+                        if TranslateButton.offered(for: note.text, translation: translatedNotes[version.id]) {
+                            TranslateButton(text: note.text, translation: Binding(
+                                get: { translatedNotes[version.id] }, set: { translatedNotes[version.id] = $0 }))
+                                .font(.caption.weight(.medium)).buttonStyle(.borderless)
+                                .accessibilityIdentifier("detail.version.translate." + version.id)
+                        }
                     }
                 }
             }
@@ -557,8 +563,9 @@ struct AppDetailView: View {
     }
 
     private func loadMetadata(_ version: AppVersion) async {
-        let needsSize = store.settings.store.platform.supportsIPA && metadata[version.id]?.packageSize == nil
-        guard readsMetadata, metadata[version.id] == nil || needsSize, !metadataLoading.contains(version.id) else { return }
+        // The store itself validates size/icon completeness and file eviction.
+        // Even a cached row may need its independently stored icon restored.
+        guard readsMetadata, !metadataLoading.contains(version.id) else { return }
         metadataLoading.insert(version.id)
         defer { metadataLoading.remove(version.id) }
         do {
@@ -1135,5 +1142,40 @@ private extension View {
     @ViewBuilder func measureLegacyWidth(_ width: Binding<CGFloat>) -> some View {
         if #available(iOS 17, *) { self }
         else { onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width.wrappedValue = $0 } }
+    }
+}
+
+/// Row-local decoded images are released offscreen; disk cache is version-keyed.
+private struct VersionHistoryIcon: View {
+    @EnvironmentObject private var store: ToolStore
+    let app: StoreApp
+    let versionID: String
+    let available: Bool?
+    let loading: Bool
+    let context: String
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            if let image { Image(uiImage: image).resizable().scaledToFit() }
+            else {
+                RoundedRectangle(cornerRadius: 11).fill(Color.secondary.opacity(0.10))
+                if loading { ProgressView().controlSize(.small) }
+                else { Image(systemName: "app.dashed").font(.title2).foregroundStyle(.secondary) }
+            }
+        }
+        .frame(width: 48, height: 48)
+        .clipShape(RoundedRectangle(cornerRadius: 11))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(image == nil ? Text("未获取该版本图标") : Text("该版本应用图标"))
+        .accessibilityIdentifier((image == nil ? "detail.version.icon-missing." : "detail.version.icon.") + versionID)
+        .task(id: "\(context)-\(versionID)-\(available == true)-\(loading)") {
+            image = nil
+            guard available == true else { return }
+            let data = await store.cachedVersionIcon(app: app, versionID: versionID)
+            guard !Task.isCancelled else { return }
+            image = data.flatMap(UIImage.init(data:))
+        }
+        .onDisappear { image = nil }
     }
 }

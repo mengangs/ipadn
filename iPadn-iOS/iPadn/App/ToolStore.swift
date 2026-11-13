@@ -704,13 +704,16 @@ final class ToolStore: ObservableObject {
             let newest = versionID == "123456789"
             return VersionMetadata(version: newest ? "3.2.1" : "3.1.0",
                                    released: Date(timeIntervalSince1970: 1_714_694_400),
-                                   packageSize: newest ? 128_000_000 : 96_000_000)
+                                   packageSize: newest ? 128_000_000 : 96_000_000,
+                                   iconAvailable: ProcessInfo.processInfo.arguments.contains("--version-icons-preview") &&
+                                       !(ProcessInfo.processInfo.arguments.contains("--version-icon-missing-preview") && !newest))
         }
         #endif
         let platform = settings.store.platform
         let useCache = settings.useSignerCache
+        let metadataStore = self.metadataStore
         let key = VersionMetadataStore.key(platform: platform, appID: app.id, versionID: versionID)
-        return try await metadataStore.load(key, requiringPackageSize: platform.supportsIPA) { @MainActor [apple] in
+        return try await metadataStore.load(key, requiringPackageSize: platform.supportsIPA, requiringIcon: platform.supportsIPA) { @MainActor [apple] in
             if platform == .macOS {
                 // A Mac package cannot be read in part; Apple's ticket names the version.
                 let offer = try await apple.macPackageOffer(app, versionID: versionID, useCache: useCache,
@@ -719,8 +722,33 @@ final class ToolStore: ObservableObject {
                 return VersionMetadata(version: offer.displayVersion, released: nil)
             }
             let url = try await apple.versionTicket(appID: app.id, versionID: versionID, useCache: useCache)
-            return try await RemoteZip.versionMetadata(HTTPRangeReader(url: url))
+            let resources = try await RemoteZip.versionResources(HTTPRangeReader(url: url))
+            var metadata = resources.metadata
+            if let icon = resources.icon {
+                do { try await metadataStore.saveIcon(icon, key: key) }
+                catch { metadata.iconAvailable = nil }
+            }
+            return metadata
         }
+    }
+
+    func cachedVersionIcon(app: StoreApp, versionID: String) async -> Data? {
+        #if DEBUG
+        if visualPreview {
+            guard ProcessInfo.processInfo.arguments.contains("--version-icons-preview"),
+                  !(ProcessInfo.processInfo.arguments.contains("--version-icon-missing-preview") && versionID != "123456789") else { return nil }
+            // Explicit preview-only samples, not claimed to be historical store artwork.
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1
+            return UIGraphicsImageRenderer(size: CGSize(width: 120, height: 120), format: format).pngData { context in
+                (versionID == "123456789" ? UIColor.systemOrange : UIColor.systemBlue).setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 120, height: 120))
+                ("示例" as NSString).draw(at: CGPoint(x: 22, y: 42), withAttributes: [
+                    .font: UIFont.systemFont(ofSize: 36, weight: .bold), .foregroundColor: UIColor.white])
+            }
+        }
+        #endif
+        return await metadataStore.icon(VersionMetadataStore.key(
+            platform: settings.store.platform, appID: app.id, versionID: versionID))
     }
 
     func startDownload(app: StoreApp, versionID: String?) async throws {
