@@ -311,7 +311,14 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(input.waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["search.submit"].exists)
         XCTAssertFalse(app.buttons["清空输入"].exists)
-        input.tap(); input.typeText("Test")
+        let focused = NSPredicate(format: "hasKeyboardFocus == true")
+        for _ in 0..<3 {
+            input.tap()
+            if XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: focused, object: input)], timeout: 2) == .completed {
+                break
+            }
+        }
+        input.typeText("Test")
         XCTAssertTrue(app.buttons["清空输入"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["切换或管理账号"].exists)
     }
