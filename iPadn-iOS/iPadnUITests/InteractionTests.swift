@@ -219,6 +219,10 @@ final class InteractionTests: XCTestCase {
         install.tap()
         let settings = app.buttons["installation.settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5)); settings.tap()
+        let help = app.descendants(matching: .any)["installation.help"].firstMatch
+        for _ in 0..<3 where !help.isHittable { app.swipeUp() }
+        XCTAssertTrue(help.waitForExistence(timeout: 5))
+        for _ in 0..<3 where !app.buttons["本机证书"].isHittable { app.swipeDown() }
         // One-tap installation is the default; the device-certificate mode is advanced.
         let localMode = app.buttons["本机证书"]
         XCTAssertTrue(localMode.waitForExistence(timeout: 5)); localMode.tap()
