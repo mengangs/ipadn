@@ -205,9 +205,9 @@ struct RootView: View {
         .overlay(alignment: .top) {
             if let message = store.undoNotice?.message ?? store.infoMessage {
                 Group {
-                    if store.undoNotice != nil {
+                    if let notice = store.undoNotice {
                     HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        UndoCountdown(start: notice.created, duration: UndoNotice.duration)
                         Text(message).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
                             Button("撤销") { withAnimation(UX.motion(reduceMotion)) { store.undoLastAction() } }
@@ -247,7 +247,7 @@ struct RootView: View {
         .task(id: store.undoNotice?.id) {
             guard let notice = store.undoNotice else { return }
             UIAccessibility.post(notification: .announcement, argument: AppText.text("\(notice.message)，可以撤销"))
-            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            do { try await Task.sleep(for: .seconds(UndoNotice.duration)) } catch { return }
             if store.undoNotice?.id == notice.id { store.undoNotice = nil }
         }
         .task(id: store.infoMessage) {
@@ -277,6 +277,31 @@ struct RootView: View {
         case 3: AccountsView()
         default: SearchView()
         }
+    }
+}
+
+/// Telegram's undo countdown: a ring that runs down with the seconds left
+/// inside it, so it's clear how long Undo stays offered.
+struct UndoCountdown: View {
+    let start: Date
+    let duration: TimeInterval
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+            let left = max(0, duration - context.date.timeIntervalSince(start))
+            ZStack {
+                Circle().stroke(Color.primary.opacity(0.12), lineWidth: 2)
+                Circle().trim(from: 0, to: left / duration)
+                    .stroke(Color.primary, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text("\(Int(left.rounded(.up)))")
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .compatibleCountdownTransition()
+                    .animation(.easeOut(duration: 0.2), value: Int(left.rounded(.up)))
+            }
+        }
+        .frame(width: 24, height: 24)
+        .accessibilityHidden(true)
     }
 }
 

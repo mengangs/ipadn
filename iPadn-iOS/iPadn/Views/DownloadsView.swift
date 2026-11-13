@@ -500,6 +500,11 @@ struct DownloadTaskRow: View {
     var inspecting: () -> Void
     var primary: () -> Void
     var updating: () -> Void = {}
+    /// The status seen last, so finishing in front of the user can be shown.
+    @State private var seenStatus: DownloadStatus?
+    /// Just finished: the ring closes into a check before Install appears.
+    @State private var celebrating = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var displayedApp: StoreApp {
         job.displayApp(packageIcon: manager.packageIconURL(job))
     }
@@ -596,11 +601,14 @@ struct DownloadTaskRow: View {
             RowCapsule(title: "取消") { manager.cancelProcessing(job.id) }
                 .accessibilityLabel("取消处理")
         case .pausing, .processing:
-            ProgressView().frame(width: 44, height: 44)
+            SpinningRing()
+                .accessibilityLabel(job.status == .pausing ? job.status.title : AppText.text("正在处理"))
         case .paused:
             RowCapsule(title: "继续", action: primary)
         case .failed:
             RowCapsule(title: "重试", action: primary)
+        case .completed where celebrating:
+            CompletionRing()
         case .completed:
             // Share moved into the row's swipe actions.
             if job.rawFormat == nil {
@@ -615,7 +623,7 @@ struct DownloadTaskRow: View {
             HStack(spacing: 10) {
                 Button(action: inspecting) { appHeading }.buttonStyle(RevealRowButtonStyle())
                 trailingControl
-                    .id(controlKey)
+                    .id(controlKey + (celebrating ? "-done" : ""))
                     .transition(.statusSwap)
             }
             if job.status == .running || job.status == .paused, job.expected > 0 {
@@ -649,7 +657,17 @@ struct DownloadTaskRow: View {
         }
         .padding(.vertical, 8)
         .animation(.compatibleSnappy, value: controlKey)
+        .animation(.compatibleSnappy, value: celebrating)
         .animation(.easeOut(duration: 0.2), value: update?.version)
+        .onAppear { seenStatus = job.status }
+        .compatibleOnChange(of: job.status) { status in
+            let before = seenStatus
+            seenStatus = status
+            // Finished while on screen: show it, then offer Install.
+            guard status == .completed, before == .running || before == .processing, !reduceMotion else { return }
+            celebrating = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { celebrating = false }
+        }
     }
 }
 

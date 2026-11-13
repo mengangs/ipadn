@@ -49,7 +49,10 @@ struct AppBackup: Codable {
 }
 
 struct UndoNotice: Identifiable {
+    /// How long the undo stays offered.
+    static let duration: TimeInterval = 5
     let id = UUID()
+    let created = Date()
     let message: String
     let restore: () -> Void
 }

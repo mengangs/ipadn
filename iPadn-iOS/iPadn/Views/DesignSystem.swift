@@ -115,6 +115,65 @@ struct ProgressRing: View {
     }
 }
 
+/// The ring while a finished download is checked and prepared: an arc that
+/// keeps turning on the same track, so the ring never disappears mid-task.
+struct SpinningRing: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var turning = false
+    var body: some View {
+        ZStack {
+            Circle().stroke(Color(.tertiarySystemFill), lineWidth: 3)
+            Circle().trim(from: 0, to: 0.28)
+                .stroke(UX.tint, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(turning ? 270 : -90))
+                .animation(reduceMotion ? nil : .linear(duration: 0.9).repeatForever(autoreverses: false), value: turning)
+        }
+        .frame(width: 30, height: 30)
+        .padding(7)
+        .onAppear { turning = true }
+    }
+}
+
+/// Telegram's finished state: the ring closes and a check draws inside it.
+struct CompletionRing: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var ring: CGFloat = 0.28
+    @State private var check: CGFloat = 0
+    @State private var pop: CGFloat = 1
+    var body: some View {
+        ZStack {
+            Circle().stroke(Color(.tertiarySystemFill), lineWidth: 3)
+            Circle().trim(from: 0, to: ring)
+                .stroke(Color.green, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            CheckShape().trim(from: 0, to: check)
+                .stroke(Color.green, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                .frame(width: 13, height: 10)
+        }
+        .frame(width: 30, height: 30)
+        .scaleEffect(pop)
+        .padding(7)
+        .onAppear {
+            guard !reduceMotion else { ring = 1; check = 1; return }
+            withAnimation(.easeOut(duration: 0.25)) { ring = 1 }
+            withAnimation(.easeOut(duration: 0.2).delay(0.2)) { check = 1 }
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.5).delay(0.35)) { pop = 1.12 }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.5)) { pop = 1 }
+        }
+        .accessibilityLabel("下载完成")
+    }
+}
+
+struct CheckShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.36, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        return path
+    }
+}
+
 struct BrandMark: View {
     var size: CGFloat = 40
     var body: some View {
@@ -591,6 +650,12 @@ extension View {
     @ViewBuilder func compatibleScrollBounce() -> some View {
         if #available(iOS 16.4, *) { scrollBounceBehavior(.basedOnSize) }
         else { self }
+    }
+
+    /// Digits roll down as a countdown ticks, like Telegram's undo timer.
+    @ViewBuilder func compatibleCountdownTransition() -> some View {
+        if #available(iOS 17, *) { contentTransition(.numericText(countsDown: true)) }
+        else { contentTransition(.numericText()) }
     }
 
     @ViewBuilder func compatibleBounce(trigger: some Equatable) -> some View {
