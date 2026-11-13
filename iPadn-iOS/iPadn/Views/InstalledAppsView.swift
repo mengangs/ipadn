@@ -4,11 +4,24 @@ import SwiftUI
 /// connection: which have a newer store version, which the App Store doesn't
 /// recognise (installed from a link, shown with a cloud) and where the rest
 /// came from.
+@MainActor
 struct InstalledAppsView: View {
     @EnvironmentObject private var store: ToolStore
     @Environment(\.scenePhase) private var scenePhase
     @State private var apps: [NativeInstaller.InstalledApp] = []
-    @State private var listings: [String: StoreApp] = [:]
+    @StateObject private var catalog = InstalledAppCatalog()
+    @State private var selected: Selection?
+
+    /// Snapshot the selected destination, independent of later regrouping.
+    private struct Selection: Hashable {
+        let app: NativeInstaller.InstalledApp
+        let listing: StoreApp?
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(app.bundleID)
+            hasher.combine(app.storeItemID)
+            hasher.combine(listing)
+        }
+    }
     @State private var loading = false
     @State private var loaded = false
     @State private var issue: String?
@@ -16,7 +29,7 @@ struct InstalledAppsView: View {
     @State private var updating = false
 
     /// The system can list apps for iPadn from iOS 17.4, like native installation.
-    static var isSupported: Bool {
+    nonisolated static var isSupported: Bool {
         NativeInstaller.listingIsAvailable
             && ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: 17, minorVersion: 4, patchVersion: 0))
     }
@@ -28,7 +41,7 @@ struct InstalledAppsView: View {
     /// Previews show sample data without a pairing file.
     private var paired: Bool { NativeInstaller.hasPairingFile || LocalResources.isPreview }
 
-    private func listing(_ app: NativeInstaller.InstalledApp) -> StoreApp? { app.storeItemID.flatMap { listings[$0] } }
+    private func listing(_ app: NativeInstaller.InstalledApp) -> StoreApp? { catalog.listing(for: app) }
 
     func group(of app: NativeInstaller.InstalledApp) -> Group {
         if app.manifestInstall == true { return .link }
@@ -41,7 +54,7 @@ struct InstalledAppsView: View {
     /// Whether the store has a newer version than the installed one. The same
     /// store version ID, or a store version that only adds a build number to
     /// the installed one ("10.0.10" against "10.0.10.105"), is the same release.
-    static func isUpdate(_ latest: StoreApp, installed: String, versionID: String?) -> Bool {
+    nonisolated static func isUpdate(_ latest: StoreApp, installed: String, versionID: String?) -> Bool {
         if let versionID, let current = latest.externalVersionID, versionID == current { return false }
         if latest.version.hasPrefix(installed + ".") { return false }
         return VersionOrder.isNewer(latest.version, than: installed)
@@ -96,6 +109,13 @@ struct InstalledAppsView: View {
         .toolPage().navigationTitle("本机应用").navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
         .task { if !loaded { await load() } }
+        .compatibleNavigationDestination(item: $selected) { selection in
+            if let listing = selection.listing { AppDetailView(app: listing) }
+            else { InstalledAppInfoView(app: selection.app, catalog: catalog, retry: { await refreshListings() }) }
+        }
+        .compatibleOnChange(of: store.watchCountry) { _ in
+            Task { await refreshListings() }
+        }
         // Back from LocalDevVPN: try again without asking.
         .compatibleOnChange(of: scenePhase) { phase in
             if phase == .active, issue != nil, apps.isEmpty { Task { await load() } }
@@ -173,11 +193,32 @@ struct InstalledAppsView: View {
             : (installed.isEmpty ? (app.bundleID ?? "") : AppText.text("已装 \(installed)"))
         let shown = StoreApp(id: app.storeItemID ?? app.bundleID ?? "", name: latest?.name ?? app.name ?? app.bundleID ?? "",
                              bundleID: app.bundleID ?? "", version: installed, iconURL: latest?.iconURL)
-        if let latest {
-            NavigationLink { AppDetailView(app: latest) } label: { AppRow(app: shown, subtitle: subtitle) }
-        } else {
-            AppRow(app: shown, subtitle: subtitle)
+        Button { selected = Selection(app: app, listing: latest) } label: {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    AppRow(app: shown, subtitle: subtitle)
+                    if latest == nil, InstalledAppCatalog.storeID(app) != nil {
+                        Text(catalog.missingTitle).font(.caption).foregroundStyle(.secondary)
+                            .padding(.leading, 78)
+                    }
+                }
+                Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(RevealRowButtonStyle())
+        .accessibilityIdentifier("installed.app." + app.identity)
+    }
+
+    /// Store retries do not need another connection to the installation service.
+    private func refreshListings() async {
+        #if DEBUG
+        if LocalResources.isPreview {
+            catalog.preview(Self.previewListings, country: store.watchCountry)
+            return
+        }
+        #endif
+        await catalog.load(ids: apps.compactMap(InstalledAppCatalog.storeID), country: store.watchCountry)
     }
 
     private func load() async {
@@ -185,16 +226,23 @@ struct InstalledAppsView: View {
         loading = true
         defer { loading = false; loaded = true }
         #if DEBUG
-        if LocalResources.isPreview { apps = Self.previewApps; listings = Self.previewListings; issue = nil; return }
+        if LocalResources.isPreview {
+            apps = Self.previewApps
+            var listings = Self.previewListings
+            if ProcessInfo.processInfo.arguments.contains("--installed-missing-preview") {
+                listings.removeValue(forKey: PreviewData.updatable[2].id)
+            }
+            let failed = ProcessInfo.processInfo.arguments.contains("--installed-failed-preview")
+            catalog.preview(failed ? [:] : listings, country: store.watchCountry, failed: failed)
+            issue = nil
+            return
+        }
         #endif
         do {
             let found = try await NativeInstaller.installedApps().filter { $0.placeholder != true }
             apps = found
             issue = nil
-            let ids = found.compactMap(\.storeItemID)
-            if !ids.isEmpty, let result = try? await StoreService.lookup(ids: ids, country: store.watchCountry) {
-                listings = result.apps
-            }
+            await refreshListings()
         } catch is CancellationError {
         } catch { issue = error.localizedDescription }
     }
@@ -234,6 +282,138 @@ struct InstalledAppsView: View {
         })
     }
     #endif
+}
+
+/// Device discovery and storefront availability are independent. A successful
+/// empty lookup is not a network failure, and neither confirms delisting.
+@MainActor
+final class InstalledAppCatalog: ObservableObject {
+    enum State: Equatable { case idle, loading, ready, failed(String) }
+    typealias Fetch = ([String], String) async throws -> [String: StoreApp]
+    @Published private(set) var listings: [String: StoreApp] = [:]
+    @Published private(set) var state: State = .idle
+    @Published private(set) var country = ""
+    private var generation = UUID()
+    private let fetch: Fetch
+
+    init(fetch: @escaping Fetch = { ids, country in
+        try await StoreService.lookup(ids: ids, country: country).apps
+    }) { self.fetch = fetch }
+
+    nonisolated static func storeID(_ app: NativeInstaller.InstalledApp) -> String? {
+        guard let id = app.storeItemID, let number = UInt64(id), number > 0 else { return nil }
+        return String(number)
+    }
+    func listing(for app: NativeInstaller.InstalledApp) -> StoreApp? {
+        Self.storeID(app).flatMap { listings[$0] }
+    }
+    var missingTitle: LocalizedStringKey {
+        switch state {
+        case .idle: return "尚未查询商店资料"
+        case .loading: return "正在查询商店资料…"
+        case .ready: return "当前地区未查到商店资料"
+        case .failed: return "商店查询失败"
+        }
+    }
+    var isLoading: Bool { state == .loading }
+
+    func load(ids: [String], country: String) async {
+        let token = UUID()
+        generation = token
+        self.country = country.uppercased()
+        // A failed refresh must not retain another region's update eligibility.
+        listings = [:]
+        state = .loading
+        let ids = Array(Set(ids.compactMap { UInt64($0) }.filter { $0 > 0 }.map(String.init))).sorted()
+        guard !ids.isEmpty else { state = .ready; return }
+        do {
+            try Task.checkCancellation()
+            let result = try await fetch(ids, self.country)
+            try Task.checkCancellation()
+            guard generation == token else { return }
+            let requested = Set(ids)
+            listings = result.filter { requested.contains($0.key) }
+            state = .ready
+        } catch is CancellationError {
+            guard generation == token else { return }
+            state = .idle
+        } catch {
+            guard generation == token else { return }
+            state = .failed(error.localizedDescription)
+        }
+    }
+
+    #if DEBUG
+    func preview(_ listings: [String: StoreApp], country: String, failed: Bool = false) {
+        generation = UUID()
+        self.country = country.uppercased()
+        self.listings = listings
+        state = failed ? .failed(AppText.text("网络连接暂时不可用，请检查网络后重试。")) : .ready
+    }
+    #endif
+}
+
+/// The installed identity stays readable without a matching store listing.
+@MainActor
+private struct InstalledAppInfoView: View {
+    let app: NativeInstaller.InstalledApp
+    @ObservedObject var catalog: InstalledAppCatalog
+    let retry: () async -> Void
+
+    var body: some View {
+        Form {
+            Section("本机信息") {
+                field("名称", app.name)
+                field("Bundle ID", app.bundleID)
+                field("版本", app.version)
+                field("构建号", app.build)
+                field("App ID", app.storeItemID)
+                field("商店版本 ID", app.storeVersionID)
+                field("签名标识", app.signer)
+            }
+            .accessibilityIdentifier("installed.local-info")
+            Section {
+                if InstalledAppCatalog.storeID(app) == nil {
+                    Text("此应用没有商店 App ID，仅显示本机信息。")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("installed.lookup.no-id")
+                } else {
+                    LabeledContent("商店地区", value: StoreRegions.name(catalog.country))
+                    if let listing = catalog.listing(for: app) {
+                        NavigationLink { AppDetailView(app: listing) } label: { Text("查看商店详情") }
+                            .accessibilityIdentifier("installed.store-details")
+                    } else {
+                        HStack(spacing: 10) {
+                            if catalog.isLoading { ProgressView() }
+                            Text(catalog.missingTitle).foregroundStyle(.secondary)
+                        }
+                        .accessibilityIdentifier("installed.lookup.status")
+                        if case .failed(let message) = catalog.state {
+                            Text(verbatim: message).font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    Button("重新查询") { Task { await retry() } }
+                        .disabled(catalog.isLoading)
+                        .accessibilityIdentifier("installed.lookup.retry")
+                }
+            } header: { Text("商店资料") } footer: {
+                if InstalledAppCatalog.storeID(app) != nil, catalog.listing(for: app) == nil, catalog.state == .ready {
+                    Text("未查到资料不代表应用已下架，也不影响查看本机信息。")
+                }
+            }
+        }
+        .toolPage().navigationTitle(app.name ?? app.bundleID ?? AppText.text("本机信息"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder private func field(_ title: LocalizedStringKey, _ value: String?) -> some View {
+        if let value, !value.isEmpty {
+            LabeledContent(title) {
+                Text(verbatim: value).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            }
+        }
+    }
 }
 
 extension NativeInstaller.InstalledApp {

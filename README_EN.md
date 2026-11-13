@@ -48,7 +48,7 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 | 🌏 **Regional prices** | Compare app and in-app purchase prices (including subscriptions) across regions, converted to your chosen currency and sorted from lowest. You pick the regions. |
 | 📲 **One-tap install** | Tap “Install” when a download finishes. No profile or certificate needed, with live progress. |
 | 🧩 **Native install** | Installs through the system's own installation service, with the same result as installing from a computer: the App Store recognizes and updates the app, and an App Store copy can be replaced in place with its data kept. You can also block App Store updates for the app. From iOS 27, pairing is done on the device without a computer. |
-| 📱 **Apps on this device** | Lists the apps installed on your phone and updates every app with a newer App Store version in one go. |
+| 📱 **Apps on this device** | Lists the apps installed on your phone and updates every app with a newer App Store version in one go. Apps without a store listing still open their on-device version, bundle ID and other available information. Missing regional listings and failed requests are distinguished, with a separate store-query retry. |
 | 💻 **Wi‑Fi transfer** | Download finished packages in a browser on a computer on the same Wi‑Fi, only while the page is open. |
 | 💻 **Mac apps** | Download PKG installers of Mac App Store apps and install them on a Mac. |
 | 🛍️ **Purchases** | Sync every app you've acquired, find them by name or date, and download several at once. Find removed apps that can still be downloaded and back them all up; export the list as a spreadsheet. |

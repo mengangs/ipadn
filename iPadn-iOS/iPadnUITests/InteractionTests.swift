@@ -349,6 +349,57 @@ final class InteractionTests: XCTestCase {
         attach("search-wrapped-capsule-edges", app: app)
     }
 
+    func testInstalledAppWithoutStoreListingStillOpensLocalDetails() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--installed", "--installed-missing-preview"]
+        app.launch()
+        let row = app.buttons["installed.app.notion.id"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+        XCTAssertTrue(app.staticTexts["notion.id"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["1.7.353"].exists)
+        XCTAssertTrue(app.staticTexts["当前地区未查到商店资料"].exists)
+        XCTAssertTrue(app.staticTexts["未查到资料不代表应用已下架，也不影响查看本机信息。"].exists)
+        XCTAssertTrue(app.buttons["installed.lookup.retry"].exists)
+        attach("installed-missing-store-local-info", app: app)
+    }
+
+    func testInstalledAppStoreFailureCanRetryWithoutLosingLocalDetails() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--installed", "--installed-failed-preview"]
+        app.launch()
+        let row = app.buttons["installed.app.com.netflix.Netflix"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+        XCTAssertTrue(app.staticTexts["商店查询失败"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["com.netflix.Netflix"].exists)
+        XCTAssertFalse(app.staticTexts["当前地区未查到商店资料"].exists)
+        app.buttons["installed.lookup.retry"].tap()
+        let details = app.buttons["installed.store-details"]
+        XCTAssertTrue(details.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["com.netflix.Netflix"].exists, "Regrouping must not pop the local details page")
+        details.tap()
+        XCTAssertTrue(app.buttons["app.copy-id"].waitForExistence(timeout: 10))
+        attach("installed-store-retry-restores-details", app: app)
+    }
+
+    func testInstalledAppWithoutStoreIDStillOpensLocalDetails() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--installed"]
+        app.launch()
+        let row = app.buttons["installed.app.com.example.tool"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        for _ in 0..<3 {
+            if row.isHittable { break }
+            app.swipeUp()
+        }
+        row.tap()
+        XCTAssertTrue(app.staticTexts["com.example.tool"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["installed.lookup.no-id"].exists)
+        XCTAssertFalse(app.buttons["installed.lookup.retry"].exists)
+        attach("installed-local-only-info", app: app)
+    }
+
     func testInstalledAppsUsesNeutralRecognitionHeading() {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--installed"]

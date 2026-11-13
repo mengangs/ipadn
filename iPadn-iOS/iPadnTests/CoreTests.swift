@@ -914,6 +914,78 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(InstalledAppsView.isUpdate(latest, installed: "10.1", versionID: nil))
     }
 
+    @MainActor
+    func testInstalledStoreLookupSeparatesMissingFailureAndRecovery() async {
+        let listing = StoreApp(id: "1", name: "One", version: "2.0")
+        var attempt = 0
+        let catalog = InstalledAppCatalog { ids, country in
+            XCTAssertEqual(ids, ["1"])
+            XCTAssertEqual(country, "US")
+            attempt += 1
+            switch attempt {
+            case 1, 4: return ["1": listing, "99": StoreApp(id: "99", name: "Unrequested")]
+            case 2: throw URLError(.notConnectedToInternet)
+            default: return [:]
+            }
+        }
+        var installed = NativeInstaller.InstalledApp(installed: true)
+        installed.storeItemID = "1"
+        await catalog.load(ids: ["1", "1", "0", "bad"], country: "us")
+        XCTAssertEqual(catalog.state, .ready)
+        XCTAssertEqual(catalog.listing(for: installed), listing)
+        XCTAssertNil(catalog.listings["99"])
+        await catalog.load(ids: ["1"], country: "US")
+        guard case .failed = catalog.state else { return XCTFail("Network errors must not look like a missing listing") }
+        XCTAssertNil(catalog.listing(for: installed), "Failed refreshes must not offer stale store updates")
+        await catalog.load(ids: ["1"], country: "US")
+        XCTAssertEqual(catalog.state, .ready, "A successful empty response is distinct from failure")
+        XCTAssertNil(catalog.listing(for: installed))
+        await catalog.load(ids: ["1"], country: "US")
+        XCTAssertEqual(catalog.listing(for: installed), listing, "Retry can restore store details")
+    }
+
+    @MainActor
+    func testInstalledStoreLookupDiscardsSupersededRegionResults() async {
+        let started = expectation(description: "first region lookup started")
+        var pending: CheckedContinuation<[String: StoreApp], Error>?
+        let catalog = InstalledAppCatalog { _, country in
+            if country == "CN" {
+                return try await withCheckedThrowingContinuation { continuation in
+                    pending = continuation
+                    started.fulfill()
+                }
+            }
+            return ["1": StoreApp(id: "1", name: "US listing")]
+        }
+        let older = Task { await catalog.load(ids: ["1"], country: "CN") }
+        await fulfillment(of: [started], timeout: 5)
+        guard let pending else { older.cancel(); return XCTFail("The first lookup must be waiting before the region changes") }
+        await catalog.load(ids: ["1"], country: "US")
+        pending.resume(returning: ["1": StoreApp(id: "1", name: "Old CN listing")])
+        await older.value
+        XCTAssertEqual(catalog.country, "US")
+        XCTAssertEqual(catalog.listings["1"]?.name, "US listing")
+        XCTAssertEqual(catalog.state, .ready)
+    }
+
+    @MainActor
+    func testInstalledStoreLookupNoIDAndCancellationDoNotClaimDelisting() async {
+        var calls = 0
+        let catalog = InstalledAppCatalog { _, _ in
+            calls += 1
+            throw CancellationError()
+        }
+        await catalog.load(ids: ["0", "-1", "com.example.tool"], country: "US")
+        XCTAssertEqual(calls, 0, "Local-only apps must not send a bogus App ID")
+        XCTAssertEqual(catalog.state, .ready)
+        await catalog.load(ids: ["1"], country: "US")
+        XCTAssertEqual(catalog.state, .idle, "Cancellation is neither a failed query nor a confirmed missing listing")
+        var app = NativeInstaller.InstalledApp(installed: true)
+        XCTAssertNil(InstalledAppCatalog.storeID(app))
+        app.storeItemID = "001"
+        XCTAssertEqual(InstalledAppCatalog.storeID(app), "1")
+    }
+
     func testAppLockSettingsDecode() throws {
         XCTAssertFalse(ToolSettings().appLock)
         let saved = try JSONDecoder().decode(ToolSettings.self, from: Data(#"{"appLock":true,"appLockDelay":99999}"#.utf8))
