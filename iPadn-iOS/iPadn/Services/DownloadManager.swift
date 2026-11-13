@@ -1030,7 +1030,9 @@ final class DownloadManager: NSObject, ObservableObject {
     /// without the install sheet. One that can't finish (no connection, iOS
     /// ended the background time) gets the sheet when iPadn is open again.
     private func installSilently(_ id: UUID) {
-        guard !silentQueue.contains(id) else { return }
+        // Returning to the foreground resumes waiting installs. The active
+        // install has already left the queue, but must not be enqueued again.
+        guard autoInstalling?.id != id, !silentQueue.contains(id) else { return }
         silentQueue.append(id)
         guard !silentRunning else { return }
         silentRunning = true
