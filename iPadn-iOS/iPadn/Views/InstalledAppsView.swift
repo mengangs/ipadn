@@ -371,7 +371,6 @@ private struct InstalledAppInfoView: View {
                 field("商店版本 ID", app.storeVersionID, id: "store-version-id")
                 field("签名标识", app.signer, id: "signer")
             }
-            .accessibilityIdentifier("installed.local-info")
             Section {
                 if InstalledAppCatalog.storeID(app) == nil {
                     Text("此应用没有商店 App ID，仅显示本机信息。")
