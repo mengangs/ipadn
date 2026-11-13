@@ -11,9 +11,19 @@ final class InstallationTests: XCTestCase {
         AppText.locale = Locale(identifier: "zh-Hans")
     }
 
+    func testInstallationHelpURLPreservesReadmeAnchor() throws {
+        let url = try XCTUnwrap(InstallationSettingsView.helpURL)
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(components.scheme, "https")
+        XCTAssertEqual(components.host, "github.com")
+        XCTAssertEqual(components.path, "/mengangs/ipadn")
+        XCTAssertEqual(components.fragment, "安装下载的应用")
+        XCTAssertTrue(url.absoluteString.utf8.allSatisfy { $0 < 128 })
+    }
+
     func testLocalManifestIsRealPlistAndPreservesURLAndUnicode() throws {
         let app = StoreApp(id: "1", name: "应用 & <测试>", bundleID: "test.app", version: "1.2")
-        let package = URL(string: "https://127.0.0.1:4567/token/测试.ipa")!
+        let package = try XCTUnwrap(URL(string: "https://127.0.0.1:4567/token/%E6%B5%8B%E8%AF%95.ipa"))
         let manifest = try ManifestBuilder.manifest(app: app, packageURL: package)
         let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: manifest, options: [], format: nil) as? [String: Any])
         let items = try XCTUnwrap(plist["items"] as? [[String: Any]])
