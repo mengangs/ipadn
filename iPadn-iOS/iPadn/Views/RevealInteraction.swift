@@ -96,6 +96,27 @@ final class ItemListRevealTouchGestureRecognizer: UIGestureRecognizer {
     }
 }
 
+/// Covers the window while a row is open. A tap anywhere outside that row
+/// closes it and goes no further, so the control under the finger doesn't
+/// also fire (Telegram does the same). The open row itself gets its touches.
+private final class RevealDismissOverlay: UIView {
+    /// The open row's frame in window coordinates; touches there pass through.
+    var rowFrame: () -> CGRect? = { nil }
+    var onTap: () -> Void = {}
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if let row = rowFrame(), row.contains(point) { return nil }
+        return super.hitTest(point, with: event)
+    }
+    @objc private func tapped() { onTap() }
+}
+
 private struct RevealGestureAttachment: UIViewRepresentable {
     let enabled: Bool
     let offset: CGFloat
@@ -111,6 +132,7 @@ private struct RevealGestureAttachment: UIViewRepresentable {
         weak var host: UIView?
         let recognizer = ItemListRevealTouchGestureRecognizer()
         let closeTap = UITapGestureRecognizer()
+        private var dismissOverlay: RevealDismissOverlay?
         init(_ parent: RevealGestureAttachment) {
             self.parent = parent
             super.init()
@@ -168,12 +190,31 @@ private struct RevealGestureAttachment: UIViewRepresentable {
             if recognizer.isEnabled != parent.enabled { recognizer.isEnabled = parent.enabled }
             let canClose = parent.enabled && abs(parent.offset) > 1
             if closeTap.isEnabled != canClose { closeTap.isEnabled = canClose }
+            if canClose, let window = anchor?.window { showDismissOverlay(in: window) }
+            else if !canClose { hideDismissOverlay() }
         }
         func detach() {
             recognizer.isEnabled = false; closeTap.isEnabled = false
+            hideDismissOverlay()
             host?.removeGestureRecognizer(recognizer); host?.removeGestureRecognizer(closeTap); host = nil
         }
         @objc private func closeRow() { parent.close() }
+        private func showDismissOverlay(in window: UIWindow) {
+            guard dismissOverlay == nil else { return }
+            let overlay = RevealDismissOverlay(frame: window.bounds)
+            overlay.rowFrame = { [weak self] in
+                guard let self, let window = self.anchor?.window else { return nil }
+                let row: UIView? = (self.host === window || self.host == nil) ? self.anchor?.superview : self.host
+                return row?.convert(row?.bounds ?? .zero, to: window)
+            }
+            overlay.onTap = { [weak self] in self?.parent.close() }
+            window.addSubview(overlay)
+            dismissOverlay = overlay
+        }
+        private func hideDismissOverlay() {
+            dismissOverlay?.removeFromSuperview()
+            dismissOverlay = nil
+        }
         /// UIKit reports touches left to right, while SwiftUI mirrors offsets
         /// and edges in a right-to-left layout; these map touches into the
         /// layout's direction so a swipe follows the finger in Arabic too.
