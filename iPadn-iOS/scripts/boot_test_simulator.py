@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Boot and wait for the exact simulator used by XCTest; print only its UDID."""
+import argparse
 import json
 import re
 import subprocess
@@ -21,14 +22,17 @@ def select_device(data, name="iPhone 18 Pro"):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--name", default="iPhone 18 Pro")
+    args = parser.parse_args()
     data = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "--json"]))
-    device = select_device(data)
+    device = select_device(data, name=args.name)
     udid = device["udid"]
     if device["state"] != "Booted":
-        subprocess.run(["xcrun", "simctl", "boot", udid], check=True, stdout=sys.stderr)
+        subprocess.run(["xcrun", "simctl", "boot", udid], check=True, stdout=sys.stderr, timeout=60)
     # xcodebuild may otherwise race the freshly restarted CoreSimulator and
     # fail its first app launch before it has a process ID.
-    subprocess.run(["xcrun", "simctl", "bootstatus", udid, "-b"], check=True, stdout=sys.stderr)
+    subprocess.run(["xcrun", "simctl", "bootstatus", udid, "-b"], check=True, stdout=sys.stderr, timeout=300)
     print(udid)
 
 

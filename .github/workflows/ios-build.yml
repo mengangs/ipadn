@@ -168,30 +168,17 @@ jobs:
           print('Executed tests:', result['passedTests'], 'passed;', result['skippedTests'], 'skipped')
           PY
 
-      - name: iPhone Duo screenshots
-        # Layout check on the foldable; collects screenshots, never fails the build.
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.run_ui_tests
-        continue-on-error: true
-        timeout-minutes: 15
-        run: |
-          set -o pipefail
-          xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
-            -configuration Debug -destination "platform=iOS Simulator,name=iPhone Duo" \
-            -destination-timeout 120 -derivedDataPath build/TestDerivedData \
-            -resultBundlePath build/DuoResults.xcresult \
-            -only-testing:iPadnUITests/InteractionTests/testDuoLayoutScreens \
-            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO > build/duo.log 2>&1 || true
-          grep -E "error:|Test Case|failed|skipped" build/duo.log | tail -20 || true
-          if [ -d build/DuoResults.xcresult ]; then
-            xcrun xcresulttool export attachments --path build/DuoResults.xcresult --output-path build/duo-screenshots || true
-          fi
-
-      - name: Upload iPhone Duo screenshots
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.run_ui_tests
+      - name: Upload build and test diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: iPadn-duo-screenshots
-          path: iPadn-iOS/build/duo-screenshots
+          name: iPadn-build-diagnostics
+          path: |
+            iPadn-iOS/build/*.log
+            iPadn-iOS/build/test-summary.json
+            iPadn-iOS/build/ipa-verification.json
+            iPadn-iOS/build/TestResults.xcresult
+            iPadn-iOS/build/verification.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -222,17 +209,31 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload build and test diagnostics
-        if: always()
+      - name: iPhone Duo screenshots
+        # Layout check on the foldable; collects screenshots, never fails the build.
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.run_ui_tests
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          set -o pipefail
+          simulator_id="$(python3 scripts/boot_test_simulator.py --name 'iPhone Duo')"
+          xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
+            -configuration Debug -destination "platform=iOS Simulator,name=iPhone Duo" \
+            -destination-timeout 120 -derivedDataPath build/TestDerivedData \
+            -resultBundlePath build/DuoResults.xcresult \
+            -only-testing:iPadnUITests/InteractionTests/testDuoLayoutScreens \
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO > build/duo.log 2>&1 || true
+          grep -E "error:|Test Case|failed|skipped" build/duo.log | tail -20 || true
+          if [ -d build/DuoResults.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/DuoResults.xcresult --output-path build/duo-screenshots || true
+          fi
+
+      - name: Upload iPhone Duo screenshots
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.run_ui_tests
         uses: actions/upload-artifact@v4
         with:
-          name: iPadn-build-diagnostics
-          path: |
-            iPadn-iOS/build/*.log
-            iPadn-iOS/build/test-summary.json
-            iPadn-iOS/build/ipa-verification.json
-            iPadn-iOS/build/TestResults.xcresult
-            iPadn-iOS/build/verification.json
+          name: iPadn-duo-screenshots
+          path: iPadn-iOS/build/duo-screenshots
           if-no-files-found: warn
           retention-days: 14
 
