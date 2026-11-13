@@ -1,11 +1,10 @@
-## iPadn 2.0.1
+## iPadn 2.1.0
 
-本次更新改进历史版本、下载交互与自动安装，并修复侧滑裁剪和重复安装排队问题。安装包未签名，请用自己的工具签名后安装。
+本次更新为历史版本加入对应版本的真实图标与 IPA 大小，完善下载交互、自动安装和本机应用详情，并修复侧滑裁剪、重复安装排队及搜索标签圆角问题。安装包未签名，请用自己的工具签名后安装。
 
 ### 历史版本
 
 - 每个历史版本行内显示从对应 IPA 提取的主图标，便于比较活动角标；按需局部读取、分版本缓存，未获取时显示占位，不使用最新版商店图标代替。仅存储在 Assets.car 中的图标暂不支持。
-
 - 显示每个版本对应的 IPA 安装包大小，而不是套用最新版的大小；读取已有元数据即可取得远端完整包大小，无需先下载整个安装包。
 - 版本号、日期、大小和版本 ID 分层显示，大字体下自动纵向排列。
 - 长按版本行，通过系统菜单复制版本号或版本 ID；点击菜单外即可收起。
@@ -37,18 +36,20 @@
 
 ### 两个安装包
 
-- `iPadn-2.0.1-unsigned.ipa`：标准版，含实时活动和小组件，签名需要 2 个 App ID。
-- `iPadn-2.0.1-lite-unsigned.ipa`：精简版，不含扩展，只需 1 个 App ID；不提供实时活动或小组件，其他功能相同。
+- `iPadn-2.1.0-unsigned.ipa`：标准版，含实时活动和小组件，签名需要 2 个 App ID。
+- `iPadn-2.1.0-lite-unsigned.ipa`：精简版，不含扩展，只需 1 个 App ID；不提供实时活动或小组件，其他功能相同。
 - SideStore、AltStore、Feather 等签名工具可添加源：`https://raw.githubusercontent.com/mengangs/ipadn/main/altstore-source.json`。
 
 ### English
 
-**Version history** now shows the remote IPA size of each individual version, using partial metadata reads rather than downloading the whole package or reusing the latest listing's size. Version, date, size and ID are separated, with a vertical layout for accessibility text sizes. Long-press a row to copy its version number or ID using the system menu. Old caches remain compatible; unavailable sizes show “—”. The remote raw IPA size can differ slightly from the processed local download.
+**Version history** now shows each version’s own primary icon extracted from its IPA, alongside the remote IPA size of that individual version, using partial metadata reads rather than downloading the whole package or reusing the latest listing's size. Version, date, size and ID are separated, with a vertical layout for accessibility text sizes. Long-press a row to copy its version number or ID using the system menu. Old caches remain compatible; unavailable sizes show “—”. The remote raw IPA size can differ slightly from the processed local download. Icon PNGs are fetched with bounded range reads and cached per platform/app/version; no full package download is needed. Missing icons use placeholders, never current store artwork. Icons stored only in Assets.car are not yet supported.
 
 **Downloads** gain swipe-to-delete/share with app-and-version filenames, full-card movement without clipped edges, reliable Share appearance after fast swipes, and outside-tap dismissal without activating underlying controls. Spring timing follows real elapsed time so dropped frames do not prolong closing animations. Undo retains its five-second window with a countdown ring. Completion transitions to a checkmark and Install. Task long-press keeps the native menu; tapping the selected tab scrolls to the top without resetting other tabs.
 
 **Automatic native installation** installs completed downloads sequentially without another confirmation when enabled. Pair beforehand and keep LocalDevVPN connected; other methods still need foreground confirmation. Silent audio keeps the app running from download through installation, with download/processing/install states in standard-package Live Activities. Background execution remains subject to iOS; reopening resumes pending work. Fixes duplicate queuing of an active installation on foreground return and isolates preview installation records from real data.
 
-Recent searches use chips, Discover can be hidden in Settings, and regression coverage and simulator readiness are improved. iOS / iPadOS 16 remains supported, subject to each feature's requirements. Both unsigned packages are available: standard includes Live Activities/widgets and needs two App IDs; lite has no extension and needs one. Sign with your own tool before installing.
+**Installed apps** stay inspectable even when store details are missing: open local version, Bundle ID and other device information, distinguish a missing regional listing from a failed lookup, and retry store details without reconnecting the native installation service.
+
+Recent searches use chips with corrected wrapped rounded edges, Discover can be hidden in Settings, and regression coverage and simulator readiness are improved. iOS / iPadOS 16 remains supported, subject to each feature's requirements. Both unsigned packages are available: standard includes Live Activities/widgets and needs two App IDs; lite has no extension and needs one. Sign with your own tool before installing.
 
 更早版本的更新内容见 [Releases](https://github.com/mengangs/ipadn/releases)。
