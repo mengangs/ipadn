@@ -232,15 +232,6 @@ struct DownloadsView: View {
             PackageInstallationView(job: job).sheetNotice().environmentObject(store).environmentObject(manager)
         }
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
-        .overlay {
-            if let job = menuJob {
-                TaskPreviewMenu(items: menuItems(job, latest: updateTargets[job.id]), dismiss: { withAnimation(UX.motion(reduceMotion)) { menuJob = nil } }) {
-                    taskContent(job, update: updateTargets[job.id])
-                        .padding(.horizontal, 16).padding(.vertical, 12)
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                }
-            }
-        }
     }
     /// Row-header count: the active filter, then how many have updates.
     private func headerSummary(visible: [DownloadJob], updates: [UUID: StoreApp]) -> String {
@@ -345,13 +336,12 @@ struct DownloadsView: View {
                             .revealActions(id: "download." + job.id.uuidString,
                                            enabled: !edit && !actionBusy && job.status != .processing && job.status != .pausing,
                                            [.delete { askDelete([job.id]) }] + shareAction(job))
-                            // Long press lifts the task out over a blurred list, with its actions below.
-                            .simultaneousGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
-                                guard !edit, !actionBusy else { return }
-                                UX.feedback()
-                                withAnimation(UX.motion(reduceMotion)) { menuJob = job }
-                            })
-                            .accessibilityAction(named: Text("更多操作")) { if !edit { menuJob = job } }
+                            .background {
+                                TaskContextAttachment(enabled: !edit && !actionBusy, requested: menuJob?.id == job.id,
+                                                      name: job.app.name, items: menuItems(job, latest: updates[job.id]),
+                                                      opened: { menuJob = job }, closed: { menuJob = nil })
+                            }
+                            .accessibilityAction(named: Text("更多操作")) { if !edit && !actionBusy { menuJob = job } }
                             // Outside the card background, so the whole card slides.
                             .modifier(DrawerRow(shown: cardsShown || reduceMotion, index: index, travel: 28))
                         } header: {
@@ -755,53 +745,4 @@ struct TaskMenuItem: Identifiable {
     let symbol: String
     var destructive = false
     let action: () -> Void
-}
-
-/// Telegram's long-press menu: the task lifts out of the list over a blurred
-/// backdrop, and its actions sit in a card below it. Tapping outside closes it.
-private struct TaskPreviewMenu<Preview: View>: View {
-    let items: [TaskMenuItem]
-    let dismiss: () -> Void
-    @ViewBuilder let preview: () -> Preview
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var shown = false
-    var body: some View {
-        ZStack {
-            Rectangle().fill(.ultraThinMaterial).ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture(perform: dismiss)
-                .accessibilityHidden(true)
-            VStack(spacing: 14) {
-                preview()
-                    .allowsHitTesting(false)
-                    .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
-                    .scaleEffect(shown || reduceMotion ? 1 : 0.94)
-                VStack(spacing: 0) {
-                    ForEach(items) { item in
-                        Button {
-                            dismiss()
-                            item.action()
-                        } label: {
-                            HStack(spacing: 12) {
-                                Text(item.title)
-                                Spacer(minLength: 8)
-                                Image(systemName: item.symbol)
-                            }
-                            .font(.body)
-                            .foregroundStyle(item.destructive ? Color.red : Color.primary)
-                            .frame(minHeight: 44).padding(.horizontal, 16)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("download.menu." + item.id)
-                        if item.id != items.last?.id { Divider().padding(.leading, 16) }
-                    }
-                }
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .padding(.horizontal, 16)
-            .opacity(shown ? 1 : 0)
-        }
-        .onAppear { withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) { shown = true } }
-    }
 }
