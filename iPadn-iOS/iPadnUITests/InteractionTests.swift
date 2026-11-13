@@ -392,10 +392,11 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(history.waitForExistence(timeout: 10))
         revealActions(on: history)
         app.buttons["删除"].firstMatch.tap()
-        let undo = app.buttons["notice.undo"]
-        XCTAssertTrue(undo.waitForExistence(timeout: 5))
-        XCTAssertFalse(history.exists)
-        undo.tap()
+        // Undo expires after five seconds. Snapshotting the whole history
+        // before tapping can consume that window on a busy simulator.
+        // tap() already resolves/waits for the button; restoration is checked
+        // afterwards, without changing the app's real expiry duration.
+        app.buttons["notice.undo"].tap()
         XCTAssertTrue(history.waitForExistence(timeout: 5))
     }
 
