@@ -673,3 +673,150 @@ extension View {
         else { padding(.horizontal, margin) }
     }
 }
+
+/// Places views left to right and wraps to a new line when one doesn't fit,
+/// like tags (recent searches).
+struct ChipFlow: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        let rows = arrange(subviews, width: width)
+        let height = rows.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: proposal.width ?? rows.map(\.width).max() ?? 0, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(subviews, width: bounds.width) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+                subviews[index].place(at: CGPoint(x: x, y: y + (row.height - size.height) / 2), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> [Row] {
+        var rows: [Row] = []
+        var current = Row()
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil))
+            let needed = current.indices.isEmpty ? size.width : current.width + spacing + size.width
+            if needed > width, !current.indices.isEmpty {
+                rows.append(current); current = Row()
+            }
+            current.width = current.indices.isEmpty ? size.width : current.width + spacing + size.width
+            current.height = max(current.height, size.height)
+            current.indices.append(index)
+        }
+        if !current.indices.isEmpty { rows.append(current) }
+        return rows
+    }
+}
+
+/// A capsule chip whose long-press menu lifts only the chip, keeping its round
+/// ends. SwiftUI's own context menu inside a List lifts the whole row as a
+/// square-cornered rectangle, so the menu comes from UIKit here.
+struct MenuChip: UIViewRepresentable {
+    let title: String
+    let symbol: String
+    let identifier: String
+    let deleteTitle: String
+    let onTap: () -> Void
+    let onDelete: () -> Void
+
+    struct Label: View {
+        let title: String
+        let symbol: String
+        var body: some View {
+            HStack(spacing: 6) {
+                Image(systemName: symbol).font(.footnote.weight(.medium)).foregroundStyle(.secondary)
+                Text(verbatim: title).font(.subheadline).foregroundStyle(.primary).lineLimit(1)
+            }
+            .padding(.horizontal, 14).frame(minHeight: 38)
+            .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> UIView {
+        let host = UIHostingController(rootView: Label(title: title, symbol: symbol))
+        host.view.backgroundColor = .clear
+        context.coordinator.host = host
+        let view = host.view!
+        view.addInteraction(UIContextMenuInteraction(delegate: context.coordinator))
+        view.addGestureRecognizer(UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped)))
+        view.isAccessibilityElement = true
+        view.accessibilityTraits = .button
+        update(view, context: context)
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.chip = self
+        context.coordinator.host?.rootView = Label(title: title, symbol: symbol)
+        update(view, context: context)
+    }
+
+    private func update(_ view: UIView, context: Context) {
+        view.accessibilityLabel = title
+        view.accessibilityIdentifier = identifier
+        let coordinator = context.coordinator
+        view.accessibilityCustomActions = [UIAccessibilityCustomAction(name: deleteTitle) { _ in
+            coordinator.chip.onDelete(); return true
+        }]
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
+        context.coordinator.host?.sizeThatFits(in: CGSize(width: proposal.width ?? .greatestFiniteMagnitude,
+                                                          height: .greatestFiniteMagnitude))
+    }
+
+    final class Coordinator: NSObject, UIContextMenuInteractionDelegate {
+        var chip: MenuChip
+        var host: UIHostingController<Label>?
+        init(_ chip: MenuChip) { self.chip = chip }
+
+        @objc func tapped() { chip.onTap() }
+
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                    configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+            UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+                guard let self else { return nil }
+                return UIMenu(children: [
+                    UIAction(title: self.chip.deleteTitle, image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+                        self?.chip.onDelete()
+                    },
+                ])
+            }
+        }
+
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                    previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+            preview(interaction)
+        }
+
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                    previewForDismissingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+            preview(interaction)
+        }
+
+        private func preview(_ interaction: UIContextMenuInteraction) -> UITargetedPreview? {
+            guard let view = interaction.view, let window = view.window else { return nil }
+            let parameters = UIPreviewParameters()
+            parameters.backgroundColor = .clear
+            parameters.visiblePath = UIBezierPath(roundedRect: view.bounds, cornerRadius: view.bounds.height / 2)
+            // No drop shadow around the lifted chip.
+            parameters.shadowPath = UIBezierPath()
+            // Lift it in the window: the list cell clips the enlarged chip at its edge.
+            let center = view.convert(CGPoint(x: view.bounds.midX, y: view.bounds.midY), to: window)
+            return UITargetedPreview(view: view, parameters: parameters, target: UIPreviewTarget(container: window, center: center))
+        }
+    }
+}

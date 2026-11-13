@@ -6,7 +6,8 @@ import Foundation
 /// by name, so the fields must stay equal.
 struct DownloadActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
-        /// 0 downloading, 1 preparing the package, 2 finished, 3 waiting.
+        /// 0 downloading, 1 preparing the package, 2 finished, 3 waiting,
+        /// 4 installing automatically, 5 installed, 6 install not finished.
         var phase: Int
         /// The app being downloaded (the first one when there are several).
         var name: String
