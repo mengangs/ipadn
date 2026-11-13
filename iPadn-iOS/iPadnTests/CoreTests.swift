@@ -1938,7 +1938,9 @@ final class CoreTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         func package(_ version: String, color: UIColor, includeIcon: Bool) throws -> MemoryRangeReader {
-            let url = root.appendingPathComponent(version + ".ipa")
+            // The same version is inspected with and without icon reads.
+            // Each fixture creation must have its own file, even for the same version.
+            let url = root.appendingPathComponent(version + "-" + UUID().uuidString + ".ipa")
             let archive = try Archive(url: url, accessMode: .create)
             let format = UIGraphicsImageRendererFormat(); format.scale = 1
             let png = UIGraphicsImageRenderer(size: CGSize(width: 180, height: 180), format: format).pngData { c in
