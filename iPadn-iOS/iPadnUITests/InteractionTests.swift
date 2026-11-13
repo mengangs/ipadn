@@ -64,6 +64,42 @@ final class InteractionTests: XCTestCase {
         attach("history-version-icon-unavailable", app: app)
     }
 
+    func testVersionHistoryDateRangeIncludesMatchesAndClearRestoresAllVersions() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail", "--version-dates-preview"]
+        app.launch()
+        let controls = app.buttons["按日期范围筛选"]
+        for _ in 0..<4 { if controls.exists && controls.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(controls.waitForExistence(timeout: 10))
+        controls.tap()
+        let search = app.buttons["detail.versions.date.search"]
+        for _ in 0..<3 { if search.exists && search.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertTrue(search.isEnabled)
+        search.tap()
+        let progress = app.staticTexts["detail.versions.date.progress"]
+        XCTAssertTrue(progress.waitForExistence(timeout: 5))
+        XCTAssertEqual(progress.label, "已检查 3 / 3 个版本，找到 2 个")
+        // Collapse the controls to bring both result rows into one viewport.
+        controls.tap()
+        let included = app.staticTexts["detail.version.number.123456788"]
+        for _ in 0..<3 { if included.exists && included.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(included.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["detail.version.number.123456787"].exists)
+        attach("history-date-range-results", app: app)
+        for _ in 0..<4 { if controls.isHittable { break }; app.swipeDown() }
+        controls.tap()
+        let clear = app.buttons["detail.versions.date.clear"]
+        for _ in 0..<3 { if clear.exists && clear.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(clear.waitForExistence(timeout: 5))
+        clear.tap()
+        controls.tap()
+        let restored = app.staticTexts["detail.version.number.123456787"]
+        for _ in 0..<4 { if restored.exists && restored.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(restored.waitForExistence(timeout: 5))
+        XCTAssertFalse(progress.exists)
+    }
+
     func testVersionHistoryShowsEachPackagesOwnSize() {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail"]

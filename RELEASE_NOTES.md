@@ -4,6 +4,9 @@
 
 ### 历史版本
 
+- 新增起止日期范围查询（包含结束日全天），逐步检查当前来源提供的版本，显示进度并支持取消、清除筛选；失败或日期未知会明确提示结果不完整，不按版本 ID 猜日期，也不会遇到一条范围外的日期就停止。包内时间戳标记为「包内日期」，不等同于商店发布日期。
+- 展开和筛选结果按每批 20 条追加；可见历史行延迟触发读取，滑离时取消排队，先显示版本资料再补图标。图标在后台解码，并以最多 80 张 / 8 MiB 的内存缓存减少反复滚动的开销。日期扫描不主动读取图标。
+
 - 每个历史版本行内显示从对应 IPA 提取的主图标，便于比较活动角标；按需局部读取、分版本缓存，未获取时显示占位，不使用最新版商店图标代替。仅存储在 Assets.car 中的图标暂不支持。
 - 显示每个版本对应的 IPA 安装包大小，而不是套用最新版的大小；读取已有元数据即可取得远端完整包大小，无需先下载整个安装包。
 - 版本号、日期、大小和版本 ID 分层显示，大字体下自动纵向排列。
@@ -41,6 +44,8 @@
 - SideStore、AltStore、Feather 等签名工具可添加源：`https://raw.githubusercontent.com/mengangs/ipadn/main/altstore-source.json`。
 
 ### English
+
+**Date-range search** includes the whole end day and checks every version returned by the current source, with progress, cancellation and explicit incomplete/unknown-date states. It does not infer dates from IDs or stop at the first out-of-range date. Package timestamps are labeled as package dates, not guaranteed store release dates. Histories and filtered results load in batches of 20; visible rows publish metadata before reading icons, cancelled rows leave the queue promptly, and background-decoded images share a bounded 80-image / 8 MiB cache. The date scan itself does not fetch icons.
 
 **Version history** now shows each version’s own primary icon extracted from its IPA, alongside the remote IPA size of that individual version, using partial metadata reads rather than downloading the whole package or reusing the latest listing's size. Version, date, size and ID are separated, with a vertical layout for accessibility text sizes. Long-press a row to copy its version number or ID using the system menu. Old caches remain compatible; unavailable sizes show “—”. The remote raw IPA size can differ slightly from the processed local download. Icon PNGs are fetched with bounded range reads and cached per platform/app/version; no full package download is needed. Missing icons use placeholders, never current store artwork. Icons stored only in Assets.car are not yet supported.
 

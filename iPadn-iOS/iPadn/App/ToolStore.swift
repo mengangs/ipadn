@@ -635,7 +635,14 @@ final class ToolStore: ObservableObject {
 
     func loadVersions(for app: StoreApp, force: Bool = false, official: Bool = false) async throws -> [AppVersion] {
         #if DEBUG
-        if visualPreview { return [AppVersion(id: "123456789", version: "3.2.1", source: "版本资料"), AppVersion(id: "123456788", version: "3.1.0", source: "版本资料")] }
+        if visualPreview {
+            var list = [AppVersion(id: "123456789", version: "3.2.1", source: "版本资料"),
+                        AppVersion(id: "123456788", version: "3.1.0", source: "版本资料")]
+            if ProcessInfo.processInfo.arguments.contains("--version-dates-preview") {
+                list.append(AppVersion(id: "123456787", version: "2.0.0", source: "版本资料"))
+            }
+            return list
+        }
         #endif
         let context = settings.store
         if official, let account = apple.activeID {
@@ -698,12 +705,15 @@ final class ToolStore: ObservableObject {
 
     /// The version number and date of one version, read from Apple. Lookups
     /// are cached and run one at a time.
-    func versionMetadata(app: StoreApp, versionID: String) async throws -> VersionMetadata {
+    func versionMetadata(app: StoreApp, versionID: String, includingIcon: Bool = true,
+                         onMetadata: (@MainActor @Sendable (VersionMetadata) -> Void)? = nil) async throws -> VersionMetadata {
         #if DEBUG
         if visualPreview {
             let newest = versionID == "123456789"
-            return VersionMetadata(version: newest ? "3.2.1" : "3.1.0",
-                                   released: Date(timeIntervalSince1970: 1_714_694_400),
+            let datesPreview = ProcessInfo.processInfo.arguments.contains("--version-dates-preview")
+            let age = versionID == "123456787" ? 800 : newest ? 2 : 10
+            return VersionMetadata(version: versionID == "123456787" ? "2.0.0" : newest ? "3.2.1" : "3.1.0",
+                                   released: datesPreview ? Calendar.current.date(byAdding: .day, value: -age, to: Date()) : Date(timeIntervalSince1970: 1_714_694_400),
                                    packageSize: newest ? 128_000_000 : 96_000_000,
                                    iconAvailable: ProcessInfo.processInfo.arguments.contains("--version-icons-preview") &&
                                        !(ProcessInfo.processInfo.arguments.contains("--version-icon-missing-preview") && !newest))
@@ -713,7 +723,7 @@ final class ToolStore: ObservableObject {
         let useCache = settings.useSignerCache
         let metadataStore = self.metadataStore
         let key = VersionMetadataStore.key(platform: platform, appID: app.id, versionID: versionID)
-        return try await metadataStore.load(key, requiringPackageSize: platform.supportsIPA, requiringIcon: platform.supportsIPA) { @MainActor [apple] in
+        return try await metadataStore.load(key, requiringPackageSize: platform.supportsIPA, requiringIcon: includingIcon && platform.supportsIPA) { @MainActor [apple] in
             if platform == .macOS {
                 // A Mac package cannot be read in part; Apple's ticket names the version.
                 let offer = try await apple.macPackageOffer(app, versionID: versionID, useCache: useCache,
@@ -722,7 +732,8 @@ final class ToolStore: ObservableObject {
                 return VersionMetadata(version: offer.displayVersion, released: nil)
             }
             let url = try await apple.versionTicket(appID: app.id, versionID: versionID, useCache: useCache)
-            let resources = try await RemoteZip.versionResources(HTTPRangeReader(url: url))
+            let resources = try await RemoteZip.versionResources(HTTPRangeReader(url: url), includingIcon: includingIcon,
+                                                                onMetadata: { value in await onMetadata?(value) })
             var metadata = resources.metadata
             if let icon = resources.icon {
                 do { try await metadataStore.saveIcon(icon, key: key) }
@@ -730,6 +741,17 @@ final class ToolStore: ObservableObject {
             }
             return metadata
         }
+    }
+
+    func cachedVersionImage(app: StoreApp, versionID: String) async -> UIImage? {
+        #if DEBUG
+        if visualPreview {
+            let data = await cachedVersionIcon(app: app, versionID: versionID)
+            return data.flatMap(UIImage.init(data:))
+        }
+        #endif
+        return await metadataStore.image(VersionMetadataStore.key(
+            platform: settings.store.platform, appID: app.id, versionID: versionID))
     }
 
     func cachedVersionIcon(app: StoreApp, versionID: String) async -> Data? {

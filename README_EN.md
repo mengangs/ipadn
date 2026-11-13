@@ -37,6 +37,7 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 ## What’s new in 2.1.0
 
 - **Clearer version history**: each row shows its own package icon, IPA size and version details, making activity badges easy to compare without downloading the full package. Asset-catalog-only icons are not yet supported; unavailable icons use placeholders.
+- **Find versions by date**: select inclusive start/end dates, with progress, cancellation and explicit unknown-date counts. Histories load in batches, with on-demand icons and a bounded decoded-image cache. Package dates can differ from store release dates.
 - **More complete download controls**: swipe to delete/share, outside-tap dismissal, a five-second Undo countdown, completion transitions, and sequential automatic installation with the native method.
 - **Inspectable installed apps**: view local version and Bundle ID even without store details, distinguish missing regional listings from lookup failures, and retry store details independently.
 - Fixes clipped swipe edges, slow closing animations after dropped frames, duplicate installation queuing and wrapped search-chip corners. Both standard and lite packages remain available. See the [release notes](RELEASE_NOTES.md).

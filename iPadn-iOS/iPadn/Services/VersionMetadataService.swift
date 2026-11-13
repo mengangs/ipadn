@@ -1,11 +1,14 @@
 import Foundation
 import CryptoKit
+import UIKit
 
 /// The version number, date and package size of one App Store version, read from the
 /// package itself (ipatool's get-version-metadata).
 struct VersionMetadata: Codable, Hashable, Sendable {
     var version: String
     var released: Date?
+    /// nil in legacy caches; those dates must also be treated as approximate.
+    var releaseDateIsEstimated: Bool? = nil
     /// Complete remote IPA length, not the extracted app or an individual ZIP entry.
     /// Optional so caches written before size support remain readable.
     var packageSize: Int64? = nil
@@ -63,7 +66,8 @@ enum RemoteZip {
         try await versionResources(reader, includingIcon: false).metadata
     }
 
-    static func versionResources(_ reader: RangeReader, includingIcon: Bool = true) async throws
+    static func versionResources(_ reader: RangeReader, includingIcon: Bool = true,
+                                 onMetadata: (@Sendable (VersionMetadata) async -> Void)? = nil) async throws
         -> (metadata: VersionMetadata, icon: Data?) {
         let (entries, size) = try await centralDirectory(reader)
         guard let entry = entries.first(where: { isMainInfoPlist($0.name) }) else { throw Failure.notFound }
@@ -74,9 +78,13 @@ enum RemoteZip {
         let version = plistString(plist["CFBundleShortVersionString"] ?? plist["bundleShortVersionString"])
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !version.isEmpty else { throw Failure.unreadable }
+        let explicitDate = releaseDate(plist["releaseDate"] ?? plist["ReleaseDate"])
         var metadata = VersionMetadata(version: version,
-                                       released: releaseDate(plist["releaseDate"] ?? plist["ReleaseDate"]) ?? entry.modified,
+                                       released: explicitDate ?? entry.modified,
+                                       releaseDateIsEstimated: explicitDate == nil,
                                        packageSize: size)
+        await onMetadata?(metadata)
+        try Task.checkCancellation()
         var icon: Data?
         if includingIcon {
             do {
@@ -289,7 +297,13 @@ actor VersionMetadataStore {
     static let filename = "version-metadata.json"
     private var cache = LocalResources.load([String: VersionMetadata].self, filename: VersionMetadataStore.filename) ?? [:]
     private var busy = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [(UUID, CheckedContinuation<Void, Error>)] = []
+    private let decodedIcons: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 80
+        cache.totalCostLimit = 8 * 1024 * 1024
+        return cache
+    }()
 
     static func key(platform: AppPlatform, appID: String, versionID: String) -> String {
         "\(platform.rawValue)|\(appID)|\(versionID)"
@@ -308,10 +322,20 @@ actor VersionMetadataStore {
             .appendingPathComponent(name + ".png")
     }
     func icon(_ key: String) -> Data? { try? Data(contentsOf: Self.iconURL(key)) }
+    /// File IO and PNG decoding stay on this actor, not the UI executor.
+    func image(_ key: String) -> UIImage? {
+        if let image = decodedIcons.object(forKey: key as NSString) { return image }
+        guard let data = icon(key), let image = UIImage(data: data)?.preparingForDisplay() else { return nil }
+        decodedIcons.setObject(image, forKey: key as NSString,
+                               cost: Int(image.size.width * image.scale * image.size.height * image.scale * 4))
+        return image
+    }
+
     func saveIcon(_ data: Data, key: String) throws {
         let url = Self.iconURL(key)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: url, options: .atomic)
+        decodedIcons.removeObject(forKey: key as NSString)
     }
     private func satisfies(_ value: VersionMetadata, key: String, size: Bool, icon: Bool) -> Bool {
         (!size || value.packageSize != nil) && (!icon || (value.iconAvailable != nil &&
@@ -323,7 +347,7 @@ actor VersionMetadataStore {
         // Old records retain their useful version/date, but are refreshed once
         // when an IPA row also needs its size. Mac metadata need not have one.
         if let value = cache[key], satisfies(value, key: key, size: requiringPackageSize, icon: requiringIcon) { return value }
-        await acquire()
+        try await acquire()
         defer { release() }
         // A row scrolled away while waiting: skip its request.
         try Task.checkCancellation()
@@ -335,11 +359,23 @@ actor VersionMetadataStore {
         return value
     }
 
-    private func acquire() async {
+    private func acquire() async throws {
+        try Task.checkCancellation()
         guard busy else { busy = true; return }
-        await withCheckedContinuation { waiters.append($0) }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                waiters.append((id, continuation))
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(id) }
+        }
+    }
+    private func cancelWaiter(_ id: UUID) {
+        guard let index = waiters.firstIndex(where: { $0.0 == id }) else { return }
+        waiters.remove(at: index).1.resume(throwing: CancellationError())
     }
     private func release() {
-        if waiters.isEmpty { busy = false } else { waiters.removeFirst().resume() }
+        if waiters.isEmpty { busy = false } else { waiters.removeFirst().1.resume() }
     }
 }

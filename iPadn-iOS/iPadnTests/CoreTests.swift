@@ -1958,7 +1958,18 @@ final class CoreTests: XCTestCase {
             }
             return MemoryRangeReader(data: try Data(contentsOf: url))
         }
-        let old = try await RemoteZip.versionResources(package("1.0", color: .blue, includeIcon: true))
+        let partial = expectation(description: "version metadata published before icon extraction")
+        let old = try await RemoteZip.versionResources(package("1.0", color: .blue, includeIcon: true), onMetadata: { metadata in
+            XCTAssertEqual(metadata.version, "1.0")
+            XCTAssertNotNil(metadata.packageSize)
+            XCTAssertNil(metadata.iconAvailable)
+            partial.fulfill()
+        })
+        await fulfillment(of: [partial], timeout: 3)
+        let dateOnly = try await RemoteZip.versionResources(package("1.0", color: .blue, includeIcon: true), includingIcon: false)
+        XCTAssertNil(dateOnly.icon)
+        XCTAssertNil(dateOnly.metadata.iconAvailable, "Date scans must not mark an uninspected icon unavailable")
+        XCTAssertEqual(dateOnly.metadata.version, old.metadata.version)
         let new = try await RemoteZip.versionResources(package("2.0", color: .red, includeIcon: true))
         XCTAssertEqual(old.metadata.version, "1.0")
         XCTAssertEqual(old.metadata.iconAvailable, true)
