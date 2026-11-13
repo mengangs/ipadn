@@ -32,8 +32,6 @@ struct DownloadsView: View {
     /// A mode change is running; taps wait so two changes never overlap.
     @State private var switchingMode = false
     @State private var actionBusy = false
-    /// The task whose lifted card and actions are showing.
-    @State private var menuJob: DownloadJob?
     private var filteredJobs: [DownloadJob] {
         manager.jobs.filter { filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
     }
@@ -240,11 +238,7 @@ struct DownloadsView: View {
         return text
     }
     private func taskContent(_ job: DownloadJob, update: StoreApp?, editing: Bool = false) -> some View {
-        DownloadTaskRow(snapshot: job, progress: manager.progress(for: job.id), update: update, kept: store.keepsVersion(job), editing: editing,
-                         // A long press that opened the card must not also press the button under the finger.
-                         inspecting: { if menuJob == nil { inspecting = job } },
-                         primary: { if menuJob == nil { primary(job) } },
-                         updating: { if menuJob == nil { downloadUpdate(job) } })
+        DownloadTaskRow(snapshot: job, progress: manager.progress(for: job.id), update: update, kept: store.keepsVersion(job), editing: editing, inspecting: { inspecting = job }, primary: { primary(job) }, updating: { downloadUpdate(job) })
     }
     private func shareAction(_ job: DownloadJob) -> [RevealAction] {
         guard job.status == .completed, manager.fileURL(job) != nil else { return [] }
@@ -336,15 +330,40 @@ struct DownloadsView: View {
                             .revealActions(id: "download." + job.id.uuidString,
                                            enabled: !edit && !actionBusy && job.status != .processing && job.status != .pausing,
                                            [.delete { askDelete([job.id]) }] + shareAction(job))
-                            .background {
-                                TaskContextAttachment(enabled: !edit && !actionBusy, requested: menuJob?.id == job.id,
-                                                      name: job.app.name, items: menuItems(job, latest: updates[job.id]),
-                                                      closed: { menuJob = nil })
+                            .contextMenu {
+                                if !edit {
+                                    if let latest = updates[job.id] {
+                                        Button("下载新版本 \(latest.version)", systemImage: "arrow.down.circle") { downloadUpdate(job) }
+                                    }
+                                    if job.status == .completed && job.updateKey != nil {
+                                        if store.keepsVersion(job) {
+                                            Button("恢复更新提醒", systemImage: "bell") { store.keepVersion(false, of: job); UX.feedback() }
+                                        } else {
+                                            Button("保留此版本", systemImage: "pin") {
+                                                store.keepVersion(true, of: job); UX.feedback()
+                                                store.infoMessage = AppText.text("已保留此版本，不再提醒更新")
+                                            }
+                                        }
+                                    }
+                                    Button("任务详情", systemImage: "info.circle") { inspecting = job }
+                                    if let file = manager.fileURL(job) {
+                                        Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: manager.exportURL(job) ?? file) }
+                                        if job.rawFormat == nil {
+                                            Button("安装", systemImage: "square.and.arrow.down") { installing = job }
+                                        }
+                                        Button("复制本机链接", systemImage: "link") {
+                                            perform {
+                                                let url = try await store.installation.localURL(file: file)
+                                                UIPasteboard.general.string = url.absoluteString
+                                                store.infoMessage = AppText.text("已复制链接")
+                                            }
+                                        }
+                                    }
+                                    if job.status != .processing && job.status != .pausing {
+                                        Button("删除任务及文件", systemImage: "trash", role: .destructive) { askDelete([job.id]) }
+                                    }
+                                }
                             }
-                            .simultaneousGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
-                                if !edit && !actionBusy { menuJob = job }
-                            })
-                            .accessibilityAction(named: Text("更多操作")) { if !edit && !actionBusy { menuJob = job } }
                             // Outside the card background, so the whole card slides.
                             .modifier(DrawerRow(shown: cardsShown || reduceMotion, index: index, travel: 28))
                         } header: {
@@ -431,41 +450,6 @@ struct DownloadsView: View {
             if imported > 0 { filter = .all; term = ""; store.infoMessage = AppText.text("已导入 \(imported) 个安装包") }
             if !failures.isEmpty { store.errorMessage = failures.joined(separator: "\n") }
         }
-    }
-    /// The actions for a task, shared by the long-press menu.
-    private func menuItems(_ job: DownloadJob, latest: StoreApp?) -> [TaskMenuItem] {
-        var items: [TaskMenuItem] = []
-        if let latest {
-            items.append(TaskMenuItem(id: "update", title: AppText.text("下载新版本 \(latest.version)"), symbol: "arrow.down.circle") { downloadUpdate(job) })
-        }
-        if job.status == .completed && job.updateKey != nil {
-            if store.keepsVersion(job) {
-                items.append(TaskMenuItem(id: "unkeep", title: AppText.text("恢复更新提醒"), symbol: "bell") { store.keepVersion(false, of: job); UX.feedback() })
-            } else {
-                items.append(TaskMenuItem(id: "keep", title: AppText.text("保留此版本"), symbol: "pin") {
-                    store.keepVersion(true, of: job); UX.feedback()
-                    store.infoMessage = AppText.text("已保留此版本，不再提醒更新")
-                })
-            }
-        }
-        items.append(TaskMenuItem(id: "detail", title: AppText.text("任务详情"), symbol: "info.circle") { inspecting = job })
-        if let file = manager.fileURL(job) {
-            items.append(TaskMenuItem(id: "export", title: AppText.text("导出文件"), symbol: "square.and.arrow.up") { share = SharedFile(url: manager.exportURL(job) ?? file) })
-            if job.rawFormat == nil {
-                items.append(TaskMenuItem(id: "install", title: AppText.text("安装"), symbol: "square.and.arrow.down") { installing = job })
-            }
-            items.append(TaskMenuItem(id: "link", title: AppText.text("复制本机链接"), symbol: "link") {
-                perform {
-                    let url = try await store.installation.localURL(file: file)
-                    UIPasteboard.general.string = url.absoluteString
-                    store.infoMessage = AppText.text("已复制链接")
-                }
-            })
-        }
-        if job.status != .processing && job.status != .pausing {
-            items.append(TaskMenuItem(id: "delete", title: AppText.text("删除任务及文件"), symbol: "trash", destructive: true) { askDelete([job.id]) })
-        }
-        return items
     }
     private func packageDisplayApp(_ job: DownloadJob) -> StoreApp {
         var app = job.app
@@ -739,13 +723,4 @@ private struct DrawerRow: ViewModifier {
             .animation(shown ? .spring(response: 0.32, dampingFraction: 0.84).delay(0.01 + Double(min(index, 10)) * 0.02)
                              : .easeIn(duration: 0.12), value: shown)
     }
-}
-
-/// One action on the long-press card.
-struct TaskMenuItem: Identifiable {
-    let id: String
-    let title: String
-    let symbol: String
-    var destructive = false
-    let action: () -> Void
 }

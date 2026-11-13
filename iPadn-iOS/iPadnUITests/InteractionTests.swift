@@ -393,62 +393,23 @@ final class InteractionTests: XCTestCase {
         }
     }
 
-    func testTaskMenuStaysAtRowAndDismissesOnFirstOutsideTap() {
-        let app = Self.launchableApp()
-        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--stress-records=100"]
-        app.launch()
-        let row = app.descendants(matching: .any)["download.task.stress-0.paused"].firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
-        let sourceFrame = row.frame
-        let addFrame = app.buttons["downloads.add"].frame
-        let addPoint = app.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: addFrame.midX, dy: addFrame.midY))
-        row.press(forDuration: 0.7)
-        let preview = app.images["download.menu.preview"]
-        let details = app.buttons["download.menu.detail"]
-        XCTAssertTrue(details.waitForExistence(timeout: 5))
-        XCTAssertTrue(preview.exists)
-        // These two actions fit below the first row: no centering is necessary.
-        XCTAssertEqual(preview.frame.minY, sourceFrame.minY, accuracy: 6)
-        XCTAssertEqual(preview.frame.width, sourceFrame.width, accuracy: 6)
-        XCTAssertFalse(app.navigationBars["任务详情"].exists, "Releasing a long press must not also tap the row")
-        addPoint.tap()
-        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: details)
-        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 5), .completed, "The first outside tap must close the menu")
-        XCTAssertFalse(app.buttons["downloads.import"].exists, "The closing tap must not also activate Add")
-        app.buttons["downloads.add"].tap()
-        XCTAssertTrue(app.buttons["downloads.import"].waitForExistence(timeout: 5), "The next tap must work normally")
-    }
-
-    func testTaskMenuBackgroundDragClosesAndScrollsInOneGesture() {
+    func testNativeTaskMenuDismissesAndOpensDetails() {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--stress-records=100"]
         app.launch()
         let first = app.descendants(matching: .any)["download.task.stress-0.paused"].firstMatch
         XCTAssertTrue(first.waitForExistence(timeout: 10))
         first.press(forDuration: 0.7)
-        let details = app.buttons["download.menu.detail"]
+        let details = app.buttons["任务详情"].firstMatch
         XCTAssertTrue(details.waitForExistence(timeout: 5))
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.82))
-            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
+        XCTAssertFalse(app.navigationBars["任务详情"].exists, "Long press must not also tap the row")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: details)
         XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 5), .completed)
-        XCTAssertFalse(first.isHittable, "The same drag must scroll the list, not only close the menu")
-        XCTAssertTrue(app.buttons["downloads.edit"].isHittable)
-    }
-
-    func testTaskMenuActionStillOpensDetails() {
-        let app = Self.launchableApp()
-        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--stress-records=100"]
-        app.launch()
-        let first = app.descendants(matching: .any)["download.task.stress-0.paused"].firstMatch
-        XCTAssertTrue(first.waitForExistence(timeout: 10))
         first.press(forDuration: 0.7)
-        let details = app.buttons["download.menu.detail"]
         XCTAssertTrue(details.waitForExistence(timeout: 5))
         details.tap()
         XCTAssertTrue(app.navigationBars["任务详情"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.images["download.menu.preview"].exists)
     }
 
     private func revealActions(on element: XCUIElement) {
