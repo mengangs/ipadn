@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class InteractionTests: XCTestCase {
     /// The assertions here read Chinese copy, so the app runs in Chinese even
@@ -428,12 +429,17 @@ final class InteractionTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [backAtTop], timeout: 5), .completed, "Reselecting Downloads must scroll to the first task")
     }
 
-    func testDownloadSwipeSurfaceScreenshotsInBothDirections() {
+    func testDownloadSwipeSurfaceScreenshotsInBothDirections() throws {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads"]
         app.launch()
         let row = app.descendants(matching: .any)["download.task.preview-2.paused"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
+        // Just outside the resting cell, but INSIDE the translated card after
+        // a right swipe. A native inset-grouped cell mask used to leave this
+        // pixel as page background, truncating the moving surface early.
+        let probe = CGPoint(x: app.frame.maxX - 3, y: row.frame.minY + 3)
+        let resting = try screenshotPixel(app.screenshot(), at: probe, appFrame: app.frame)
         revealActions(on: row)
         let delete = app.buttons["删除"].firstMatch
         XCTAssertTrue(delete.waitForExistence(timeout: 5))
@@ -447,6 +453,32 @@ final class InteractionTests: XCTestCase {
         // Both edges are captured: the moving surface must keep its own
         // rounded corners, rather than being clipped to the resting row.
         attach("download-card-surface-right", app: app)
+        let translated = try screenshotPixel(app.screenshot(), at: probe, appFrame: app.frame)
+        let brightnessGain = zip(translated.prefix(3), resting.prefix(3)).reduce(0) { $0 + Int($1.0) - Int($1.1) }
+        XCTAssertGreaterThan(brightnessGain, 20, "The white card must extend beyond the resting cell's right boundary")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        let closedAgain = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: delete)
+        XCTAssertEqual(XCTWaiter.wait(for: [closedAgain], timeout: 5), .completed)
+        let restored = try screenshotPixel(app.screenshot(), at: probe, appFrame: app.frame)
+        for (before, after) in zip(resting, restored) {
+            XCTAssertLessThanOrEqual(abs(Int(before) - Int(after)), 2, "Closing must restore the resting card and page margin")
+        }
+    }
+
+    /// Normalize to RGBA, independent of simulator pixel format and scale.
+    private func screenshotPixel(_ screenshot: XCUIScreenshot, at point: CGPoint, appFrame: CGRect) throws -> [UInt8] {
+        let image = try XCTUnwrap(screenshot.image.cgImage)
+        let sx = CGFloat(image.width) / appFrame.width, sy = CGFloat(image.height) / appFrame.height
+        let sample = try XCTUnwrap(image.cropping(to: CGRect(x: ((point.x - appFrame.minX) * sx).rounded(.down),
+                                                           y: ((point.y - appFrame.minY) * sy).rounded(.down), width: 1, height: 1)))
+        var rgba = [UInt8](repeating: 0, count: 4)
+        try rgba.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                                                 bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(sample, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        return rgba
     }
 
     func testNativeTaskMenuDismissesAndOpensDetails() {

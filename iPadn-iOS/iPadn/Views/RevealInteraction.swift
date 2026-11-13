@@ -133,6 +133,23 @@ private struct RevealGestureAttachment: UIViewRepresentable {
         let recognizer = ItemListRevealTouchGestureRecognizer()
         let closeTap = UITapGestureRecognizer()
         private var dismissOverlay: RevealDismissOverlay?
+        /// Inset-grouped Lists also mask the UIKit cell/hosting ancestors.
+        /// Our moving card supplies its own rounded mask; temporarily remove
+        /// only those ancestor masks, never the scroll view's viewport.
+        private final class SavedClipping {
+            weak var view: UIView?
+            let clips: Bool
+            let mask: CALayer?
+            init(_ view: UIView) {
+                self.view = view; clips = view.clipsToBounds; mask = view.layer.mask
+            }
+            func restore() {
+                guard let view else { return }
+                view.clipsToBounds = clips
+                if view.layer.mask == nil { view.layer.mask = mask }
+            }
+        }
+        private var savedClipping: [SavedClipping] = []
         init(_ parent: RevealGestureAttachment) {
             self.parent = parent
             super.init()
@@ -189,12 +206,30 @@ private struct RevealGestureAttachment: UIViewRepresentable {
         private func updateEnabledState() {
             if recognizer.isEnabled != parent.enabled { recognizer.isEnabled = parent.enabled }
             let canClose = parent.enabled && abs(parent.offset) > 1
+            updateClipping(revealing: abs(parent.offset) > 1)
             if closeTap.isEnabled != canClose { closeTap.isEnabled = canClose }
             if canClose, let window = anchor?.window { showDismissOverlay(in: window) }
             else if !canClose { hideDismissOverlay() }
         }
+        private func updateClipping(revealing: Bool) {
+            guard revealing else { restoreClipping(); return }
+            var ancestor = anchor?.superview
+            while let view = ancestor, !(view is UIScrollView), !(view is UIWindow) {
+                if !savedClipping.contains(where: { $0.view === view }) {
+                    savedClipping.append(SavedClipping(view))
+                }
+                view.clipsToBounds = false
+                view.layer.mask = nil
+                ancestor = view.superview
+            }
+        }
+        private func restoreClipping() {
+            for state in savedClipping.reversed() { state.restore() }
+            savedClipping.removeAll()
+        }
         func detach() {
             recognizer.isEnabled = false; closeTap.isEnabled = false
+            restoreClipping()
             hideDismissOverlay()
             host?.removeGestureRecognizer(recognizer); host?.removeGestureRecognizer(closeTap); host = nil
         }
