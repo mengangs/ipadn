@@ -393,6 +393,41 @@ final class InteractionTests: XCTestCase {
         }
     }
 
+    func testDownloadCompletionOffersInstallAndCompletedRowsDoNotReplay() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--completion-preview"]
+        app.launch()
+        let pause = app.buttons["暂停"].firstMatch
+        XCTAssertTrue(pause.waitForExistence(timeout: 10))
+        pause.tap() // Preview-only: running -> processing -> completed; no real download.
+        let install = app.buttons["download.install.preview-1"]
+        XCTAssertTrue(install.waitForExistence(timeout: 8), "The completion check must give way to Install")
+        XCTAssertFalse(pause.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["download.task.preview-1.completed"].firstMatch.exists)
+        attach("completion-offers-install", app: app)
+        app.terminate()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads"]
+        app.launch()
+        XCTAssertTrue(app.buttons["download.install.1232780281"].waitForExistence(timeout: 10), "Previously completed rows must offer Install without replaying the celebration")
+    }
+
+    func testTabReselectScrollsToTopWithoutResettingOnTabSwitch() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--stress-records=100"]
+        app.launch()
+        let first = app.descendants(matching: .any)["download.task.stress-0.paused"].firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        app.swipeUp()
+        XCTAssertFalse(first.isHittable)
+        let tabs = app.tabBars.firstMatch
+        tabs.buttons["搜索"].tap()
+        tabs.buttons["下载"].tap()
+        XCTAssertFalse(first.isHittable, "Returning to Downloads must retain its scroll position")
+        tabs.buttons["下载"].tap()
+        let backAtTop = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: first)
+        XCTAssertEqual(XCTWaiter.wait(for: [backAtTop], timeout: 5), .completed, "Reselecting Downloads must scroll to the first task")
+    }
+
     func testNativeTaskMenuDismissesAndOpensDetails() {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--stress-records=100"]

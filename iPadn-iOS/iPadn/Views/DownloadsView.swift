@@ -458,6 +458,12 @@ struct DownloadsView: View {
     }
     private func primary(_ job: DownloadJob) {
         UX.feedback()
+        #if DEBUG
+        if LocalResources.isPreview, ProcessInfo.processInfo.arguments.contains("--completion-preview"), job.status == .running {
+            manager.completePreviewDownload(job.id)
+            return
+        }
+        #endif
         switch job.status {
         case .running, .queued: manager.pause(job.id)
         case .paused: manager.resume(job.id)

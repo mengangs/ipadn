@@ -20,6 +20,9 @@ enum AppContainer {
             if ProcessInfo.processInfo.arguments.contains("--updates") {
                 jobs = PreviewData.updatable.map { DownloadJob(app: $0, status: .completed) }
             }
+            if ProcessInfo.processInfo.arguments.contains("--completion-preview") {
+                jobs = [jobs[0]]
+            }
             let store = ToolStore(downloadManager: DownloadManager(previewJobs: jobs))
             store.prepareVisualPreview()
             store.settings.appearance = ProcessInfo.processInfo.arguments.contains("--dark") ? "dark" : "light"

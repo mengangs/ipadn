@@ -222,6 +222,20 @@ final class DownloadManager: NSObject, ObservableObject {
         tasks = activeTasks
         restoring = activeTasks.isEmpty
     }
+    /// Isolated UI-test fixture: exercise the real row's processing/completed
+    /// transitions without a URLSession, file writes, notifications or install.
+    func completePreviewDownload(_ id: UUID) {
+        guard LocalResources.isPreview,
+              ProcessInfo.processInfo.arguments.contains("--completion-preview"),
+              let index = jobs.firstIndex(where: { $0.id == id && $0.status == .running }) else { return }
+        jobs[index].status = .processing
+        Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .milliseconds(350)) } catch { return }
+            guard let self, let index = self.jobs.firstIndex(where: { $0.id == id && $0.status == .processing }) else { return }
+            self.jobs[index].downloaded = self.jobs[index].expected
+            self.jobs[index].status = .completed
+        }
+    }
     #endif
 
     override init() {

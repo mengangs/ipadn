@@ -314,26 +314,47 @@ struct TabReselectScroll: UIViewRepresentable {
         var moved: (() -> Void)?
         override func didMoveToWindow() { super.didMoveToWindow(); moved?() }
     }
-    final class Coordinator: NSObject {
-        var selected = 0
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         weak var anchor: Anchor?
         private weak var watched: UITabBar?
+        private var tap: UITapGestureRecognizer?
+        private var selectedAtTouch: Int?
         func install() {
-            guard let window = anchor?.window, let bar = Self.tabBar(in: window), bar !== watched else { return }
+            guard let window = anchor?.window, let bar = Self.tabBar(in: window) else { detach(); return }
+            guard bar !== watched else { return }
+            detach()
             let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
             tap.cancelsTouchesInView = false
+            tap.delegate = self
             bar.addGestureRecognizer(tap)
+            self.tap = tap
             watched = bar
         }
+        func detach() {
+            if let tap { watched?.removeGestureRecognizer(tap) }
+            tap = nil; watched = nil; selectedAtTouch = nil
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let bar = watched else { return false }
+            // Capture BEFORE UIKit changes selection, not when the tap ends.
+            // Comparing item indices also avoids assuming LTR button positions.
+            selectedAtTouch = bar.items?.firstIndex { $0 === bar.selectedItem }
+            var view = touch.view
+            while let current = view, current !== bar {
+                if current is UIControl { return true }
+                view = current.superview
+            }
+            return false
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
         @objc private func tapped(_ gesture: UITapGestureRecognizer) {
-            guard let bar = gesture.view as? UITabBar else { return }
-            let point = gesture.location(in: bar)
-            // Tab buttons are the bar's controls, left to right in tab order.
-            let buttons = bar.subviews.compactMap { $0 as? UIControl }.sorted { $0.frame.minX < $1.frame.minX }
-            // The selection changes on touch-up, which the tab bar handles, so
-            // `selected` still holds the tab that was showing before this tap.
-            guard let index = buttons.firstIndex(where: { $0.frame.contains(point) }), index == selected else { return }
-            Self.scrollToTop(in: bar.window)
+            guard let bar = gesture.view as? UITabBar, let before = selectedAtTouch else { return }
+            selectedAtTouch = nil
+            DispatchQueue.main.async { [weak bar] in
+                guard let bar, bar.items?.firstIndex(where: { $0 === bar.selectedItem }) == before else { return }
+                Self.scrollToTop(in: bar.window)
+            }
         }
         private static func tabBar(in view: UIView) -> UITabBar? {
             if let bar = view as? UITabBar { return bar }
@@ -347,7 +368,8 @@ struct TabReselectScroll: UIViewRepresentable {
             var bestArea: CGFloat = 0
             var stack: [UIView] = [window]
             while let view = stack.popLast() {
-                if let scroll = view as? UIScrollView, !scroll.isHidden, scroll.alpha > 0.01,
+                guard !view.isHidden, view.alpha > 0.01, view.layer.opacity > 0.01 else { continue }
+                if let scroll = view as? UIScrollView,
                    scroll.contentSize.height > scroll.bounds.height {
                     let visible = scroll.convert(scroll.bounds, to: window).intersection(window.bounds)
                     let area = visible.width * visible.height
@@ -368,8 +390,11 @@ struct TabReselectScroll: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: Anchor, context: Context) {
-        context.coordinator.selected = selected
         context.coordinator.install()
+    }
+    static func dismantleUIView(_ view: Anchor, coordinator: Coordinator) {
+        view.moved = nil
+        coordinator.detach()
     }
 }
 
