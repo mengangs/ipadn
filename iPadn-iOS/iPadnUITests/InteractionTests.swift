@@ -327,7 +327,7 @@ final class InteractionTests: XCTestCase {
         XCTAssertFalse(row.exists)
     }
 
-    func testHistoryAccountSwipeAndImportPicker() {
+    func testHistoryAndFavoriteActions() {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview"]
         app.launch()
@@ -356,6 +356,10 @@ final class InteractionTests: XCTestCase {
         // not detail.get. Copy ID is present in either authentication state.
         XCTAssertTrue(app.buttons["app.copy-id"].waitForExistence(timeout: 10))
         app.terminate()
+    }
+
+    func testAccountSwipeAndSourceSettings() {
+        let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--accounts"]
         app.launch()
         let account = app.buttons["account.demo@example.com"]
@@ -375,6 +379,13 @@ final class InteractionTests: XCTestCase {
         source.tap()
         XCTAssertTrue(app.textFields["来源名称"].waitForExistence(timeout: 5))
         app.terminate()
+    }
+
+    func testDownloadImportPickerCanBeCancelled() {
+        // The Files UI starts in a separate process. Keep its cold-start
+        // budget independent of the history and account/settings scenarios;
+        // all assertions stay covered under the same 120-second test cap.
+        let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads"]
         app.launch()
         let add = app.buttons["downloads.add"]
