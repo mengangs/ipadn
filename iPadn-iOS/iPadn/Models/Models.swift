@@ -310,6 +310,8 @@ struct ToolSettings: Codable, Equatable {
     var autoInstall = false
     /// Download progress on the Lock Screen and in the Dynamic Island.
     var downloadLiveActivity = true
+    /// Shows app icons beside historical versions and fetches them on demand.
+    var showHistoryIcons = true
     /// Opt in to on-device translation; the system sheet remains the default.
     var directTranslation = false
     var useSignerCache = true
@@ -339,7 +341,7 @@ struct ToolSettings: Codable, Equatable {
         case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency, appUpdateCheck, targetPrices
         case appearanceSchema, compatibleDownloadMode, nativeInstallation, versionSourcesSchema, appLock, appLockDelay, showDiscover
         case wifiOnlyDownloads, autoInstall
-        case downloadLiveActivity, directTranslation
+        case downloadLiveActivity, showHistoryIcons, directTranslation
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -357,6 +359,7 @@ struct ToolSettings: Codable, Equatable {
         wifiOnlyDownloads = try values.decodeIfPresent(Bool.self, forKey: .wifiOnlyDownloads) ?? wifiOnlyDownloads
         autoInstall = try values.decodeIfPresent(Bool.self, forKey: .autoInstall) ?? autoInstall
         downloadLiveActivity = try values.decodeIfPresent(Bool.self, forKey: .downloadLiveActivity) ?? downloadLiveActivity
+        showHistoryIcons = try values.decodeIfPresent(Bool.self, forKey: .showHistoryIcons) ?? showHistoryIcons
         directTranslation = try values.decodeIfPresent(Bool.self, forKey: .directTranslation) ?? directTranslation
         watchNotifications = try values.decodeIfPresent(Bool.self, forKey: .watchNotifications) ?? watchNotifications
         targetPrices = try values.decodeIfPresent(Bool.self, forKey: .targetPrices) ?? targetPrices

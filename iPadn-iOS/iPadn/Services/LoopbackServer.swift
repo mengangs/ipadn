@@ -117,7 +117,7 @@ final class LoopbackServer: @unchecked Sendable {
             catch {
                 // A fixed port can take a moment to be released.
                 guard self.port != nil else { throw error }
-                try await Task.sleep(nanoseconds: 500_000_000)
+                try await Task.sleep(nanoseconds: 250_000_000)
                 try await startListener()
             }
             return
@@ -139,7 +139,7 @@ final class LoopbackServer: @unchecked Sendable {
     }
 
     /// Whether something accepts TCP connections on the loopback port.
-    static func isListening(port: UInt16, timeout: TimeInterval = 1.5) async -> Bool {
+    static func isListening(port: UInt16, timeout: TimeInterval = 0.8) async -> Bool {
         guard let endpointPort = NWEndpoint.Port(rawValue: port) else { return false }
         final class Probe: @unchecked Sendable {
             private let lock = NSLock()

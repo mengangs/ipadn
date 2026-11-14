@@ -24,9 +24,17 @@ struct PackageInstallationView: View {
     private let proxied = LocalHostRecord.proxyOrVPNActive
     /// How far a native installation has got; nil when none is running.
     @State private var nativePhase: NativeInstaller.Phase?
+    @State private var cancelling = false
+    @State private var autoStartPending = false
+    @State private var autoStartTask: Task<Void, Never>?
+    @State private var installTask: Task<Void, Never>?
+    @State private var followUpTask: Task<Void, Never>?
     /// Native installation only: keep the App Store from offering updates.
     @State private var blockUpdates = false
     private var native: Bool { store.settings.usesNativeInstallation }
+    private var isNativeCancellable: Bool { nativePhase?.isCancellable == true }
+    private var isLockedInSystemInstall: Bool { nativePhase?.isCancellable == false }
+    private var canCancel: Bool { autoStartPending || busy || isNativeCancellable }
     var body: some View {
         NavigationStack {
             Form {
@@ -44,19 +52,36 @@ struct PackageInstallationView: View {
                         } label: {
                             HStack(spacing: 8) {
                                 if busy || openingSystem { ProgressView().tint(UX.onAccent) }
-                                Text(nativePhase != nil ? "正在安装…" : busy ? "正在准备…" : openingSystem ? "正在打开安装…" : "安装")
+                                Text(cancelling ? "正在取消…"
+                                     : isLockedInSystemInstall ? "系统正在安装…"
+                                     : nativePhase != nil ? "正在安装…"
+                                     : busy ? "正在准备…"
+                                     : openingSystem ? "正在打开安装…" : "安装")
                                     .contentTransition(.opacity)
                             }
                             .frame(maxWidth: .infinity)
-                            .animation(.easeOut(duration: 0.15), value: busy || openingSystem)
+                            .animation(.easeOut(duration: 0.15), value: busy || openingSystem || cancelling || nativePhase != nil)
                         }
-                        .buttonStyle(PrimaryButtonStyle()).disabled(busy || openingSystem)
+                        .buttonStyle(PrimaryButtonStyle()).disabled(busy || openingSystem || cancelling || nativePhase != nil)
                         .accessibilityIdentifier("installation.request")
+                        if canCancel || isLockedInSystemInstall {
+                            Button {
+                                cancelInstallation()
+                            } label: {
+                                Label(isLockedInSystemInstall ? "系统安装阶段无法取消" : cancelling ? "正在取消…" : "取消安装",
+                                      systemImage: isLockedInSystemInstall ? "lock.fill" : "xmark.circle")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(isLockedInSystemInstall || cancelling ? Color.secondary : Color.primary)
+                            .disabled(isLockedInSystemInstall || cancelling)
+                            .accessibilityIdentifier("installation.cancel")
+                        }
                         if !native, attempted || InstallLog.insideLiveContainer {
                             Button { requestInstallation(viaBrowser: true) } label: {
                                 Label("在 Safari 中安装", systemImage: "safari").frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.borderless).disabled(busy || openingSystem)
+                            .buttonStyle(.borderless).disabled(busy || openingSystem || cancelling)
                             .accessibilityIdentifier("installation.browser")
                         }
                         Button {
@@ -68,7 +93,7 @@ struct PackageInstallationView: View {
                     .frame(maxWidth: .infinity).padding(.vertical, 10)
                 }
                 if let nativePhase {
-                    Section { NativeProgressRow(phase: nativePhase) }
+                    Section { NativeProgressRow(phase: nativePhase, cancelling: cancelling) }
                 } else if started {
                     Section {
                         TimelineView(.periodic(from: .now, by: 0.5)) { _ in
@@ -100,15 +125,24 @@ struct PackageInstallationView: View {
                     }
                 }
             }.toolPage().navigationTitle("安装").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.disabled(nativePhase != nil) } }
-                .interactiveDismissDisabled(nativePhase != nil)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") {
+                    cancelInstallation(silent: true)
+                    dismiss()
+                }.disabled(isLockedInSystemInstall || cancelling) } }
+                .interactiveDismissDisabled(isLockedInSystemInstall || cancelling)
                 .sheet(item: $sharedFile) { ShareSheet(items: [$0.url]) }
                 .compatibleOnChange(of: scenePhase) { phase in if phase != .active { openingSystem = false } }
-                .task {
-                    guard startsAutomatically, !attempted else { return }
-                    try? await Task.sleep(for: .milliseconds(500))
-                    requestInstallation()
+                .onAppear {
+                    guard startsAutomatically, !attempted, autoStartTask == nil else { return }
+                    autoStartPending = true
+                    autoStartTask = Task { @MainActor in
+                        defer { autoStartPending = false; autoStartTask = nil }
+                        do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+                        guard !Task.isCancelled else { return }
+                        requestInstallation()
+                    }
                 }
+                .onDisappear { cancelInstallation(silent: true) }
                 .alert("安装未开始", isPresented: Binding(get: { issue != nil }, set: { if !$0 { issue = nil } })) {
                     Button("知道了", role: .cancel) { issue = nil }
                 } message: { Text(issue ?? "") }
@@ -133,18 +167,70 @@ struct PackageInstallationView: View {
         guard let host else { return "" }
         return "\n" + AppText.text("已开启代理：如果无法安装，请为 \(host) 添加直连（DIRECT）规则。")
     }
+    private func cancelInstallation(silent: Bool = false) {
+        autoStartTask?.cancel(); autoStartTask = nil
+        autoStartPending = false
+        followUpTask?.cancel(); followUpTask = nil
+        openingSystem = false
+        if isLockedInSystemInstall {
+            cancelling = false
+            if !silent {
+                message = AppText.text("已进入系统安装阶段，无法中断，请等待完成。")
+            }
+            return
+        }
+        guard busy || isNativeCancellable || installTask != nil else {
+            if !silent, attempted { message = AppText.text("已取消安装。") }
+            return
+        }
+        UX.feedback()
+        if nativePhase != nil {
+            cancelling = true
+            NativeInstaller.cancel()
+            installTask?.cancel()
+            return
+        }
+        attempt += 1
+        installTask?.cancel(); installTask = nil
+        store.installation.stopHosting()
+        busy = false
+        cancelling = false
+        started = false
+        message = silent ? nil : AppText.text("已取消安装。")
+    }
+
     /// Hands the package to the system installer and waits for it to finish.
     private func requestNativeInstallation() {
-        guard !busy else { return }
+        guard !busy, !cancelling, nativePhase == nil else { return }
         UX.feedback()
-        busy = true; message = nil; started = false; nativePhase = .connecting
-        Task { @MainActor in
-            defer { busy = false; nativePhase = nil }
-            do {
-                guard let file = manager.fileURL(job) else { throw ToolError.message("找不到安装包文件，请重新下载。") }
-                let outcome = try await NativeInstaller.install(package: file, bundleID: job.app.bundleID, blockUpdates: blockUpdates) { phase in
-                    Task { @MainActor in if nativePhase != nil { nativePhase = phase } }
+        autoStartTask?.cancel(); autoStartTask = nil; autoStartPending = false
+        followUpTask?.cancel(); followUpTask = nil
+        installTask?.cancel()
+        attempt += 1
+        let current = attempt
+        busy = true; cancelling = false; message = nil; issue = nil; started = false; attempted = true; nativePhase = .connecting
+        installTask = Task { @MainActor in
+            defer {
+                if attempt == current {
+                    busy = false
+                    cancelling = false
+                    nativePhase = nil
+                    installTask = nil
                 }
+            }
+            do {
+                guard let file = manager.fileURL(job) else { throw ToolError.message(AppText.text("找不到安装包文件，请重新下载。")) }
+                let outcome = try await NativeInstaller.install(package: file, bundleID: job.app.bundleID, blockUpdates: blockUpdates) { phase in
+                    Task { @MainActor in
+                        guard attempt == current, nativePhase != nil else { return }
+                        nativePhase = phase
+                        if !phase.isCancellable && cancelling {
+                            cancelling = false
+                            message = AppText.text("已进入系统安装阶段，无法中断，请等待完成。")
+                        }
+                    }
+                }
+                guard attempt == current else { return }
                 UX.feedback()
                 message = outcome.after?.recognisedByAppStore == false
                     ? AppText.text("安装完成，但系统没有保留这个安装包的购买记录，App Store 可能无法识别它。")
@@ -153,19 +239,32 @@ struct PackageInstallationView: View {
                     message = (message ?? "") + "\n" + AppText.text("已阻止 App Store 更新这个应用。")
                 }
             } catch is CancellationError {
-                message = nil
-            } catch { issue = error.localizedDescription }
+                guard attempt == current else { return }
+                message = AppText.text("已取消安装。")
+            } catch {
+                guard attempt == current else { return }
+                issue = error.localizedDescription
+            }
         }
     }
     private func requestInstallation(viaBrowser: Bool = false) {
         if native, !viaBrowser { requestNativeInstallation(); return }
-        guard !busy, !openingSystem else { return }
+        guard !busy, !openingSystem, !cancelling else { return }
         UX.feedback()
-        busy = true; message = nil; started = false; attempted = true
+        autoStartTask?.cancel(); autoStartTask = nil; autoStartPending = false
+        followUpTask?.cancel(); followUpTask = nil
+        installTask?.cancel()
+        busy = true; cancelling = false; message = nil; issue = nil; started = false; attempted = true
         attempt += 1
         let current = attempt
-        Task { @MainActor in
-            defer { busy = false }
+        installTask = Task { @MainActor in
+            defer {
+                if attempt == current {
+                    busy = false
+                    cancelling = false
+                    installTask = nil
+                }
+            }
             do {
                 guard let file = manager.fileURL(job) else { throw ToolError.message(AppText.text("找不到安装包文件，请重新下载。")) }
                 let url: URL
@@ -177,38 +276,52 @@ struct PackageInstallationView: View {
                 } else {
                     url = try await store.installation.installURL(job: job, file: file, plistServer: store.settings.plistServer)
                 }
+                try Task.checkCancellation()
+                guard attempt == current else { return }
                 let local = !store.settings.automaticInstallation && store.settings.localInstallation
                 let served = InstallLog.shared.manifestCount
-                InstallLog.shared.beginInstallation()
                 let target = try viaBrowser ? store.installation.browserPage(installURL: url, app: job.app) : url
+                try Task.checkCancellation()
+                guard attempt == current else { return }
+                InstallLog.shared.beginInstallation()
                 openURL(target) { accepted in
+                    guard attempt == current else { return }
                     InstallLog.shared.add((viaBrowser ? "install page handed to Safari: " : "install link handed to the system: ")
                                           + (accepted ? "accepted" : "refused"))
                     if accepted {
                         started = true
                         // Until the prompt (or Safari) takes over the screen.
                         openingSystem = true
-                        Task { @MainActor in
-                            try? await Task.sleep(for: .seconds(12))
+                        message = viaBrowser ? AppText.text("请在 Safari 中确认安装，然后回到 iPadn 等待完成。") : AppText.text("请在系统弹窗中确认安装，完成前请勿退出 iPadn。")
+                        followUpTask?.cancel()
+                        followUpTask = Task { @MainActor in
+                            if local, !viaBrowser {
+                                do { try await Task.sleep(for: .seconds(6)) } catch { return }
+                                guard attempt == current else { return }
+                                if InstallLog.shared.manifestCount == served {
+                                    message = nil; started = false; openingSystem = false
+                                    issue = proxied
+                                        ? AppText.text("系统没能连接到 iPadn 的本机安装服务。开启代理或 VPN 时，请在代理规则中为 ipadn.localtest.me 添加直连（DIRECT）规则，或暂时关闭代理；也可以改用一键安装。")
+                                        : AppText.text("系统没能连接到 iPadn 的本机安装服务。请在「设置 › 通用 › 关于本机 › 证书信任设置」中确认已开启 iPadn 本机安装 CA；也可以改用一键安装。")
+                                    return
+                                }
+                                do { try await Task.sleep(for: .seconds(6)) } catch { return }
+                            } else {
+                                do { try await Task.sleep(for: .seconds(12)) } catch { return }
+                            }
                             if attempt == current { openingSystem = false }
                         }
-                        message = viaBrowser ? AppText.text("请在 Safari 中确认安装，然后回到 iPadn 等待完成。") : AppText.text("请在系统弹窗中确认安装，完成前请勿退出 iPadn。")
                     }
                     else { issue = AppText.text("无法开始安装，请检查安装方式，或导出安装包。"); store.installation.stopHosting() }
-                    guard accepted, local else { return }
-                    // The system fetches the install details from iPadn right away;
-                    // if it never did, it could not connect.
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .seconds(6))
-                        if attempt == current, InstallLog.shared.manifestCount == served, !viaBrowser {
-                            message = nil; started = false
-                            issue = proxied
-                                ? AppText.text("系统没能连接到 iPadn 的本机安装服务。开启代理或 VPN 时，请在代理规则中为 ipadn.localtest.me 添加直连（DIRECT）规则，或暂时关闭代理；也可以改用一键安装。")
-                                : AppText.text("系统没能连接到 iPadn 的本机安装服务。请在「设置 › 通用 › 关于本机 › 证书信任设置」中确认已开启 iPadn 本机安装 CA；也可以改用一键安装。")
-                        }
-                    }
                 }
-            } catch { issue = error.localizedDescription }
+            } catch is CancellationError {
+                store.installation.stopHosting()
+                guard attempt == current else { return }
+                message = AppText.text("已取消安装。")
+            } catch {
+                guard attempt == current else { return }
+                issue = error.localizedDescription
+            }
         }
     }
 }
@@ -216,18 +329,22 @@ struct PackageInstallationView: View {
 /// The step a native installation is at.
 private struct NativeProgressRow: View {
     let phase: NativeInstaller.Phase
+    var cancelling = false
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             switch phase {
             case .connecting:
-                Label("正在连接本机安装服务…", systemImage: "point.3.connected.trianglepath.dotted")
+                Label(cancelling ? "正在取消连接…" : "正在连接本机安装服务…", systemImage: "point.3.connected.trianglepath.dotted")
                 ProgressView().tint(UX.tint)
             case .uploading(let fraction):
-                Label("正在传输安装包 \(Int(fraction * 100))%", systemImage: "arrow.down.app")
+                Label(cancelling ? "正在取消传输…" : "正在传输安装包 \(Int(fraction * 100))%", systemImage: "arrow.down.app")
                 ProgressView(value: fraction).tint(UX.tint).animation(.linear(duration: 0.3), value: fraction)
             case .installing(let fraction):
                 Label("系统正在安装 \(Int(fraction * 100))%", systemImage: "gearshape.2")
                 ProgressView(value: fraction).tint(UX.tint).animation(.linear(duration: 0.3), value: fraction)
+                Text("已进入系统安装阶段，请等待完成，期间无法取消。")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .font(.subheadline)

@@ -43,6 +43,13 @@ enum NativeInstaller {
         case connecting
         case uploading(Double)
         case installing(Double)
+
+        var isCancellable: Bool {
+            switch self {
+            case .connecting, .uploading: return true
+            case .installing: return false
+            }
+        }
     }
     /// A failure with the step it happened in, so the message can say what to fix.
     struct Failure: LocalizedError, Equatable {
@@ -159,12 +166,86 @@ enum NativeInstaller {
     /// One operation at a time: the library keeps one cancellation flag.
     private static let gate = NSLock()
     private static var running = false
-    private static func begin() throws {
+    private static var activeToken: UUID?
+    private static var cancellingToken: UUID?
+    private static var waiters: [(id: UUID, continuation: CheckedContinuation<Void, Never>)] = []
+
+    private static func tryAcquireGate() -> UUID? {
         gate.lock(); defer { gate.unlock() }
-        guard !running else { throw ToolError.message(AppText.text("另一个安装正在进行，请稍候。")) }
+        guard !running else { return nil }
+        let token = UUID()
         running = true
+        activeToken = token
+        cancellingToken = nil
+        return token
     }
-    private static func end() { gate.lock(); running = false; gate.unlock() }
+
+    private static func isCancellingActiveRun() -> Bool {
+        gate.lock(); defer { gate.unlock() }
+        return running && cancellingToken != nil && cancellingToken == activeToken
+    }
+
+    private static func acquireGate(waitForCancelled: Bool = false) async throws -> UUID {
+        try Task.checkCancellation()
+        if let token = tryAcquireGate() { return token }
+        if waitForCancelled && isCancellingActiveRun() {
+            let deadline = Date().addingTimeInterval(3)
+            while Date() < deadline {
+                try Task.checkCancellation()
+                if let token = tryAcquireGate() { return token }
+                guard isCancellingActiveRun() else { break }
+                let waiterID = UUID()
+                await withTaskCancellationHandler {
+                    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                        gate.lock()
+                        if !running {
+                            gate.unlock()
+                            continuation.resume()
+                        } else {
+                            waiters.append((waiterID, continuation))
+                            gate.unlock()
+                            DispatchQueue.global().asyncAfter(deadline: .now() + 0.25) {
+                                wakeWaiter(id: waiterID)
+                            }
+                        }
+                    }
+                } onCancel: {
+                    wakeWaiter(id: waiterID)
+                }
+            }
+            try Task.checkCancellation()
+            if let token = tryAcquireGate() { return token }
+        }
+        throw ToolError.message(AppText.text("另一个安装正在进行，请稍候。"))
+    }
+
+    private static func wakeWaiter(id: UUID) {
+        gate.lock()
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else { gate.unlock(); return }
+        let entry = waiters.remove(at: index)
+        gate.unlock()
+        entry.continuation.resume()
+    }
+
+    private static func end(token: UUID) {
+        gate.lock()
+        guard activeToken == token else { gate.unlock(); return }
+        running = false
+        activeToken = nil
+        cancellingToken = nil
+        let pending = waiters
+        waiters.removeAll()
+        gate.unlock()
+        for entry in pending { entry.continuation.resume() }
+    }
+
+    private static func cancelIfActive(_ token: UUID) {
+        gate.lock()
+        let matches = running && activeToken == token
+        if matches { cancellingToken = token }
+        gate.unlock()
+        if matches { cancelFunction?() }
+    }
 
     /// The App Store compares this version ID in the installed purchase record
     /// with the newest release; one above every real ID reads as up to date.
@@ -231,30 +312,44 @@ enum NativeInstaller {
     /// Reports what the system has installed for `bundleID`. Also the
     /// connection check: it goes through the VPN, the pairing and the tunnel.
     static func lookup(bundleID: String) async throws -> InstalledApp {
-        try begin(); defer { end() }
-        let port = await RemotePairingPort.resolve()
-        let body = try request(bundleID: bundleID, package: nil, port: port)
-        InstallLog.shared.add("native lookup (port \(port))")
-        return try await Task.detached(priority: .userInitiated) {
-            guard let lookupFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
-            let reply = try decode(body.withCString { lookupFunction($0) })
-            guard let app = reply.app else { throw Failure(stage: "reply", detail: "missing app") }
-            return app
-        }.value
+        let token = try await acquireGate(waitForCancelled: true)
+        defer { end(token: token) }
+        return try await runWithPortRetry { port in
+            try Task.checkCancellation()
+            let body = try request(bundleID: bundleID, package: nil, port: port)
+            InstallLog.shared.add("native lookup (port \(port))")
+            return try await withTaskCancellationHandler {
+                try await Task.detached(priority: .userInitiated) {
+                    guard let lookupFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
+                    let reply = try decode(body.withCString { lookupFunction($0) })
+                    guard let app = reply.app else { throw Failure(stage: "reply", detail: "missing app") }
+                    return app
+                }.value
+            } onCancel: {
+                cancelIfActive(token)
+            }
+        }
     }
 
     /// Every app the user installed on this device. Reads only; nothing changes.
     static func installedApps() async throws -> [InstalledApp] {
-        try begin(); defer { end() }
-        let port = await RemotePairingPort.resolve()
-        let body = try request(bundleID: "*", package: nil, port: port)
-        InstallLog.shared.add("native list (port \(port))")
-        return try await Task.detached(priority: .userInitiated) {
-            guard let listFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
-            let reply = try decode(body.withCString { listFunction($0) })
-            guard let apps = reply.apps else { throw Failure(stage: "reply", detail: "missing apps") }
-            return apps
-        }.value
+        let token = try await acquireGate(waitForCancelled: true)
+        defer { end(token: token) }
+        return try await runWithPortRetry { port in
+            try Task.checkCancellation()
+            let body = try request(bundleID: "*", package: nil, port: port)
+            InstallLog.shared.add("native list (port \(port))")
+            return try await withTaskCancellationHandler {
+                try await Task.detached(priority: .userInitiated) {
+                    guard let listFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
+                    let reply = try decode(body.withCString { listFunction($0) })
+                    guard let apps = reply.apps else { throw Failure(stage: "reply", detail: "missing apps") }
+                    return apps
+                }.value
+            } onCancel: {
+                cancelIfActive(token)
+            }
+        }
     }
     /// The parsed result of a list reply. Internal so tests can cover it.
     static func listResult(from data: Data) throws -> [InstalledApp] {
@@ -267,12 +362,29 @@ enum NativeInstaller {
         init(_ handler: @escaping @Sendable (Phase) -> Void) { self.handler = handler }
     }
 
+    private static func runWithPortRetry<T>(_ work: (UInt16) async throws -> T) async throws -> T {
+        let resolved = await RemotePairingPort.resolveWithStatus()
+        do {
+            return try await work(resolved.port)
+        } catch let failure as Failure where ["connect", "pairing", "tunnel"].contains(failure.stage) {
+            RemotePairingPort.invalidateCache()
+            guard resolved.fromCache, !Task.isCancelled else { throw failure }
+            let fresh = await RemotePairingPort.resolve(forceRefresh: true)
+            do {
+                return try await work(fresh)
+            } catch let retryFailure as Failure where ["connect", "pairing", "tunnel"].contains(retryFailure.stage) {
+                RemotePairingPort.invalidateCache()
+                throw retryFailure
+            }
+        }
+    }
+
     /// Installs `package`, replacing an installed copy in place. The package
     /// stays on this device; it is handed to the system installer directly.
     static func install(package: URL, bundleID: String, blockUpdates: Bool = false,
                         progress: @escaping @Sendable (Phase) -> Void) async throws -> Outcome {
-        try begin(); defer { end() }
-        let port = await RemotePairingPort.resolve()
+        let token = try await acquireGate(waitForCancelled: true)
+        defer { end(token: token) }
         var metadata: Data?
         if blockUpdates {
             guard let record = try blockedMetadata(of: package) else {
@@ -280,29 +392,36 @@ enum NativeInstaller {
             }
             metadata = record
         }
-        let body = try request(bundleID: bundleID, package: package, port: port, metadata: metadata)
-        InstallLog.shared.add("native install started (port \(port))")
         // Sending the package takes a while; keep running if the user leaves.
-        let background = await UIApplication.shared.beginBackgroundTask(withName: "iPadn native installation") { cancel() }
+        let background = await UIApplication.shared.beginBackgroundTask(withName: "iPadn native installation") { cancelIfActive(token) }
         defer { Task { @MainActor in UIApplication.shared.endBackgroundTask(background) } }
         do {
-            let outcome = try await Task.detached(priority: .userInitiated) {
-                guard let installFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
-                let box = Unmanaged.passRetained(ProgressBox(progress))
-                defer { box.release() }
-                let callback: ProgressFunction = { context, phase, done, total in
-                    guard let context else { return }
-                    let fraction = total > 0 ? min(1, Double(done) / Double(total)) : 0
-                    let handler = Unmanaged<ProgressBox>.fromOpaque(context).takeUnretainedValue().handler
-                    switch phase {
-                    case 1: handler(.uploading(fraction))
-                    case 2: handler(.installing(fraction))
-                    default: handler(.connecting)
-                    }
+            let outcome = try await runWithPortRetry { port in
+                try Task.checkCancellation()
+                let body = try request(bundleID: bundleID, package: package, port: port, metadata: metadata)
+                InstallLog.shared.add("native install started (port \(port))")
+                return try await withTaskCancellationHandler {
+                    try await Task.detached(priority: .userInitiated) {
+                        guard let installFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
+                        let box = Unmanaged.passRetained(ProgressBox(progress))
+                        defer { box.release() }
+                        let callback: ProgressFunction = { context, phase, done, total in
+                            guard let context else { return }
+                            let fraction = total > 0 ? min(1, Double(done) / Double(total)) : 0
+                            let handler = Unmanaged<ProgressBox>.fromOpaque(context).takeUnretainedValue().handler
+                            switch phase {
+                            case 1: handler(.uploading(fraction))
+                            case 2: handler(.installing(fraction))
+                            default: handler(.connecting)
+                            }
+                        }
+                        let reply = try decode(body.withCString { installFunction($0, callback, box.toOpaque()) })
+                        return Outcome(upgraded: reply.upgraded ?? false, after: reply.after)
+                    }.value
+                } onCancel: {
+                    cancelIfActive(token)
                 }
-                let reply = try decode(body.withCString { installFunction($0, callback, box.toOpaque()) })
-                return Outcome(upgraded: reply.upgraded ?? false, after: reply.after)
-            }.value
+            }
             InstallLog.shared.add("native install finished (\(outcome.upgraded ? "upgrade" : "install"))")
             return outcome
         } catch {
@@ -312,7 +431,13 @@ enum NativeInstaller {
     }
 
     /// Stops sending the package. An install the system already started continues.
-    static func cancel() { cancelFunction?() }
+    static func cancel() {
+        gate.lock()
+        let hasActive = running && activeToken != nil
+        if hasActive { cancellingToken = activeToken }
+        gate.unlock()
+        cancelFunction?()
+    }
 
     // MARK: On-device pairing
 
@@ -348,7 +473,8 @@ enum NativeInstaller {
     /// file. Blocks until the user finishes in Settings, gives up or cancels.
     static func pair(name: String, events: @escaping @Sendable (PairingEvent) -> Void) async throws -> Data {
         guard pairingIsAvailable else { throw ToolError.message(AppText.text("当前版本不包含本机配对组件。")) }
-        try begin(); defer { end() }
+        let token = try await acquireGate(waitForCancelled: true)
+        defer { end(token: token) }
         let body = String(decoding: try JSONSerialization.data(withJSONObject: ["name": name]), as: UTF8.self)
         return try await Task.detached(priority: .userInitiated) {
             guard let pairFunction, let freeFunction else { throw ToolError.message(AppText.text("当前版本不包含本机配对组件。")) }
@@ -425,21 +551,93 @@ extension ToolSettings {
 }
 
 /// Finds the port of this device's remote pairing service. The system picks it
-/// at boot and advertises it over Bonjour; it is not fixed.
+/// at boot and advertises it over Bonjour; it is not fixed. Caches discovered
+/// ports briefly and invalidates on network/foreground changes or connect failures.
 enum RemotePairingPort {
+    struct CachedEntry: Equatable {
+        let port: UInt16
+        let fromDiscovery: Bool
+        let resolvedAt: Date
+    }
+
+    final class Cache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var entry: CachedEntry?
+        private var inFlight: Task<(port: UInt16, fromCache: Bool), Never>?
+        private let discoveryTTL: TimeInterval
+        private let fallbackTTL: TimeInterval
+
+        init(discoveryTTL: TimeInterval = 60, fallbackTTL: TimeInterval = 8) {
+            self.discoveryTTL = discoveryTTL
+            self.fallbackTTL = fallbackTTL
+        }
+
+        func freshEntry(now: Date = Date()) -> CachedEntry? {
+            lock.lock(); defer { lock.unlock() }
+            guard let entry else { return nil }
+            let limit = entry.fromDiscovery ? discoveryTTL : fallbackTTL
+            if now.timeIntervalSince(entry.resolvedAt) < limit { return entry }
+            self.entry = nil
+            return nil
+        }
+
+        func store(port: UInt16, fromDiscovery: Bool, now: Date = Date()) {
+            lock.lock(); defer { lock.unlock() }
+            entry = CachedEntry(port: port, fromDiscovery: fromDiscovery, resolvedAt: now)
+        }
+
+        func invalidate() {
+            lock.lock(); defer { lock.unlock() }
+            entry = nil
+        }
+
+        func existingTask() -> Task<(port: UInt16, fromCache: Bool), Never>? {
+            lock.lock(); defer { lock.unlock() }
+            return inFlight
+        }
+
+        func setTask(_ task: Task<(port: UInt16, fromCache: Bool), Never>?) {
+            lock.lock(); defer { lock.unlock() }
+            inFlight = task
+        }
+    }
+
+    private static let cache: Cache = {
+        let store = Cache()
+        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil) { _ in
+            store.invalidate()
+        }
+        return store
+    }()
+
+    static func invalidateCache() { cache.invalidate() }
+
     private final class Search: @unchecked Sendable {
         private let queue = DispatchQueue(label: "app.local.iPadn.remote-pairing-port")
         private var browser: NWBrowser?
         private var connection: NWConnection?
         private var continuation: CheckedContinuation<UInt16?, Never>?
+        private var cancelled = false
+        private var finished = false
         private var loopbackChosen = false
 
         func run(timeout: TimeInterval) async -> UInt16? {
-            await withCheckedContinuation { continuation in
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    queue.async {
+                        if self.cancelled {
+                            continuation.resume(returning: nil)
+                            return
+                        }
+                        self.continuation = continuation
+                        self.start()
+                        self.queue.asyncAfter(deadline: .now() + timeout) { self.finish(nil) }
+                    }
+                }
+            } onCancel: {
                 queue.async {
-                    self.continuation = continuation
-                    self.start()
-                    self.queue.asyncAfter(deadline: .now() + timeout) { self.finish(nil) }
+                    self.cancelled = true
+                    self.finish(nil)
                 }
             }
         }
@@ -482,16 +680,36 @@ enum RemotePairingPort {
             browser.start(queue: queue)
         }
         private func finish(_ port: UInt16?) {
-            guard let continuation else { return }
+            guard !finished else { return }
+            finished = true
+            let pending = continuation
             self.continuation = nil
             browser?.cancel(); connection?.cancel()
-            continuation.resume(returning: port)
+            pending?.resume(returning: port)
         }
     }
 
-    static func resolve(timeout: TimeInterval = 4) async -> UInt16 {
-        let found = await Search().run(timeout: timeout)
-        InstallLog.shared.add("remote pairing port: " + (found.map { "\($0) (discovered)" } ?? "\(NativeInstaller.fallbackPort) (default)"))
-        return found ?? NativeInstaller.fallbackPort
+    static func resolveWithStatus(timeout: TimeInterval = 2.5, forceRefresh: Bool = false) async -> (port: UInt16, fromCache: Bool) {
+        if !forceRefresh, let cached = cache.freshEntry() {
+            return (cached.port, true)
+        }
+        if !forceRefresh, let existing = cache.existingTask() {
+            return await existing.value
+        }
+        let task = Task<(port: UInt16, fromCache: Bool), Never> {
+            defer { cache.setTask(nil) }
+            let found = await Search().run(timeout: timeout)
+            guard !Task.isCancelled else { return (NativeInstaller.fallbackPort, false) }
+            let port = found ?? NativeInstaller.fallbackPort
+            cache.store(port: port, fromDiscovery: found != nil)
+            InstallLog.shared.add("remote pairing port: " + (found.map { "\($0) (discovered)" } ?? "\(NativeInstaller.fallbackPort) (default)"))
+            return (port, false)
+        }
+        cache.setTask(task)
+        return await task.value
+    }
+
+    static func resolve(timeout: TimeInterval = 2.5, forceRefresh: Bool = false) async -> UInt16 {
+        await resolveWithStatus(timeout: timeout, forceRefresh: forceRefresh).port
     }
 }

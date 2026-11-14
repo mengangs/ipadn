@@ -472,7 +472,7 @@ struct AppDetailView: View {
                 versionRow(version)
                     .opacity(versionsStale ? 0.4 : 1)
                     .disabled(versionsStale)
-                    .task(id: "\(version.id)-\(versionsKey)-\(readsMetadata)-\(versionsStale)") {
+                    .task(id: "\(version.id)-\(versionsKey)-\(readsMetadata)-\(versionsStale)-\(store.settings.showHistoryIcons)") {
                         // Fast scrolling should not queue tickets for rows already gone.
                         do { try await Task.sleep(nanoseconds: 180_000_000) } catch { return }
                         if !Task.isCancelled && !versionsStale { await loadMetadata(version) }
@@ -687,7 +687,7 @@ struct AppDetailView: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 12))
         return HStack(alignment: .top, spacing: 12) {
-            if store.settings.store.platform.supportsIPA {
+            if store.settings.store.platform.supportsIPA && store.settings.showHistoryIcons {
                 VersionHistoryIcon(app: app, versionID: version.id, available: info?.iconAvailable,
                                    loading: metadataLoading[version.id] != nil, context: versionsKey)
             }
@@ -771,7 +771,8 @@ struct AppDetailView: View {
         metadataLoading[version.id] = requestID
         defer { if metadataLoading[version.id] == requestID { metadataLoading[version.id] = nil } }
         do {
-            let value = try await store.versionMetadata(app: app, versionID: version.id) { partial in
+            let value = try await store.versionMetadata(app: app, versionID: version.id,
+                                                        includingIcon: store.settings.showHistoryIcons) { partial in
                 guard !Task.isCancelled, context == versionsKey else { return }
                 // Publish the number/date/size before the icon's extra range reads.
                 metadata[version.id] = partial

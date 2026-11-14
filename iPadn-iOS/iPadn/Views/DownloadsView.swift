@@ -272,6 +272,34 @@ struct DownloadsView: View {
                         LiveContainerTip { withAnimation { liveContainerTipDismissed = true } }
                     }
                 }
+                if let autoInstall = manager.autoInstalling {
+                    Section {
+                        HStack(spacing: 12) {
+                            ProgressView(value: autoInstall.fraction)
+                                .progressViewStyle(.circular)
+                                .tint(UX.tint)
+                                .frame(width: 24, height: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("正在自动安装 \(autoInstall.name)")
+                                    .font(.subheadline.weight(.medium))
+                                    .lineLimit(1)
+                                Text(autoInstall.canCancel ? AppText.text("准备或传输中，可随时取消") : AppText.text("已进入系统安装阶段，无法取消"))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            if autoInstall.canCancel {
+                                Button("取消") {
+                                    UX.feedback()
+                                    _ = manager.cancelAutoInstall(autoInstall.id)
+                                }
+                                .buttonStyle(CapsuleButtonStyle())
+                                .accessibilityIdentifier("downloads.auto-install.cancel")
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
             if manager.waitingForWiFi, manager.jobs.contains(where: { [.queued, .pausing].contains($0.status) }) {
                 Section { WiFiWaitRow() }
             }

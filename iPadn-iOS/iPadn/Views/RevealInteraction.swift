@@ -743,9 +743,17 @@ private struct RevealDeleteModifier: ViewModifier {
     @State private var lastVisibleY: CGFloat?
 
 
+    private var verticalPadding: CGFloat {
+        // Standalone cards keep 4pt spacing between rows inside shared sections;
+        // grouped rows stay tightly coupled so revealing one row opens only a
+        // hairline-scale seam instead of breaking the list with wide gray gaps.
+        grouping == .standalone ? 2 : 2 / max(1, displayScale)
+    }
+
     private func cardShape(rounding: CGFloat) -> CompatibleCardShape {
-        let top: CGFloat = grouping == .middle ? 24 * rounding : 24
-        let bottom: CGFloat = grouping == .standalone ? 24 : 24 * rounding
+        let groupedRadius: CGFloat = 14
+        let top: CGFloat = grouping == .middle ? groupedRadius * rounding : 24
+        let bottom: CGFloat = grouping == .standalone ? 24 : groupedRadius * rounding
         return CompatibleCardShape(top: top, bottom: bottom)
     }
 
@@ -817,7 +825,7 @@ private struct RevealDeleteModifier: ViewModifier {
                         .clipped()
                 }
             }
-            .padding(.vertical, 2)
+            .padding(.vertical, verticalPadding)
             .background {
                 if grouping != .standalone {
                     // Join the resting accounts to the native Add Account row.

@@ -694,7 +694,17 @@ final class ToolStore: ObservableObject {
                   let id = listing.externalVersionID, !id.isEmpty else { return [] }
             return [AppVersion(id: id, version: listing.version.isEmpty ? AppVersion.unknown : listing.version, source: "Apple TV")]
         }
-        return try await versions.thirdParty(app.id, sources: settings.versionSources, force: force)
+        var list = try await versions.thirdParty(app.id, sources: settings.versionSources, force: force)
+        if let latestID = app.externalVersionID, !latestID.isEmpty {
+            let storeVersion = VersionService.sanitizedVersion(app.version)
+            if storeVersion != AppVersion.unknown {
+                for index in list.indices where list[index].id == latestID &&
+                    VersionService.versionPreference(storeVersion) > VersionService.versionPreference(list[index].version) {
+                    list[index].version = storeVersion
+                }
+            }
+        }
+        return list
     }
 
     /// Every version Apple lists for the active account. Never claims a license.
@@ -712,8 +722,12 @@ final class ToolStore: ObservableObject {
         let third = context.platform == .iOS ? (try? await versions.thirdParty(app.id, sources: settings.versionSources, force: force)) ?? [] : []
         let names = Dictionary(third.map { ($0.id, $0.version) }, uniquingKeysWith: { first, _ in first })
         let ids = asset.externalVersionIDs.isEmpty ? [asset.app.externalVersionID ?? ""] : Array(asset.externalVersionIDs.reversed())
+        let latestVersion = VersionService.sanitizedVersion(asset.app.version.isEmpty ? app.version : asset.app.version)
         return ids.filter { !$0.isEmpty && seen.insert($0).inserted }.map { id in
-            AppVersion(id: id, version: id == asset.app.externalVersionID ? asset.app.version : names[id] ?? AppVersion.unknown, source: "Apple")
+            let known = id == asset.app.externalVersionID && latestVersion != AppVersion.unknown
+                ? latestVersion
+                : (names[id] ?? (id == app.externalVersionID ? VersionService.sanitizedVersion(app.version) : AppVersion.unknown))
+            return AppVersion(id: id, version: known, source: "Apple")
         }
     }
 
@@ -721,7 +735,7 @@ final class ToolStore: ObservableObject {
         #if DEBUG
         if visualPreview {
             var result: [String: VersionMetadata] = [:]
-            for id in versionIDs { result[id] = try? await versionMetadata(app: app, versionID: id) }
+            for id in versionIDs { result[id] = try? await versionMetadata(app: app, versionID: id, includingIcon: settings.showHistoryIcons) }
             return result
         }
         #endif
@@ -744,7 +758,7 @@ final class ToolStore: ObservableObject {
             return VersionMetadata(version: versionID == "123456787" ? "2.0.0" : newest ? "3.2.1" : "3.1.0",
                                    released: datesPreview ? Calendar.current.date(byAdding: .day, value: -age, to: Date()) : Date(timeIntervalSince1970: 1_714_694_400),
                                    packageSize: newest ? 128_000_000 : 96_000_000,
-                                   iconAvailable: ProcessInfo.processInfo.arguments.contains("--version-icons-preview") &&
+                                   iconAvailable: includingIcon && ProcessInfo.processInfo.arguments.contains("--version-icons-preview") &&
                                        !(ProcessInfo.processInfo.arguments.contains("--version-icon-missing-preview") && !newest))
         }
         #endif
@@ -760,15 +774,24 @@ final class ToolStore: ObservableObject {
                 guard !offer.displayVersion.isEmpty else { throw RemoteZip.Failure.notFound }
                 return VersionMetadata(version: offer.displayVersion, released: nil)
             }
-            let url = try await apple.versionTicket(appID: app.id, versionID: versionID, useCache: useCache)
-            let resources = try await RemoteZip.versionResources(HTTPRangeReader(url: url), includingIcon: includingIcon,
-                                                                onMetadata: { value in await onMetadata?(value) })
-            var metadata = resources.metadata
-            if let icon = resources.icon {
-                do { try await metadataStore.saveIcon(icon, key: key) }
-                catch { metadata.iconAvailable = nil }
+            let ticket = try await apple.versionTicketDetails(appID: app.id, versionID: versionID, useCache: useCache)
+            if !ticket.displayVersion.isEmpty {
+                await onMetadata?(VersionMetadata(version: ticket.displayVersion, released: nil, packageSize: ticket.fileSize))
             }
-            return metadata
+            do {
+                let resources = try await RemoteZip.versionResources(HTTPRangeReader(url: ticket.url), includingIcon: includingIcon,
+                                                                    onMetadata: { value in await onMetadata?(value) })
+                var metadata = resources.metadata
+                if metadata.packageSize == nil { metadata.packageSize = ticket.fileSize }
+                if let icon = resources.icon {
+                    do { try await metadataStore.saveIcon(icon, key: key) }
+                    catch { metadata.iconAvailable = nil }
+                }
+                return metadata
+            } catch RemoteZip.Failure.notFound, RemoteZip.Failure.unreadable where !ticket.displayVersion.isEmpty {
+                return VersionMetadata(version: ticket.displayVersion, released: nil,
+                                       packageSize: ticket.fileSize, iconAvailable: includingIcon ? false : nil)
+            }
         }
     }
 

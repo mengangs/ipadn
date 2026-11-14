@@ -380,10 +380,20 @@ final class AppleService: ObservableObject {
             platform: plistString(metadata["software-platform"]), account: account.id)
     }
 
+    struct VersionTicket: Sendable {
+        let url: URL
+        let displayVersion: String
+        let fileSize: Int64?
+    }
+
     /// Download ticket for one version, used only to read that version's
     /// Info.plist. Unlike a download it never acquires a license or signs in
     /// again, so browsing a version list cannot trigger a verification prompt.
     func versionTicket(appID: String, versionID: String, useCache: Bool) async throws -> URL {
+        try await versionTicketDetails(appID: appID, versionID: versionID, useCache: useCache).url
+    }
+
+    func versionTicketDetails(appID: String, versionID: String, useCache: Bool) async throws -> VersionTicket {
         guard let account = active, !account.dsid.isEmpty else { throw AppleAuthError.reauthenticationRequired }
         guard let app = UInt64(appID), app > 0, UInt64(versionID).map({ $0 > 0 }) == true else {
             throw ToolError.message(AppText.text("版本 ID 只能包含数字"))
@@ -405,7 +415,12 @@ final class AppleService: ObservableObject {
               [versionID, ""].contains(plistString(metadata["softwareVersionExternalIdentifier"])) else {
             throw ToolError.message(AppText.text("Apple 没有返回该版本的信息"))
         }
-        return url
+        let displayVersion = VersionService.sanitizedVersion(plistString(metadata["bundleShortVersionString"]))
+        let assetInfo = song["asset-info"] as? [String: Any]
+        let fileSize = (assetInfo?["file-size"] as? NSNumber)?.int64Value
+        return VersionTicket(url: url,
+                             displayVersion: displayVersion == AppVersion.unknown ? "" : displayVersion,
+                             fileSize: fileSize.flatMap { $0 > 0 ? $0 : nil })
     }
 
     static var noOfferMessage: String { AppText.text("Apple 没有返回该版本的下载信息") }

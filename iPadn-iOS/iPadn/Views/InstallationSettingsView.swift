@@ -19,6 +19,7 @@ struct InstallationSettingsView: View {
     @State private var busy = false
     /// Which action is running, shown with a spinner on its own row.
     @State private var working: Action?
+    @State private var checkTask: Task<Void, Never>?
     private enum Action { case create, profile, check, connection }
     /// What the file picker is importing.
     private enum ImportKind { case certificate, pairingFile }
@@ -128,13 +129,19 @@ struct InstallationSettingsView: View {
             }
         }.toolPage().navigationTitle("安装设置").navigationBarTitleDisplayMode(.inline)
             .task {
-                refreshCertificate()
-                // A pairing file dropped into iPadn's folder is picked up without asking.
-                if store.settings.usesNativeInstallation, !hasPairingFile, (try? NativeInstaller.importPairingFileFromDocuments()) == true {
+                let tryImportPairing = store.settings.usesNativeInstallation && !hasPairingFile
+                async let certLoad = refreshCertificate()
+                async let pairingImported = Task.detached(priority: .userInitiated) { () -> Result<Bool, Error> in
+                    guard tryImportPairing else { return .success(false) }
+                    return Result { try NativeInstaller.importPairingFileFromDocuments() }
+                }.value
+                await certLoad
+                if case .success(true) = await pairingImported {
                     hasPairingFile = NativeInstaller.hasPairingFile
                     store.infoMessage = AppText.text("已从 iPadn 文件夹导入配对文件。请在 LocalDevVPN 中连接后点按「检查连接」。")
                 }
             }
+            .onDisappear { checkTask?.cancel(); checkTask = nil }
             .compatibleOnChange(of: scenePhase) { phase in if phase != .active, working == .profile { working = nil } }
             .sheet(isPresented: $showingPairingGuide) {
                 PairingGuideView(pairing: pairing)
@@ -197,10 +204,14 @@ struct InstallationSettingsView: View {
         }
         .animation(.easeOut(duration: 0.15), value: running)
     }
-    private func refreshCertificate() {
+    private func refreshCertificate() async {
         do {
-            certificateName = try InstallationCertificate.load()?.name ?? Self.notImported
-            hasLocalProfile = try InstallationCertificate.localProfile() != nil
+            let loaded = try await Task.detached(priority: .userInitiated) {
+                (try InstallationCertificate.load()?.name ?? Self.notImported,
+                 try InstallationCertificate.localProfile() != nil)
+            }.value
+            certificateName = loaded.0
+            hasLocalProfile = loaded.1
         }
         catch { issue = error.localizedDescription }
     }
@@ -211,10 +222,13 @@ struct InstallationSettingsView: View {
             defer { busy = false; working = nil }
             do {
                 let material = try await Task.detached(priority: .userInitiated) { try LocalInstallationIdentityFactory.create() }.value
-                try InstallationCertificate.save(data: material.pkcs12, password: material.password,
-                    localRoot: material.rootCertificate, localIdentifier: material.identifier)
+                try await Task.detached(priority: .userInitiated) {
+                    try InstallationCertificate.save(data: material.pkcs12, password: material.password,
+                        localRoot: material.rootCertificate, localIdentifier: material.identifier)
+                }.value
                 store.installation.stopHosting(); store.settings.localInstallation = true; store.settings.localInstallHost = ManifestBuilder.defaultLocalHost
-                refreshCertificate()
+                ManifestBuilder.invalidateLoopbackHostCache()
+                await refreshCertificate()
                 store.infoMessage = AppText.text("证书已创建，请安装描述文件。")
             } catch { issue = error.localizedDescription }
         }
@@ -227,7 +241,9 @@ struct InstallationSettingsView: View {
             // leaves the screen) or a few seconds pass.
             defer { busy = false; Task { try? await Task.sleep(for: .seconds(8)); if working == .profile { working = nil } } }
             do {
-                guard let profile = try InstallationCertificate.localProfile() else { throw ToolError.message(AppText.text("请先创建证书")) }
+                guard let profile = try await Task.detached(priority: .userInitiated, operation: {
+                    try InstallationCertificate.localProfile()
+                }).value else { throw ToolError.message(AppText.text("请先创建证书")) }
                 let url = try await store.installation.profileURL(data: profile)
                 openURL(url) { accepted in
                     if accepted { store.infoMessage = AppText.text("请在「设置」中安装描述文件，然后在「通用 › 关于本机 › 证书信任设置」中开启信任。") }
@@ -237,53 +253,76 @@ struct InstallationSettingsView: View {
         }
     }
     private func saveCertificate() {
-        guard let data = certificateData else { return }
-        do {
-            try InstallationCertificate.save(data: data, password: password)
-            store.installation.stopHosting()
-            certificateData = nil; password = ""; issue = nil
-            refreshCertificate(); store.infoMessage = AppText.text("证书已导入。")
-        } catch { issue = error.localizedDescription }
+        guard !busy, let data = certificateData else { return }
+        let password = self.password
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try InstallationCertificate.save(data: data, password: password)
+                }.value
+                store.installation.stopHosting()
+                ManifestBuilder.invalidateLoopbackHostCache()
+                certificateData = nil; self.password = ""; issue = nil
+                await refreshCertificate(); store.infoMessage = AppText.text("证书已导入。")
+            } catch { issue = error.localizedDescription }
+        }
     }
     /// Takes a pairing file from iPadn's own folder first; the system file
     /// picker is the fallback for files kept elsewhere.
     private func importPairingFile() {
-        do {
-            if try NativeInstaller.importPairingFileFromDocuments() {
-                hasPairingFile = NativeInstaller.hasPairingFile
-                store.infoMessage = AppText.text("已从 iPadn 文件夹导入配对文件。请在 LocalDevVPN 中连接后点按「检查连接」。")
+        guard !busy else { return }
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                let imported = try await Task.detached(priority: .userInitiated) {
+                    try NativeInstaller.importPairingFileFromDocuments()
+                }.value
+                if imported {
+                    hasPairingFile = NativeInstaller.hasPairingFile
+                    store.infoMessage = AppText.text("已从 iPadn 文件夹导入配对文件。请在 LocalDevVPN 中连接后点按「检查连接」。")
+                    return
+                }
+            } catch {
+                issue = error.localizedDescription
                 return
             }
-        } catch {
-            issue = error.localizedDescription
-            return
+            importKind = .pairingFile
+            importing = true
         }
-        importKind = .pairingFile
-        importing = true
     }
     /// Goes through the VPN, the pairing and the tunnel, then asks the system
     /// about iPadn itself: a full rehearsal without installing anything.
     private func checkConnection() {
         guard !busy else { return }; busy = true; working = .connection
         UX.feedback()
-        Task {
-            defer { busy = false; working = nil }
+        checkTask?.cancel()
+        checkTask = Task {
+            defer { busy = false; working = nil; checkTask = nil }
             do {
                 _ = try await NativeInstaller.lookup(bundleID: Bundle.main.bundleIdentifier ?? "app.local.iPadn")
                 store.infoMessage = AppText.text("连接正常，可以使用原生安装。")
+            } catch is CancellationError {
             } catch { issue = error.localizedDescription }
         }
     }
     private func checkCertificate() {
-        busy = true; working = .check
+        guard !busy else { return }; busy = true; working = .check
         UX.feedback()
-        Task {
-            defer { busy = false; working = nil }
+        checkTask?.cancel()
+        let rawHost = store.settings.localInstallHost
+        checkTask = Task {
+            defer { busy = false; working = nil; checkTask = nil }
             do {
-                let host = try ManifestBuilder.localHost(store.settings.localInstallHost)
-                guard let certificate = try InstallationCertificate.load() else { throw ToolError.message(AppText.text("请先创建或导入证书")) }
+                let host = try ManifestBuilder.localHost(rawHost)
+                guard let certificate = try await Task.detached(priority: .userInitiated, operation: {
+                    try InstallationCertificate.load()
+                }).value else { throw ToolError.message(AppText.text("请先创建或导入证书")) }
                 try await certificate.validateAsync(host: host)
                 store.infoMessage = AppText.text("证书有效。")
+            } catch is CancellationError {
             } catch { issue = error.localizedDescription }
         }
     }

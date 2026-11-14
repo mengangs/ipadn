@@ -218,6 +218,27 @@ final class DownloadConcurrencyTests: XCTestCase {
         XCTAssertEqual(manager.jobs.map(\.id), jobs.map(\.id))
     }
 
+    @MainActor
+    func testCancelAutoInstallStopsQueuedAndRespectsIrreversibleStage() {
+        let job = DownloadJob(app: StoreApp(id: "auto-1", name: "Auto App", version: "1.0"), status: .completed)
+        let manager = DownloadManager(previewJobs: [job])
+        XCTAssertEqual(manager.cancelAutoInstall(job.id), .idle)
+
+        manager.pendingAutoInstalls = [job.id]
+        XCTAssertEqual(manager.cancelAutoInstall(job.id), .cancelled)
+        XCTAssertTrue(manager.pendingAutoInstalls.isEmpty)
+
+        manager.setAutoInstallingForTesting(.init(id: job.id, name: "Auto App 1.0", fraction: 0.4, canCancel: true))
+        XCTAssertEqual(manager.cancelAutoInstall(job.id), .cancelled)
+
+        manager.setAutoInstallingForTesting(.init(id: job.id, name: "Auto App 1.0", fraction: 0.85, canCancel: false))
+        XCTAssertEqual(manager.cancelAutoInstall(job.id), .irreversible)
+        XCTAssertNotNil(manager.autoInstallNotice)
+        XCTAssertThrowsError(try manager.remove(job.id))
+        XCTAssertEqual(manager.jobs.count, 1, "Task in irreversible system install stage must not be deleted")
+        manager.setAutoInstallingForTesting(nil)
+    }
+
     private final class SaveCounter: @unchecked Sendable {
         private let lock = NSLock()
         private var _slow = false

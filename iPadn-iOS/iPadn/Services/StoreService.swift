@@ -639,7 +639,7 @@ actor VersionService {
         let enabled = sources.filter(\.enabled)
         guard !enabled.isEmpty else { throw ToolError.message(AppText.text("请在设置中启用至少一个版本来源")) }
         let sourceKey = enabled.map { "\($0.name)|\($0.urlTemplate)|\($0.containerKey)|\($0.reverse)" }.joined(separator: ";")
-        let key = appID + "|" + sourceKey
+        let key = "v2|" + appID + "|" + sourceKey
         if !force, let entry = cache[key], Date().timeIntervalSince(entry.savedAt) < 24 * 3600 { return entry.versions }
         let revision = cacheRevision
         // Complete every enabled query. Taking the first provider to respond
@@ -688,15 +688,35 @@ actor VersionService {
         return versions
     }
 
+    static func sanitizedVersion(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != AppVersion.unknown else { return AppVersion.unknown }
+        // Ignore scraper text fragments accidentally placed in bundle_version
+        // (e.g. "aktualisiert"). Do not synthesize dots for pure integers like "4800".
+        guard !trimmed.contains(where: \.isWhitespace),
+              trimmed.contains(where: { $0.isASCII && $0.isNumber }) else {
+            return AppVersion.unknown
+        }
+        return trimmed
+    }
+
+    static func versionPreference(_ raw: String) -> Int {
+        let value = sanitizedVersion(raw)
+        guard value != AppVersion.unknown else { return 0 }
+        return value.contains(".") ? 2 : 1
+    }
+
     static func mergeSourceResults(_ sources: [[AppVersion]]) -> [AppVersion] {
         var result: [AppVersion] = []
         var indices: [String: Int] = [:]
         // Preserve the configured source priority and the order returned by
-        // each source. The API does not provide comparable release timestamps.
+        // each source. Prefer user-facing dotted versions over dotless build numbers.
         for source in sources {
-            for version in source where !version.id.isEmpty {
+            for rawVersion in source where !rawVersion.id.isEmpty {
+                var version = rawVersion
+                version.version = sanitizedVersion(version.version)
                 if let index = indices[version.id] {
-                    if result[index].version == AppVersion.unknown && version.version != AppVersion.unknown {
+                    if versionPreference(version.version) > versionPreference(result[index].version) {
                         result[index].version = version.version
                     }
                     if !result[index].source.components(separatedBy: "、").contains(version.source) {
@@ -738,8 +758,8 @@ actor VersionService {
         return ordered.compactMap { record in
             let id = plistString(record["external_identifier"])
             guard !id.isEmpty, id.allSatisfy({ $0.isASCII && $0.isNumber }), seen.insert(id).inserted else { return nil }
-            let version = plistString(record["bundle_version"])
-            return AppVersion(id: id, version: version.isEmpty ? AppVersion.unknown : version, source: source.name)
+            let version = sanitizedVersion(plistString(record["bundle_version"]))
+            return AppVersion(id: id, version: version, source: source.name)
         }
     }
 

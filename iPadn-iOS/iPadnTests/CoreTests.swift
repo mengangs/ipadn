@@ -2142,5 +2142,108 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(StoreService.developerApps(rows, excluding: "1", platform: .iOS).map(\.id), ["2", "3"])
         XCTAssertEqual(StoreService.developerApps(rows, excluding: "1", platform: .tvOS).map(\.id), ["3"])
     }
+
+    func testVersionServicePrefersDottedVersionsAndStripsNonVersionText() {
+        XCTAssertEqual(VersionService.sanitizedVersion("  14.2.1 "), "14.2.1")
+        XCTAssertEqual(VersionService.sanitizedVersion("4800"), "4800", "Numeric integer build strings must not have synthetic dots inserted")
+        XCTAssertEqual(VersionService.sanitizedVersion("aktualisiert"), AppVersion.unknown)
+        XCTAssertEqual(VersionService.sanitizedVersion("enthält einige Leistungsverbesserungen"), AppVersion.unknown)
+        XCTAssertEqual(VersionService.sanitizedVersion(""), AppVersion.unknown)
+
+        XCTAssertGreaterThan(VersionService.versionPreference("117.0"), VersionService.versionPreference("2817"))
+        XCTAssertGreaterThan(VersionService.versionPreference("2817"), VersionService.versionPreference(AppVersion.unknown))
+
+        // Higher-tier dotted version overrides dotless build integer regardless of source order.
+        let integerFirst = [
+            AppVersion(id: "884016839", version: "2817", source: "iosdump"),
+            AppVersion(id: "884016840", version: "4800", source: "iosdump"),
+            AppVersion(id: "884016841", version: "aktualisiert", source: "Timbrd")
+        ]
+        let dottedSecond = [
+            AppVersion(id: "884016839", version: "117.0", source: "Timbrd")
+        ]
+        let merged = VersionService.mergeSourceResults([integerFirst, dottedSecond])
+        XCTAssertEqual(merged.map(\.id), ["884016839", "884016840", "884016841"])
+        XCTAssertEqual(merged[0].version, "117.0")
+        XCTAssertEqual(merged[1].version, "4800", "Fallback dotless integer stays intact when no dotted candidate exists")
+        XCTAssertEqual(merged[2].version, AppVersion.unknown)
+    }
+
+    func testToolSettingsDecodesShowHistoryIconsWithDefaultTrue() throws {
+        let legacy = try JSONDecoder().decode(ToolSettings.self, from: Data(#"{"showDiscover":false}"#.utf8))
+        XCTAssertTrue(legacy.showHistoryIcons)
+
+        var settings = ToolSettings()
+        settings.showHistoryIcons = false
+        let roundTrip = try JSONDecoder().decode(ToolSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertFalse(roundTrip.showHistoryIcons)
+    }
+
+    func testVersionMetadataStorePreservesCachedIconWhenLoadingWithoutIcons() async throws {
+        let store = VersionMetadataStore()
+        let key = "icon-preserve-" + UUID().uuidString
+        let fileURL = VersionMetadataStore.iconURL(key)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        try await store.saveIcon(Data([137, 80, 78, 71]), key: key)
+        _ = try await store.load(key, requiringPackageSize: true, requiringIcon: true) {
+            VersionMetadata(version: "2.1.0", released: nil, packageSize: 500, iconAvailable: true)
+        }
+        // Force a metadata refresh without icons (e.g. toggling showHistoryIcons OFF).
+        let updated = try await store.load(key, requiringPackageSize: false, requiringIcon: false) {
+            VersionMetadata(version: "2.1.0", released: nil, packageSize: 500, iconAvailable: nil)
+        }
+        XCTAssertEqual(updated.iconAvailable, true)
+        let cachedBytes = await store.icon(key)
+        XCTAssertEqual(cachedBytes, Data([137, 80, 78, 71]))
+    }
+
+    func testDownloadActivityStateCalculationThrottlingAndSpeedDecay() throws {
+        if #available(iOS 16.1, *) {
+            let now = Date(timeIntervalSince1970: 1_700_000_000)
+            let running = DownloadJob(app: StoreApp(id: "1", name: "App One", version: "1.0", size: 20_000_000),
+                                      status: .running, downloaded: 5_000_000, expected: 20_000_000)
+            let queued = DownloadJob(app: StoreApp(id: "2", name: "App Two", version: "1.0", size: 10_000_000),
+                                     status: .queued, downloaded: 0, expected: 10_000_000)
+            let state = DownloadActivity.computeState(
+                active: [running, queued],
+                progress: { ($0.downloaded, $0.expected) },
+                rate: { $0 == running.id ? 2_500_000 : 9_999_999 },
+                now: now
+            )
+            XCTAssertEqual(state.phase, 0)
+            XCTAssertEqual(state.count, 2)
+            XCTAssertEqual(state.written, 5_000_000, "Only running cohort bytes contribute to phase 0")
+            XCTAssertEqual(state.speed, 2_500_000)
+            XCTAssertNotNil(state.estimatedEnd)
+            XCTAssertEqual(state.estimatedEnd!.timeIntervalSince(now), 6.0, accuracy: 0.05)
+
+            let paused = DownloadActivity.computePausedState(
+                paused: [running],
+                progress: { _ in (5_000_000, 20_000_000) },
+                now: now
+            )
+            XCTAssertEqual(paused.phase, 7)
+            XCTAssertEqual(paused.speed, 0)
+            XCTAssertNil(paused.estimatedEnd)
+
+            // Backwards-compatible ContentState decoding without speed key.
+            let legacyJSON = #"{"phase":0,"name":"Legacy","count":1,"written":10,"expected":100,"updated":1700000000}"#
+            let decoded = try JSONDecoder().decode(DownloadActivityAttributes.ContentState.self, from: Data(legacyJSON.utf8))
+            XCTAssertEqual(decoded.speed, 0)
+
+            // Throttle sub-second progress updates while pushing immediate phase/ETA changes.
+            var moved = state
+            moved.written += 4096
+            XCTAssertFalse(DownloadActivity.shouldSend(moved, after: state, elapsed: 0.4))
+            XCTAssertTrue(DownloadActivity.shouldSend(moved, after: state, elapsed: 1.0))
+            XCTAssertTrue(DownloadActivity.shouldSend(paused, after: state, elapsed: 0.1))
+
+            var faster = state
+            faster.speed = 4_000_000
+            faster.estimatedEnd = now.addingTimeInterval(3.75)
+            XCTAssertFalse(DownloadActivity.shouldSend(faster, after: state, elapsed: 0.5))
+            XCTAssertTrue(DownloadActivity.shouldSend(faster, after: state, elapsed: 1.0))
+        }
+    }
 }
 

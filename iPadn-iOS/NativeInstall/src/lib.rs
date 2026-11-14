@@ -43,6 +43,27 @@ pub const PHASE_UPLOAD: i32 = 1;
 pub const PHASE_INSTALL: i32 = 2;
 
 static CANCELLED: AtomicBool = AtomicBool::new(false);
+static CANCEL_NOTIFY: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
+async fn wait_cancelled() {
+    while !CANCELLED.load(Ordering::SeqCst) {
+        CANCEL_NOTIFY.notified().await;
+    }
+}
+
+async fn cancellable<T, Fut>(fut: Fut) -> Result<T, Failure>
+where
+    Fut: std::future::Future<Output = Result<T, Failure>>,
+{
+    if CANCELLED.load(Ordering::SeqCst) {
+        return Err(failure("cancelled", "cancelled"));
+    }
+    tokio::select! {
+        biased;
+        _ = wait_cancelled() => Err(failure("cancelled", "cancelled")),
+        result = fut => result,
+    }
+}
 
 pub type ProgressCallback = extern "C" fn(context: *mut c_void, phase: i32, done: u64, total: u64);
 
@@ -294,19 +315,30 @@ async fn list(session: &mut Session) -> Result<Json, IdeviceError> {
 async fn upload(session: &mut Session, path: &str, progress: Progress) -> Result<(), Failure> {
     let mut file = tokio::fs::File::open(path).await.map_err(fail("package"))?;
     let total = file.metadata().await.map_err(fail("package"))?.len();
-    let mut afc = AfcClient::connect_rsd(&mut session.adapter, &mut session.handshake)
-        .await
-        .map_err(fail("upload"))?;
-    if afc.get_file_info(STAGING_DIRECTORY).await.is_err() {
-        afc.mk_dir(STAGING_DIRECTORY).await.map_err(fail("upload"))?;
-    }
+    let mut afc = cancellable(async {
+        AfcClient::connect_rsd(&mut session.adapter, &mut session.handshake)
+            .await
+            .map_err(fail("upload"))
+    })
+    .await?;
+    cancellable(async {
+        if afc.get_file_info(STAGING_DIRECTORY).await.is_err() {
+            afc.mk_dir(STAGING_DIRECTORY).await.map_err(fail("upload"))?;
+        }
+        Ok(())
+    })
+    .await?;
 
     let mut buffer = vec![0u8; UPLOAD_CHUNK];
     let mut sent = 0u64;
     progress.report(PHASE_UPLOAD, 0, total);
     let (outcome, closed) = {
-        let mut descriptor =
-            afc.open(STAGED_PACKAGE, AfcFopenMode::WrOnly).await.map_err(fail("upload"))?;
+        let mut descriptor = cancellable(async {
+            afc.open(STAGED_PACKAGE, AfcFopenMode::WrOnly)
+                .await
+                .map_err(fail("upload"))
+        })
+        .await?;
         // Streamed in chunks: reading a whole package into memory gets a phone
         // app killed for packages of a few hundred megabytes.
         let outcome: Result<(), Failure> = loop {
@@ -318,8 +350,15 @@ async fn upload(session: &mut Session, path: &str, progress: Progress) -> Result
                 Ok(read) => read,
                 Err(error) => break Err(fail("package")(error)),
             };
-            if let Err(error) = descriptor.write_entire(&buffer[..read]).await {
-                break Err(fail("upload")(error));
+            if let Err(err) = cancellable(async {
+                descriptor
+                    .write_entire(&buffer[..read])
+                    .await
+                    .map_err(fail("upload"))
+            })
+            .await
+            {
+                break Err(err);
             }
             sent += read as u64;
             progress.report(PHASE_UPLOAD, sent, total);
@@ -363,8 +402,8 @@ async fn checked_list(session: &mut Session) -> Result<Json, Failure> {
 async fn install(request: &Request, progress: Progress) -> Result<Json, Failure> {
     let package = request.ipa.as_deref().ok_or_else(|| failure("request", "missing ipa"))?;
     progress.report(PHASE_CONNECT, 0, 1);
-    let mut session = connect(request).await?;
-    let before = checked_lookup(&mut session, &request.bundle_id).await?;
+    let mut session = cancellable(connect(request)).await?;
+    let before = cancellable(checked_lookup(&mut session, &request.bundle_id)).await?;
     progress.report(PHASE_CONNECT, 1, 1);
 
     upload(&mut session, package, progress).await?;
@@ -386,10 +425,23 @@ async fn install(request: &Request, progress: Progress) -> Result<Json, Failure>
         options.insert("iTunesMetadata".into(), plist::Value::Data(record));
     }
     let options = Some(plist::Value::Dictionary(options));
-    let mut client =
+    let mut client = match cancellable(async {
         InstallationProxyClient::connect_rsd(&mut session.adapter, &mut session.handshake)
             .await
-            .map_err(fail("install"))?;
+            .map_err(fail("install"))
+    })
+    .await
+    {
+        Ok(client) => client,
+        Err(err) => {
+            remove_staged(&mut session).await;
+            return Err(err);
+        }
+    };
+    if CANCELLED.load(Ordering::SeqCst) {
+        remove_staged(&mut session).await;
+        return Err(failure("cancelled", "cancelled"));
+    }
     progress.report(PHASE_INSTALL, 0, 100);
     let report = |(percent, progress): (u64, Progress)| async move {
         progress.report(PHASE_INSTALL, percent.min(100), 100);
@@ -462,9 +514,10 @@ pub unsafe extern "C" fn iPadnNativeInstall(
 /// `request` must be a valid NUL-terminated string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn iPadnNativeLookup(request: *const c_char) -> *mut c_char {
+    CANCELLED.store(false, Ordering::SeqCst);
     run(request, |request: Request| async move {
-        let mut session = connect(&request).await?;
-        let app = checked_lookup(&mut session, &request.bundle_id).await?;
+        let mut session = cancellable(connect(&request)).await?;
+        let app = cancellable(checked_lookup(&mut session, &request.bundle_id)).await?;
         Ok(json!({ "ok": true, "app": app }))
     })
 }
@@ -475,9 +528,10 @@ pub unsafe extern "C" fn iPadnNativeLookup(request: *const c_char) -> *mut c_cha
 /// `request` must be a valid NUL-terminated string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn iPadnNativeList(request: *const c_char) -> *mut c_char {
+    CANCELLED.store(false, Ordering::SeqCst);
     run(request, |request: Request| async move {
-        let mut session = connect(&request).await?;
-        let apps = checked_list(&mut session).await?;
+        let mut session = cancellable(connect(&request)).await?;
+        let apps = cancellable(checked_list(&mut session)).await?;
         Ok(json!({ "ok": true, "apps": apps }))
     })
 }
@@ -512,6 +566,7 @@ pub extern "C" fn iPadnNativePairCancel() {
 #[unsafe(no_mangle)]
 pub extern "C" fn iPadnNativeCancel() {
     CANCELLED.store(true, Ordering::SeqCst);
+    CANCEL_NOTIFY.notify_waiters();
 }
 
 /// Frees a reply returned by this library.

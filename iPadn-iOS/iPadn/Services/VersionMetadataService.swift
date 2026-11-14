@@ -352,7 +352,12 @@ actor VersionMetadataStore {
         // A row scrolled away while waiting: skip its request.
         try Task.checkCancellation()
         if let value = cache[key], satisfies(value, key: key, size: requiringPackageSize, icon: requiringIcon) { return value }
-        let value = try await fetch()
+        var value = try await fetch()
+        if !requiringIcon, value.iconAvailable == nil,
+           let previous = cache[key], previous.iconAvailable == true,
+           FileManager.default.fileExists(atPath: Self.iconURL(key).path) {
+            value.iconAvailable = true
+        }
         cache[key] = value
         if cache.count > 5_000 { cache.removeAll(); cache[key] = value }
         try? LocalResources.save(cache, filename: Self.filename)

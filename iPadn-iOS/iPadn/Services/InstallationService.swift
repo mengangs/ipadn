@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import UIKit
 import Combine
 
@@ -56,71 +57,87 @@ final class InstallationService: ObservableObject {
 
     func localInstallURL(job: DownloadJob, file: URL, host: String, icon: URL? = nil) async throws -> URL {
         let host = try ManifestBuilder.localHost(host)
-        guard let certificate = try InstallationCertificate.load() else {
-            throw ToolError.message(AppText.text("请先在安装方式中创建证书"))
-        }
-        do { try await certificate.validateAsync(host: host) }
-        catch InstallationCertificate.CheckFailure.outdated where (try? InstallationCertificate.localProfile()) != nil {
-            // Made by an earlier iPadn that didn't cover this address.
-            throw ToolError.message(AppText.text("证书需要更新。请在「安装设置」中重新创建证书，并安装、信任新的描述文件。"))
-        }
-        // The server listens on 127.0.0.1; any other answer (no network, or a
-        // proxy app that answers DNS itself) means the system can't reach it.
-        // Fallbacks are used only when the certificate covers them too.
-        var candidates = host == ManifestBuilder.defaultLocalHost
-            ? ManifestBuilder.fallbackLocalHosts.filter { $0 == host || (try? certificate.validate(host: $0)) != nil }
-            : [host]
-        // With a proxy or VPN on, public names go through it; ipadn.local is
-        // answered on this device and proxy apps leave *.local alone.
-        let proxied = LocalHostRecord.proxyOrVPNActive
-        let coversLocal = (try? certificate.validate(host: LocalHostRecord.host)) != nil
-        InstallLog.shared.add("proxy or VPN: \(proxied ? "on" : "off"), certificate covers ipadn.local: \(coversLocal)")
-        if proxied, coversLocal, host == ManifestBuilder.defaultLocalHost, LocalHostRecord.shared.publish() {
-            candidates.insert(LocalHostRecord.host, at: 0)
-        }
-        var found = await ManifestBuilder.firstLoopbackHost(candidates)
-        if found == nil, proxied {
+        // Fetch and resize icons off the main actor alongside certificate,
+        // mDNS and loopback host checks instead of serializing after server startup.
+        async let iconTask = Self.iconImages(icon)
+        let setup = try await Task.detached(priority: .userInitiated) { () -> (certificate: InstallationCertificate.Identity, candidates: [String], proxied: Bool) in
+            try Task.checkCancellation()
+            guard let certificate = try InstallationCertificate.load() else {
+                throw ToolError.message(AppText.text("请先在安装方式中创建证书"))
+            }
+            do { try certificate.validate(host: host) }
+            catch InstallationCertificate.CheckFailure.outdated where (try? InstallationCertificate.localProfile()) != nil {
+                // Made by an earlier iPadn that didn't cover this address.
+                throw ToolError.message(AppText.text("证书需要更新。请在「安装设置」中重新创建证书，并安装、信任新的描述文件。"))
+            }
+            // The server listens on 127.0.0.1; any other answer (no network, or a
+            // proxy app that answers DNS itself) means the system can't reach it.
+            // Fallbacks are used only when the certificate covers them too.
+            var candidates = host == ManifestBuilder.defaultLocalHost
+                ? ManifestBuilder.fallbackLocalHosts.filter { $0 == host || (try? certificate.validate(host: $0)) != nil }
+                : [host]
+            // With a proxy or VPN on, public names go through it; ipadn.local is
+            // answered on this device and proxy apps leave *.local alone.
+            let proxied = LocalHostRecord.proxyOrVPNActive
+            let coversLocal = (try? certificate.validate(host: LocalHostRecord.host)) != nil
+            InstallLog.shared.add("proxy or VPN: \(proxied ? "on" : "off"), certificate covers ipadn.local: \(coversLocal)")
+            if proxied, coversLocal, host == ManifestBuilder.defaultLocalHost, LocalHostRecord.shared.publish() {
+                candidates.insert(LocalHostRecord.host, at: 0)
+            }
+            return (certificate, candidates, proxied)
+        }.value
+        try Task.checkCancellation()
+        var found = await ManifestBuilder.firstLoopbackHost(setup.candidates, proxied: setup.proxied)
+        try Task.checkCancellation()
+        if found == nil, setup.proxied {
             // Proxy apps answer lookups with a stand-in address and still
             // connect straight to this device when a rule says so (DIRECT);
             // let the system try, and the check after opening the link
             // reports it if it couldn't connect.
-            found = candidates.first { $0 != LocalHostRecord.host } ?? host
+            found = setup.candidates.first { $0 != LocalHostRecord.host } ?? host
             InstallLog.shared.add("no loopback answer behind the proxy; trying \(found ?? host)")
         }
         guard let reachable = found else {
             throw ToolError.message(AppText.text("当前网络下无法连接本机安装服务，请检查网络后重试，或改用一键安装。"))
         }
-        let server = LoopbackServer(identity: certificate.identity, certificates: certificate.certificates, publicHost: reachable)
+        let server = LoopbackServer(identity: setup.certificate.identity, certificates: setup.certificate.certificates, publicHost: reachable)
         try await server.start()
+        try Task.checkCancellation()
         let packageURL = try server.register(file)
         // The home screen shows these while the app installs.
         var images: (small: URL, large: URL)?
-        if let icon = await Self.iconImages(icon) {
+        if let icon = await iconTask {
             images = try (server.register(data: icon.small, contentType: "image/png"),
                           server.register(data: icon.large, contentType: "image/png"))
         }
         let data = try ManifestBuilder.manifest(app: job.app, packageURL: packageURL, images: images)
         let manifestURL = try server.register(data: data, contentType: "application/xml")
-        InstallLog.shared.add("local install link created (host \(reachable), port \(manifestURL.port ?? 0), chain \(certificate.certificates.count))")
+        InstallLog.shared.add("local install link created (host \(reachable), port \(manifestURL.port ?? 0), chain \(setup.certificate.certificates.count))")
         keepHosting(server)
         return try ManifestBuilder.systemURL(manifestURL: manifestURL)
     }
 
     /// The app icon as the two PNG sizes an install manifest names, or nil
     /// when there is no icon or it can't be loaded quickly.
-    private static func iconImages(_ url: URL?) async -> (small: Data, large: Data)? {
+    nonisolated private static func iconImages(_ url: URL?) async -> (small: Data, large: Data)? {
         guard let url else { return nil }
-        var data: Data?
-        if url.isFileURL { data = try? Data(contentsOf: url) }
-        else if url.scheme == "https" { data = try? await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 5)).0 }
-        guard let data, let image = UIImage(data: data) else { return nil }
-        func png(_ side: CGFloat) -> Data {
-            let format = UIGraphicsImageRendererFormat(); format.scale = 1
-            return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).pngData { _ in
-                image.draw(in: CGRect(x: 0, y: 0, width: side, height: side))
+        return await Task.detached(priority: .utility) { () -> (small: Data, large: Data)? in
+            var data: Data?
+            if url.isFileURL { data = try? Data(contentsOf: url) }
+            else if url.scheme == "https" {
+                var request = URLRequest(url: url, timeoutInterval: 4)
+                request.cachePolicy = .returnCacheDataElseLoad
+                data = try? await URLSession.shared.data(for: request).0
             }
-        }
-        return (png(57), png(512))
+            guard !Task.isCancelled, let data, let image = UIImage(data: data) else { return nil }
+            func png(_ side: CGFloat) -> Data {
+                let format = UIGraphicsImageRendererFormat(); format.scale = 1
+                return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).pngData { _ in
+                    image.draw(in: CGRect(x: 0, y: 0, width: side, height: side))
+                }
+            }
+            return (png(57), png(512))
+        }.value
     }
 
     /// A page on this device that opens `installURL`, for installing from
@@ -171,19 +188,104 @@ enum ManifestBuilder {
         let host = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return ["", "127.0.0.1", "localhost", "127.0.0.1.sslip.io"].contains(host) ? defaultLocalHost : value
     }
+    final class LoopbackHostCache: @unchecked Sendable {
+        struct Key: Hashable {
+            let hosts: [String]
+            let proxied: Bool
+        }
+        private struct Entry {
+            let host: String
+            let resolvedAt: Date
+        }
+        private let lock = NSLock()
+        private var entries: [Key: Entry] = [:]
+        private var inFlight: [Key: Task<String?, Never>] = [:]
+        private let ttl: TimeInterval
+
+        init(ttl: TimeInterval = 30) { self.ttl = ttl }
+
+        func freshHost(for key: Key, now: Date = Date()) -> String? {
+            lock.lock(); defer { lock.unlock() }
+            guard let entry = entries[key] else { return nil }
+            if now.timeIntervalSince(entry.resolvedAt) < ttl { return entry.host }
+            entries.removeValue(forKey: key)
+            return nil
+        }
+
+        func store(_ host: String?, for key: Key, now: Date = Date()) {
+            lock.lock(); defer { lock.unlock() }
+            guard let host else { return }
+            entries[key] = Entry(host: host, resolvedAt: now)
+        }
+
+        func invalidate() {
+            lock.lock(); defer { lock.unlock() }
+            entries.removeAll()
+        }
+
+        func existingTask(for key: Key) -> Task<String?, Never>? {
+            lock.lock(); defer { lock.unlock() }
+            return inFlight[key]
+        }
+
+        func setTask(_ task: Task<String?, Never>?, for key: Key) {
+            lock.lock(); defer { lock.unlock() }
+            inFlight[key] = task
+        }
+    }
+
+    private static let loopbackHostCache: LoopbackHostCache = {
+        let cache = LoopbackHostCache()
+        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil) { _ in
+            cache.invalidate()
+        }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { _ in cache.invalidate() }
+        monitor.start(queue: DispatchQueue(label: "app.local.iPadn.loopback-path-monitor"))
+        return cache
+    }()
+
+    static func invalidateLoopbackHostCache() {
+        loopbackHostCache.invalidate()
+    }
+
     /// The first of `hosts` (in order) that resolves to this device. The
     /// lookups run side by side and give up after `timeout`, so a network
-    /// with broken DNS can't hold the install up.
-    static func firstLoopbackHost(_ hosts: [String], timeout: TimeInterval = 3) async -> String? {
+    /// with broken DNS can't hold the install up. Uses a short-lived cache
+    /// invalidated on foreground/network changes and deduplicates concurrent
+    /// callers without caching negative results.
+    static func firstLoopbackHost(_ hosts: [String], timeout: TimeInterval = 2, proxied: Bool? = nil) async -> String? {
+        guard !hosts.isEmpty else { return nil }
+        let isProxied = proxied ?? LocalHostRecord.proxyOrVPNActive
+        let key = LoopbackHostCache.Key(hosts: hosts, proxied: isProxied)
+        if let cached = loopbackHostCache.freshHost(for: key) {
+            return cached
+        }
+        if let running = loopbackHostCache.existingTask(for: key) {
+            return await running.value
+        }
+        let task = Task<String?, Never> {
+            defer { loopbackHostCache.setTask(nil, for: key) }
+            let resolved = await probeFirstLoopbackHost(hosts, timeout: timeout)
+            loopbackHostCache.store(resolved, for: key)
+            return resolved
+        }
+        loopbackHostCache.setTask(task, for: key)
+        return await task.value
+    }
+
+    static func probeFirstLoopbackHost(_ hosts: [String], timeout: TimeInterval = 2) async -> String? {
         guard !hosts.isEmpty else { return nil }
         final class Race: @unchecked Sendable {
             private let lock = NSLock()
             private var answers: [Bool?]
             private var continuation: CheckedContinuation<String?, Never>?
+            private var cancelled = false
             private let hosts: [String]
             init(_ hosts: [String], _ continuation: CheckedContinuation<String?, Never>) {
                 self.hosts = hosts; answers = Array(repeating: nil, count: hosts.count); self.continuation = continuation
             }
+            var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
             func record(_ index: Int, loopback: Bool) {
                 lock.lock(); answers[index] = loopback
                 // Decided once every host before the first loopback one has answered.
@@ -195,18 +297,41 @@ enum ManifestBuilder {
             func timeOut() {
                 lock.lock(); finishLocked(answers.firstIndex { $0 == true }.map { hosts[$0] }); lock.unlock()
             }
+            func cancel() {
+                lock.lock(); cancelled = true; finishLocked(nil); lock.unlock()
+            }
             private func finishLocked(_ host: String?) { continuation?.resume(returning: host); continuation = nil }
         }
-        return await withCheckedContinuation { continuation in
-            let race = Race(hosts, continuation)
-            for (index, host) in hosts.enumerated() {
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let addresses = ManifestBuilder.addresses(of: host)
-                    InstallLog.shared.add("\(host) resolves to \(addresses.isEmpty ? "nothing" : addresses.joined(separator: ", "))")
-                    race.record(index, loopback: addresses.contains { $0.hasPrefix("127.") })
-                }
+        final class Holder: @unchecked Sendable {
+            private let lock = NSLock()
+            private var race: Race?
+            private var cancelled = false
+            func set(_ race: Race) {
+                lock.lock(); self.race = race; let wasCancelled = cancelled; lock.unlock()
+                if wasCancelled { race.cancel() }
             }
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { race.timeOut() }
+            func cancel() {
+                lock.lock(); cancelled = true; let target = race; lock.unlock()
+                target?.cancel()
+            }
+        }
+        let holder = Holder()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let active = Race(hosts, continuation)
+                holder.set(active)
+                for (index, host) in hosts.enumerated() {
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        if active.isCancelled { return }
+                        let addresses = ManifestBuilder.addresses(of: host)
+                        InstallLog.shared.add("\(host) resolves to \(addresses.isEmpty ? "nothing" : addresses.joined(separator: ", "))")
+                        active.record(index, loopback: addresses.contains { $0.hasPrefix("127.") })
+                    }
+                }
+                DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { active.timeOut() }
+            }
+        } onCancel: {
+            holder.cancel()
         }
     }
     /// Numeric addresses the system resolves `host` to.

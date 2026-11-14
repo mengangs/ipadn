@@ -102,4 +102,29 @@ final class NativeInstallerTests: XCTestCase {
         XCTAssertEqual(restored.usesNativeInstallation, NativeInstaller.isAvailable)
         XCTAssertEqual(restored.installationMethodTitle, NativeInstaller.isAvailable ? "原生安装" : "本机证书")
     }
+
+    func testPhaseIsCancellableDistinguishesTransferFromSystemInstall() {
+        XCTAssertTrue(NativeInstaller.Phase.connecting.isCancellable)
+        XCTAssertTrue(NativeInstaller.Phase.uploading(0).isCancellable)
+        XCTAssertTrue(NativeInstaller.Phase.uploading(0.99).isCancellable)
+        XCTAssertFalse(NativeInstaller.Phase.installing(0).isCancellable)
+        XCTAssertFalse(NativeInstaller.Phase.installing(0.5).isCancellable)
+    }
+
+    func testRemotePairingPortCacheRespectsDiscoveryAndFallbackTTLs() {
+        let cache = RemotePairingPort.Cache(discoveryTTL: 60, fallbackTTL: 8)
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+
+        cache.store(port: 54321, fromDiscovery: true, now: t0)
+        XCTAssertEqual(cache.freshEntry(now: t0.addingTimeInterval(59))?.port, 54321)
+        XCTAssertNil(cache.freshEntry(now: t0.addingTimeInterval(60)))
+
+        cache.store(port: 62078, fromDiscovery: false, now: t0)
+        XCTAssertEqual(cache.freshEntry(now: t0.addingTimeInterval(7))?.port, 62078)
+        XCTAssertNil(cache.freshEntry(now: t0.addingTimeInterval(8)))
+
+        cache.store(port: 54321, fromDiscovery: true, now: t0)
+        cache.invalidate()
+        XCTAssertNil(cache.freshEntry(now: t0))
+    }
 }
