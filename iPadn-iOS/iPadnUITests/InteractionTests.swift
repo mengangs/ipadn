@@ -80,6 +80,8 @@ final class InteractionTests: XCTestCase {
         let progress = app.staticTexts["detail.versions.date.progress"]
         XCTAssertTrue(progress.waitForExistence(timeout: 5))
         XCTAssertEqual(progress.label, "已检查 3 / 3 个版本，找到 2 个")
+        // The whole filter, its actions and the live result state stay one panel.
+        attach("history-date-range-panel", app: app)
         // Collapse the controls to bring both result rows into one viewport.
         controls.tap()
         let included = app.staticTexts["detail.version.number.123456788"]

@@ -30,6 +30,7 @@ struct AppDetailView: View {
     @State private var versionPageLimit = 20
     @State private var dateFrom = Calendar.current.date(byAdding: .year, value: -1, to: Date()) ?? Date()
     @State private var dateThrough = Date()
+    @State private var dateFilterExpanded = false
     @StateObject private var dateQuery = VersionDateQuery()
     /// Release notes by version number, from the App Store page's version history.
     @State private var releaseNotes: [String: ReleaseNote] = [:]
@@ -503,42 +504,133 @@ struct AppDetailView: View {
         }
     }
 
+    /// One compact block: the filter, its action row and the live status stay
+    /// visually grouped instead of becoming several separate card rows.
     @ViewBuilder private var dateRangeControls: some View {
-        DisclosureGroup("按日期范围筛选") {
-            DatePicker("开始日期", selection: $dateFrom, displayedComponents: .date)
-                .accessibilityIdentifier("detail.versions.date.from")
-            DatePicker("结束日期", selection: $dateThrough, displayedComponents: .date)
-                .accessibilityIdentifier("detail.versions.date.through")
-            HStack {
-                Button("查询") { startDateQuery() }
-                    .disabled(versionsLoading || versionsStale || versions.isEmpty ||
-                              VersionDateRange(from: dateFrom, through: dateThrough) == nil)
-                    .accessibilityIdentifier("detail.versions.date.search")
-                Spacer()
-                if dateQuery.running { Button("取消查询") { dateQuery.cancel() } }
-                if dateQuery.range != nil {
-                    Button("清除筛选") { dateQuery.clear(); versionPageLimit = 20 }
-                        .accessibilityIdentifier("detail.versions.date.clear")
+        VStack(alignment: .leading, spacing: 12) {
+            DisclosureGroup(isExpanded: $dateFilterExpanded) {
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(spacing: 0) {
+                        dateField("开始日期", selection: $dateFrom, id: "detail.versions.date.from")
+                        Divider()
+                        dateField("结束日期", selection: $dateThrough, id: "detail.versions.date.through")
+                    }
+                    dateActionRow
+                    Text("首次查询需逐个读取版本日期，可取消；只为显示的结果加载图标。包内日期可能与商店发布日期不同。")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 10)
+            } label: {
+                Text("按日期范围筛选").font(.subheadline.weight(.medium))
+            }
+            if let range = dateQuery.range { dateStatus(range) }
+        }
+    }
+
+    private var canStartDateQuery: Bool {
+        !versionsLoading && !versionsStale && !versions.isEmpty &&
+            VersionDateRange(from: dateFrom, through: dateThrough) != nil
+    }
+
+    /// Label on the left, the system's compact date field on the right, so both
+    /// fields line up whatever the language or text size.
+    private func dateField(_ title: LocalizedStringKey, selection: Binding<Date>, id: String) -> some View {
+        let picker = DatePicker("", selection: selection, displayedComponents: .date)
+            .labelsHidden()
+            .datePickerStyle(.compact)
+            .accessibilityIdentifier(id)
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // A wide date beside a large label would otherwise be clipped.
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title).font(.subheadline)
+                    picker
+                }
+            } else {
+                HStack(spacing: 12) {
+                    Text(title).font(.subheadline)
+                    Spacer(minLength: 8)
+                    picker
                 }
             }
-            Text("首次查询需逐个读取版本日期，可取消；只为显示的结果加载图标。包内日期可能与商店发布日期不同。")
-                .font(.caption).foregroundStyle(.secondary)
         }
-        if let range = dateQuery.range {
-            Text("查询范围：\(range.start.formatted(date: .abbreviated, time: .omitted)) — \(range.endExclusive.addingTimeInterval(-1).formatted(date: .abbreviated, time: .omitted))")
-                .font(.caption).foregroundStyle(.secondary)
+        .frame(minHeight: 38)
+    }
+
+    private var dateActionRow: some View {
+        let search = Button { startDateQuery() } label: {
+            Text("查询")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(UX.onAccent)
+                .padding(.horizontal, 18)
+                .frame(minHeight: 32)
+                .background(UX.tint, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!canStartDateQuery)
+        .opacity(canStartDateQuery ? 1 : 0.4)
+        .accessibilityIdentifier("detail.versions.date.search")
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    search
+                    dateSecondaryActions
+                }
+            } else {
+                HStack(spacing: 16) {
+                    search
+                    Spacer(minLength: 0)
+                    dateSecondaryActions
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var dateSecondaryActions: some View {
+        if dateQuery.running {
+            Button("取消查询") { dateQuery.cancel() }
+                .font(.subheadline)
+                .accessibilityIdentifier("detail.versions.date.cancel")
+        }
+        if dateQuery.range != nil {
+            Button("清除筛选") { dateQuery.clear(); versionPageLimit = 20 }
+                .font(.subheadline)
+                .accessibilityIdentifier("detail.versions.date.clear")
+        }
+    }
+
+    /// Range, progress and any caveat share one panel so an incomplete scan
+    /// reads as one state instead of a stack of unrelated lines.
+    private func dateStatus(_ range: VersionDateRange) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("查询范围：\(range.start.formatted(date: .abbreviated, time: .omitted)) — \(range.endExclusive.addingTimeInterval(-1).formatted(date: .abbreviated, time: .omitted))")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                if dateQuery.running { ProgressView().controlSize(.small) }
+            }
             Text("已检查 \(dateQuery.checked) / \(dateQuery.total) 个版本，找到 \(dateQuery.matches.count) 个")
-                .font(.footnote.monospacedDigit())
+                .font(.footnote.monospacedDigit().weight(.medium))
                 .accessibilityIdentifier("detail.versions.date.progress")
             if dateQuery.incomplete {
-                Text("结果尚不完整：\(dateQuery.unknown) 个日期未知，\(dateQuery.total - dateQuery.checked) 个尚未检查。")
+                Label("结果尚不完整：\(dateQuery.unknown) 个日期未知，\(dateQuery.total - dateQuery.checked) 个尚未检查。",
+                      systemImage: "exclamationmark.circle")
                     .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if dateQuery.stoppedForAccount {
-                Text("账号验证失效，查询已停止。请重新登录后重试。")
+                Label("账号验证失效，查询已停止。请重新登录后重试。",
+                      systemImage: "person.crop.circle.badge.exclamationmark")
                     .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.tertiarySystemFill).opacity(0.55),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func startDateQuery() {
