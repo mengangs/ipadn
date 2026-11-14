@@ -51,10 +51,11 @@ struct AppBackup: Codable {
 struct UndoNotice: Identifiable {
     /// How long the undo stays offered.
     static let duration: TimeInterval = 5
-    let id = UUID()
-    let created = Date()
+    var id = UUID()
+    var revision = 1
+    var created = Date()
     let message: String
-    let restore: () -> Void
+    let restore: (UndoNotice) -> Void
 }
 
 @MainActor
@@ -439,7 +440,7 @@ final class ToolStore: ObservableObject {
             let previousRecords = watch.filter { $0.value.id == app.id }
             watch = watch.filter { $0.value.id != app.id }
             persistWatch()
-            undoNotice = UndoNotice(message: AppText.text("已取消关注 \(app.name)")) { [weak self] in
+            undoNotice = UndoNotice(message: AppText.text("已取消关注 \(app.name)")) { [weak self] notice in
                 guard let self, !self.isFavorite(app) else { return }
                 let previous = self.favoriteTask
                 self.favoriteTask = Task {
@@ -453,7 +454,10 @@ final class ToolStore: ObservableObject {
                         self.watch.merge(previousRecords) { current, _ in current }
                         self.persistWatch(); self.updateLocalResults()
                     }
-                    catch { self.errorMessage = error.localizedDescription }
+                    catch {
+                        self.errorMessage = error.localizedDescription
+                        self.rearmUndoNotice(notice)
+                    }
                 }
             }
         }
@@ -607,27 +611,52 @@ final class ToolStore: ObservableObject {
         searchHistory = Array(searchHistory.prefix(50)); persistHistory()
     }
     func removeHistory(_ term: String) {
-        guard let index = searchHistory.firstIndex(where: { $0.term == term }) else { return }
-        let item = searchHistory.remove(at: index); persistHistory()
-        undoNotice = UndoNotice(message: AppText.text("已删除搜索记录")) { [weak self] in
-            guard let self, !self.searchHistory.contains(where: { $0.term == term }) else { return }
-            self.searchHistory.insert(item, at: min(index, self.searchHistory.count))
-            self.searchHistory = Array(self.searchHistory.prefix(50)); self.persistHistory()
-        }
+        searchHistory.removeAll { $0.term == term }
+        persistHistory()
     }
     func clearHistory() {
-        let previous = searchHistory
-        searchHistory.removeAll(); persistHistory()
-        undoNotice = UndoNotice(message: AppText.text("已清除最近搜索")) { [weak self] in
-            guard let self else { return }
-            let current = Set(self.searchHistory.map(\.term))
-            self.searchHistory = Array((self.searchHistory + previous.filter { !current.contains($0.term) }).prefix(50))
-            self.persistHistory()
+        searchHistory.removeAll()
+        persistHistory()
+    }
+
+    private var downloadUndoTokens: [UUID] = []
+    private var downloadUndoNoticeID: UUID?
+    func removeDownloadWithUndo(_ id: UUID) async throws {
+        guard let receipt = try await downloads.removeReversibly(id) else { return }
+        let reusingBanner = undoNotice?.id != nil
+            && undoNotice?.id == downloadUndoNoticeID
+            && Date().timeIntervalSince(undoNotice?.created ?? .distantPast) < UndoNotice.duration
+        if !reusingBanner {
+            downloadUndoTokens.removeAll()
         }
+        downloadUndoTokens.append(receipt.token)
+        let tokens = downloadUndoTokens
+        downloads.extendRemovalUndo(tokens, until: receipt.created.addingTimeInterval(UndoNotice.duration))
+        let noticeID = reusingBanner ? (undoNotice?.id ?? UUID()) : UUID()
+        let revision = reusingBanner ? (undoNotice?.revision ?? 0) + 1 : 1
+        let notice = UndoNotice(id: noticeID, revision: revision, created: receipt.created,
+            message: AppText.text("已删除 \(tokens.count) 项任务与文件")) { [weak self] notice in
+            guard let self else { return }
+            Task { @MainActor in
+                do { try await self.downloads.undoRemovalGroup(tokens) }
+                catch {
+                    self.errorMessage = error.localizedDescription
+                    self.rearmUndoNotice(notice, downloadNotice: true)
+                }
+            }
+        }
+        undoNotice = notice
+        downloadUndoNoticeID = notice.id
     }
     func undoLastAction() {
         let notice = undoNotice; undoNotice = nil
-        notice?.restore()
+        guard let notice, Date().timeIntervalSince(notice.created) < UndoNotice.duration else { return }
+        notice.restore(notice)
+    }
+    private func rearmUndoNotice(_ notice: UndoNotice, downloadNotice: Bool = false) {
+        guard undoNotice == nil, Date().timeIntervalSince(notice.created) < UndoNotice.duration else { return }
+        undoNotice = notice
+        if downloadNotice { downloadUndoNoticeID = notice.id }
     }
     private func persistHistory() {
         if let data = try? JSONEncoder().encode(searchHistory) { LocalResources.defaults.set(data, forKey: LocalResources.searchHistory) }

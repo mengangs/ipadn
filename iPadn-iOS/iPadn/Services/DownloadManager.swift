@@ -66,6 +66,7 @@ final class DownloadManager: NSObject, ObservableObject {
     private var catalogArtworkAttempted = Set<UUID>()
     private var iconSizeChecked = Set<UUID>()
     private var olderIconRetried = Set<UUID>()
+    private var packageIconCache: [UUID: Bool] = [:]
     private var removalAfterCancel = Set<UUID>()
     private let persistQueue = DispatchQueue(label: "iPadn.download-jobs", qos: .utility)
     private var artworkCountry = "CN"
@@ -634,16 +635,157 @@ final class DownloadManager: NSObject, ObservableObject {
         try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
         try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
         try? FileManager.default.removeItem(at: PackageIconService.cacheURL(id))
+        packageIconCache.removeValue(forKey: id)
         try? FileManager.default.removeItem(at: Self.decryptedURL(id))
         MacPackageSecrets.delete(id)
         catalogArtworkAttempted.remove(id)
         schedule()
     }
 
+    /// A swipe removes the durable task immediately but retains its files in
+    /// the existing crash-recoverable quarantine until Undo expires.
+    private struct UndoRemoval {
+        let created: Date
+        var expires: Date
+        let jobs: [(index: Int, job: DownloadJob)]
+        let resume: Set<UUID>
+        let files: [(aside: URL, original: URL)]
+    }
+    private var undoRemovals: [UUID: UndoRemoval] = [:]
+    private var undoRemovalTimers: [UUID: Task<Void, Never>] = [:]
+    @Published private(set) var recentlyRestoredIDs: Set<UUID> = []
+    private var restoredClearTask: Task<Void, Never>?
+
+    private func markRecentlyRestored(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        recentlyRestoredIDs.formUnion(ids)
+        restoredClearTask?.cancel()
+        restoredClearTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .milliseconds(900)) } catch { return }
+            self?.recentlyRestoredIDs.removeAll()
+        }
+    }
+
+    func removeReversibly(_ id: UUID) async throws -> (token: UUID, created: Date)? {
+        let token = UUID()
+        guard try await removeBatch([id], undoToken: token) > 0,
+              let receipt = undoRemovals[token] else { return nil }
+        return (token, receipt.created)
+    }
+
+    /// Consecutive swipes share the latest notice and five-second window.
+    func extendRemovalUndo(_ tokens: [UUID], until deadline: Date) {
+        for token in tokens where undoRemovals[token] != nil {
+            undoRemovals[token]?.expires = deadline
+            armRemovalUndo(token)
+        }
+    }
+
+    private func armRemovalUndo(_ token: UUID) {
+        undoRemovalTimers.removeValue(forKey: token)?.cancel()
+        guard let receipt = undoRemovals[token] else { return }
+        let delay = max(0, receipt.expires.timeIntervalSinceNow)
+        undoRemovalTimers[token] = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            self?.finishRemovalUndo(token)
+        }
+    }
+
+    private func finishRemovalUndo(_ token: UUID) {
+        guard let receipt = undoRemovals.removeValue(forKey: token) else { return }
+        undoRemovalTimers.removeValue(forKey: token)?.cancel()
+        for item in receipt.jobs { packageIconCache.removeValue(forKey: item.job.id) }
+        persistQueue.async {
+            for file in receipt.files { try? FileManager.default.removeItem(at: file.aside) }
+            for item in receipt.jobs {
+                let id = item.job.id
+                for url in [LocalResources.resumeURL(id), LocalResources.stagingURL(id), PackageIconService.cacheURL(id), Self.decryptedURL(id)] {
+                    try? FileManager.default.removeItem(at: url)
+                }
+                MacPackageSecrets.delete(id)
+            }
+        }
+    }
+
+    func undoRemoval(_ token: UUID) async throws {
+        try await undoRemovalGroup([token])
+    }
+
+    /// Claim the whole group before the first disk await. Otherwise the expiry
+    /// timer for a later receipt can delete its files while an earlier save runs.
+    func undoRemovalGroup(_ tokens: [UUID]) async throws {
+        guard removingIDs.isEmpty, !loadingJobs else { throw ToolError.message(AppText.text("正在保存任务，请稍后重试")) }
+        guard storageError == nil else { throw ToolError.message(storageError!) }
+        let now = Date()
+        var claimed: [(token: UUID, receipt: UndoRemoval)] = []
+        var seen = Set<UUID>()
+        let unique = tokens.filter { seen.insert($0).inserted }
+        for token in unique.reversed() {
+            guard let receipt = undoRemovals[token] else { continue }
+            guard now < receipt.expires else { finishRemovalUndo(token); continue }
+            guard !receipt.jobs.contains(where: { item in jobs.contains { $0.id == item.job.id } }) else { continue }
+            claimed.append((token, receipt))
+        }
+        guard !claimed.isEmpty else { return }
+        for item in claimed {
+            undoRemovals.removeValue(forKey: item.token)
+            undoRemovalTimers.removeValue(forKey: item.token)?.cancel()
+        }
+        let entries = claimed.flatMap { $0.receipt.jobs }
+        removingIDs = Set(entries.map { $0.job.id })
+        defer { removingIDs.removeAll(); persist(); schedule(); finishBackgroundIfReady() }
+        let insert: ([DownloadJob]) -> [DownloadJob] = { current in
+            var result = current
+            // Each receipt's indices describe the list at that deletion; undo
+            // deletions in reverse order rather than sorting across receipts.
+            for item in claimed {
+                for entry in item.receipt.jobs.sorted(by: { $0.index < $1.index }) {
+                    result.insert(entry.job, at: min(entry.index, result.count))
+                }
+            }
+            return result
+        }
+        let restored = insert(currentJobs), save = saveJobs
+        let moves = claimed.flatMap { $0.receipt.files }.map { ($0.aside, $0.original) }
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                persistQueue.async {
+                    do {
+                        try DownloadRemovalTransaction.perform(moves) { try save(restored) }
+                        continuation.resume()
+                    } catch { continuation.resume(throwing: error) }
+                }
+            }
+            // Publish once, preserving unrelated updates delivered during I/O.
+            for entry in entries { packageIconCache.removeValue(forKey: entry.job.id) }
+            let restoredIDs = Set(entries.map(\.job.id))
+            jobs = insert(currentJobs)
+            markRecentlyRestored(restoredIDs)
+            for id in claimed.reduce(into: Set<UUID>(), { $0.formUnion($1.receipt.resume) }) { resume(id) }
+        } catch {
+            for item in claimed {
+                undoRemovals[item.token] = item.receipt
+                armRemovalUndo(item.token)
+            }
+            throw error
+        }
+    }
+
     /// One durable commit for a batch. Pause live transfers first; move packages
     /// aside and roll them back if the task-list write fails. Disk work is serial
     /// with earlier progress saves, and never runs on the main actor.
     func removeBatch(_ ids: Set<UUID>) async throws -> Int {
+        try await removeBatch(ids, undoToken: nil)
+    }
+
+    private func removeBatch(_ ids: Set<UUID>, undoToken: UUID?) async throws -> Int {
+        if undoToken != nil && (!removingIDs.isEmpty || loadingJobs) {
+            let queueDeadline = Date().addingTimeInterval(2)
+            while (!removingIDs.isEmpty || loadingJobs) && Date() < queueDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            try Task.checkCancellation()
+        }
         guard removingIDs.isEmpty, !loadingJobs else { throw ToolError.message(AppText.text("正在保存任务，请稍后重试")) }
         guard storageError == nil else { throw ToolError.message(storageError!) }
         let selected = jobs.filter { ids.contains($0.id) }
@@ -668,34 +810,44 @@ final class DownloadManager: NSObject, ObservableObject {
         let files = targets.compactMap { job in fileURL(job).map { (job.id, $0) } }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             persistQueue.async {
-                var moved: [(URL, URL)] = []
-                do {
-                    for (id, file) in files {
-                        let aside = LocalResources.support.appendingPathComponent("\(id.uuidString).removing.ipa")
-                        try FileManager.default.moveItem(at: file, to: aside)
-                        moved.append((aside, file))
-                    }
-                    try save(next)
-                } catch {
-                    for (aside, file) in moved.reversed() { try? FileManager.default.moveItem(at: aside, to: file) }
-                    continuation.resume(throwing: error); return
+                let moves = files.map { id, file in
+                    (from: file, to: LocalResources.support.appendingPathComponent("\(id.uuidString).removing.ipa"))
                 }
-                for (aside, _) in moved { try? FileManager.default.removeItem(at: aside) }
-                for id in removed {
-                    for url in [LocalResources.resumeURL(id), LocalResources.stagingURL(id), PackageIconService.cacheURL(id), Self.decryptedURL(id)] {
-                        try? FileManager.default.removeItem(at: url)
+                do {
+                    try DownloadRemovalTransaction.perform(moves) { try save(next) }
+                } catch { continuation.resume(throwing: error); return }
+                if undoToken == nil {
+                    for move in moves { try? FileManager.default.removeItem(at: move.to) }
+                    for id in removed {
+                        for url in [LocalResources.resumeURL(id), LocalResources.stagingURL(id), PackageIconService.cacheURL(id), Self.decryptedURL(id)] {
+                            try? FileManager.default.removeItem(at: url)
+                        }
+                        MacPackageSecrets.delete(id)
                     }
-                    MacPackageSecrets.delete(id)
                 }
                 continuation.resume()
             }
         }
+        if let undoToken {
+            let created = Date()
+            undoRemovals[undoToken] = UndoRemoval(created: created,
+                expires: created.addingTimeInterval(UndoNotice.duration),
+                jobs: currentJobs.enumerated().compactMap { index, job in
+                    removed.contains(job.id) ? (index, job) : nil
+                },
+                resume: Set(selected.filter { $0.status == .running }.map(\.id)),
+                files: files.map { id, original in
+                    (LocalResources.support.appendingPathComponent("\(id.uuidString).removing.ipa"), original)
+                })
+            armRemovalUndo(undoToken)
+        }
+        recentlyRestoredIDs.subtract(removed)
         jobs.removeAll { removed.contains($0.id) }
         for id in removed {
             tasks.removeValue(forKey: id)?.cancel()
             rowProgress.removeValue(forKey: id); transferMetrics.removeValue(forKey: id)
             progressPublishedAt.removeValue(forKey: id); fallbackForegroundIDs.remove(id)
-            catalogArtworkAttempted.remove(id)
+            catalogArtworkAttempted.remove(id); packageIconCache.removeValue(forKey: id)
         }
         updateBackgroundTask()
         return removed.count
@@ -758,7 +910,10 @@ final class DownloadManager: NSObject, ObservableObject {
 
     func packageIconURL(_ job: DownloadJob) -> URL? {
         let url = PackageIconService.cacheURL(job.id)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        if let exists = packageIconCache[job.id] { return exists ? url : nil }
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        packageIconCache[job.id] = exists
+        return exists ? url : nil
     }
 
     /// Packages whose icon scan has started but not finished.
@@ -795,8 +950,10 @@ final class DownloadManager: NSObject, ObservableObject {
                 }.value
                 guard let index = jobs.firstIndex(where: { $0.id == job.id }) else {
                     try? FileManager.default.removeItem(at: PackageIconService.cacheURL(job.id))
+                    packageIconCache.removeValue(forKey: job.id)
                     continue
                 }
+                packageIconCache.removeValue(forKey: job.id)
                 jobs[index].packageIconScanned = true
                 interrupted.remove(job.id.uuidString)
                 UserDefaults.standard.set(Array(interrupted), forKey: Self.iconScanKey)
@@ -812,6 +969,7 @@ final class DownloadManager: NSObject, ObservableObject {
                job.displayApp(packageIcon: nil).iconURL != nil, !job.isOlderVersion,
                PackageIconService.pixelWidth(cached) < 180 {
                 try? FileManager.default.removeItem(at: cached)
+                packageIconCache[job.id] = false
                 objectWillChange.send()
             }
             // tvOS packages keep their icon in a layered asset catalog, and the
@@ -840,8 +998,10 @@ final class DownloadManager: NSObject, ObservableObject {
                 // A download can be deleted while the artwork request is in flight.
                 guard let index = jobs.firstIndex(where: { $0.id == job.id }) else {
                     try? FileManager.default.removeItem(at: PackageIconService.cacheURL(job.id))
+                    packageIconCache.removeValue(forKey: job.id)
                     continue
                 }
+                packageIconCache.removeValue(forKey: job.id)
                 if tvArtwork != nil {
                     jobs[index].app.iconURL = artwork
                     jobs[index].appleTVArtwork = true
@@ -910,6 +1070,7 @@ final class DownloadManager: NSObject, ObservableObject {
                     return result
                 }.value
                 guard let index = self.jobs.firstIndex(where: { $0.id == id }) else { return }
+                self.packageIconCache.removeValue(forKey: id)
                 self.jobs[index].localFilename = result.0
                 self.jobs[index].app = job.completing(with: result.1)
                 self.jobs[index].packageIconScanned = true

@@ -49,6 +49,7 @@ struct SettingsView: View {
             .accessibilityIdentifier(identifier)
     }
     var body: some View {
+        ScrollViewReader { reader in
         Form {
             if page == .root {
             Section {
@@ -205,6 +206,7 @@ struct SettingsView: View {
                     Text("默认使用深色图标。「跟随系统」会随主屏幕的浅色、深色和着色外观切换（iOS 18 及更新版本），也可以固定使用浅色图标。")
                 }
             }
+            TranslationSettingsSections()
             }
             if page == .sources {
             ForEach($store.settings.versionSources) { $source in
@@ -222,7 +224,7 @@ struct SettingsView: View {
                         }
                     }
                     .accessibilityIdentifier("settings.source." + source.name)
-                    .revealDelete(id: "source." + source.id.uuidString, title: "移除") {
+                    .revealDelete(id: "source." + source.id.uuidString, title: "移除", fills: true) {
                         let id = source.id
                         withAnimation { store.settings.versionSources.removeAll { $0.id == id } }
                     }
@@ -340,6 +342,15 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings.support")
             }
             }
+        }
+        .compatibleOnChange(of: store.settings.directTranslation) { on in
+            guard on, page == .appearance else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(150))
+                guard store.settings.directTranslation else { return }
+                withAnimation { reader.scrollTo("settings.translation.resources", anchor: .bottom) }
+            }
+        }
         }
         .toolPage().navigationTitle(page.title).navigationBarTitleDisplayMode(.inline)
         .compatibleOnChange(of: scenePhase) { phase in if phase == .active { icons.refresh() } }

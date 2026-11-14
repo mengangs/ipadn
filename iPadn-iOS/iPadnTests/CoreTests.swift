@@ -1631,6 +1631,21 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try DMAP.walk(payload) { _ in })
     }
 
+    func testDirectTranslationIsOptInAndMigratesExistingSettings() throws {
+        XCTAssertFalse(ToolSettings().directTranslation)
+        for json in ["{}", #"{"appearance":"dark","appearanceSchema":2,"wifiOnlyDownloads":true}"#] {
+            XCTAssertFalse(try JSONDecoder().decode(ToolSettings.self, from: Data(json.utf8)).directTranslation)
+        }
+        for enabled in [false, true] {
+            var settings = ToolSettings()
+            settings.directTranslation = enabled
+            let data = try JSONEncoder().encode(settings)
+            XCTAssertEqual(try JSONDecoder().decode(ToolSettings.self, from: data), settings)
+        }
+        let saved = try JSONDecoder().decode(ToolSettings.self, from: Data(#"{"directTranslation":true}"#.utf8))
+        XCTAssertTrue(saved.directTranslation)
+    }
+
     func testJobAndSettingsPersistenceRoundTrip() throws {
         let app = StoreApp(id: "1", name: "Test", bundleID: "test.bundle", version: "1.0")
         let job = DownloadJob(app: app, status: .paused, downloaded: 20, expected: 100)

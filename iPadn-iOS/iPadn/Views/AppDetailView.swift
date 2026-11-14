@@ -53,6 +53,8 @@ struct AppDetailView: View {
     @State private var retryVersionsAfterVerification = false
     @State private var verifiedForRetry = false
     @State private var showDescription = false
+    @State private var collapsedDescriptionHeight: CGFloat = 0
+    @State private var fullDescriptionHeight: CGFloat = 0
     @State private var reloadID = 0
     @State private var loadedVersionsKey: String?
     @State private var loadedReloadID = 0
@@ -110,13 +112,28 @@ struct AppDetailView: View {
                 versionSection
                 if store.settings.store.platform == .macOS { macSection }
                 if !app.description.isEmpty {
+                    let displayed = translatedDescription ?? app.description
+                    let truncated = fullDescriptionHeight - collapsedDescriptionHeight > 2
                     CardSection {
-                        Text(translatedDescription ?? app.description).font(.subheadline)
+                        Text(displayed).font(.subheadline)
                             .lineLimit(showDescription ? nil : 4).textSelection(.enabled)
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                                collapsedDescriptionHeight = $0
+                            }
+                            .background {
+                                Text(displayed).font(.subheadline)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .hidden()
+                                    .accessibilityHidden(true)
+                                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                                        fullDescriptionHeight = $0
+                                    }
+                            }
                         let translates = TranslateButton.offered(for: app.description, translation: translatedDescription)
-                        if !showDescription || translates {
+                        let showMore = !showDescription && truncated
+                        if showMore || translates {
                             HStack {
-                                if !showDescription {
+                                if showMore {
                                     Button("更多") { withAnimation { showDescription = true } }
                                 }
                                 Spacer()
@@ -128,6 +145,9 @@ struct AppDetailView: View {
                             .font(.subheadline).buttonStyle(.borderless)
                         }
                     } header: { sectionTitle("简介") }
+                    .compatibleOnChange(of: translatedDescription) { value in
+                        if value != nil, truncated { withAnimation { showDescription = true } }
+                    }
                 }
                 if !app.isDelisted { ReviewsCard(app: app) }
                 if !app.isDelisted {

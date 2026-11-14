@@ -16,8 +16,34 @@ enum UX {
         traits.userInterfaceStyle == .dark ? .systemGreen : (UIColor(named: "AccentColor") ?? .label)
     })
     static let iconCorner: CGFloat = 0.2237
-    static func feedback() { UISelectionFeedbackGenerator().selectionChanged() }
-    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    @MainActor private static let selectionGenerator = UISelectionFeedbackGenerator()
+    @MainActor private static let lightImpactGenerator = UIImpactFeedbackGenerator(style: .light)
+    @MainActor private static let softImpactGenerator = UIImpactFeedbackGenerator(style: .soft)
+    @MainActor private static let notificationGenerator = UINotificationFeedbackGenerator()
+    @MainActor static func prepare() {
+        selectionGenerator.prepare()
+        lightImpactGenerator.prepare()
+    }
+    @MainActor static func feedback() {
+        selectionGenerator.selectionChanged()
+        selectionGenerator.prepare()
+    }
+    @MainActor static func tapLight() {
+        lightImpactGenerator.impactOccurred(intensity: 0.72)
+        lightImpactGenerator.prepare()
+    }
+    @MainActor static func tapSoft() {
+        softImpactGenerator.impactOccurred(intensity: 0.6)
+        softImpactGenerator.prepare()
+    }
+    @MainActor static func success() {
+        notificationGenerator.notificationOccurred(.success)
+        notificationGenerator.prepare()
+    }
+    @MainActor static func warning() {
+        notificationGenerator.notificationOccurred(.warning)
+        notificationGenerator.prepare()
+    }
 }
 
 /// Full-width primary action (App Store sign-in "继续" style).
@@ -34,6 +60,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .opacity(enabled ? 1 : 0.35)
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
             .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.15), value: configuration.isPressed)
+            .compatibleOnChange(of: configuration.isPressed) { down in if down { UX.prepare() } }
     }
 }
 typealias MonochromeButtonStyle = PrimaryButtonStyle
@@ -45,13 +72,19 @@ struct TintedSwitchToggleStyle: ToggleStyle {
     }
 }
 
-/// App Store "获取 / 打开" capsule. `filled` is the prominent variant.
-struct CapsuleButtonStyle: ButtonStyle {
-    var filled = false
-    @Environment(\.isEnabled) private var enabled
-    @Environment(\.revealSuppressesPress) private var suppressesPress
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+private struct CapsuleAppearanceModifier: ViewModifier {
+    let filled: Bool
+    let pressed: Bool
+    let enabled: Bool
+    let suppressesPress: Bool
+    let pressScale: CGFloat
+    let pressOpacity: Double
+    var managesPressAndEnabled = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        let down = pressed && !suppressesPress
+        content
             .environment(\.isEnabled, enabled || suppressesPress)
             .font(.subheadline.weight(.bold))
             .lineLimit(1)
@@ -60,33 +93,207 @@ struct CapsuleButtonStyle: ButtonStyle {
             .foregroundStyle(filled ? UX.onAccent : UX.tint)
             .padding(.horizontal, 16).frame(minWidth: 74, minHeight: 30)
             .background(filled ? AnyShapeStyle(UX.tint) : AnyShapeStyle(Color(.tertiarySystemFill)), in: Capsule())
-            .opacity(configuration.isPressed && !suppressesPress ? 0.6 : enabled || suppressesPress ? 1 : 0.4)
+            .opacity(managesPressAndEnabled ? (down ? pressOpacity : enabled || suppressesPress ? 1 : 0.4) : 1)
+            .scaleEffect(managesPressAndEnabled && down && !reduceMotion ? pressScale : 1)
+            .animation(managesPressAndEnabled && !reduceMotion ? .compatibleSnappy(duration: 0.14) : nil, value: down)
             .contentShape(Capsule())
     }
 }
 
-/// Capsule action inside a navigable List row. A Button there would be
-/// swallowed by the row's link, so it uses a high-priority tap instead.
+/// Shared touch-down tracker so custom UIKit tap targets highlight on finger-down
+/// while cancelling cleanly during list scroll or horizontal swipe gestures.
+final class TactileContainerView: UIView {
+    var onPressChange: ((Bool) -> Void)?
+    private var pressed = false
+
+    private func setPressed(_ down: Bool) {
+        guard pressed != down else { return }
+        pressed = down
+        if down { UX.prepare() }
+        onPressChange?(down)
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        setPressed(true)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        setPressed(bounds.insetBy(dx: -12, dy: -12).contains(touch.location(in: self)))
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        setPressed(false)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        setPressed(false)
+    }
+}
+
+private struct TactileTapOverlay: UIViewRepresentable {
+    let enabled: Bool
+    let onPressChange: (Bool) -> Void
+    let onTap: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    func makeUIView(context: Context) -> TactileContainerView {
+        let view = TactileContainerView()
+        view.backgroundColor = .clear
+        view.isOpaque = false
+        view.isAccessibilityElement = false
+        view.onPressChange = { [weak coordinator = context.coordinator] down in
+            coordinator?.handlePressChange(down)
+        }
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped))
+        tap.cancelsTouchesInView = true
+        tap.delaysTouchesBegan = false
+        tap.delaysTouchesEnded = false
+        tap.delegate = context.coordinator
+        view.addGestureRecognizer(tap)
+        return view
+    }
+
+    func updateUIView(_ uiView: TactileContainerView, context: Context) {
+        context.coordinator.parent = self
+        uiView.isUserInteractionEnabled = enabled
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: TactileTapOverlay
+        init(parent: TactileTapOverlay) { self.parent = parent }
+
+        func handlePressChange(_ down: Bool) {
+            parent.onPressChange(down)
+        }
+
+        @objc func tapped() {
+            guard parent.enabled else { return }
+            parent.onTap()
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            parent.enabled
+        }
+    }
+}
+
+private struct TactileNavigationTapModifier: ViewModifier {
+    let enabled: Bool
+    let pressScale: CGFloat
+    let pressOpacity: Double
+    let onTap: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.revealSuppressesPress) private var suppressesPress
+    @State private var pressed = false
+    @State private var downAt: CFTimeInterval = 0
+    @State private var pulseClearWork: DispatchWorkItem?
+
+    func body(content: Content) -> some View {
+        let active = pressed && enabled && !suppressesPress
+        content
+            .opacity(active ? pressOpacity : (enabled || suppressesPress ? 1 : 0.4))
+            .scaleEffect(active && !reduceMotion ? pressScale : 1)
+            .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.14), value: active)
+            .overlay {
+                TactileTapOverlay(
+                    enabled: enabled && !suppressesPress,
+                    onPressChange: { down in
+                        if down {
+                            pulseClearWork?.cancel()
+                            pulseClearWork = nil
+                            downAt = CACurrentMediaTime()
+                            pressed = true
+                        } else if pulseClearWork == nil {
+                            pressed = false
+                        }
+                    },
+                    onTap: {
+                        let elapsed = downAt > 0 ? CACurrentMediaTime() - downAt : 0
+                        downAt = 0
+                        if !reduceMotion && elapsed < 0.06 {
+                            pulseClearWork?.cancel()
+                            pressed = true
+                            let work = DispatchWorkItem {
+                                pulseClearWork = nil
+                                pressed = false
+                            }
+                            pulseClearWork = work
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
+                        } else {
+                            pressed = false
+                        }
+                        onTap()
+                    }
+                )
+            }
+    }
+}
+
+extension View {
+    /// Scroll-safe, swipe-safe tap control for buttons nested inside a List `NavigationLink`.
+    func tactileNavigationTap(enabled: Bool = true, pressScale: CGFloat = 0.94, pressOpacity: Double = 0.72,
+                              onTap: @escaping () -> Void) -> some View {
+        modifier(TactileNavigationTapModifier(enabled: enabled, pressScale: pressScale, pressOpacity: pressOpacity, onTap: onTap))
+    }
+}
+
+/// App Store "获取 / 打开" capsule. `filled` is the prominent variant.
+struct CapsuleButtonStyle: ButtonStyle {
+    var filled = false
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.revealSuppressesPress) private var suppressesPress
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed && !suppressesPress
+        configuration.label
+            .modifier(CapsuleAppearanceModifier(filled: filled, pressed: pressed, enabled: enabled,
+                                              suppressesPress: suppressesPress, pressScale: 0.94, pressOpacity: 0.72))
+            .compatibleOnChange(of: pressed) { down in if down { UX.prepare() } }
+    }
+}
+
+/// Primary row action pill: native `Button` outside `NavigationLink`, or
+/// scroll-safe UIKit tap overlay inside a `NavigationLink` row so tapping
+/// "Get" doesn't also push the detail page.
 struct RowCapsule: View {
     let title: LocalizedStringKey
     var filled = false
     var enabled = true
+    var insideNavigationLink = false
+    var haptic = true
     let action: () -> Void
+    @Environment(\.revealSuppressesPress) private var suppressesPress
     var body: some View {
-        Text(title)
-            .font(.subheadline.weight(.bold)).lineLimit(1)
-            // Capsule labels ("Download", "Get") must never be clipped.
-            .fixedSize(horizontal: true, vertical: false)
-            .foregroundStyle(filled ? UX.onAccent : UX.tint)
-            .padding(.horizontal, 16).frame(minWidth: 74, minHeight: 30)
-            .background(filled ? AnyShapeStyle(UX.tint) : AnyShapeStyle(Color(.tertiarySystemFill)), in: Capsule())
-            .opacity(enabled ? 1 : 0.4)
-            .contentShape(Capsule())
-            .highPriorityGesture(TapGesture().onEnded { if enabled { action() } })
-            .accessibilityElement(children: .ignore)
-            .accessibilityAddTraits(.isButton)
+        if insideNavigationLink {
+            Text(title)
+                .modifier(CapsuleAppearanceModifier(filled: filled, pressed: false, enabled: enabled,
+                                                  suppressesPress: suppressesPress, pressScale: 1, pressOpacity: 1,
+                                                  managesPressAndEnabled: false))
+                .tactileNavigationTap(enabled: enabled) {
+                    if haptic { UX.tapLight() }
+                    action()
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel(title)
+                .accessibilityAction {
+                    if enabled {
+                        if haptic { UX.tapLight() }
+                        action()
+                    }
+                }
+        } else {
+            Button {
+                if haptic { UX.tapLight() }
+                action()
+            } label: {
+                Text(title)
+            }
+            .buttonStyle(CapsuleButtonStyle(filled: filled))
+            .disabled(!enabled)
             .accessibilityLabel(title)
-            .accessibilityAction { if enabled { action() } }
+        }
     }
 }
 
@@ -349,7 +556,7 @@ struct TaskStatusPill: View {
         // Not a Label: inside List rows a Label gets the list's icon column,
         // which leaves a wide gap between the glyph and the text.
         HStack(spacing: 4) {
-            Image(systemName: status.symbol).imageScale(.small)
+            Image(systemName: status.symbol).imageScale(.small).accessibilityHidden(true)
             Text(status.title)
         }
         .font(.caption.weight(.semibold))
@@ -548,7 +755,7 @@ extension View {
     }
     @ViewBuilder func compatibleSelectionFeedback<T: Equatable>(trigger: T) -> some View {
         if #available(iOS 17, *) { sensoryFeedback(.selection, trigger: trigger) }
-        else { onChange(of: trigger) { _ in UISelectionFeedbackGenerator().selectionChanged() } }
+        else { onChange(of: trigger) { _ in UX.feedback() } }
     }
     @ViewBuilder func compatiblePresentationCornerRadius(_ radius: CGFloat) -> some View {
         if #available(iOS 16.4, *) { presentationCornerRadius(radius) }
@@ -658,6 +865,10 @@ extension View {
         else { contentTransition(.numericText()) }
     }
 
+    @ViewBuilder func compatibleNumericTransition() -> some View {
+        contentTransition(.numericText())
+    }
+
     @ViewBuilder func compatibleBounce(trigger: some Equatable) -> some View {
         if #available(iOS 17, *) { symbolEffect(.bounce, value: trigger) }
         else { self }
@@ -733,6 +944,8 @@ struct MenuChip: UIViewRepresentable {
     struct Label: View {
         let title: String
         let symbol: String
+        var pressed = false
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
         var body: some View {
             HStack(spacing: 6) {
                 Image(systemName: symbol).font(.footnote.weight(.medium)).foregroundStyle(.secondary)
@@ -740,16 +953,27 @@ struct MenuChip: UIViewRepresentable {
             }
             .padding(.horizontal, 14).frame(minHeight: 38)
             .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+            .opacity(pressed ? 0.72 : 1)
+            .scaleEffect(pressed && !reduceMotion ? 0.94 : 1)
+            .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.14), value: pressed)
         }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    func makeUIView(context: Context) -> UIView {
+    func makeUIView(context: Context) -> TactileContainerView {
         let host = UIHostingController(rootView: Label(title: title, symbol: symbol))
         host.view.backgroundColor = .clear
+        host.view.isUserInteractionEnabled = false
+        host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         context.coordinator.host = host
-        let view = host.view!
+        let view = TactileContainerView()
+        view.backgroundColor = .clear
+        view.onPressChange = { [weak coordinator = context.coordinator] down in
+            coordinator?.setPressed(down)
+        }
+        host.view.frame = view.bounds
+        view.addSubview(host.view)
         view.addInteraction(UIContextMenuInteraction(delegate: context.coordinator))
         view.addGestureRecognizer(UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped)))
         view.isAccessibilityElement = true
@@ -758,9 +982,9 @@ struct MenuChip: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ view: UIView, context: Context) {
+    func updateUIView(_ view: TactileContainerView, context: Context) {
         context.coordinator.chip = self
-        context.coordinator.host?.rootView = Label(title: title, symbol: symbol)
+        context.coordinator.host?.rootView = Label(title: title, symbol: symbol, pressed: context.coordinator.pressed)
         update(view, context: context)
     }
 
@@ -773,7 +997,7 @@ struct MenuChip: UIViewRepresentable {
         }]
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: TactileContainerView, context: Context) -> CGSize? {
         context.coordinator.host?.sizeThatFits(in: CGSize(width: proposal.width ?? .greatestFiniteMagnitude,
                                                           height: .greatestFiniteMagnitude))
     }
@@ -781,9 +1005,20 @@ struct MenuChip: UIViewRepresentable {
     final class Coordinator: NSObject, UIContextMenuInteractionDelegate {
         var chip: MenuChip
         var host: UIHostingController<Label>?
+        var pressed = false
         init(_ chip: MenuChip) { self.chip = chip }
 
-        @objc func tapped() { chip.onTap() }
+        func setPressed(_ down: Bool) {
+            guard pressed != down else { return }
+            pressed = down
+            host?.rootView = Label(title: chip.title, symbol: chip.symbol, pressed: down)
+        }
+
+        @objc func tapped() {
+            setPressed(false)
+            UX.tapSoft()
+            chip.onTap()
+        }
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
                                     configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
@@ -799,12 +1034,19 @@ struct MenuChip: UIViewRepresentable {
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
                                     previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
-            preview(interaction)
+            UIView.performWithoutAnimation { setPressed(false) }
+            return preview(interaction)
         }
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
                                     previewForDismissingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
             preview(interaction)
+        }
+
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                    willDisplayMenuFor configuration: UIContextMenuConfiguration,
+                                    animator: (any UIContextMenuInteractionAnimating)?) {
+            setPressed(false)
         }
 
         private func preview(_ interaction: UIContextMenuInteraction) -> UITargetedPreview? {

@@ -4,6 +4,7 @@ import UIKit
 /// A newer iPadn release: what changed, and its installation package.
 struct AppUpdateView: View {
     @EnvironmentObject private var store: ToolStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let release: AppRelease
     @State private var progress: Double?
     @State private var downloaded: URL?
@@ -51,7 +52,10 @@ struct AppUpdateView: View {
                         }
                         .disabled(progress != nil)
                         .accessibilityIdentifier("update.download")
-                        if let progress { ProgressView(value: progress) }
+                        if let progress {
+                            ProgressView(value: progress)
+                                .transition(.opacity)
+                        }
                     }
                     if AppUpdateService.installedByTrollStore, let url = AppUpdateService.trollStoreURL(for: release) {
                         Button("用 TrollStore 安装", systemImage: "square.and.arrow.down") {
@@ -70,6 +74,8 @@ struct AppUpdateView: View {
         }
         .navigationTitle("iPadn 更新")
         .navigationBarTitleDisplayMode(.inline)
+        .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.25), value: progress != nil)
+        .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.25), value: downloaded != nil)
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
         .onAppear { if downloaded == nil { downloaded = AppUpdateService.downloadedPackage(for: release) } }
         .onDisappear { if share == nil { downloading?.cancel() } }
@@ -77,6 +83,7 @@ struct AppUpdateView: View {
 
     private func download() {
         guard downloading == nil else { return }
+        UX.tapLight()
         progress = 0
         downloading = Task {
             defer { downloading = nil }
@@ -87,6 +94,7 @@ struct AppUpdateView: View {
                 }
                 progress = nil
                 downloaded = file
+                UX.success()
                 share = SharedFile(url: file)
             } catch {
                 progress = nil

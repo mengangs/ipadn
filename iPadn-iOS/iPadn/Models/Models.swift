@@ -310,6 +310,8 @@ struct ToolSettings: Codable, Equatable {
     var autoInstall = false
     /// Download progress on the Lock Screen and in the Dynamic Island.
     var downloadLiveActivity = true
+    /// Opt in to on-device translation; the system sheet remains the default.
+    var directTranslation = false
     var useSignerCache = true
     var appearance = "system"
     /// 2 once the appearance default is following the system (1.7.0 saved its dark default).
@@ -337,7 +339,7 @@ struct ToolSettings: Codable, Equatable {
         case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency, appUpdateCheck, targetPrices
         case appearanceSchema, compatibleDownloadMode, nativeInstallation, versionSourcesSchema, appLock, appLockDelay, showDiscover
         case wifiOnlyDownloads, autoInstall
-        case downloadLiveActivity
+        case downloadLiveActivity, directTranslation
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -355,6 +357,7 @@ struct ToolSettings: Codable, Equatable {
         wifiOnlyDownloads = try values.decodeIfPresent(Bool.self, forKey: .wifiOnlyDownloads) ?? wifiOnlyDownloads
         autoInstall = try values.decodeIfPresent(Bool.self, forKey: .autoInstall) ?? autoInstall
         downloadLiveActivity = try values.decodeIfPresent(Bool.self, forKey: .downloadLiveActivity) ?? downloadLiveActivity
+        directTranslation = try values.decodeIfPresent(Bool.self, forKey: .directTranslation) ?? directTranslation
         watchNotifications = try values.decodeIfPresent(Bool.self, forKey: .watchNotifications) ?? watchNotifications
         targetPrices = try values.decodeIfPresent(Bool.self, forKey: .targetPrices) ?? targetPrices
         let regions = (try values.decodeIfPresent([String].self, forKey: .priceRegions) ?? priceRegions).filter { StoreRegions.codes.contains($0) }
@@ -498,8 +501,24 @@ enum LocalResources {
     }
 }
 
+private final class FileByteFormatterCache: @unchecked Sendable {
+    static let shared = FileByteFormatterCache()
+    private let lock = NSLock()
+    private let formatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter
+    }()
+
+    func format(_ count: Int64) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return formatter.string(fromByteCount: count)
+    }
+}
+
 extension Int64 {
-    var byteLabel: String { ByteCountFormatter.string(fromByteCount: self, countStyle: .file) }
+    var byteLabel: String { FileByteFormatterCache.shared.format(self) }
 }
 
 func plistString(_ value: Any?) -> String {

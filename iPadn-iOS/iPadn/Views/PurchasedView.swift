@@ -182,11 +182,14 @@ struct PurchasedView: View {
                                         Image(systemName: "icloud.and.arrow.down")
                                             .font(.title3.weight(.medium)).foregroundStyle(UX.tint)
                                             .frame(width: 34, height: 44).contentShape(Rectangle())
-                                            .highPriorityGesture(TapGesture().onEnded { getting = app.storeApp; UX.feedback() })
+                                            .tactileNavigationTap(pressScale: 0.88, pressOpacity: 0.55) {
+                                                UX.tapLight()
+                                                getting = app.storeApp
+                                            }
                                             .accessibilityElement(children: .ignore)
                                             .accessibilityAddTraits(.isButton)
                                             .accessibilityLabel("下载 \(app.name)")
-                                            .accessibilityAction { getting = app.storeApp; UX.feedback() }
+                                            .accessibilityAction { UX.tapLight(); getting = app.storeApp }
                                     }
                                 }
                             }

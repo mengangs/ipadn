@@ -1,6 +1,9 @@
 import SwiftUI
 import WebKit
 import UIKit
+#if DEBUG
+import os
+#endif
 
 struct AppIcon: View {
     var url: URL?
@@ -146,7 +149,13 @@ struct RootView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private let destinations: [(title: LocalizedStringKey, symbol: String)] = [("搜索", "magnifyingglass"), ("下载", "arrow.down.circle.fill"), ("已购", "bag.fill"), ("账号", "person.crop.circle.fill")]
+    @State private var vectorTabBarUnavailable = false
+    private let destinations: [(title: LocalizedStringKey, symbol: String, kind: RevealAnimationKind)] = [
+        ("搜索", "magnifyingglass", .tabSearch),
+        ("下载", "arrow.down.circle.fill", .tabDownloads),
+        ("已购", "bag.fill", .tabPurchased),
+        ("账号", "person.crop.circle.fill", .tabAccount)
+    ]
     var body: some View {
         Group {
             if sizeClass == .regular {
@@ -176,15 +185,23 @@ struct RootView: View {
                 }
             } else {
                 TabView(selection: $tabs.selection) {
-                    NavigationStack { SearchView() }.tabItem { Label("搜索", systemImage: "magnifyingglass") }.tag(0)
-                    NavigationStack { DownloadsView() }.tabItem { Label("下载", systemImage: "arrow.down.circle.fill") }
+                    NavigationStack { SearchView() }.tabItem { tabLabel(destinations[0]) }.tag(0)
+                    NavigationStack { DownloadsView() }.tabItem { tabLabel(destinations[1]) }
                         .badge(downloads.jobs.filter { DownloadFilter.active.includes($0.status) }.count).tag(1)
-                    NavigationStack { PurchasedView() }.tabItem { Label("已购", systemImage: "bag.fill") }.tag(2)
-                    NavigationStack { AccountsView() }.tabItem { Label("账号", systemImage: "person.crop.circle.fill") }.tag(3)
+                    NavigationStack { PurchasedView() }.tabItem { tabLabel(destinations[2]) }.tag(2)
+                    NavigationStack { AccountsView() }.tabItem { tabLabel(destinations[3]) }.tag(3)
                 }
                 .toolbarBackground(.visible, for: .tabBar)
                 .toolbarBackground(.ultraThinMaterial, for: .tabBar)
-                .background { TabReselectScroll(selected: tabs.selection) }
+                .background {
+                    TabReselectScroll(
+                        selected: tabs.selection,
+                        reduceMotion: reduceMotion,
+                        kinds: destinations.map(\.kind),
+                        enableVectorIcons: !vectorTabBarUnavailable,
+                        onVectorFallback: { vectorTabBarUnavailable = true }
+                    )
+                }
             }
         }
         .preferredColorScheme(store.settings.appearance == "system" ? nil : store.settings.appearance == "dark" ? .dark : .light)
@@ -211,12 +228,18 @@ struct RootView: View {
                         UndoCountdown(start: notice.created, duration: UndoNotice.duration)
                         Text(message).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
-                            Button("撤销") { withAnimation(UX.motion(reduceMotion)) { store.undoLastAction() } }
+                            .compatibleNumericTransition()
+                            Button("撤销") {
+                                UX.tapLight()
+                                withAnimation(UX.motion(reduceMotion)) { store.undoLastAction() }
+                            }
                                 .font(.subheadline.weight(.semibold)).frame(minWidth: 44, minHeight: 44)
                                 .compatibleInteractionShape(Rectangle())
                                 .accessibilityIdentifier("notice.undo")
                     }
                     .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.88), value: notice.revision)
                     } else {
                         // Match 1.8.0: the whole compact notice dismisses on tap.
                         Button { store.infoMessage = nil } label: {
@@ -239,17 +262,25 @@ struct RootView: View {
                 // The top of the root tab container includes the navigation bar.
                 // On compact-height devices show the banner nearer the top.
                 .padding(.top, sizeClass == .regular ? 16 : verticalSizeClass == .compact ? 8 : 52)
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .id(store.undoNotice != nil ? "undo" : "info")
+                .transition(reduceMotion
+                    ? .opacity
+                    : .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: .top)))
                 .zIndex(1)
             }
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.infoMessage)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.undoNotice?.id)
-        .task(id: store.undoNotice?.id) {
+        .animation(reduceMotion ? nil : .spring(response: 0.36, dampingFraction: 0.86), value: store.infoMessage)
+        .animation(reduceMotion ? nil : .spring(response: 0.36, dampingFraction: 0.86), value: store.undoNotice?.id)
+        .task(id: store.undoNotice.map { "\($0.id.uuidString)-\($0.revision)" }) {
             guard let notice = store.undoNotice else { return }
             UIAccessibility.post(notification: .announcement, argument: AppText.text("\(notice.message)，可以撤销"))
-            do { try await Task.sleep(for: .seconds(UndoNotice.duration)) } catch { return }
-            if store.undoNotice?.id == notice.id { store.undoNotice = nil }
+            let remaining = notice.created.addingTimeInterval(UndoNotice.duration).timeIntervalSinceNow
+            if remaining > 0 {
+                do { try await Task.sleep(for: .seconds(remaining)) } catch { return }
+            }
+            if store.undoNotice?.id == notice.id && store.undoNotice?.revision == notice.revision {
+                store.undoNotice = nil
+            }
         }
         .task(id: store.infoMessage) {
             guard let message = store.infoMessage else { return }
@@ -271,6 +302,13 @@ struct RootView: View {
             if reduceMotion { transaction.animation = nil; transaction.disablesAnimations = true }
         }
     }
+    @ViewBuilder private func tabLabel(_ item: (title: LocalizedStringKey, symbol: String, kind: RevealAnimationKind)) -> some View {
+        if !vectorTabBarUnavailable, RevealAnimationLibrary.syncLoad(item.kind) != nil {
+            Label { Text(item.title) } icon: { Image(uiImage: TabVectorIconView.placeholderImage) }
+        } else {
+            Label(item.title, systemImage: item.symbol)
+        }
+    }
     @ViewBuilder private func page(_ index: Int) -> some View {
         switch index {
         case 1: DownloadsView()
@@ -286,14 +324,16 @@ struct RootView: View {
 struct UndoCountdown: View {
     let start: Date
     let duration: TimeInterval
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+        TimelineView(.animation) { context in
             let left = max(0, duration - context.date.timeIntervalSince(start))
             ZStack {
                 Circle().stroke(Color.primary.opacity(0.12), lineWidth: 2)
-                Circle().trim(from: 0, to: left / duration)
+                Circle().trim(from: 0, to: min(1, left / duration))
                     .stroke(Color.primary, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                     .rotationEffect(.degrees(-90))
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: start)
                 Text("\(Int(left.rounded(.up)))")
                     .font(.system(size: 12, weight: .semibold).monospacedDigit())
                     .foregroundStyle(.primary)
@@ -306,81 +346,492 @@ struct UndoCountdown: View {
     }
 }
 
+@MainActor
+private final class TabVectorIconView: UIView {
+    static let placeholderImage: UIImage = {
+        let size = CGSize(width: 26, height: 26)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in }.withRenderingMode(.alwaysTemplate)
+    }()
+
+    let kind: RevealAnimationKind
+    private let stage = CALayer()
+    private var shapes: [CAShapeLayer] = []
+    private var prepared: PreparedRevealAnimation?
+
+    init(kind: RevealAnimationKind) {
+        self.kind = kind
+        super.init(frame: .zero)
+        isUserInteractionEnabled = false
+        isAccessibilityElement = false
+        clipsToBounds = false
+        layer.addSublayer(stage)
+        if let loaded = RevealAnimationLibrary.syncLoad(kind) {
+            prepared = loaded
+            shapes = loaded.makeShapeLayers(color: resolvedColor(), into: stage)
+            loaded.applyFrame(last: true, to: shapes)
+        }
+        if #available(iOS 17.0, *) {
+            registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: TabVectorIconView, _) in
+                self.syncColors()
+            }
+        }
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    private func resolvedColor() -> CGColor {
+        tintColor.resolvedColor(with: traitCollection).cgColor
+    }
+
+    func syncColors() {
+        prepared?.applyColors(resolvedColor(), to: shapes)
+    }
+
+    override func didMoveToSuperview() { super.didMoveToSuperview(); syncColors() }
+    override func didMoveToWindow() { super.didMoveToWindow(); syncColors(); layoutStage() }
+    override func tintColorDidChange() { super.tintColorDidChange(); syncColors() }
+    override func layoutSubviews() { super.layoutSubviews(); layoutStage() }
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if #available(iOS 17.0, *) { return }
+        if traitCollection.hasDifferentColorAppearance(comparedTo: previousTraitCollection) {
+            syncColors()
+        }
+    }
+
+    private func layoutStage() {
+        guard let asset = prepared?.asset, bounds.width > 0, bounds.height > 0 else { return }
+        let scale = min(bounds.width / asset.canvas[0], bounds.height / asset.canvas[1])
+        let width = asset.canvas[0] * scale
+        let height = asset.canvas[1] * scale
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        stage.anchorPoint = .zero
+        stage.position = CGPoint(x: (bounds.width - width) * 0.5, y: (bounds.height - height) * 0.5)
+        stage.bounds = CGRect(x: 0, y: 0, width: asset.canvas[0], height: asset.canvas[1])
+        stage.transform = CATransform3DMakeScale(scale, scale, 1)
+        CATransaction.commit()
+    }
+
+    func play(beginTime: CFTimeInterval) {
+        prepared?.play(on: shapes, in: window, beginTime: beginTime, key: "tab.vector")
+    }
+}
+
 /// Tapping the tab you are already on scrolls its list back to the top, as in
-/// Telegram. It watches the tab bar's taps and changes nothing about the tabs.
+/// Telegram. It also renders multi-part vector animations inside native UITabBar
+/// / Liquid Glass tab slots at full display refresh rate.
 struct TabReselectScroll: UIViewRepresentable {
+    enum VectorAttachmentResult: Equatable {
+        case attached
+        case deferred
+        case unsupportedHierarchy
+    }
+
     let selected: Int
+    let reduceMotion: Bool
+    let kinds: [RevealAnimationKind]
+    let enableVectorIcons: Bool
+    let onVectorFallback: () -> Void
     final class Anchor: UIView {
         var moved: (() -> Void)?
         override func didMoveToWindow() { super.didMoveToWindow(); moved?() }
     }
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+    @MainActor final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         weak var anchor: Anchor?
         private weak var watched: UITabBar?
         private var tap: UITapGestureRecognizer?
         private var selectedAtTouch: Int?
+        private var lastSelected: Int?
+        private var installTask: Task<Void, Never>?
+        private var followUpTask: Task<Void, Never>?
+        private var fallbackNotified = false
+        var reduceMotion = false
+        var kinds: [RevealAnimationKind] = []
+        var enableVectorIcons = true
+        var onVectorFallback: (() -> Void)?
+
         func install() {
-            guard let window = anchor?.window, let bar = Self.tabBar(in: window) else { detach(); return }
-            guard bar !== watched else { return }
-            detach()
-            let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
-            tap.cancelsTouchesInView = false
-            tap.delegate = self
-            bar.addGestureRecognizer(tap)
-            self.tap = tap
-            watched = bar
+            installTask?.cancel()
+            installTask = nil
+            if attachCurrent() == .attached {
+                if enableVectorIcons { scheduleFollowUpAttach() }
+                return
+            }
+            installTask = Task { @MainActor [weak self] in
+                for delayMs in [16, 40, 100, 220, 450] {
+                    try? await Task.sleep(for: .milliseconds(delayMs))
+                    guard !Task.isCancelled, let self else { return }
+                    let result = self.attachCurrent()
+                    if result == .attached {
+                        if self.enableVectorIcons { self.scheduleFollowUpAttach() }
+                        return
+                    }
+                    if delayMs == 450, result == .unsupportedHierarchy {
+                        self.notifyVectorFallbackIfNeeded(in: self.watched)
+                    }
+                }
+            }
         }
-        func detach() {
+
+        private func scheduleFollowUpAttach() {
+            guard enableVectorIcons else { return }
+            followUpTask?.cancel()
+            followUpTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(50))
+                guard !Task.isCancelled, let self, self.enableVectorIcons, let bar = self.watched else { return }
+                if TabReselectScroll.attachVectorIcons(in: bar, kinds: self.kinds) == .unsupportedHierarchy {
+                    self.install()
+                }
+            }
+        }
+
+        @discardableResult
+        private func attachCurrent() -> VectorAttachmentResult {
+            guard let window = anchor?.window, let bar = Self.tabBar(in: window) else { return .deferred }
+            if bar !== watched {
+                detachTapOnly()
+                let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+                tap.cancelsTouchesInView = false
+                tap.delegate = self
+                bar.addGestureRecognizer(tap)
+                self.tap = tap
+                watched = bar
+            }
+            guard enableVectorIcons else {
+                TabReselectScroll.removeVectorIcons(in: bar)
+                return .attached
+            }
+            return TabReselectScroll.attachVectorIcons(in: bar, kinds: kinds)
+        }
+
+        func updateSelection(_ selected: Int, reduceMotion: Bool, kinds: [RevealAnimationKind],
+                             enableVectorIcons: Bool, onVectorFallback: @escaping () -> Void) {
+            self.reduceMotion = reduceMotion
+            self.kinds = kinds
+            self.enableVectorIcons = enableVectorIcons
+            self.onVectorFallback = onVectorFallback
+            install()
+            guard let previous = lastSelected else {
+                lastSelected = selected
+                return
+            }
+            guard previous != selected else { return }
+            lastSelected = selected
+            guard !reduceMotion, enableVectorIcons, let bar = watched else { return }
+            DispatchQueue.main.async { [weak self, weak bar, kinds] in
+                guard let self, let bar, self.enableVectorIcons else { return }
+                let result = TabReselectScroll.attachVectorIcons(in: bar, kinds: kinds)
+                if result == .attached {
+                    Self.playTabIcon(at: selected, in: bar, kinds: kinds)
+                } else if result == .unsupportedHierarchy {
+                    self.install()
+                }
+            }
+        }
+
+        private func notifyVectorFallbackIfNeeded(in bar: UITabBar?) {
+            if let bar { TabReselectScroll.removeVectorIcons(in: bar) }
+            guard !fallbackNotified else { return }
+            fallbackNotified = true
+            enableVectorIcons = false
+            #if DEBUG
+            if CommandLine.arguments.contains("--reveal-metrics") {
+                Logger(subsystem: "app.local.iPadn", category: "Reveal")
+                    .notice("TabBar vector hierarchy unavailable; reverting to SF Symbols")
+            }
+            #endif
+            onVectorFallback?()
+        }
+
+        private func detachTapOnly() {
             if let tap { watched?.removeGestureRecognizer(tap) }
             tap = nil; watched = nil; selectedAtTouch = nil
         }
+
+        func detach() {
+            installTask?.cancel()
+            installTask = nil
+            followUpTask?.cancel()
+            followUpTask = nil
+            detachTapOnly()
+        }
+
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             guard let bar = watched else { return false }
             // Capture BEFORE UIKit changes selection, not when the tap ends.
             // Comparing item indices also avoids assuming LTR button positions.
-            selectedAtTouch = bar.items?.firstIndex { $0 === bar.selectedItem }
+            let current = bar.items?.firstIndex { $0 === bar.selectedItem }
+            selectedAtTouch = current
             var view = touch.view
-            while let current = view, current !== bar {
-                if current is UIControl { return true }
-                view = current.superview
+            while let node = view, node !== bar {
+                if node is UIControl { return true }
+                view = node.superview
+            }
+            if let current, Self.tabIndex(at: touch.location(in: bar), in: bar) == current {
+                return true
             }
             return false
         }
+
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                                shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
         @objc private func tapped(_ gesture: UITapGestureRecognizer) {
             guard let bar = gesture.view as? UITabBar, let before = selectedAtTouch else { return }
             selectedAtTouch = nil
-            DispatchQueue.main.async { [weak bar] in
-                guard let bar, bar.items?.firstIndex(where: { $0 === bar.selectedItem }) == before else { return }
-                Self.scrollToTop(in: bar.window)
+            let reduce = reduceMotion
+            let kinds = kinds
+            DispatchQueue.main.async { [weak self, weak bar] in
+                guard let self, let bar, bar.items?.firstIndex(where: { $0 === bar.selectedItem }) == before else { return }
+                let scrolled = Self.scrollToTop(in: bar.window)
+                #if DEBUG
+                if CommandLine.arguments.contains("--reveal-metrics") {
+                    Logger(subsystem: "app.local.iPadn", category: "Reveal")
+                        .info("TabBar reselect index=\(before, privacy: .public) scrolled=\(scrolled, privacy: .public)")
+                }
+                #endif
+                if !reduce, self.enableVectorIcons {
+                    if TabReselectScroll.attachVectorIcons(in: bar, kinds: kinds) == .attached {
+                        Self.playTabIcon(at: before, in: bar, kinds: kinds)
+                    } else {
+                        self.install()
+                    }
+                }
             }
         }
+
+        private static func tabButtonGroups(in bar: UITabBar, count: Int) -> [[UIView]] {
+            var byParent: [ObjectIdentifier: [UIView]] = [:]
+            var stack: [UIView] = [bar]
+            while let view = stack.popLast() {
+                let name = String(describing: type(of: view))
+                if name.contains("Badge") { continue }
+                if (name.contains("TabButton") || name.contains("TabBarButton")), let parent = view.superview, !view.isHidden, view.alpha > 0.01 {
+                    byParent[ObjectIdentifier(parent), default: []].append(view)
+                    continue
+                }
+                stack.append(contentsOf: view.subviews)
+            }
+            let isRTL = bar.effectiveUserInterfaceLayoutDirection == .rightToLeft
+            return byParent.values.compactMap { group in
+                guard group.count == count else { return nil }
+                let sorted = group.sorted {
+                    $0.convert($0.bounds, to: bar).midX < $1.convert($1.bounds, to: bar).midX
+                }
+                return isRTL ? Array(sorted.reversed()) : sorted
+            }
+        }
+
+        private static func firstTabImageView(in button: UIView) -> UIImageView? {
+            var stack: [UIView] = [button]
+            while let view = stack.popLast() {
+                let name = String(describing: type(of: view))
+                if name.contains("Badge") { continue }
+                if let imageView = view as? UIImageView,
+                   !imageView.isHidden, imageView.alpha > 0.01,
+                   imageView.image != nil,
+                   imageView.bounds.width >= 14, imageView.bounds.width <= 48,
+                   imageView.bounds.height >= 14, imageView.bounds.height <= 48 {
+                    return imageView
+                }
+                stack.append(contentsOf: view.subviews)
+            }
+            return nil
+        }
+
+        private static func fallbackImageColumns(in bar: UITabBar, count: Int) -> [[UIImageView]] {
+            var candidates: [(midX: CGFloat, view: UIImageView)] = []
+            var stack: [UIView] = [bar]
+            while let view = stack.popLast() {
+                let name = String(describing: type(of: view))
+                if name.contains("Badge") { continue }
+                if let imageView = view as? UIImageView,
+                   !imageView.isHidden, imageView.alpha > 0.01,
+                   imageView.image != nil,
+                   imageView.bounds.width >= 14, imageView.bounds.width <= 48,
+                   imageView.bounds.height >= 14, imageView.bounds.height <= 48 {
+                    let midX = imageView.convert(CGPoint(x: imageView.bounds.midX, y: imageView.bounds.midY), to: bar).x
+                    candidates.append((midX, imageView))
+                }
+                stack.append(contentsOf: view.subviews)
+            }
+            candidates.sort { $0.midX < $1.midX }
+            var columns: [(anchorX: CGFloat, views: [UIImageView])] = []
+            for item in candidates {
+                if let idx = columns.firstIndex(where: { abs($0.anchorX - item.midX) <= 14 }) {
+                    columns[idx].views.append(item.view)
+                } else {
+                    columns.append((item.midX, [item.view]))
+                }
+            }
+            guard columns.count == count else { return [] }
+            let ordered = columns.map(\.views)
+            return bar.effectiveUserInterfaceLayoutDirection == .rightToLeft ? Array(ordered.reversed()) : ordered
+        }
+
+        fileprivate static func resolvedTabImageViews(in bar: UITabBar, count: Int) -> [[UIImageView]] {
+            bar.layoutIfNeeded()
+            let groups = tabButtonGroups(in: bar, count: count)
+            if !groups.isEmpty {
+                var byIndex = Array(repeating: [UIImageView](), count: count)
+                for group in groups {
+                    for (index, button) in group.enumerated() {
+                        button.clipsToBounds = false
+                        if let imageView = firstTabImageView(in: button) {
+                            byIndex[index].append(imageView)
+                        }
+                    }
+                }
+                if byIndex.allSatisfy({ !$0.isEmpty }) {
+                    return byIndex
+                }
+            }
+            return fallbackImageColumns(in: bar, count: count)
+        }
+
+        private static func playTabIcon(at index: Int, in bar: UITabBar, kinds: [RevealAnimationKind]) {
+            guard (0..<kinds.count).contains(index) else { return }
+            let kind = kinds[index]
+            let columns = resolvedTabImageViews(in: bar, count: kinds.count)
+            guard columns.count == kinds.count else { return }
+            let syncTime = CACurrentMediaTime()
+            var played = 0
+            for imageView in columns[index] {
+                if let iconView = imageView.subviews.compactMap({ $0 as? TabVectorIconView }).first(where: { $0.kind == kind }) {
+                    iconView.play(beginTime: syncTime)
+                    played += 1
+                }
+            }
+            #if DEBUG
+            if CommandLine.arguments.contains("--reveal-metrics") {
+                Logger(subsystem: "app.local.iPadn", category: "Reveal")
+                    .info("TabBar vector index=\(index, privacy: .public) views=\(played, privacy: .public)")
+            }
+            #endif
+        }
+
+        private static func tabIndex(at point: CGPoint, in bar: UITabBar) -> Int? {
+            guard bar.bounds.contains(point), let count = bar.items?.count, count > 0, bar.bounds.width > 0 else { return nil }
+            let groups = tabButtonGroups(in: bar, count: count)
+            if let primary = groups.first {
+                return primary.enumerated().min(by: {
+                    let a = $0.element.convert($0.element.bounds, to: bar).midX
+                    let b = $1.element.convert($1.element.bounds, to: bar).midX
+                    return abs(a - point.x) < abs(b - point.x)
+                })?.offset
+            }
+            let raw = min(count - 1, max(0, Int((point.x / bar.bounds.width) * CGFloat(count))))
+            return bar.effectiveUserInterfaceLayoutDirection == .rightToLeft ? (count - 1 - raw) : raw
+        }
+
         private static func tabBar(in view: UIView) -> UITabBar? {
             if let bar = view as? UITabBar { return bar }
             for sub in view.subviews { if let bar = tabBar(in: sub) { return bar } }
             return nil
         }
+        private static func enclosingNavigationController(for view: UIView) -> UINavigationController? {
+            var responder: UIResponder? = view.next
+            while let current = responder {
+                if let vc = current as? UIViewController {
+                    return (vc as? UINavigationController) ?? vc.navigationController
+                }
+                responder = current.next
+            }
+            return nil
+        }
         /// The visible, scrollable list with the most area on screen.
-        private static func scrollToTop(in window: UIWindow?) {
-            guard let window else { return }
+        @discardableResult
+        private static func scrollToTop(in window: UIWindow?) -> Bool {
+            guard let window else { return false }
             var best: UIScrollView?
             var bestArea: CGFloat = 0
             var stack: [UIView] = [window]
             while let view = stack.popLast() {
                 guard !view.isHidden, view.alpha > 0.01, view.layer.opacity > 0.01 else { continue }
                 if let scroll = view as? UIScrollView,
-                   scroll.contentSize.height > scroll.bounds.height {
+                   scroll.contentSize.height > scroll.bounds.height + 2 {
                     let visible = scroll.convert(scroll.bounds, to: window).intersection(window.bounds)
                     let area = visible.width * visible.height
                     if area > bestArea { best = scroll; bestArea = area }
                 }
                 stack.append(contentsOf: view.subviews)
             }
-            guard let scroll = best else { return }
-            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: -scroll.adjustedContentInset.top), animated: true)
+            guard let scroll = best else { return false }
+            if let nav = enclosingNavigationController(for: scroll),
+               let root = nav.viewControllers.first,
+               nav.viewControllers.count > 1,
+               nav.topViewController !== root {
+                return false
+            }
+            let topY = -scroll.adjustedContentInset.top
+            guard scroll.contentOffset.y > topY + 2 else { return false }
+            UX.tapSoft()
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: topY), animated: true)
+            return true
         }
     }
+    @MainActor
+    @discardableResult
+    static func attachVectorIcons(in bar: UITabBar, kinds: [RevealAnimationKind]) -> VectorAttachmentResult {
+        guard !kinds.isEmpty, bar.window != nil, bar.bounds.width > 0,
+              let items = bar.items, items.count == kinds.count else {
+            return .deferred
+        }
+        let expectedSlots = kinds.filter { RevealAnimationLibrary.syncLoad($0) != nil }.count
+        guard expectedSlots > 0 else {
+            removeVectorIcons(in: bar)
+            return .unsupportedHierarchy
+        }
+        let columns = Coordinator.resolvedTabImageViews(in: bar, count: kinds.count)
+        guard columns.count == kinds.count else {
+            removeVectorIcons(in: bar)
+            return .unsupportedHierarchy
+        }
+        var attachedSlots = 0
+        for (index, imageViews) in columns.enumerated() {
+            let kind = kinds[index]
+            guard RevealAnimationLibrary.syncLoad(kind) != nil else { continue }
+            var slotReady = false
+            for imageView in imageViews {
+                imageView.clipsToBounds = false
+                if let existing = imageView.subviews.compactMap({ $0 as? TabVectorIconView }).first {
+                    if existing.kind == kind {
+                        existing.frame = imageView.bounds
+                        existing.syncColors()
+                        slotReady = true
+                        continue
+                    }
+                    existing.removeFromSuperview()
+                }
+                let iconView = TabVectorIconView(kind: kind)
+                iconView.frame = imageView.bounds
+                iconView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                imageView.addSubview(iconView)
+                slotReady = true
+            }
+            if slotReady { attachedSlots += 1 }
+        }
+        guard attachedSlots == expectedSlots else {
+            removeVectorIcons(in: bar)
+            return .unsupportedHierarchy
+        }
+        return .attached
+    }
+
+    @MainActor
+    static func removeVectorIcons(in root: UIView) {
+        var stack: [UIView] = [root]
+        while let view = stack.popLast() {
+            if let icon = view as? TabVectorIconView {
+                icon.removeFromSuperview()
+                continue
+            }
+            stack.append(contentsOf: view.subviews)
+        }
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> Anchor {
         let view = Anchor()
@@ -390,7 +841,8 @@ struct TabReselectScroll: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: Anchor, context: Context) {
-        context.coordinator.install()
+        context.coordinator.updateSelection(selected, reduceMotion: reduceMotion, kinds: kinds,
+                                            enableVectorIcons: enableVectorIcons, onVectorFallback: onVectorFallback)
     }
     static func dismantleUIView(_ view: Anchor, coordinator: Coordinator) {
         view.moved = nil

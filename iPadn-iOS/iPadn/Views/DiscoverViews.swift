@@ -66,7 +66,7 @@ struct ChartView: View {
                     NavigationLink { AppDetailView(app: app) } label: {
                         // The rank leads the category line, so the name keeps the full width.
                         AppRow(app: app, subtitle: ["\(index + 1)", app.displayCategory].filter { !$0.isEmpty }.joined(separator: " · ")) {
-                            RowCapsule(title: app.isFree ? "获取" : LocalizedStringKey(app.priceLabel)) { getting = app; UX.feedback() }
+                            RowCapsule(title: app.isFree ? "获取" : LocalizedStringKey(app.priceLabel), insideNavigationLink: true) { getting = app }
                                 .accessibilityLabel(AppText.text("获取 \(app.name)"))
                         }
                     }

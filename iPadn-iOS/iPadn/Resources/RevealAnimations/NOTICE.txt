@@ -1,0 +1,20 @@
+Telegram reveal animation attribution
+
+The original anim_delete.json vector artwork is from Telegram-iOS, commit
+24638bc69bd083981b178dd1e7f921eebbf7fc46:
+submodules/TelegramUI/Resources/Animations/anim_delete.json
+
+Source: https://github.com/TelegramMessenger/Telegram-iOS/tree/24638bc69bd083981b178dd1e7f921eebbf7fc46
+Copyright Telegram contributors. GNU GPL v2; see repository root LICENSE.
+No Telegram branding, affiliation, account, or network service is used.
+
+compile_reveal_animations.py converts the original paths, transforms and easing
+to native CAShapeLayer keyframes, normalizes the glyph size uniformly, and drops
+only the entirely static tail. The Share artwork and lift/return/settle sequence
+are original iPadn work, not Telegram artwork. Both use Telegram-inspired
+play-once activation at visible content >= 0.1 and reset at <= 0.01.
+
+Original trash JSON: iPadn-iOS/vendor/TelegramRevealAnimations/anim_delete.json
+Converter/source for Share: iPadn-iOS/scripts/compile_reveal_animations.py
+Regenerate: python -I iPadn-iOS/scripts/compile_reveal_animations.py
+Validate: python -I iPadn-iOS/scripts/compile_reveal_animations.py --check

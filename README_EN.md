@@ -34,6 +34,12 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 ---
 
+## In development (not released)
+
+- Swipe icons play a complete sequence once revealed: Telegram’s open-source trash artwork animates the lid and bounce, while the original share glyph lifts, returns and settles. Native Core Animation handles playback; closing resets it, and Reduce Motion shows the complete static icon.
+- Download swipe deletion skips confirmation and offers a five-second countdown with Undo, including consecutive deletions. Long-press Delete task and file and batch deletion retain confirmation. Search-history deletion no longer offers a countdown or Undo.
+- Translation uses the original system sheet by default. On iOS 18+, enable Translate in place under Account › Settings › Appearance & icon › Translation, choose a source language and prepare its languages. Translations follow the iPadn interface language, with Show original.
+
 ## What’s new in 2.1.1
 
 - **Fix an Installation settings crash on iOS 16**: encode the installation-help URL correctly and safely handle invalid App Store links.
@@ -53,7 +59,7 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 | | |
 | --- | --- |
 | 🔍 **Search & discover** | Search by app name, App ID or App Store link, and switch storefront region and platform (iPhone / iPad / Apple TV / Mac). Recent searches appear as chips. Discover can be turned off in Settings; when enabled it shows Top Free, Top Paid and Top Grossing for any region, by category. App pages show screenshots, customer reviews and other apps by the same developer. |
-| 🌐 **Translation** | Descriptions and release notes in another language can be replaced with the system translation (iOS 17.4 or later). |
+| 🌐 **Translation** | Descriptions and release notes use the system translation sheet by default. On iOS 18+, opt into in-place translation under Settings › Appearance & icon › Translation and prepare languages there. The target follows the app language, with Show original. |
 | 🕘 **Older versions** | See each version's number, date, IPA package size, version-specific icon and release notes and download older versions, or enter a version ID directly. Long-press a row to copy its version number or ID; accessibility text sizes use a vertical layout. Unavailable sizes show “—”, never the latest version's size. Primary icon PNGs are read on demand from each version's IPA and cached separately. Unavailable icons use a placeholder, never current store artwork; asset-catalog-only icons are not yet supported. Downloaded apps can “Keep this version” to stop update reminders. |
 | ⬇️ **Downloads** | Background downloads you can pause, resume and retry, with live speed and time remaining, also on the Lock Screen and in the Dynamic Island. Download over Wi‑Fi only and install automatically when a download finishes if you like. Swipe cards to delete or share; tap elsewhere to close the actions. Exported filenames include the app name and version. Deletion offers a five-second Undo countdown, and completion changes the progress ring to a checkmark and Install. Long-press uses the system menu; tap the selected tab again to scroll to the top. Task details show the permissions, extensions and languages a package declares. |
 | 🔔 **Update alerts** | Downloaded apps with a newer version are marked in the list, and background checks send a notification. |

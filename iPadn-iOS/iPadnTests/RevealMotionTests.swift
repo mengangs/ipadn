@@ -13,6 +13,36 @@ final class RevealMotionTests: XCTestCase {
         AppText.locale = Locale(identifier: "zh-Hans")
     }
 
+    func testIconPlaysOnceAndDoesNotScrubOrRestartWithFingerJitter() {
+        var playback = RevealIconPlayback()
+        XCTAssertEqual(playback.update(visibility: 0.09, reduced: false), .none)
+        XCTAssertEqual(playback.update(visibility: 0.1, reduced: false), .play)
+        for visibility in [1.0, 0.5, 0.05, 0.09, 0.11, 1] {
+            XCTAssertEqual(playback.update(visibility: visibility, reduced: false), .none)
+        }
+        XCTAssertEqual(playback.update(visibility: 0.01, reduced: false), .reset)
+        XCTAssertEqual(playback.update(visibility: 0, reduced: false), .none)
+        XCTAssertEqual(playback.update(visibility: 0.2, reduced: false), .play)
+    }
+
+    func testReducedMotionShowsFinalGlyphWithoutStartingAPlaybackLoop() {
+        var playback = RevealIconPlayback()
+        XCTAssertEqual(playback.update(visibility: 1, reduced: true), .finish)
+        XCTAssertEqual(playback.update(visibility: 0.5, reduced: true), .none)
+        XCTAssertEqual(playback.update(visibility: 1, reduced: false), .play)
+        XCTAssertEqual(playback.update(visibility: 1, reduced: true), .finish)
+        XCTAssertEqual(playback.update(visibility: 0, reduced: false), .reset)
+    }
+
+    func testInvalidVisibilityResetsSafelyAndOvershootDoesNotReplay() {
+        var playback = RevealIconPlayback()
+        XCTAssertEqual(playback.update(visibility: .nan, reduced: false), .none)
+        XCTAssertEqual(playback.update(visibility: -1, reduced: false), .none)
+        XCTAssertEqual(playback.update(visibility: 5, reduced: false), .play)
+        XCTAssertEqual(playback.update(visibility: 10, reduced: false), .none)
+        XCTAssertEqual(playback.update(visibility: .infinity, reduced: false), .reset)
+    }
+
     private func model() -> ItemListRevealMotion {
         var motion = ItemListRevealMotion()
         var parameters = ItemListRevealMotionParameters()
@@ -91,6 +121,19 @@ final class RevealMotionTests: XCTestCase {
         XCTAssertTrue(motion.isAtRest)
         XCTAssertEqual(motion.state, .open)
     }
+    func testFillingExpandsPrimaryButtonAndHidesSecondaryActions() {
+        var motion = ItemListRevealMotion()
+        var parameters = ItemListRevealMotionParameters()
+        parameters.width = 360; parameters.count = 2; parameters.isDestructive = true
+        motion.configure(parameters)
+        motion.settle(to: 360, velocity: 1400, animated: true, filling: true)
+        for _ in 0..<240 { motion.advance(by: 1.0 / 120) }
+        XCTAssertEqual(motion.state, .filling)
+        XCTAssertEqual(motion.body.value, 360, accuracy: 0.01)
+        XCTAssertEqual(motion.buttonGeometry.count, 2)
+        XCTAssertEqual(motion.buttonGeometry[0].width, 340, accuracy: 0.01)
+        XCTAssertEqual(motion.buttonGeometry[1].opacity, 0, accuracy: 0.01)
+    }
     func testMotionWorkFor1000RowsHasMeasurableBaseline() {
         measure {
             for _ in 0..<1000 {
@@ -109,6 +152,9 @@ final class RevealMotionTests: XCTestCase {
 enum RevealMotionTestRunner {
     static func main() {
         XCTMain([testCase([
+            ("icon plays once", RevealMotionTests.testIconPlaysOnceAndDoesNotScrubOrRestartWithFingerJitter),
+            ("icon reduce motion", RevealMotionTests.testReducedMotionShowsFinalGlyphWithoutStartingAPlaybackLoop),
+            ("icon invalid input", RevealMotionTests.testInvalidVisibilityResetsSafelyAndOvershootDoesNotReplay),
             ("short drag", RevealMotionTests.testShortDragReboundsWithoutCommitting),
             ("full drag cancellation", RevealMotionTests.testFullDragArmsButCancellationNeverCommits),
             ("retreat and regrab", RevealMotionTests.testRetreatDisarmsActionAndRegrabPreservesPosition),
@@ -116,6 +162,7 @@ enum RevealMotionTestRunner {
             ("dropped frames", RevealMotionTests.testAnalyticSpringPreservesElapsedTimeAcrossDroppedFrames),
             ("close after frame gap", RevealMotionTests.testClosingRevealSettlesAfterLongFrameGap),
             ("reduce motion", RevealMotionTests.testReduceMotionSnapsAndStopsAtRest),
+            ("filling expands primary", RevealMotionTests.testFillingExpandsPrimaryButtonAndHidesSecondaryActions),
             ("1000 rows baseline", RevealMotionTests.testMotionWorkFor1000RowsHasMeasurableBaseline)
         ])])
     }

@@ -75,7 +75,7 @@ struct SearchView: View {
     private func resultRow(_ app: StoreApp, note: String?) -> some View {
         NavigationLink { AppDetailView(app: app) } label: {
             AppRow(app: app, subtitle: note.map { [app.displayCategory, $0].filter { !$0.isEmpty }.joined(separator: " · ") }) {
-                RowCapsule(title: "获取") { getting = app; UX.feedback() }
+                RowCapsule(title: "获取", insideNavigationLink: true) { getting = app }
                     .accessibilityLabel("获取 \(app.name)")
             }
         }
@@ -127,7 +127,7 @@ struct SearchView: View {
                     }
                         .buttonStyle(RevealRowButtonStyle())
                         .accessibilityIdentifier("favorite." + app.id)
-                        .revealDelete(id: "favorite." + app.id, title: "取消关注") { withAnimation { store.toggleFavorite(app) } }
+                        .revealDelete(id: "favorite." + app.id, title: "取消关注", fills: true) { withAnimation { store.toggleFavorite(app) } }
                 }
             } header: {
                 HStack {

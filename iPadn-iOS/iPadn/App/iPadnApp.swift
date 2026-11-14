@@ -23,8 +23,20 @@ enum AppContainer {
             if ProcessInfo.processInfo.arguments.contains("--completion-preview") {
                 jobs = [jobs[0]]
             }
-            let store = ToolStore(downloadManager: DownloadManager(previewJobs: jobs))
+            let verifiesInteractions = ProcessInfo.processInfo.arguments.contains("--interaction-verification")
+            var fixtureError: String?
+            if verifiesInteractions {
+                do { jobs = try PreviewData.interactionVerificationJobs() }
+                catch { jobs = []; fixtureError = error.localizedDescription }
+            }
+            let manager = verifiesInteractions
+                ? DownloadManager(previewJobs: jobs, saveJobs: { try LocalResources.save($0, filename: LocalResources.jobsFilename) })
+                : DownloadManager(previewJobs: jobs)
+            let store = ToolStore(downloadManager: manager)
             store.prepareVisualPreview()
+            if verifiesInteractions {
+                store.errorMessage = fixtureError
+            }
             store.settings.appearance = ProcessInfo.processInfo.arguments.contains("--dark") ? "dark" : "light"
             if ProcessInfo.processInfo.arguments.contains("--downloads") { store.tab = 1 }
             if ProcessInfo.processInfo.arguments.contains("--accounts") { store.prepareAccountPreview(); store.tab = 3 }
@@ -149,7 +161,44 @@ enum PreviewData {
         zip(apps.prefix(3), ["363590051", "324684580", "1232780281"]).map { app, id in var app = app; app.id = id; return app }
     }
     /// The followed app; UI tests find it by this identifier.
-    static var favorite: StoreApp { var app = apps[0]; app.id = "preview-app"; return app }
+    static var favorite: StoreApp {
+        var app = apps[0]; app.id = "preview-app"
+        if ProcessInfo.processInfo.arguments.contains("--interaction-verification") || ProcessInfo.processInfo.arguments.contains("--translation-preview") {
+            app.name = "翻译验证（隔离文本）"
+            app.description = "This app helps you organize your notes and keep your documents in one place. You can search your files and share them with your team."
+            app.iconURL = nil
+        }
+        return app
+    }
+    /// Device verification only: actual bytes and durable saves, exclusively
+    /// under the existing preview sandbox. Never used by a normal app launch.
+    static func interactionVerificationJobs() throws -> [DownloadJob] {
+        precondition(LocalResources.isPreview)
+        LocalResources.ensureDirectoriesExist()
+        let existing = (try? FileManager.default.contentsOfDirectory(
+            at: LocalResources.packages, includingPropertiesForKeys: nil
+        )) ?? []
+        for url in existing where url.lastPathComponent.hasPrefix("Interaction-Probe-") && url.pathExtension == "ipa" {
+            try? FileManager.default.removeItem(at: url)
+        }
+        var jobs: [DownloadJob] = []
+        var files: [[String: String]] = []
+        for (index, letter) in ["A", "B"].enumerated() {
+            let name = "Interaction-Probe-\(letter)-\(UUID().uuidString).ipa"
+            let bytes = Data((0..<8192).map { UInt8(($0 + index) % 251) })
+            try bytes.write(to: LocalResources.packages.appendingPathComponent(name), options: .atomic)
+            let job = DownloadJob(app: StoreApp(id: "verification-\(letter)", name: "撤销测试 \(letter)（隔离数据）", version: "1.0"),
+                status: .completed, downloaded: Int64(bytes.count), expected: Int64(bytes.count),
+                packageIconScanned: true, localFilename: name)
+            jobs.append(job)
+            files.append(["id": job.id.uuidString, "filename": name, "patternOffset": String(index)])
+        }
+        jobs.append(DownloadJob(app: StoreApp(id: "verification-C", name: "撤销测试 C（无文件）", version: "1.0"), status: .paused))
+        try LocalResources.save(jobs, filename: LocalResources.jobsFilename)
+        let manifest = try JSONSerialization.data(withJSONObject: ["files": files], options: .sortedKeys)
+        try manifest.write(to: LocalResources.support.appendingPathComponent("interaction-verification-manifest.json"), options: .atomic)
+        return jobs
+    }
     static var chinese: Bool { Locale.preferredLanguages.first?.hasPrefix("zh") == true }
 }
 
@@ -159,6 +208,7 @@ private struct PreviewScreen: View {
     var body: some View {
         Group {
             if args.contains("--login") { NavigationStack { LoginView() } }
+            else if args.contains("--translation-settings") { NavigationStack { SettingsView(page: .appearance) } }
             else if args.contains("--detail"), let app = store.favorites.first { NavigationStack { AppDetailView(app: app) } }
             else if args.contains("--installation") { NavigationStack { InstallationSettingsView() } }
             else if args.contains("--support") { NavigationStack { SupportView() } }
