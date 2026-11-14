@@ -34,7 +34,13 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 ---
 
-## What’s new in 2.1.0
+## What’s new in 2.1.1
+
+- **Fix an Installation settings crash on iOS 16**: encode the installation-help URL correctly and safely handle invalid App Store links.
+- **Improve date-range filter layout**: group start/end dates, query actions and progress in one panel, align controls and adapt to accessibility text sizes.
+- Standard and lite packages remain available for iOS / iPadOS 16 and later. See the [release notes](RELEASE_NOTES.md).
+
+## 2.1.0 highlights
 
 - **Clearer version history**: each row shows its own package icon, IPA size and version details, making activity badges easy to compare without downloading the full package. Asset-catalog-only icons are not yet supported; unavailable icons use placeholders.
 - **Find versions by date**: select inclusive start/end dates, with progress, cancellation and explicit unknown-date counts. Histories load in batches, with on-demand icons and a bounded decoded-image cache. Package dates can differ from store release dates.
