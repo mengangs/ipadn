@@ -23,27 +23,35 @@ final class InteractionTests: XCTestCase {
         guard #available(iOS 18.0, *) else { throw XCTSkip("Direct translation requires iOS 18") }
         let app = Self.launchableApp()
         app.launchArguments += ["--visual-preview", "--accounts"]
+        func switchControl(for toggle: XCUIElement) -> XCUIElement {
+            let inner = toggle.switches.firstMatch
+            return inner.exists ? inner : toggle
+        }
         func openTranslationGroup() {
             let settings = app.buttons["accounts.settings"]
             XCTAssertTrue(settings.waitForExistence(timeout: 10)); settings.tap()
             XCTAssertFalse(app.buttons["settings.page.translation"].exists, "Translation must not add another settings page")
             openSettingsPage("appearance", in: app)
             let toggle = app.switches["settings.translation.direct"]
-            for _ in 0..<5 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
+            for _ in 0..<5 { if toggle.exists && switchControl(for: toggle).isHittable { break }; app.swipeUp() }
             XCTAssertTrue(toggle.waitForExistence(timeout: 10))
         }
         app.launch()
         openTranslationGroup()
         let direct = app.switches["settings.translation.direct"]
-        if direct.value as? String == "1" { direct.tap() }
+        if direct.value as? String == "1" { switchControl(for: direct).tap() }
         XCTAssertFalse(app.buttons["settings.translation.prepare"].exists)
-        direct.tap()
+        switchControl(for: direct).tap()
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: direct)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 3), .completed, "Tapping the switch control must enable direct translation")
         let status = app.descendants(matching: .any)["settings.translation.status"].firstMatch
         for _ in 0..<4 { if status.exists && status.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(status.waitForExistence(timeout: 15))
         XCTAssertFalse(app.staticTexts["所需下载"].exists, "Enabling only checks availability; download requires an explicit tap")
-        for _ in 0..<4 { if direct.isHittable { break }; app.swipeDown() }
-        direct.tap()
+        for _ in 0..<4 { if switchControl(for: direct).isHittable { break }; app.swipeDown() }
+        switchControl(for: direct).tap()
+        let disabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: direct)
+        XCTAssertEqual(XCTWaiter.wait(for: [disabled], timeout: 3), .completed, "Tapping the switch control must disable direct translation")
         app.terminate()
         app.launch()
         openTranslationGroup()
@@ -453,11 +461,17 @@ final class InteractionTests: XCTestCase {
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--history-wrap-preview"]
         app.launch()
         let first = app.buttons["history.效率工具"]
-        let lower = app.buttons["history.Apple Music"]
+        let last = app.buttons["history.@"]
         XCTAssertTrue(first.waitForExistence(timeout: 10))
-        XCTAssertTrue(lower.waitForExistence(timeout: 5))
-        let upperFrame = first.frame, lowerFrame = lower.frame
-        XCTAssertGreaterThan(lowerFrame.minY, upperFrame.maxY, "The fixture must wrap to exercise both grouped-cell corners")
+        XCTAssertTrue(last.waitForExistence(timeout: 5))
+        let upperFrame = first.frame
+        let wrappedCandidates = ["history.照片编辑", "history.Apple Music", "history.@"].map { app.buttons[$0] }
+        guard let lower = wrappedCandidates.first(where: {
+            $0.exists && $0.frame.minY > upperFrame.maxY && abs($0.frame.minX - upperFrame.minX) < 2
+        }) else {
+            return XCTFail("The fixture must wrap to exercise both grouped-cell corners")
+        }
+        let lowerFrame = lower.frame
         let screenshot = app.screenshot()
         for (frame, fraction) in [(upperFrame, CGFloat(0.22)), (lowerFrame, CGFloat(0.78))] {
             // Just inside each capsule arc, but outside the old cell mask.

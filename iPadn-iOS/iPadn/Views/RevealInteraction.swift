@@ -107,6 +107,7 @@ final class RevealOutsideDismissGestureRecognizer: UIGestureRecognizer {
     static let maxTapMovement: CGFloat = 10
     private var origin: CGPoint = .zero
     private var trackedTouch: UITouch?
+    private(set) var lastResolvedState: UIGestureRecognizer.State = .possible
 
     override init(target: Any?, action: Selector?) {
         super.init(target: target, action: action)
@@ -117,20 +118,31 @@ final class RevealOutsideDismissGestureRecognizer: UIGestureRecognizer {
 
     func beginTracking(at point: CGPoint) {
         origin = point
+        lastResolvedState = .possible
     }
 
-    func updateTracking(at point: CGPoint) {
+    @discardableResult
+    func updateTracking(at point: CGPoint) -> UIGestureRecognizer.State {
+        guard lastResolvedState == .possible else { return lastResolvedState }
         if hypot(point.x - origin.x, point.y - origin.y) > Self.maxTapMovement {
+            lastResolvedState = .failed
             state = .failed
         }
+        return lastResolvedState
     }
 
-    func finishTracking(at point: CGPoint) {
-        state = hypot(point.x - origin.x, point.y - origin.y) <= Self.maxTapMovement ? .ended : .failed
+    @discardableResult
+    func finishTracking(at point: CGPoint) -> UIGestureRecognizer.State {
+        guard lastResolvedState == .possible else { return lastResolvedState }
+        let next: UIGestureRecognizer.State = hypot(point.x - origin.x, point.y - origin.y) <= Self.maxTapMovement ? .ended : .failed
+        lastResolvedState = next
+        state = next
+        return next
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         guard trackedTouch == nil, touches.count == 1, let touch = touches.first else {
+            lastResolvedState = .failed
             state = .failed
             return
         }
@@ -149,6 +161,7 @@ final class RevealOutsideDismissGestureRecognizer: UIGestureRecognizer {
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        lastResolvedState = .failed
         state = .failed
     }
 
@@ -156,6 +169,7 @@ final class RevealOutsideDismissGestureRecognizer: UIGestureRecognizer {
         super.reset()
         trackedTouch = nil
         origin = .zero
+        lastResolvedState = .possible
     }
 }
 

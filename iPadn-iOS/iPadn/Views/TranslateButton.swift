@@ -174,6 +174,8 @@ private struct TranslationLanguageResources: View {
                 ProgressView().accessibilityLabel("正在加载…")
             } else if languages.isEmpty {
                 Text("不支持这组语言")
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("settings.translation.status")
             } else {
                 Picker("原文语言", selection: $source) {
                     ForEach(languages, id: \.maximalIdentifier) { language in

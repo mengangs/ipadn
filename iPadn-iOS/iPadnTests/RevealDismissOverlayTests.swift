@@ -61,13 +61,14 @@ final class RevealDismissOverlayTests: XCTestCase {
 
         overlay.recognizer.beginTracking(at: CGPoint(x: 100, y: 300))
         overlay.recognizer.updateTracking(at: CGPoint(x: 100, y: 315))
-        XCTAssertEqual(overlay.recognizer.state, .failed)
+        XCTAssertEqual(overlay.recognizer.lastResolvedState, .failed)
+        XCTAssertEqual(overlay.recognizer.finishTracking(at: CGPoint(x: 100, y: 300)), .failed)
         XCTAssertFalse(tapped)
 
         overlay.recognizer.reset()
         overlay.recognizer.beginTracking(at: CGPoint(x: 100, y: 300))
         overlay.recognizer.finishTracking(at: CGPoint(x: 103, y: 304))
-        XCTAssertEqual(overlay.recognizer.state, .ended)
+        XCTAssertEqual(overlay.recognizer.lastResolvedState, .ended)
     }
 
     @MainActor
