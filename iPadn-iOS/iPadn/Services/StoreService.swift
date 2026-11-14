@@ -688,9 +688,10 @@ actor VersionService {
         return versions
     }
 
-    static func sanitizedVersion(_ raw: String) -> String {
+    static func sanitizedVersion(_ raw: String, rejectingID: String? = nil) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != AppVersion.unknown else { return AppVersion.unknown }
+        if let rejectingID, !rejectingID.isEmpty, trimmed == rejectingID { return AppVersion.unknown }
         // Ignore scraper text fragments accidentally placed in bundle_version
         // (e.g. "aktualisiert"). Do not synthesize dots for pure integers like "4800".
         guard !trimmed.contains(where: \.isWhitespace),
@@ -758,7 +759,7 @@ actor VersionService {
         return ordered.compactMap { record in
             let id = plistString(record["external_identifier"])
             guard !id.isEmpty, id.allSatisfy({ $0.isASCII && $0.isNumber }), seen.insert(id).inserted else { return nil }
-            let version = sanitizedVersion(plistString(record["bundle_version"]))
+            let version = sanitizedVersion(plistString(record["bundle_version"]), rejectingID: id)
             return AppVersion(id: id, version: version, source: source.name)
         }
     }

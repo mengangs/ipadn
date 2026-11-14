@@ -2146,6 +2146,8 @@ final class CoreTests: XCTestCase {
     func testVersionServicePrefersDottedVersionsAndStripsNonVersionText() {
         XCTAssertEqual(VersionService.sanitizedVersion("  14.2.1 "), "14.2.1")
         XCTAssertEqual(VersionService.sanitizedVersion("4800"), "4800", "Numeric integer build strings must not have synthetic dots inserted")
+        XCTAssertEqual(VersionService.sanitizedVersion("845839234", rejectingID: "845839234"), AppVersion.unknown)
+        XCTAssertEqual(VersionService.sanitizedVersion("3.5.9", rejectingID: "845839234"), "3.5.9")
         XCTAssertEqual(VersionService.sanitizedVersion("aktualisiert"), AppVersion.unknown)
         XCTAssertEqual(VersionService.sanitizedVersion("enthält einige Leistungsverbesserungen"), AppVersion.unknown)
         XCTAssertEqual(VersionService.sanitizedVersion(""), AppVersion.unknown)
