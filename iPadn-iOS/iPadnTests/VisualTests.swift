@@ -70,4 +70,31 @@ final class VisualTests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
     }
+
+    func testShimmerBeginTimeSynchronizesPhaseAcrossMounts() {
+        let period = ShimmerLayoutMath.period
+        let t1 = 100.25
+        let t2 = 100.75
+        let begin1 = ShimmerLayoutMath.beginTime(forWallClock: t1, layerTime: t1, period: period)
+        let begin2 = ShimmerLayoutMath.beginTime(forWallClock: t2, layerTime: t2, period: period)
+        let phase1 = (500.0 - begin1).truncatingRemainder(dividingBy: period)
+        let phase2 = (500.0 - begin2).truncatingRemainder(dividingBy: period)
+        XCTAssertEqual(phase1, phase2, accuracy: 0.0001)
+    }
+
+    func testShimmerSweepEndpointsMapWindowSpanToLocalUnitSpace() {
+        let endpoints = ShimmerLayoutMath.unitSweepEndpoints(
+            viewFrameInContainer: CGRect(x: 20, y: 120, width: 350, height: 64),
+            containerWidth: 390
+        )
+        XCTAssertLessThan(endpoints.endFrom.x, 0)
+        XCTAssertGreaterThan(endpoints.startTo.x, 1)
+        XCTAssertGreaterThan(endpoints.endTo.x, endpoints.startTo.x)
+
+        let zeroWidth = ShimmerLayoutMath.unitSweepEndpoints(
+            viewFrameInContainer: .zero,
+            containerWidth: 0
+        )
+        XCTAssertTrue(zeroWidth.startFrom.x.isFinite && zeroWidth.endTo.x.isFinite)
+    }
 }

@@ -718,7 +718,7 @@ struct RevealRowButtonStyle: ButtonStyle {
         configuration.label
             .environment(\.isEnabled, enabled || suppressesPress)
             .opacity(enabled || suppressesPress ? (pressed ? 0.6 : 1) : 0.4)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: pressed)
+            .animation(reduceMotion ? nil : .easeOut(duration: pressed ? 0.06 : 0.16), value: pressed)
     }
 }
 

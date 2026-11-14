@@ -281,6 +281,12 @@ struct SettingsView: View {
                 NavigationLink { StorageView() } label: { Label("存储空间", systemImage: "internaldrive") }
                     .accessibilityIdentifier("settings.storage")
                 Button("清除历史版本缓存") { clearCache = true }
+                    .confirmationDialog("清除历史版本缓存？", isPresented: $clearCache, titleVisibility: .visible) {
+                        Button("清除缓存", role: .destructive) {
+                            Task { do { try await store.versions.clearCache(); store.infoMessage = AppText.text("已清除缓存") } catch { store.errorMessage = error.localizedDescription } }
+                        }
+                        Button("取消", role: .cancel) {}
+                    }
                 Button("导出诊断信息") {
                     do { share = SharedFile(url: try store.exportDiagnostics()) } catch { store.errorMessage = error.localizedDescription }
                 }
@@ -381,9 +387,6 @@ struct SettingsView: View {
         }
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
         .actionConfirmation(isPresented: $resetSettings, title: "恢复默认设置？", message: "账号、已下载的安装包和已购记录不受影响。", confirmTitle: "恢复默认设置") { store.settings = ToolSettings() }
-        .actionConfirmation(isPresented: $clearCache, title: "清除历史版本缓存？", confirmTitle: "清除缓存") {
-            Task { do { try await store.versions.clearCache(); store.infoMessage = AppText.text("已清除缓存") } catch { store.errorMessage = error.localizedDescription } }
-        }
     }
 }
 

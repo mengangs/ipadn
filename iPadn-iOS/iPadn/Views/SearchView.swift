@@ -66,7 +66,6 @@ struct SearchView: View {
         .rootTabBar("搜索", headerScrolledAway: headerAway)
         .compatibleNavigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
         .compatibleNavigationDestination(item: $viewingFavorite) { app in AppDetailView(app: app) }
-        .actionConfirmation(isPresented: $confirmClear, title: "清除最近搜索？", confirmTitle: "清除") { withAnimation { store.clearHistory() } }
         .task { await store.loadNameCatalog() }
         .task { await store.checkWatched() }
         .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
@@ -110,7 +109,13 @@ struct SearchView: View {
                 HStack {
                     Text("最近搜索").font(.title3.weight(.bold)).foregroundStyle(.primary).textCase(nil)
                     Spacer()
-                    Button("清除") { confirmClear = true }.font(.body).textCase(nil)
+                    Button("清除") { confirmClear = true }
+                        .font(.body)
+                        .textCase(nil)
+                        .confirmationDialog("清除最近搜索？", isPresented: $confirmClear, titleVisibility: .visible) {
+                            Button("清除", role: .destructive) { withAnimation(UX.motion(reduceMotion)) { store.clearHistory() } }
+                            Button("取消", role: .cancel) {}
+                        }
                 }
             } footer: {
                 Text("长按可删除单条记录。")

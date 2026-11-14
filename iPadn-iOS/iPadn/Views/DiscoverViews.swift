@@ -57,7 +57,10 @@ struct ChartView: View {
             if let issue, apps.isEmpty {
                 Section { InlineIssue(message: issue) { Task { await load() } } }
             } else if loading && apps.isEmpty {
-                Section { HStack(spacing: 10) { ProgressView(); Text("正在读取排行榜…").foregroundStyle(.secondary) } }
+                Section {
+                    HStack(spacing: 10) { ProgressView(); Text("正在读取排行榜…").foregroundStyle(.secondary) }
+                    AppSkeleton(); AppSkeleton(); AppSkeleton()
+                }
             } else if apps.isEmpty {
                 Section { Text("这个排行榜暂时没有内容。").foregroundStyle(.secondary) }
             }

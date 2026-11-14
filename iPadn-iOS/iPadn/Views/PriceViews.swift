@@ -258,6 +258,7 @@ private struct RegionPriceSkeleton: View {
             }
             Spacer()
         }
+        .monochromeShimmer()
         .padding(.vertical, 4)
         .accessibilityHidden(true)
     }

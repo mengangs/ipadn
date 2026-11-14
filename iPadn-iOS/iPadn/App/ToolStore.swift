@@ -1304,6 +1304,9 @@ extension ToolStore {
         visualPreview = true
         cacheLoading = false
         results = []; hasSearched = false; searchText = ""
+        if ProcessInfo.processInfo.arguments.contains("--skeleton-preview") {
+            searching = true
+        }
         favorites = [PreviewData.favorite]
         if ProcessInfo.processInfo.arguments.contains("--updates") {
             for app in PreviewData.updatable {

@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import QuartzCore
 
 // Visual language modeled on the App Store with the iPadn monochrome accent:
 // grouped backgrounds, capsule action buttons, ring progress, large titles.
@@ -582,6 +583,202 @@ struct TagBadge: View {
     }
 }
 
+/// Pure-Swift coordinate & phase math for window-synchronized skeleton shimmer.
+enum ShimmerLayoutMath {
+    static let period: CFTimeInterval = 1.45
+    static let sweepFraction: Double = 0.72
+
+    /// Aligns every mounted shimmer layer to a single wall-clock phase so rows
+    /// appearing at different times sweep as one continuous wave.
+    static func beginTime(forWallClock wallClock: CFTimeInterval, layerTime: CFTimeInterval,
+                          period: CFTimeInterval = Self.period) -> CFTimeInterval {
+        guard period > 0 else { return layerTime }
+        var phase = wallClock.truncatingRemainder(dividingBy: period)
+        if phase < 0 { phase += period }
+        return layerTime - phase
+    }
+
+    /// Maps a global horizontal gleam sweep `[ -bandWidth, containerWidth + bandWidth ]`
+    /// back into `CAGradientLayer` unit space `[0, 1]` for a subview at `viewFrameInContainer`.
+    static func unitSweepEndpoints(viewFrameInContainer: CGRect, containerWidth: CGFloat) -> (
+        startFrom: CGPoint, endFrom: CGPoint, startTo: CGPoint, endTo: CGPoint
+    ) {
+        let viewWidth = max(viewFrameInContainer.width, 1)
+        let effectiveContainerWidth = max(containerWidth, viewFrameInContainer.maxX, viewWidth)
+        let bandWidth = max(140, effectiveContainerWidth * 0.55)
+        func unitX(_ containerX: CGFloat) -> CGFloat {
+            (containerX - viewFrameInContainer.minX) / viewWidth
+        }
+        return (
+            startFrom: CGPoint(x: unitX(-bandWidth), y: 0.25),
+            endFrom: CGPoint(x: unitX(0), y: 0.75),
+            startTo: CGPoint(x: unitX(effectiveContainerWidth), y: 0.25),
+            endTo: CGPoint(x: unitX(effectiveContainerWidth + bandWidth), y: 0.75)
+        )
+    }
+}
+
+private final class ShimmerTrackUIView: UIView {
+    private static let animationKey = "ipadn.monochrome.shimmer"
+    private let gradientLayer = CAGradientLayer()
+    private var lastAnimatedWidth: CGFloat = -1
+    private var lastAnimatedHeight: CGFloat = -1
+    private var lastWindowMinX: CGFloat = .nan
+    var isReduceMotionEnabled = false {
+        didSet {
+            if oldValue != isReduceMotionEnabled { syncAnimation(force: true) }
+        }
+    }
+    var isDarkAppearance = false {
+        didSet {
+            if oldValue != isDarkAppearance { updatePalette() }
+        }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+        gradientLayer.type = .axial
+        gradientLayer.locations = [0, 0.5, 1]
+        gradientLayer.opacity = 0
+        layer.addSublayer(gradientLayer)
+        updatePalette()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        syncAnimation(force: true)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientLayer.frame = bounds
+        CATransaction.commit()
+        syncAnimation(force: false)
+    }
+
+    private func updatePalette() {
+        // Masked by skeleton bone shapes (~12% light / ~24% dark alpha), so this
+        // translucent gleam lifts/deepens only by ~6-10% luminance without color shift.
+        let dark = isDarkAppearance || traitCollection.userInterfaceStyle == .dark
+        let sheen: UIColor = dark
+            ? UIColor.white.withAlphaComponent(0.42)
+            : UIColor.black.withAlphaComponent(0.55)
+        let edge = sheen.withAlphaComponent(0)
+        gradientLayer.colors = [edge.cgColor, sheen.cgColor, edge.cgColor]
+    }
+
+    private func syncAnimation(force: Bool) {
+        guard let window, !isReduceMotionEnabled, !UIAccessibility.isReduceMotionEnabled,
+              bounds.width > 1, bounds.height > 1 else {
+            gradientLayer.removeAnimation(forKey: Self.animationKey)
+            gradientLayer.opacity = 0
+            lastAnimatedWidth = -1
+            lastAnimatedHeight = -1
+            lastWindowMinX = .nan
+            return
+        }
+        let frameInWindow = convert(bounds, to: window)
+        let roundedX = frameInWindow.minX.rounded()
+        if !force,
+           abs(bounds.width - lastAnimatedWidth) < 0.5,
+           abs(bounds.height - lastAnimatedHeight) < 0.5,
+           roundedX == lastWindowMinX,
+           gradientLayer.animation(forKey: Self.animationKey) != nil {
+            return
+        }
+        lastAnimatedWidth = bounds.width
+        lastAnimatedHeight = bounds.height
+        lastWindowMinX = roundedX
+
+        let endpoints = ShimmerLayoutMath.unitSweepEndpoints(
+            viewFrameInContainer: frameInWindow,
+            containerWidth: window.bounds.width
+        )
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientLayer.startPoint = endpoints.startTo
+        gradientLayer.endPoint = endpoints.endTo
+        gradientLayer.opacity = 1
+        CATransaction.commit()
+
+        let keyTimes: [NSNumber] = [0, NSNumber(value: ShimmerLayoutMath.sweepFraction), 1]
+        let timingFunctions = [
+            CAMediaTimingFunction(name: .easeInEaseOut),
+            CAMediaTimingFunction(name: .linear),
+        ]
+
+        let startAnim = CAKeyframeAnimation(keyPath: "startPoint")
+        startAnim.values = [endpoints.startFrom, endpoints.startTo, endpoints.startTo]
+        startAnim.keyTimes = keyTimes
+        startAnim.timingFunctions = timingFunctions
+
+        let endAnim = CAKeyframeAnimation(keyPath: "endPoint")
+        endAnim.values = [endpoints.endFrom, endpoints.endTo, endpoints.endTo]
+        endAnim.keyTimes = keyTimes
+        endAnim.timingFunctions = timingFunctions
+
+        let group = CAAnimationGroup()
+        group.animations = [startAnim, endAnim]
+        group.duration = ShimmerLayoutMath.period
+        group.repeatCount = .infinity
+        group.isRemovedOnCompletion = false
+        group.fillMode = .both
+        let wallNow = CACurrentMediaTime()
+        let layerNow = gradientLayer.convertTime(wallNow, from: nil)
+        group.beginTime = ShimmerLayoutMath.beginTime(forWallClock: wallNow, layerTime: layerNow)
+        if #available(iOS 15.0, *) {
+            group.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        }
+        gradientLayer.removeAnimation(forKey: Self.animationKey)
+        gradientLayer.add(group, forKey: Self.animationKey)
+    }
+}
+
+private struct MonochromeShimmerOverlay: UIViewRepresentable {
+    let reduceMotion: Bool
+    let isDark: Bool
+    func makeUIView(context: Context) -> ShimmerTrackUIView {
+        let view = ShimmerTrackUIView()
+        view.isReduceMotionEnabled = reduceMotion
+        view.isDarkAppearance = isDark
+        return view
+    }
+    func updateUIView(_ view: ShimmerTrackUIView, context: Context) {
+        view.isReduceMotionEnabled = reduceMotion
+        view.isDarkAppearance = isDark
+    }
+}
+
+private struct MonochromeShimmerModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    func body(content: Content) -> some View {
+        if reduceMotion {
+            content
+        } else {
+            content.overlay {
+                MonochromeShimmerOverlay(reduceMotion: reduceMotion, isDark: colorScheme == .dark)
+                    .allowsHitTesting(false)
+                    .mask { content }
+            }
+        }
+    }
+}
+
+extension View {
+    /// Sweeps a synchronized, 120Hz GPU-driven monochrome gleam across placeholder shapes.
+    func monochromeShimmer() -> some View {
+        modifier(MonochromeShimmerModifier())
+    }
+}
+
 struct AppSkeleton: View {
     var body: some View {
         HStack(spacing: 14) {
@@ -592,7 +789,10 @@ struct AppSkeleton: View {
             }
             Spacer()
             Capsule().fill(Color(.tertiarySystemFill)).frame(width: 74, height: 30)
-        }.padding(.vertical, 6).accessibilityHidden(true)
+        }
+        .monochromeShimmer()
+        .padding(.vertical, 6)
+        .accessibilityHidden(true)
     }
 }
 
@@ -732,8 +932,12 @@ extension AnyTransition {
     static var statusSwap: AnyTransition {
         .asymmetric(
             insertion: .opacity.combined(with: .scale(scale: 0.92))
-                .animation(.easeOut(duration: 0.18).delay(0.1)),
-            removal: .opacity.animation(.easeIn(duration: 0.1)))
+                .animation(.easeOut(duration: 0.16).delay(0.08)),
+            removal: .opacity.animation(.easeIn(duration: 0.08)))
+    }
+
+    static func statusSwap(reduceMotion: Bool) -> AnyTransition {
+        reduceMotion ? .opacity : statusSwap
     }
 }
 

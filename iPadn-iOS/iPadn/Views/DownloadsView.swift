@@ -543,7 +543,7 @@ struct DownloadTaskRow: View {
                 }
                 statusLine
                     .id(controlKey)
-                    .transition(.statusSwap)
+                    .transition(.statusSwap(reduceMotion: reduceMotion))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -619,17 +619,23 @@ struct DownloadTaskRow: View {
             }
         }
     }
+    private var showsTrailingControl: Bool {
+        job.status != .completed || job.rawFormat == nil
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Button(action: inspecting) { appHeading }.buttonStyle(RevealRowButtonStyle())
-                trailingControl
-                    .id(controlKey + (celebrating ? "-done" : ""))
-                    .transition(.statusSwap)
+                if showsTrailingControl {
+                    trailingControl
+                        .id(controlKey + (celebrating ? "-done" : ""))
+                        .transition(.statusSwap(reduceMotion: reduceMotion))
+                        .frame(minWidth: 74, minHeight: 44, alignment: .trailing)
+                }
             }
-            if job.status == .running || job.status == .paused, job.expected > 0 {
-                ProgressView(value: job.progress).tint(job.status == .paused ? .secondary : UX.tint)
-                    .animation(.linear(duration: 0.25), value: job.progress)
+            if [.running, .pausing, .paused].contains(job.status), job.expected > 0 {
+                ProgressView(value: job.progress).tint(job.status == .running ? UX.tint : .secondary)
+                    .animation(reduceMotion ? nil : .linear(duration: 0.25), value: job.progress)
                     .transition(.opacity)
                     .accessibilityLabel("下载进度").accessibilityValue("\(Int(job.progress * 100))%")
             }
@@ -659,21 +665,27 @@ struct DownloadTaskRow: View {
             }
         }
         .padding(.vertical, 8)
-        .animation(reduceMotion ? nil : .compatibleSnappy, value: controlKey)
-        .animation(reduceMotion ? nil : .compatibleSnappy, value: celebrating)
-        .animation(reduceMotion ? nil : .compatibleSnappy, value: job.error)
-        .animation(reduceMotion ? nil : .compatibleSnappy, value: job.expected > 0)
+        .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.34), value: controlKey)
+        .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.34), value: celebrating)
+        .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.34), value: job.error)
+        .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.34), value: job.expected > 0)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: update?.version)
         .onAppear { seenStatus = job.status }
         .compatibleOnChange(of: job.status) { status in
             let before = seenStatus
             seenStatus = status
+            if status != .completed { celebrating = false }
             // Finished while on screen: give tactile confirmation and celebrate briefly.
             guard status == .completed, before == .running || before == .processing else { return }
             UX.success()
             guard !reduceMotion else { return }
             celebrating = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { celebrating = false }
+        }
+        .task(id: celebrating) {
+            guard celebrating else { return }
+            try? await Task.sleep(for: .milliseconds(1100))
+            guard !Task.isCancelled else { return }
+            celebrating = false
         }
     }
 }

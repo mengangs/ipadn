@@ -1090,6 +1090,7 @@ private struct VersionRowSkeleton: View {
             Spacer(minLength: 8)
             Capsule().fill(Color(.tertiarySystemFill)).frame(width: 74, height: 30)
         }
+        .monochromeShimmer()
         .padding(.vertical, 2)
         .accessibilityHidden(true)
     }

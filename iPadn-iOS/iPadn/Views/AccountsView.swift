@@ -86,13 +86,21 @@ struct AccountsView: View {
                     .accessibilityIdentifier("accounts.settings")
             }
             if apple.active != nil {
-                Section { Button("退出登录", role: .destructive) { signingOut = true }.frame(maxWidth: .infinity) }
+                Section {
+                    Button("退出登录", role: .destructive) { signingOut = true }
+                        .frame(maxWidth: .infinity)
+                        .confirmationDialog("退出当前账号？", isPresented: $signingOut, titleVisibility: .visible) {
+                            Button("退出登录", role: .destructive) { apple.select(nil) }
+                            Button("取消", role: .cancel) {}
+                        } message: {
+                            Text("账号仍会保留，可随时切换回来。")
+                        }
+                }
             }
         }
         .animation(UX.motion(reduceMotion), value: apple.accounts.map(\.id))
         .overlay { if store.accountRemoving != nil { ProgressView("正在移除账号…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
         .toolPage().rootTabBar("账号", headerScrolledAway: headerAway)
-        .actionConfirmation(isPresented: $signingOut, title: "退出当前账号？", message: "账号仍会保留，可随时切换回来。", confirmTitle: "退出登录") { apple.select(nil) }
         .actionConfirmation(isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), title: "移除账号？", message: removalMessage, confirmTitle: "移除账号") {
             guard let id = deleting?.id else { return }
             Task {
