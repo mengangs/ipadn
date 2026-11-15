@@ -1,6 +1,6 @@
 # iPadn 项目全面交接与问题排查文档 (HANDOVER.md)
 
-> **更新时间**：2026-11-15（2.1.2 / build 32 发布准备；家庭共享暂停）
+> **更新时间**：2026-11-15（2.1.2 / build 32 已正式发布；家庭共享暂停）
 > **代码仓库**：`https://github.com/mengangs/ipadn.git` (`main` 分支)  
 > **本地工作区**：`D:\iOS-Dev\projects\ipadn` (映射到 WSL2: `/mnt/d/iOS-Dev/projects/ipadn`)  
 > **目标产品**：iOS 原生应用 `iPadn` (`app.local.iPadn`)
@@ -16,7 +16,15 @@
   - `iPadnTests.xctest`：224 项执行，0 失败；
   - `iPadnUITests.xctest`（`full` 范围，`iPhone 18 Pro` iOS 27.2 Simulator）：34 项执行，33 通过，1 项因机型条件跳过（`testDuoLayoutScreens`），0 失败；`test-summary.json` 汇总 257 通过、1 跳过、0 失败；`ipa-verification.json` 通过（含高刷新率声明）。可选折叠屏步骤 `iPhone Duo screenshots`（`continue-on-error: true`）15 分钟超时未产出截图，不影响主测试门禁。
 - **2.1.2 真机验收（iPhone 15 Pro）**：已通过 `python scripts/xtool_build.py --deploy`（含 `xtool_postbuild.py` Mach-O SDK 兼容标记 26.0 与高刷新率校验）在 `iPhone 15 Pro` 部署并验证最终 UI 改动（含 `2.1.2 / build 32` 正常启动）：操作按钮居中形变、云朵与 `3.0pt` 等宽底轨黑白 `ProgressRing`、侧滑原生动画、底部标签栏搜索/账号动效、下载与历史版本交互；配对灵动岛/后台策略及历史版本校准逻辑同步由 CI `43704876456` 的 `CoreTests` / `NativeInstallerTests` / `iPadnUITests` 覆盖验证。真实设备账号（`1251098224@qq.com`）、已导入配对文件与最近搜索（`forward`）均完整保留，临时测试下载任务已清理。
-- **2.1.2 / build 32 发布准备**：`generate_project.py` 与生成的 `iPadn.xcodeproj`（含应用与扩展共享配置）以及本地不入库 `Config/xtool/*.plist` 已更新为 `2.1.2 / 32`，`RELEASE_NOTES.md`、`README.md`、`README_EN.md` 与本文档已同步；待本发布提交在 `main` 触发并完成完整 CI（`run_tests=true`、`run_ui_tests=true`、`ui_test_scope=full`、`publish_release=true`）后自动生成 `v2.1.2` 标签、发布标准版与精简版 IPA 及校验文件，并更新 `altstore-source.json`。
+- **最新正式版本为 [2.1.2 / build 32](https://github.com/mengangs/ipadn/releases/tag/v2.1.2)**：由 `main` 提交 `0cf33a5` 触发完整 CI 与发布流水线 [43710252575](https://github.com/mengangs/ipadn/actions/runs/43710252575) 于 2026-11-15 12:17:53 UTC（北京时间 20:17:53）正式发布：
+  - `iPadnTests.xctest`：224 项通过，0 失败；
+  - `iPadnUITests.xctest`（`full` 范围，`iPhone 18 Pro` iOS 27.2 Simulator）：34 项执行，33 通过，1 项因机型跳过（`testDuoLayoutScreens`），0 失败；`iPhone Duo screenshots` 中 `testDuoLayoutScreens` 单独通过（85.821 秒）；`ipa-verification.json` 通过（`2.1.2 / build 32`，`high_refresh_rate: true`）。
+  - AltStore 源已自动更新为提交 `3277008`，随后已补充完善 `README.md`、`README_EN.md`、`RELEASE_NOTES.md`（含已下架应用关键词优先搜索、下载设置开关及同步微光说明），并同步更新线上 Release 说明与 `altstore-source.json`。
+
+| 发布资产 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| `iPadn-2.1.2-unsigned.ipa` | 49,466,076 | `35557d2e13a46f637f10feb30c96b497952e869adab22d1ef29e3f1a77595af0` |
+| `iPadn-2.1.2-lite-unsigned.ipa` | 49,328,014 | `a8bb075ffe40cf7d832ed712a2fc1f84b353cac18e6b37b6031c350d4fadb531` |
 
 ## 2026-11-14 iPadn 2.1.1（build 31）与当前交接
 
