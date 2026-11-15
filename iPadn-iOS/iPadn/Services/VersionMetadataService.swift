@@ -406,7 +406,7 @@ actor VersionMetadataStore {
             existing.bundleShortVersion = existing.version
         }
         existing.version = better
-        if existingScore >= 2 || replaceDotless {
+        if VersionService.versionPreference(better, rejectingID: rejectingID) >= 2 || replaceDotless {
             existing.metadataSchema = VersionMetadata.currentSchema
         }
         cache[key] = existing
@@ -504,8 +504,6 @@ actor VersionMetadataStore {
                 value.iconAvailable = true
             }
         }
-        if value.ticketChecked == nil { value.ticketChecked = true }
-        if value.metadataSchema == nil { value.metadataSchema = VersionMetadata.currentSchema }
         cache[key] = value
         if cache.count > 5_000 { cache.removeAll(); cache[key] = value }
         try? LocalResources.save(cache, filename: Self.filename)

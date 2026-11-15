@@ -123,7 +123,7 @@ def last_time(v):
 
 
 def compile_asset(path):
-    raw = path.read_bytes()
+    raw = path.read_bytes().replace(b'\r\n', b'\n')
     assert hashlib.sha256(raw).hexdigest() == '64158b35934cfedf33a6416da3c7a1bf2880a263c4a90dd416051d8741d22a8b', 'Pinned upstream artwork changed'
     data = json.loads(raw)
     assert not data.get('assets'), 'Precompositions/images unsupported'
@@ -311,17 +311,18 @@ def _cubic_segment(p0, c1, c2, p1):
 
 
 def compile_tab_search():
-    """Original iPadn Tab Search icon: loupe tilt + whip handle + inner glint sweep."""
+    """Original iPadn Tab Search icon: balanced bold loupe tilt + whip handle + inner glint sweep."""
     frames_count = 31
     angle_keys = [(0, 0.0), (5, -14.0), (14, 16.0), (22, -5.0), (27, 1.5), (30, 0.0)]
     handle_lag_keys = [(0, 0.0), (6, -10.0), (15, 21.0), (23, -7.0), (28, 2.0), (30, 0.0)]
     scale_keys = [(0, 1.0), (5, 0.94), (14, 1.06), (22, 0.985), (30, 1.0)]
-    dx_keys = [(0, 0.0), (5, -1.3), (14, 1.6), (22, -0.5), (30, 0.0)]
-    dy_keys = [(0, 0.0), (5, 0.7), (14, -1.4), (22, 0.4), (30, 0.0)]
+    dx_keys = [(0, 0.0), (5, -1.2), (14, 1.4), (22, -0.45), (30, 0.0)]
+    dy_keys = [(0, 0.0), (5, 0.65), (14, -1.2), (22, 0.35), (30, 0.0)]
     glint_alpha_keys = [(0, 0.0), (6, 0.0), (12, 0.78), (20, 0.55), (27, 0.0), (30, 0.0)]
     glint_sweep_keys = [(0, -2.55), (6, -2.55), (17, -1.85), (27, -1.35), (30, -1.35)]
 
-    rest_cx, rest_cy, rest_r = 22.0, 22.0, 13.8
+    # Weighted stroke widths & footprint to sit cleanly alongside filled tab icons at 26pt
+    rest_cx, rest_cy, rest_r = 22.8, 22.6, 13.6
     lens_frames, handle_frames, glint_frames = [], [], []
     for f in range(frames_count):
         a = math.radians(_interp_keys(angle_keys, f))
@@ -332,23 +333,23 @@ def compile_tab_search():
         r = rest_r * sc
         lens_frames.append({
             'opacity': 1.0,
-            'width': 3.8,
+            'width': 5.4,
             'contours': [_cubic_circle(cx, cy, r, r, rot=a)],
         })
         h_angle = math.radians(45.0) + a * 0.5 + (hl - a) * 0.45
         p0 = (cx + r * math.cos(h_angle), cy + r * math.sin(h_angle))
-        p_mid = (cx + (r + 5.6) * math.cos(h_angle + (hl - a) * 0.25),
-                 cy + (r + 5.6) * math.sin(h_angle + (hl - a) * 0.25))
-        p1 = (cx + (r + 12.2) * math.cos(h_angle + (hl - a) * 0.55),
-              cy + (r + 12.2) * math.sin(h_angle + (hl - a) * 0.55))
+        p_mid = (cx + (r + 5.4) * math.cos(h_angle + (hl - a) * 0.25),
+                 cy + (r + 5.4) * math.sin(h_angle + (hl - a) * 0.25))
+        p1 = (cx + (r + 11.8) * math.cos(h_angle + (hl - a) * 0.55),
+              cy + (r + 11.8) * math.sin(h_angle + (hl - a) * 0.55))
         handle_frames.append({
             'opacity': 1.0,
-            'width': 3.9,
+            'width': 6.0,
             'contours': [{'closed': False, 'points': _cubic_segment(p0, p_mid, p_mid, p1)}],
         })
         g_start = _interp_keys(glint_sweep_keys, f) + a * 0.4
         g_end = g_start + 0.85
-        gr = r - 4.4
+        gr = r - 5.1
         k_arc = (4.0 / 3.0) * math.tan((g_end - g_start) / 4.0)
         ga0 = (cx + gr * math.cos(g_start), cy + gr * math.sin(g_start))
         ga1 = (cx + gr * math.cos(g_end), cy + gr * math.sin(g_end))
@@ -364,7 +365,7 @@ def compile_tab_search():
         'version': 1,
         'canvas': [52, 52],
         'duration': (frames_count - 1) / 60.0,
-        'sourceSHA256': hashlib.sha256(b'iPadn-original-tab-search-v1').hexdigest(),
+        'sourceSHA256': hashlib.sha256(b'iPadn-original-tab-search-v2').hexdigest(),
         'sourceCommit': 'iPadn-original',
         'tracks': [
             {'name': 'lens', 'stroke': True, 'evenOdd': False, 'lineCap': 2, 'lineJoin': 2, 'frames': lens_frames},
@@ -487,58 +488,120 @@ def compile_tab_purchased():
 
 
 def compile_tab_account():
-    """Original iPadn Tab Account icon: outer badge + expressive head & lagged shoulder motion."""
-    frames_count = 33
-    head_dx_keys = [(0, 0.0), (5, -2.0), (13, 2.2), (21, -0.8), (28, 0.25), (32, 0.0)]
-    head_dy_keys = [(0, 0.0), (5, 0.7), (13, -0.6), (21, 0.25), (32, 0.0)]
-    sh_dx_keys = [(0, 0.0), (7, -1.4), (15, 1.5), (23, -0.5), (29, 0.15), (32, 0.0)]
-    sh_dy_keys = [(0, 0.0), (7, -0.4), (15, 0.5), (23, -0.2), (32, 0.0)]
-    sh_rot_keys = [(0, 0.0), (7, -6.0), (15, 6.0), (23, -2.0), (32, 0.0)]
-    ring_ry_keys = [(0, 20.5), (5, 20.1), (13, 20.8), (22, 20.3), (32, 20.5)]
+    """Original iPadn Tab Account icon matched to Telegram TabContacts choreography."""
+    frames_count = 35
 
-    def shoulder_contour(dx, dy, rot_deg):
-        """Smooth shoulder crescent kept strictly inside r=16.5 concentric to (26, 26)."""
-        rot = math.radians(rot_deg)
-        co, si = math.cos(rot), math.sin(rot)
-        cx, cy = 26.0, 26.0
+    def bezier_y_for_x(x, x1, y1, x2, y2):
+        if x <= 0.0:
+            return 0.0
+        if x >= 1.0:
+            return 1.0
+        lo, hi = 0.0, 1.0
+        for _ in range(30):
+            t = 0.5 * (lo + hi)
+            mt = 1.0 - t
+            bx = 3.0 * mt * mt * t * x1 + 3.0 * mt * t * t * x2 + t * t * t
+            if bx < x:
+                lo = t
+            else:
+                hi = t
+        t = 0.5 * (lo + hi)
+        mt = 1.0 - t
+        return 3.0 * mt * mt * t * y1 + 3.0 * mt * t * t * y2 + t * t * t
 
-        def clamp_point(x, y):
-            vx, vy = (x * co - y * si) + dx, (x * si + y * co) + dy
-            dist = math.hypot(vx, vy)
-            max_r = 16.4
-            if dist > max_r:
-                s = max_r / dist
-                vx, vy = vx * s, vy * s
-            return (cx + vx, cy + vy)
+    def ease_seg(frame, t0, v0, t1, v1, ox, oy, ix, iy):
+        if frame <= t0:
+            return v0
+        if frame >= t1:
+            return v1
+        u = (frame - t0) / (t1 - t0)
+        return v0 + (v1 - v0) * bezier_y_for_x(u, ox, oy, ix, iy)
 
-        # Sample smooth 8-point rounded shoulder crescent in local coords relative to (26, 26)
-        local_pts = [
-            (-11.2, 9.2), (-8.8, 3.8), (-4.0, 2.3), (0.0, 2.2),
-            (4.0, 2.3), (8.8, 3.8), (11.2, 9.2), (6.5, 14.0),
-            (0.0, 15.6), (-6.5, 14.0),
+    base_shoulder_pts = [
+        (-11.2, 9.2), (-8.8, 3.8), (-4.0, 2.3), (0.0, 2.2),
+        (4.0, 2.3), (8.8, 3.8), (11.2, 9.2), (6.5, 14.0),
+        (0.0, 15.6), (-6.5, 14.0),
+    ]
+    base_shoulder_rads = [1.8, 2.2, 1.6, 1.4, 1.6, 2.2, 1.8, 2.0, 2.0, 2.0]
+
+    def clamp_to_ring(x, y, safe_r):
+        """Keep cutout coordinates strictly inside the outer badge wall."""
+        vx = x - 26.0
+        vy = y - 26.0
+        norm = math.hypot(vx, vy)
+        if norm > safe_r and norm > 0.0:
+            scale = safe_r / norm
+            vx *= scale
+            vy *= scale
+        return (26.0 + vx, 26.0 + vy)
+
+    def person_contours(ox, oy, scale, safe_r):
+        """Build [head, shoulders] contours collapsed toward/from an inner anchor."""
+        hr = 5.6 * scale
+        head_x = 26.0 + ox
+        head_y = 26.0 + oy - 6.4 * scale
+        hx, hy = clamp_to_ring(head_x, head_y, max(1.0, safe_r - hr))
+        c_head = _cubic_circle(hx, hy, hr, hr)
+
+        verts = [
+            clamp_to_ring(26.0 + ox + px * scale, 26.0 + oy + py * scale, safe_r)
+            for px, py in base_shoulder_pts
         ]
-        verts = [clamp_point(px, py) for px, py in local_pts]
-        rads = [1.8, 2.2, 1.6, 1.4, 1.6, 2.2, 1.8, 2.0, 2.0, 2.0]
-        return _rounded_polygon(verts, rads)
+        rads = [max(0.0001, r * scale) for r in base_shoulder_rads]
+        c_shoulders = _rounded_polygon(verts, rads)
+        return c_head, c_shoulders
+
+    vanish_x, vanish_y = -8.6, 8.6
+    spawn_x, spawn_y = 8.6, 8.6
 
     frames = []
     for f in range(frames_count):
-        ry = _interp_keys(ring_ry_keys, f)
-        rx = (20.5 * 20.5) / ry
-        c_ring = _cubic_circle(26.0, 26.0, rx, ry)
-        c_head = _cubic_circle(26.0 + _interp_keys(head_dx_keys, f),
-                               19.6 + _interp_keys(head_dy_keys, f),
-                               5.6, 5.6)
-        c_shoulders = shoulder_contour(_interp_keys(sh_dx_keys, f),
-                                       _interp_keys(sh_dy_keys, f),
-                                       _interp_keys(sh_rot_keys, f))
-        frames.append({'opacity': 1.0, 'width': 0.0, 'contours': [c_ring, c_head, c_shoulders]})
+        # Outer scale (1.0 -> 0.97 -> 1.0 over t=0..16..34) combined with
+        # ring contraction (1.0 -> 0.88 -> 1.0 over t=0..10..33), matching TabContacts.
+        if f <= 16:
+            layer_s = ease_seg(f, 0, 1.0, 16, 0.97, 0.15, 0.0, 0.3, 1.0)
+        else:
+            layer_s = ease_seg(f, 16, 0.97, 34, 1.0, 0.167, 0.0, 0.2, 1.0)
+        if f <= 10:
+            ring_mul = ease_seg(f, 0, 1.0, 10, 0.88, 0.15, 0.0, 0.3, 1.0)
+        else:
+            ring_mul = ease_seg(f, 10, 0.88, 33, 1.0, 0.167, 0.0, 0.2, 1.0)
+
+        rr = 20.5 * ring_mul * layer_s
+        safe_r = max(12.0, rr - 3.6)
+        c_ring = _cubic_circle(26.0, 26.0, rr, rr)
+
+        # Outgoing contact scales 1.0 -> 0 while retreating toward bottom-left (t=0..16).
+        u_out = ease_seg(f, 0, 0.0, 16, 1.0, 0.15, 0.0, 0.7, 1.0)
+        out_scale = max(0.0001, (1.0 - u_out) * layer_s)
+        out_head, out_sh = person_contours(
+            vanish_x * u_out,
+            vanish_y * u_out,
+            out_scale,
+            safe_r,
+        )
+
+        # Incoming contact slides from bottom-right to center while growing 0 -> 1.0 (t=10..33).
+        u_in = ease_seg(f, 10, 0.0, 33, 1.0, 0.2, 0.0, 0.2, 1.0)
+        in_scale = max(0.0001, u_in * layer_s)
+        in_head, in_sh = person_contours(
+            spawn_x * (1.0 - u_in),
+            spawn_y * (1.0 - u_in),
+            in_scale,
+            safe_r,
+        )
+
+        frames.append({
+            'opacity': 1.0,
+            'width': 0.0,
+            'contours': [c_ring, out_head, out_sh, in_head, in_sh],
+        })
 
     return {
         'version': 1,
         'canvas': [52, 52],
         'duration': (frames_count - 1) / 60.0,
-        'sourceSHA256': hashlib.sha256(b'iPadn-original-tab-account-v1').hexdigest(),
+        'sourceSHA256': hashlib.sha256(b'iPadn-original-tab-account-v5').hexdigest(),
         'sourceCommit': 'iPadn-original',
         'tracks': [
             {'name': 'account', 'stroke': False, 'evenOdd': True, 'lineCap': 1, 'lineJoin': 1, 'frames': frames},
@@ -567,7 +630,7 @@ def main():
         if args.check:
             assert destination.read_text(encoding='utf-8') == encoded, f'Stale asset: {target}'
         else:
-            destination.write_text(encoded, encoding='utf-8')
+            destination.write_text(encoded, encoding='utf-8', newline='\n')
         print(f'{target}: {len(asset["tracks"])} tracks, {len(asset["tracks"][0]["frames"])} frames, {asset["duration"]:.3f}s, {len(encoded):,} bytes')
 
 

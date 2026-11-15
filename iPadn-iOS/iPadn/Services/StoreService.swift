@@ -1028,10 +1028,9 @@ actor VersionService {
         guard !structuralMatches.isEmpty else { return nil }
 
         let uniqueWinner: ([ (note: ReleaseNote, precision: MarketingMatchPrecision) ]) -> ReleaseNote? = { pool in
-            guard let bestRank = pool.map(\.precision).max() else { return nil }
-            let top = pool.filter { $0.precision == bestRank }
-            let distinctVersions = Set(top.map { sanitizedVersion($0.note.version) })
-            return distinctVersions.count == 1 ? top[0].note : nil
+            let distinctVersions = Set(pool.map { sanitizedVersion($0.note.version) })
+            guard distinctVersions.count == 1 else { return nil }
+            return pool.max(by: { $0.precision < $1.precision })?.note
         }
 
         if let released {
@@ -1111,26 +1110,42 @@ actor VersionService {
     static func mergeSourceResults(_ sources: [[AppVersion]]) -> [AppVersion] {
         var result: [AppVersion] = []
         var indices: [String: Int] = [:]
-        // Preserve the configured source priority and relative chronological
-        // anchor order when later sources contribute versions missing from earlier ones.
+        // Preserve the configured source priority, inserting a version missing from
+        // earlier sources before its next shared anchor when one follows in order.
         for source in sources {
-            var insertCursor = 0
-            for rawVersion in source where !rawVersion.id.isEmpty {
+            let validSource: [AppVersion] = source.compactMap { rawVersion in
+                guard !rawVersion.id.isEmpty else { return nil }
                 var version = rawVersion
                 version.version = sanitizedVersion(version.version, rejectingID: version.id)
+                return version
+            }
+            var nextKnownAnchor: [String?] = Array(repeating: nil, count: validSource.count)
+            var trailingAnchor: String?
+            for idx in validSource.indices.reversed() {
+                nextKnownAnchor[idx] = trailingAnchor
+                let id = validSource[idx].id
+                if indices[id] != nil { trailingAnchor = id }
+            }
+            var insertCursor = 0
+            for (pos, version) in validSource.enumerated() {
                 if let index = indices[version.id] {
                     result[index].version = preferredVersion(version.version, over: result[index].version, rejectingID: version.id)
                     if !result[index].source.components(separatedBy: "、").contains(version.source) {
                         result[index].source += AppText.text("、") + version.source
                     }
                     insertCursor = max(insertCursor, index + 1)
-                } else {
-                    let targetIndex = min(insertCursor, result.count)
-                    result.insert(version, at: targetIndex)
-                    for i in targetIndex..<result.count {
+                } else if let anchorID = nextKnownAnchor[pos],
+                          let anchorIndex = indices[anchorID],
+                          anchorIndex >= insertCursor {
+                    result.insert(version, at: anchorIndex)
+                    for i in anchorIndex..<result.count {
                         indices[result[i].id] = i
                     }
-                    insertCursor = targetIndex + 1
+                    insertCursor = anchorIndex + 1
+                } else {
+                    indices[version.id] = result.count
+                    result.append(version)
+                    insertCursor = result.count
                 }
             }
         }

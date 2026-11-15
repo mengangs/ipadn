@@ -103,6 +103,32 @@ final class NativeInstallerTests: XCTestCase {
         XCTAssertEqual(restored.installationMethodTitle, NativeInstaller.isAvailable ? "原生安装" : "本机证书")
     }
 
+    @MainActor
+    func testOnDevicePairingPrefersLiveActivityOverSystemNotificationsAndFormatsCode() {
+        XCTAssertFalse(OnDevicePairing.shouldSendFallbackNotification(hasActiveLiveActivity: true))
+        XCTAssertTrue(OnDevicePairing.shouldSendFallbackNotification(hasActiveLiveActivity: false))
+        XCTAssertEqual(OnDevicePairing.formattedCode("482913"), "482 913")
+        XCTAssertEqual(OnDevicePairing.formattedCode("12345"), "12345")
+
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        for step in 1...3 {
+            XCTAssertEqual(
+                OnDevicePairing.activityStaleDate(forStep: step, now: now),
+                now.addingTimeInterval(OnDevicePairing.activityLifetime)
+            )
+        }
+        XCTAssertNil(OnDevicePairing.activityStaleDate(forStep: 4, now: now))
+        XCTAssertNil(OnDevicePairing.activityStaleDate(forStep: 0, now: now))
+
+        if #available(iOS 16.2, *) {
+            XCTAssertNil(OnDevicePairing.alertConfiguration(step: 1))
+            XCTAssertNotNil(OnDevicePairing.alertConfiguration(step: 2))
+            XCTAssertNotNil(OnDevicePairing.alertConfiguration(step: 3, code: "482913"))
+            XCTAssertNotNil(OnDevicePairing.alertConfiguration(step: 4))
+            XCTAssertNotNil(OnDevicePairing.alertConfiguration(step: 0, message: "timeout"))
+        }
+    }
+
     func testPhaseIsCancellableDistinguishesTransferFromSystemInstall() {
         XCTAssertTrue(NativeInstaller.Phase.connecting.isCancellable)
         XCTAssertTrue(NativeInstaller.Phase.uploading(0).isCancellable)
