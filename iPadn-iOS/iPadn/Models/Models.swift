@@ -265,21 +265,29 @@ struct DownloadJob: Codable, Identifiable {
     var userFacingVersion: String { resolvedMarketingVersion ?? app.version }
     /// App name paired with user-facing version for Live Activity, alerts, and auto-install notices.
     var userFacingTitle: String { [app.name, userFacingVersion].filter { !$0.isEmpty }.joined(separator: " ") }
-    func displayVersionSummary(displayedVersion: String, includeVersionID: Bool) -> String {
-        var parts: [String] = []
-        if let marketing = resolvedMarketingVersion {
-            if !displayedVersion.isEmpty && displayedVersion != marketing {
-                parts.append(AppText.text("v\(marketing)（包内 \(displayedVersion)）"))
-            } else {
-                parts.append("v\(marketing)")
+    /// Build number (`CFBundleVersion`) preserved on the job or dispatch ticket, if known.
+    var resolvedBundleVersion: String? {
+        for candidate in [app.bundleVersion, asset?.app.bundleVersion] {
+            if let value = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+                return value
             }
-        } else if !displayedVersion.isEmpty {
-            parts.append("v\(displayedVersion)")
         }
-        if includeVersionID, let extID = app.externalVersionID, !extID.isEmpty {
-            parts.append("ID \(extID)")
+        return nil
+    }
+    /// App Store external version identifier associated with the download or dispatch ticket.
+    var resolvedExternalVersionID: String? {
+        for candidate in [app.externalVersionID, asset?.app.externalVersionID] {
+            if let value = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+                return value
+            }
         }
-        return parts.joined(separator: " · ")
+        return nil
+    }
+    /// Concise version label (`v3.8`) for download list rows without internal build numbers or IDs.
+    var conciseVersionLabel: String {
+        let version = userFacingVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !version.isEmpty, version != AppVersion.unknown else { return "" }
+        return "v\(version)"
     }
     /// Upgrades incomplete or failed jobs loaded from older app saves whose
     /// `app.version` took a stale dotless dispatch short string instead of a dotted `bundleVersion`.

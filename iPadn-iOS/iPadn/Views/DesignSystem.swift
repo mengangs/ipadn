@@ -298,27 +298,268 @@ struct RowCapsule: View {
     }
 }
 
-/// App Store download progress: a ring with a stop/pause glyph.
+/// App Store button display state for pill-to-ring morph animations.
+enum AppStoreActionPhase: Equatable {
+    case capsule(title: String, filled: Bool = false, enabled: Bool = true)
+    case cloud(enabled: Bool = true)
+    case loading
+    case downloading(Double)
+    case processing
+
+    var isCircular: Bool {
+        switch self {
+        case .loading, .downloading, .processing: return true
+        case .capsule, .cloud: return false
+        }
+    }
+
+    var isCloud: Bool {
+        if case .cloud = self { return true }
+        return false
+    }
+
+    var isEnabled: Bool {
+        switch self {
+        case .capsule(_, _, let enabled), .cloud(let enabled): return enabled
+        case .loading, .downloading, .processing: return true
+        }
+    }
+}
+
+private struct PillButtonPressStyle: ButtonStyle {
+    let scale: CGFloat
+    let opacity: Double
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? opacity : (enabled ? 1 : 0.4))
+            .scaleEffect(configuration.isPressed && !reduceMotion ? scale : 1)
+            .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.14), value: configuration.isPressed)
+            .compatibleOnChange(of: configuration.isPressed) { down in if down { UX.prepare() } }
+    }
+}
+
+/// Monochrome App Store action control that smoothly morphs a capsule button into
+/// a rotating open arc while loading and a clockwise progress ring while downloading.
+struct AppStoreActionButton: View {
+    let phase: AppStoreActionPhase
+    var alignment: Alignment = .trailing
+    var insideNavigationLink = false
+    var accessibilityLabelText: String? = nil
+    var accessibilityValueText: String? = nil
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.revealSuppressesPress) private var suppressesPress
+
+    @State private var lastTitle = "获取"
+    @State private var lastFilled = false
+    @State private var pillWidth: CGFloat = 74
+    @State private var pillHeight: CGFloat = 30
+
+    private var morphAnimation: Animation? {
+        reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82)
+    }
+
+    private var isCircular: Bool { phase.isCircular }
+    private var ringSize: CGFloat { max(30, dynamicTypeSize.isAccessibilitySize ? min(36, pillHeight) : 30) }
+    private var slotMinWidth: CGFloat {
+        if case .cloud = phase { return max(34, ringSize) }
+        return max(74, pillWidth)
+    }
+    private var activeTitle: String {
+        if case .capsule(let title, _, _) = phase, !title.isEmpty { return title }
+        return lastTitle
+    }
+    private var activeFilled: Bool {
+        if case .capsule(_, let filled, _) = phase { return filled }
+        return lastFilled
+    }
+    private var ringProgress: Double? {
+        switch phase {
+        case .downloading(let fraction): return fraction
+        case .loading, .processing: return nil
+        case .capsule, .cloud: return nil
+        }
+    }
+    private var targetWidth: CGFloat {
+        if isCircular { return ringSize }
+        if phase.isCloud { return max(34, ringSize) }
+        return max(74, pillWidth)
+    }
+    private var targetHeight: CGFloat {
+        if isCircular { return ringSize }
+        if phase.isCloud { return max(30, ringSize) }
+        return max(30, pillHeight)
+    }
+
+    @ViewBuilder private var morphBody: some View {
+        let circular = isCircular
+        let cloud = phase.isCloud
+        let showPill = !circular && !cloud
+        ZStack {
+            Capsule()
+                .fill(activeFilled ? AnyShapeStyle(UX.tint) : AnyShapeStyle(Color(.tertiarySystemFill)))
+                .opacity(showPill ? 1 : 0)
+
+            Text(LocalizedStringKey(activeTitle))
+                .font(.subheadline.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.75 : 1.0)
+                .foregroundStyle(activeFilled ? UX.onAccent : UX.tint)
+                .padding(.horizontal, 16)
+                .opacity(showPill ? 1 : 0)
+                .scaleEffect(showPill || reduceMotion ? 1 : 0.45)
+
+            Image(systemName: "icloud.and.arrow.down")
+                .font(.title3.weight(.medium))
+                .foregroundStyle(UX.tint)
+                .opacity(cloud ? 1 : 0)
+                .scaleEffect(cloud || reduceMotion ? 1 : 0.5)
+
+            if circular {
+                ProgressRing(
+                    progress: ringProgress,
+                    showsStopSquare: true,
+                    size: ringSize,
+                    outerPadding: 0
+                )
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.72)))
+            }
+        }
+        .frame(width: targetWidth, height: targetHeight)
+        .clipShape(Capsule())
+        .background {
+            Text(LocalizedStringKey(activeTitle))
+                .font(.subheadline.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.75 : 1.0)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, 16)
+                .frame(minWidth: 74, minHeight: 30)
+                .hidden()
+                .accessibilityHidden(true)
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                    if size.width > 0 { pillWidth = max(74, size.width) }
+                    if size.height > 0 { pillHeight = max(30, size.height) }
+                }
+        }
+        .frame(minWidth: slotMinWidth, minHeight: 36, alignment: alignment)
+        .contentShape(Rectangle())
+        .animation(morphAnimation, value: circular)
+        .animation(morphAnimation, value: cloud)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: activeTitle)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: activeFilled)
+        .onAppear { syncCachedCapsule(phase) }
+        .compatibleOnChange(of: phase) { next in syncCachedCapsule(next) }
+    }
+
+    private func syncCachedCapsule(_ current: AppStoreActionPhase) {
+        if case .capsule(let title, let filled, _) = current {
+            lastTitle = title
+            lastFilled = filled
+        }
+    }
+
+    private var accessibleLabel: Text {
+        accessibilityLabelText.map { Text(verbatim: $0) } ?? Text(LocalizedStringKey(activeTitle))
+    }
+
+    var body: some View {
+        let enabled = phase.isEnabled
+        if insideNavigationLink {
+            morphBody
+                .tactileNavigationTap(
+                    enabled: enabled && !suppressesPress,
+                    pressScale: isCircular ? 0.90 : 0.94,
+                    pressOpacity: isCircular ? 0.65 : 0.72
+                ) {
+                    UX.tapLight()
+                    action()
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel(accessibleLabel)
+                .accessibilityValue(Text(accessibilityValueText ?? ""))
+                .accessibilityAction {
+                    guard enabled else { return }
+                    UX.tapLight()
+                    action()
+                }
+        } else {
+            Button {
+                UX.tapLight()
+                action()
+            } label: {
+                morphBody
+            }
+            .buttonStyle(PillButtonPressStyle(scale: isCircular ? 0.90 : 0.94, opacity: isCircular ? 0.65 : 0.72))
+            .disabled(!enabled)
+            .accessibilityLabel(accessibleLabel)
+            .accessibilityValue(Text(accessibilityValueText ?? ""))
+        }
+    }
+}
+
+/// App Store download progress: an open monochrome spinning arc while waiting,
+/// or a clockwise circular progress ring with a stop/pause glyph inside.
 struct ProgressRing: View {
     var progress: Double?
     var symbol = "pause.fill"
+    var showsStopSquare = false
+    var size: CGFloat = 30
+    var trackLineWidth: CGFloat = 3.0
+    var guideLineWidth: CGFloat = 2.0
+    var outerPadding: CGFloat = 7
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Keeps strokes inside `size × size` so surrounding `Capsule()` morph clips never slice the ring in half.
+    private var strokeInset: CGFloat {
+        max(trackLineWidth, guideLineWidth) / 2
+    }
+
     var body: some View {
         ZStack {
-            Circle().stroke(Color(.tertiarySystemFill), lineWidth: 3)
+            Circle()
+                .inset(by: strokeInset)
+                .stroke(UX.tint.opacity(0.18), lineWidth: guideLineWidth)
+                .opacity(progress == nil ? 0 : 1)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: progress == nil)
             if let progress {
-                Circle().trim(from: 0, to: max(0.02, min(1, progress)))
-                    .stroke(UX.tint, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                Circle()
+                    .inset(by: strokeInset)
+                    .trim(from: 0, to: max(0.02, min(1, progress)))
+                    .stroke(UX.tint, style: StrokeStyle(lineWidth: trackLineWidth, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                    .animation(.linear(duration: 0.25), value: progress)
-            }
-            if progress == nil {
-                ProgressView().controlSize(.small)
+                    .animation(reduceMotion ? nil : .linear(duration: 0.25), value: progress)
+                if showsStopSquare {
+                    RoundedRectangle(cornerRadius: 2.2, style: .continuous)
+                        .fill(UX.tint)
+                        .frame(width: 9, height: 9)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.6)))
+                } else {
+                    Image(systemName: symbol).font(.system(size: 10, weight: .bold)).foregroundStyle(UX.tint)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.6)))
+                }
             } else {
-                Image(systemName: symbol).font(.system(size: 10, weight: .bold)).foregroundStyle(UX.tint)
+                TimelineView(.animation(minimumInterval: nil, paused: reduceMotion)) { timeline in
+                    let period = 0.85
+                    let fraction = reduceMotion
+                        ? 0.0
+                        : timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
+                    Circle()
+                        .inset(by: strokeInset)
+                        .trim(from: 0, to: 0.78)
+                        .stroke(UX.tint, style: StrokeStyle(lineWidth: trackLineWidth, lineCap: .round))
+                        .rotationEffect(.degrees(fraction * 360 - 90))
+                }
+                .transition(.opacity)
             }
         }
-        .frame(width: 30, height: 30)
-        .padding(7)
+        .frame(width: size, height: size)
+        .padding(outerPadding)
         .contentShape(Circle())
     }
 }

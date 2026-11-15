@@ -9,7 +9,6 @@ struct PurchasedView: View {
     @State private var query = ""
     @State private var months = 0
     @State private var showLogin = false
-    @State private var getting: StoreApp?
     @State private var headerAway = false
     @State private var selecting = false
     @State private var selection = Set<String>()
@@ -179,17 +178,14 @@ struct PurchasedView: View {
                                     AppRow(app: storeApp(app), subtitle: subtitle, badge: badges[app.id]) {
                                         // The App Store's re-download glyph leaves room for the
                                         // purchase date in longer languages.
-                                        Image(systemName: "icloud.and.arrow.down")
-                                            .font(.title3.weight(.medium)).foregroundStyle(UX.tint)
-                                            .frame(width: 34, height: 44).contentShape(Rectangle())
-                                            .tactileNavigationTap(pressScale: 0.88, pressOpacity: 0.55) {
-                                                UX.tapLight()
-                                                getting = app.storeApp
-                                            }
-                                            .accessibilityElement(children: .ignore)
-                                            .accessibilityAddTraits(.isButton)
-                                            .accessibilityLabel("下载 \(app.name)")
-                                            .accessibilityAction { UX.tapLight(); getting = app.storeApp }
+                                        StoreDownloadActionButton(
+                                            app: storeApp(app),
+                                            platformOverride: store.settings.store.platform == .iPadOS ? .iPadOS : .iOS,
+                                            cloudWhenIdle: true,
+                                            insideNavigationLink: true,
+                                            alignment: .trailing,
+                                            idleAccessibilityLabel: AppText.text("下载 \(app.name)")
+                                        )
                                     }
                                 }
                             }
@@ -225,7 +221,6 @@ struct PurchasedView: View {
         }
         .navigationDestination(isPresented: $showLogin) { LoginView() }
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
-        .compatibleNavigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
         .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
         .toolPage()
         .rootTabBar("已购项目", headerScrolledAway: headerAway)

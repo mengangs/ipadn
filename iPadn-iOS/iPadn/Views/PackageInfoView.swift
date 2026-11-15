@@ -23,6 +23,9 @@ struct PackageInfoView: View {
                         row("版本", info.version)
                     }
                     row("构建号", info.build)
+                    if let extID = job?.resolvedExternalVersionID {
+                        row("商店版本 ID", extID, monospaced: true)
+                    }
                     row("最低系统", info.minimumOS.isEmpty ? "" : "iOS " + info.minimumOS)
                     row("适用设备", info.devices)
                     if !info.languages.isEmpty {

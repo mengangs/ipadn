@@ -125,6 +125,138 @@ extension AppRow where Accessory == EmptyView {
     }
 }
 
+/// Binds an App Store morphing pill/ring button to live preparation and `DownloadManager` job state.
+struct StoreDownloadActionButton: View {
+    @EnvironmentObject private var store: ToolStore
+    @EnvironmentObject private var downloads: DownloadManager
+    let app: StoreApp
+    var platformOverride: AppPlatform? = nil
+    var versionID: String? = nil
+    var marketingVersion: String? = nil
+    var idleTitle: String = "获取"
+    var filled = false
+    var enabled = true
+    var cloudWhenIdle = false
+    var insideNavigationLink = false
+    var alignment: Alignment = .trailing
+    var idleAccessibilityLabel: String? = nil
+    var onEnqueued: (() -> Void)? = nil
+    var onRequireVerification: (() -> Void)? = nil
+    var onRequireReauthentication: ((String?) -> Void)? = nil
+
+    private var platform: AppPlatform { platformOverride ?? store.settings.store.platform }
+
+    var body: some View {
+        let preparing = store.isPreparingDownload(appID: app.id, platform: platform, versionID: versionID)
+        if !preparing, let job = store.matchingDownloadJob(for: app, platform: platform, versionID: versionID) {
+            StoreJobActionButton(
+                job: job,
+                progressState: downloads.progress(for: job.id),
+                autoInstalling: downloads.autoInstalling?.id == job.id ? downloads.autoInstalling : nil,
+                appName: app.name,
+                filled: filled,
+                insideNavigationLink: insideNavigationLink,
+                alignment: alignment,
+                action: triggerAction
+            )
+        } else {
+            let phase: AppStoreActionPhase = preparing
+                ? .loading
+                : (cloudWhenIdle ? .cloud(enabled: enabled) : .capsule(title: idleTitle, filled: filled, enabled: enabled))
+            let label = preparing
+                ? AppText.text("取消准备下载")
+                : idleAccessibilityLabel
+            AppStoreActionButton(
+                phase: phase,
+                alignment: alignment,
+                insideNavigationLink: insideNavigationLink,
+                accessibilityLabelText: label,
+                action: triggerAction
+            )
+        }
+    }
+
+    private func triggerAction() {
+        store.triggerAppStoreAction(
+            for: app,
+            platform: platform,
+            versionID: versionID,
+            marketingVersion: marketingVersion,
+            onEnqueued: onEnqueued,
+            onRequireVerification: onRequireVerification,
+            onRequireReauthentication: onRequireReauthentication
+        )
+    }
+}
+
+private struct StoreJobActionButton: View {
+    let job: DownloadJob
+    @ObservedObject var progressState: DownloadProgressState
+    let autoInstalling: DownloadManager.AutoInstallProgress?
+    let appName: String
+    let filled: Bool
+    let insideNavigationLink: Bool
+    let alignment: Alignment
+    let action: () -> Void
+
+    private var liveJob: DownloadJob { progressState.applying(to: job) }
+
+    private var phase: AppStoreActionPhase {
+        if let autoInstalling {
+            return autoInstalling.hasProgress ? .downloading(autoInstalling.fraction) : .processing
+        }
+        switch liveJob.status {
+        case .queued:
+            return .loading
+        case .running:
+            return liveJob.expected > 0 ? .downloading(liveJob.progress) : .loading
+        case .pausing, .processing:
+            return .processing
+        case .paused:
+            return .capsule(title: "继续", filled: false, enabled: true)
+        case .failed:
+            return .capsule(title: "重试", filled: false, enabled: true)
+        case .completed:
+            if job.rawFormat == nil {
+                return .capsule(title: "安装", filled: filled, enabled: true)
+            }
+            return .capsule(title: "已完成", filled: false, enabled: true)
+        }
+    }
+
+    private var accessibilityLabelText: String? {
+        if let autoInstalling {
+            return AppText.text("正在安装") + " " + autoInstalling.name
+        }
+        switch liveJob.status {
+        case .queued: return AppText.text("等待下载，点按暂停")
+        case .running: return AppText.text("暂停")
+        case .pausing, .processing: return AppText.text("正在处理")
+        case .paused: return AppText.text("继续")
+        case .failed: return AppText.text("重试")
+        case .completed: return job.rawFormat == nil ? AppText.text("安装") : AppText.text("已完成")
+        }
+    }
+
+    private var accessibilityValueText: String? {
+        if case .downloading(let fraction) = phase {
+            return "\(Int((fraction * 100).rounded()))%"
+        }
+        return nil
+    }
+
+    var body: some View {
+        AppStoreActionButton(
+            phase: phase,
+            alignment: alignment,
+            insideNavigationLink: insideNavigationLink,
+            accessibilityLabelText: accessibilityLabelText,
+            accessibilityValueText: accessibilityValueText,
+            action: action
+        )
+    }
+}
+
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
     func makeUIViewController(context: Context) -> UIActivityViewController {
@@ -211,6 +343,25 @@ struct RootView: View {
                 // Runs after the sheet has closed, so a retry can present again.
                 let retry = request.retry
                 Task { @MainActor in try? await Task.sleep(for: .milliseconds(400)); retry?() }
+            }
+        }
+        .sheet(item: $store.installingJob) { job in
+            PackageInstallationView(job: job).sheetNotice()
+                .environmentObject(store)
+                .environmentObject(downloads)
+        }
+        .sheet(item: $store.loginPrompt) { prompt in
+            NavigationStack {
+                LoginView(initialAccountID: prompt.accountID) {
+                    let retry = prompt.retry
+                    store.loginPrompt = nil
+                    Task { @MainActor in try? await Task.sleep(for: .milliseconds(350)); retry?() }
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") { store.loginPrompt = nil }
+                    }
+                }
             }
         }
         .background {

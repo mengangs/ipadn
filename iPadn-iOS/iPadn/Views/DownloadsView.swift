@@ -178,6 +178,19 @@ struct DownloadsView: View {
                         Section("任务信息") {
                             LabeledContent("添加时间", value: job.createdAt.formatted(date: .abbreviated, time: .shortened))
                             TaskSizeRows(job: job, progress: manager.progress(for: job.id))
+                            if let marketing = job.resolvedMarketingVersion {
+                                LabeledContent("商店版本", value: marketing)
+                            }
+                            let packageShort = job.app.version.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !packageShort.isEmpty && packageShort != AppVersion.unknown {
+                                LabeledContent("包内版本", value: packageShort)
+                            }
+                            if let build = job.resolvedBundleVersion {
+                                LabeledContent("构建号", value: build)
+                            }
+                            if let versionID = job.resolvedExternalVersionID {
+                                LabeledContent("商店版本 ID", value: versionID)
+                            }
                             if let account = job.account { LabeledContent("Apple 账号", value: account) }
                         }
                         if let error = job.error { Section("未完成原因") { Text(error).font(.subheadline) } }
@@ -428,16 +441,11 @@ struct DownloadsView: View {
         }
     }
 
-    private func showsVersionID(for job: DownloadJob) -> Bool {
-        job.isOlderVersion || job.status == .failed || manager.jobs.count(where: { $0.app.id == job.app.id }) > 1
-    }
-
     /// A compact row for edit mode: selection mark, icon, name and state.
     private func editRow(_ job: DownloadJob) -> some View {
         let app = job.displayApp(packageIcon: manager.packageIconURL(job))
         let selected = selection.contains(job.id)
-        let versionSummary = job.displayVersionSummary(displayedVersion: app.version, includeVersionID: showsVersionID(for: job))
-        let details = [versionSummary, job.status.title].filter { !$0.isEmpty }.joined(separator: " · ")
+        let details = [job.conciseVersionLabel, job.status.title].filter { !$0.isEmpty }.joined(separator: " · ")
         return Button { toggleSelection(job.id) } label: {
             HStack(spacing: 12) {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
@@ -479,8 +487,8 @@ struct DownloadsView: View {
         }
     }
     private func packageDisplayApp(_ job: DownloadJob) -> StoreApp {
-        var app = job.app
-        app.iconURL = job.displayApp(packageIcon: manager.packageIconURL(job)).iconURL
+        var app = job.displayApp(packageIcon: manager.packageIconURL(job))
+        app.version = job.userFacingVersion
         return app
     }
     private func primary(_ job: DownloadJob) {
@@ -553,6 +561,7 @@ struct DownloadTaskRow: View {
     /// Just finished: the ring closes into a check before Install appears.
     @State private var celebrating = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private var displayedApp: StoreApp {
         job.displayApp(packageIcon: manager.packageIconURL(job))
     }
@@ -575,20 +584,40 @@ struct DownloadTaskRow: View {
     }
     private var appHeading: some View {
         let displayedApp = self.displayedApp
-        let showVersionID = job.isOlderVersion || job.status == .failed || manager.jobs.count(where: { $0.app.id == job.app.id }) > 1
-        let versionSummary = job.displayVersionSummary(displayedVersion: displayedApp.version, includeVersionID: showVersionID)
+        let versionText = job.conciseVersionLabel
+        let sizeText = displayedApp.size > 0 ? displayedApp.size.byteLabel : ""
         return HStack(alignment: .center, spacing: 14) {
             AppIcon(url: displayedApp.iconURL, size: 64)
             VStack(alignment: .leading, spacing: 4) {
                 Text(displayedApp.name).font(.body.weight(.medium)).lineLimit(2)
                 HStack(spacing: 6) {
                     platformIcon
-                    // Version and size scroll once in place when the row is too narrow.
-                    MarqueeText(text: [versionSummary,
-                                       displayedApp.size > 0 ? displayedApp.size.byteLabel : ""]
-                                    .filter { !$0.isEmpty }.joined(separator: " · "))
+                    if !versionText.isEmpty || !sizeText.isEmpty {
+                        // Keep file size visible when version labels are long or screens are narrow.
+                        HStack(spacing: 4) {
+                            if !versionText.isEmpty {
+                                Text(verbatim: versionText)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .layoutPriority(0)
+                            }
+                            if !versionText.isEmpty && !sizeText.isEmpty {
+                                Text(verbatim: "·")
+                                    .layoutPriority(1)
+                            }
+                            if !sizeText.isEmpty {
+                                Text(verbatim: sizeText)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.8 : 1.0)
+                                    .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: false)
+                                    .layoutPriority(2)
+                            }
+                        }
+                        .font(.subheadline.monospacedDigit())
                         .foregroundStyle(.secondary)
+                        .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("download.size." + job.app.id)
+                    }
                 }
                 statusLine
                     .id(controlKey)

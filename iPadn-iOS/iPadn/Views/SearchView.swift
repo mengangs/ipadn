@@ -8,7 +8,6 @@ struct SearchView: View {
     @EnvironmentObject private var apple: AppleService
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmClear = false
-    @State private var getting: StoreApp?
     @State private var viewingFavorite: StoreApp?
     @State private var headerAway = false
     @State private var searchCardWidth: CGFloat = 0
@@ -68,7 +67,6 @@ struct SearchView: View {
         .animation(UX.motion(reduceMotion), value: store.favorites.map(\.id))
         .toolPage()
         .rootTabBar("搜索", headerScrolledAway: headerAway)
-        .compatibleNavigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
         .compatibleNavigationDestination(item: $viewingFavorite) { app in AppDetailView(app: app) }
         .task { await store.loadNameCatalog() }
         .task { await store.checkWatched() }
@@ -78,8 +76,14 @@ struct SearchView: View {
     private func resultRow(_ app: StoreApp, note: String?) -> some View {
         NavigationLink { AppDetailView(app: app) } label: {
             AppRow(app: app, subtitle: note.map { [app.displayCategory, $0].filter { !$0.isEmpty }.joined(separator: " · ") }) {
-                RowCapsule(title: "获取", insideNavigationLink: true) { getting = app }
-                    .accessibilityLabel("获取 \(app.name)")
+                StoreDownloadActionButton(
+                    app: app,
+                    idleTitle: store.settings.store.platform.supportsIPA ? "获取" : "获取 PKG",
+                    filled: false,
+                    insideNavigationLink: true,
+                    alignment: .trailing,
+                    idleAccessibilityLabel: AppText.text("获取 \(app.name)")
+                )
             }
         }
         .contextMenu {

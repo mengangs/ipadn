@@ -214,6 +214,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(notes["1.2026.272"]?.date, Date(timeIntervalSince1970: 1_791_310_021))
         XCTAssertEqual(notes["8.3.1"]?.text, "新增评分来源")
         XCTAssertEqual(ReleaseNotesService.version(in: "Version 2.0"), "2.0")
+        XCTAssertEqual(ReleaseNotesService.version(in: "バージョン4.8"), "4.8")
         XCTAssertNil(ReleaseNotesService.version(in: "What’s New"))
         XCTAssertTrue(ReleaseNotesService.parse("<html></html>").isEmpty)
     }
@@ -2825,7 +2826,52 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(job.app.bundleVersion, "4")
         XCTAssertEqual(job.app.storeMarketingVersion, "1.9.1")
         XCTAssertEqual(job.storeVersion, "1.9.1", "Update checks must compare App Store marketing version, not 10.0.18")
+        XCTAssertEqual(job.conciseVersionLabel, "v1.9.1")
+        XCTAssertEqual(job.resolvedBundleVersion, "4")
+        XCTAssertEqual(job.resolvedExternalVersionID, "889722446")
         XCTAssertTrue(VersionOrder.isNewer("1.9.5", than: job.storeVersion))
+    }
+
+    func testDownloadJobConciseLabelAndTechnicalDetailsSeparation() {
+        let withMarketing = DownloadJob(app: StoreApp(id: "385907472", name: "OPlayer Lite", version: "4800",
+                                                      externalVersionID: "857150582", bundleVersion: "4800",
+                                                      storeMarketingVersion: "4.8"),
+                                        status: .completed)
+        XCTAssertEqual(withMarketing.conciseVersionLabel, "v4.8")
+        XCTAssertEqual(withMarketing.userFacingVersion, "4.8")
+        XCTAssertEqual(withMarketing.resolvedBundleVersion, "4800")
+        XCTAssertEqual(withMarketing.resolvedExternalVersionID, "857150582")
+
+        let withoutMarketing = DownloadJob(app: StoreApp(id: "1", name: "Sample", version: "3.8"), status: .completed)
+        XCTAssertEqual(withoutMarketing.conciseVersionLabel, "v3.8")
+
+        let unknownVersion = DownloadJob(app: StoreApp(id: "2", name: "Unknown", version: AppVersion.unknown), status: .queued)
+        XCTAssertEqual(unknownVersion.conciseVersionLabel, "")
+    }
+
+    @MainActor
+    func testMatchingDownloadJobAndTargetKey() {
+        let older = DownloadJob(
+            app: StoreApp(id: "385907472", name: "OPlayer Lite", version: "3800",
+                          externalVersionID: "849000001", storeMarketingVersion: "3.8"),
+            status: .completed
+        )
+        let runningLatest = DownloadJob(
+            app: StoreApp(id: "385907472", name: "OPlayer Lite", version: "4800",
+                          externalVersionID: "857150582", storeMarketingVersion: "4.8"),
+            status: .running
+        )
+        let store = ToolStore(downloadManager: DownloadManager(previewJobs: [runningLatest, older]))
+        let searchListing = StoreApp(id: "385907472", name: "OPlayer Lite", version: "4.8")
+
+        XCTAssertEqual(store.matchingDownloadJob(for: searchListing, platform: .iOS)?.id, runningLatest.id)
+        XCTAssertEqual(store.matchingDownloadJob(for: searchListing, platform: .iOS, versionID: "849000001")?.id, older.id)
+        XCTAssertNil(store.matchingDownloadJob(for: searchListing, platform: .iOS, versionID: "853114367"))
+        XCTAssertNil(store.matchingDownloadJob(for: searchListing, platform: .macOS))
+        XCTAssertEqual(
+            ToolStore.DownloadTargetKey(appID: "385907472", platform: .iOS, versionID: " "),
+            ToolStore.DownloadTargetKey(appID: "385907472", platform: .iOS, versionID: nil)
+        )
     }
 }
 

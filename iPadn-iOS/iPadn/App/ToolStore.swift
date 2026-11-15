@@ -156,6 +156,28 @@ final class ToolStore: ObservableObject {
         guard let id = apple.activeID else { errorMessage = "请先在「账号」中登录 Apple 账号"; return }
         verificationRequest = VerificationRequest(accountID: id, retry: retry)
     }
+    struct DownloadTargetKey: Hashable {
+        let appID: String
+        let platform: AppPlatform
+        let versionID: String?
+
+        init(appID: String, platform: AppPlatform, versionID: String? = nil) {
+            self.appID = appID
+            self.platform = platform
+            let trimmed = versionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            self.versionID = trimmed.isEmpty ? nil : trimmed
+        }
+    }
+    struct LoginPrompt: Identifiable {
+        let id = UUID()
+        let accountID: String?
+        let retry: (@MainActor () -> Void)?
+    }
+    @Published private(set) var preparingDownloads: Set<DownloadTargetKey> = []
+    @Published private(set) var resolvedLatestVersionIDs: [String: String] = [:]
+    @Published var installingJob: DownloadJob?
+    @Published var loginPrompt: LoginPrompt?
+    private var prepareTasks: [DownloadTargetKey: Task<Void, Never>] = [:]
     #if DEBUG
     private var visualPreview = false
     #endif
@@ -603,6 +625,9 @@ final class ToolStore: ObservableObject {
     private func accountChanged(to id: String?) {
         // Re-login and token refresh select the same account again: not a switch.
         guard id != lastAccountID else { return }
+        for task in prepareTasks.values { task.cancel() }
+        prepareTasks.removeAll()
+        preparingDownloads.removeAll()
         let previous = lastAccountID
         lastAccountID = id
         guard let id, let account = apple.accounts.first(where: { $0.id == id }) else {
@@ -1251,7 +1276,224 @@ final class ToolStore: ObservableObject {
             platform: settings.store.platform, appID: app.id, versionID: versionID))
     }
 
-    func startDownload(app: StoreApp, versionID: String?, marketingVersion: String? = nil) async throws {
+    func resolvedLatestVersionID(appID: String, platform: AppPlatform) -> String? {
+        resolvedLatestVersionIDs["\(platform.rawValue)|\(appID)"]
+    }
+
+    func isPreparingDownload(appID: String, platform: AppPlatform, versionID: String? = nil) -> Bool {
+        let direct = DownloadTargetKey(appID: appID, platform: platform, versionID: versionID)
+        if preparingDownloads.contains(direct) { return true }
+        if direct.versionID == nil, let latest = resolvedLatestVersionID(appID: appID, platform: platform) {
+            return preparingDownloads.contains(DownloadTargetKey(appID: appID, platform: platform, versionID: latest))
+        }
+        if let versionID = direct.versionID, versionID == resolvedLatestVersionID(appID: appID, platform: platform) {
+            return preparingDownloads.contains(DownloadTargetKey(appID: appID, platform: platform, versionID: nil))
+        }
+        return false
+    }
+
+    func cancelDownloadPreparation(appID: String, platform: AppPlatform, versionID: String? = nil) {
+        let direct = DownloadTargetKey(appID: appID, platform: platform, versionID: versionID)
+        var keys = [direct]
+        if direct.versionID == nil, let latest = resolvedLatestVersionID(appID: appID, platform: platform) {
+            keys.append(DownloadTargetKey(appID: appID, platform: platform, versionID: latest))
+        } else if let versionID = direct.versionID, versionID == resolvedLatestVersionID(appID: appID, platform: platform) {
+            keys.append(DownloadTargetKey(appID: appID, platform: platform, versionID: nil))
+        }
+        for key in keys {
+            prepareTasks.removeValue(forKey: key)?.cancel()
+            preparingDownloads.remove(key)
+        }
+    }
+
+    private func jobMatchesPlatform(_ job: DownloadJob, platform: AppPlatform) -> Bool {
+        if platform == .macOS { return job.rawFormat != nil }
+        guard job.rawFormat == nil else { return false }
+        return (job.updatePlatform ?? .iOS) == platform
+    }
+
+    private static func jobPriorityRank(_ status: DownloadStatus) -> Int {
+        switch status {
+        case .running, .queued, .pausing, .processing, .paused: return 3
+        case .completed: return 2
+        case .failed: return 1
+        }
+    }
+
+    func matchingDownloadJob(
+        for app: StoreApp,
+        platform: AppPlatform,
+        versionID: String? = nil,
+        treatOutdatedCompletedAsIdle: Bool = true
+    ) -> DownloadJob? {
+        let candidates = downloads.jobs.filter { $0.app.id == app.id && jobMatchesPlatform($0, platform: platform) }
+        guard !candidates.isEmpty else { return nil }
+        let explicitExt = versionID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetExt = (explicitExt?.isEmpty == false ? explicitExt : nil)
+            ?? (app.externalVersionID?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+            ?? resolvedLatestVersionID(appID: app.id, platform: platform)
+
+        let matched: [DownloadJob]
+        if let targetExt {
+            matched = candidates.filter { $0.resolvedExternalVersionID == targetExt }
+        } else {
+            let storeVersion = app.version.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !storeVersion.isEmpty && storeVersion != AppVersion.unknown {
+                matched = candidates.filter {
+                    let jobVersion = $0.userFacingVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return jobVersion == storeVersion || ($0.app.externalVersionID == nil && $0.status != .completed)
+                }
+            } else {
+                matched = candidates
+            }
+        }
+        guard let best = matched.max(by: { lhs, rhs in
+            Self.jobPriorityRank(lhs.status) < Self.jobPriorityRank(rhs.status)
+        }) else {
+            return nil
+        }
+        if treatOutdatedCompletedAsIdle, best.status == .completed,
+           explicitExt?.isEmpty != false,
+           let key = best.updateKey, availableUpdates[key] != nil {
+            return nil
+        }
+        return best
+    }
+
+    func triggerAppStoreAction(
+        for app: StoreApp,
+        platform: AppPlatform? = nil,
+        versionID: String? = nil,
+        marketingVersion: String? = nil,
+        treatOutdatedCompletedAsIdle: Bool = true,
+        onEnqueued: (@MainActor () -> Void)? = nil,
+        onRequireVerification: (@MainActor () -> Void)? = nil,
+        onRequireReauthentication: (@MainActor (String?) -> Void)? = nil
+    ) {
+        let targetPlatform = platform ?? settings.store.platform
+        if let versionID, !versionID.isEmpty, !versionID.allSatisfy({ $0.isASCII && $0.isNumber }) {
+            errorMessage = AppText.text("版本 ID 只能包含数字")
+            return
+        }
+        if isPreparingDownload(appID: app.id, platform: targetPlatform, versionID: versionID) {
+            cancelDownloadPreparation(appID: app.id, platform: targetPlatform, versionID: versionID)
+            return
+        }
+        if let job = matchingDownloadJob(for: app, platform: targetPlatform, versionID: versionID,
+                                         treatOutdatedCompletedAsIdle: treatOutdatedCompletedAsIdle) {
+            switch job.status {
+            case .queued, .running:
+                downloads.pause(job.id)
+                return
+            case .pausing, .processing:
+                if job.protectedMacPackage == true { downloads.cancelProcessing(job.id) }
+                return
+            case .paused:
+                downloads.resume(job.id)
+                return
+            case .completed:
+                if job.rawFormat == nil {
+                    installingJob = job
+                } else {
+                    tab = 1
+                }
+                return
+            case .failed:
+                if job.asset != nil {
+                    let key = DownloadTargetKey(appID: app.id, platform: targetPlatform, versionID: versionID ?? job.resolvedExternalVersionID)
+                    runDownloadPreparation(
+                        key: key,
+                        onRequireVerification: onRequireVerification,
+                        onRequireReauthentication: onRequireReauthentication,
+                        retry: {
+                            self.triggerAppStoreAction(
+                                for: app, platform: targetPlatform, versionID: versionID,
+                                marketingVersion: marketingVersion,
+                                treatOutdatedCompletedAsIdle: treatOutdatedCompletedAsIdle,
+                                onEnqueued: onEnqueued
+                            )
+                        },
+                        operation: {
+                            try await SAPSigner.$userInitiated.withValue(true) {
+                                try await self.refreshDownload(job, switchToDownloadsTab: false)
+                            }
+                            onEnqueued?()
+                        }
+                    )
+                    return
+                } else {
+                    downloads.resume(job.id)
+                    return
+                }
+            }
+        }
+        let retryAction: @MainActor () -> Void = {
+            self.triggerAppStoreAction(
+                for: app, platform: targetPlatform, versionID: versionID,
+                marketingVersion: marketingVersion,
+                treatOutdatedCompletedAsIdle: treatOutdatedCompletedAsIdle,
+                onEnqueued: onEnqueued
+            )
+        }
+        guard apple.active != nil else {
+            if let onRequireReauthentication {
+                onRequireReauthentication(nil)
+            } else {
+                loginPrompt = LoginPrompt(accountID: nil, retry: retryAction)
+            }
+            return
+        }
+        let targetVersionID = versionID?.isEmpty == true ? nil : versionID
+        let key = DownloadTargetKey(appID: app.id, platform: targetPlatform, versionID: targetVersionID)
+        runDownloadPreparation(
+            key: key,
+            onRequireVerification: onRequireVerification,
+            onRequireReauthentication: onRequireReauthentication,
+            retry: retryAction,
+            operation: {
+                if targetPlatform.supportsIPA {
+                    try await self.startDownload(app: app, versionID: targetVersionID, marketingVersion: marketingVersion,
+                                                 switchToDownloadsTab: false)
+                } else {
+                    let offer = try await SAPSigner.$userInitiated.withValue(true) {
+                        try await self.apple.macPackageOffer(app, versionID: targetVersionID, useCache: self.settings.useSignerCache)
+                    }
+                    try Task.checkCancellation()
+                    try self.downloads.enqueueOfficialMacPackage(offer, for: app)
+                }
+                onEnqueued?()
+            }
+        )
+    }
+
+    private func runDownloadPreparation(
+        key: DownloadTargetKey,
+        onRequireVerification: (@MainActor () -> Void)?,
+        onRequireReauthentication: (@MainActor (String?) -> Void)?,
+        retry: @escaping @MainActor () -> Void,
+        operation: @escaping @MainActor () async throws -> Void
+    ) {
+        guard prepareTasks[key] == nil else { return }
+        preparingDownloads.insert(key)
+        prepareTasks[key] = Task {
+            defer {
+                preparingDownloads.remove(key)
+                prepareTasks.removeValue(forKey: key)
+            }
+            do {
+                try await operation()
+            } catch AppleLoginError.verificationRequired {
+                if let onRequireVerification { onRequireVerification() }
+                else { requestVerification(retry: retry) }
+            } catch AppleAuthError.reauthenticationRequired {
+                if let onRequireReauthentication { onRequireReauthentication(apple.activeID) }
+                else { loginPrompt = LoginPrompt(accountID: apple.activeID, retry: retry) }
+            } catch is CancellationError { }
+            catch { errorMessage = error.localizedDescription }
+        }
+    }
+
+    func startDownload(app: StoreApp, versionID: String?, marketingVersion: String? = nil, switchToDownloadsTab: Bool = false) async throws {
         var asset = try await SAPSigner.$userInitiated.withValue(true) {
             try await apple.asset(appID: app.id, versionID: versionID, store: settings.store, useCache: settings.useSignerCache)
         }
@@ -1266,6 +1508,11 @@ final class ToolStore: ObservableObject {
             }
         }
         try downloads.enqueue(asset)
+        if versionID == nil,
+           let extID = asset.app.externalVersionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !extID.isEmpty {
+            resolvedLatestVersionIDs["\(settings.store.platform.rawValue)|\(app.id)"] = extID
+        }
         // A delisted app's only artwork may arrive with the download itself.
         if let icon = asset.app.iconURL {
             func patched(_ apps: [StoreApp]) -> [StoreApp] {
@@ -1274,7 +1521,7 @@ final class ToolStore: ObservableObject {
             results = patched(results)
             localResults = patched(localResults)
         }
-        tab = 1
+        if switchToDownloadsTab { tab = 1 }
     }
 
     /// Compares finished downloads with the store's current versions. Runs
@@ -1555,7 +1802,7 @@ final class ToolStore: ObservableObject {
         return (added, failures)
     }
 
-    func refreshDownload(_ job: DownloadJob) async throws {
+    func refreshDownload(_ job: DownloadJob, switchToDownloadsTab: Bool = true) async throws {
         guard job.status == .failed, job.asset != nil else { throw ToolError.message(AppText.text("此任务无法重试")) }
         guard apple.activeID == job.account else { throw ToolError.message(AppText.text("请先切换至原下载账号：\(job.account ?? "")")) }
         let platform: AppPlatform
@@ -1570,7 +1817,7 @@ final class ToolStore: ObservableObject {
             asset.app.storeMarketingVersion = job.resolvedMarketingVersion
         }
         try downloads.refreshFailed(job.id, asset: asset)
-        tab = 1
+        if switchToDownloadsTab { tab = 1 }
     }
 
     func refreshOwned() async {
