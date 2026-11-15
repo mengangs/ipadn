@@ -323,13 +323,22 @@ enum StoreService {
                 if firstError == nil { firstError = error }
             }
         }
+        guard !icons.isEmpty || firstError == nil else {
+            if let firstError { throw firstError }
+            return [:]
+        }
         if icons.isEmpty, let firstError { throw firstError }
         return icons
     }
 
     /// Current listings for many App IDs at once: the lookup API takes a list.
     /// `nativeMac` names the IDs whose listing is a Mac app.
-    static func lookup(ids: [String], country: String) async throws -> (apps: [String: StoreApp], nativeMac: Set<String>) {
+    static func lookup(
+        ids: [String],
+        country: String,
+        timeoutInterval: TimeInterval? = nil,
+        retryTransient: Bool? = nil
+    ) async throws -> (apps: [String: StoreApp], nativeMac: Set<String>) {
         let ids = ids.filter { UInt64($0).map { $0 > 0 } == true }
         let chunks = stride(from: 0, to: ids.count, by: 100).map { Array(ids[$0..<min($0 + 100, ids.count)]) }
         var found: [String: StoreApp] = [:]
@@ -338,24 +347,103 @@ enum StoreService {
         try await withThrowingTaskGroup(of: [(app: StoreApp, mac: Bool)].self) { group in
             var pending = chunks.makeIterator()
             for _ in 0..<4 {
-                if let chunk = pending.next() { group.addTask { try await lookupChunk(chunk, country: country) } }
+                if let chunk = pending.next() {
+                    group.addTask { try await lookupChunk(chunk, country: country, timeoutInterval: timeoutInterval, retryTransient: retryTransient) }
+                }
             }
             while let rows = try await group.next() {
                 for row in rows {
                     found[row.app.id] = row.app
                     if row.mac { nativeMac.insert(row.app.id) }
                 }
-                if let chunk = pending.next() { group.addTask { try await lookupChunk(chunk, country: country) } }
+                if let chunk = pending.next() {
+                    group.addTask { try await lookupChunk(chunk, country: country, timeoutInterval: timeoutInterval, retryTransient: retryTransient) }
+                }
             }
         }
         return (found, nativeMac)
     }
 
-    private static func lookupChunk(_ chunk: [String], country: String) async throws -> [(app: StoreApp, mac: Bool)] {
+    enum DelistedVerification: Equatable, Sendable {
+        case listed
+        case delisted
+        case inconclusive
+    }
+
+    /// Verifies across storefronts whether candidate IDs are genuinely delisted.
+    /// Returns `.listed` as soon as any checked storefront lists the ID (preventing
+    /// region-limited apps from being misclassified), `.delisted` only when every
+    /// checked storefront answers cleanly without errors and omits the ID, and
+    /// `.inconclusive` on cancellation or unrecovered request failure.
+    static func verifyDelistedStatuses(
+        ids: [String],
+        store: StoreContext,
+        accountCountry: String?,
+        fetcher: (@Sendable ([String], String) async throws -> [String: StoreApp])? = nil
+    ) async -> [String: DelistedVerification] {
+        let validIDs = Array(Set(ids.filter { UInt64($0).map { $0 > 0 } == true })).sorted()
+        guard !validIDs.isEmpty else { return [:] }
+        var seenCountry = Set<String>()
+        let countries = (searchCountries(selected: store.country, accountCountry: accountCountry) + fallbackCountries)
+            .filter { seenCountry.insert($0).inserted }
+        var remaining = Set(validIDs)
+        var statuses: [String: DelistedVerification] = [:]
+        var hadFailure = false
+        let runLookup: @Sendable ([String], String) async throws -> [String: StoreApp] = fetcher ?? { batch, country in
+            try await lookup(ids: batch, country: country, timeoutInterval: 4, retryTransient: false).apps
+        }
+
+        func probeWave(batch: [String], targetCountries: [String]) async -> [String] {
+            var failedCountries: [String] = []
+            await withTaskGroup(of: (String, Result<[String: StoreApp], Error>).self) { group in
+                for country in targetCountries {
+                    group.addTask {
+                        do { return (country, .success(try await runLookup(batch, country))) }
+                        catch { return (country, .failure(error)) }
+                    }
+                }
+                for await (country, result) in group {
+                    switch result {
+                    case .success(let found):
+                        for id in found.keys where remaining.remove(id) != nil {
+                            statuses[id] = .listed
+                        }
+                        if remaining.isEmpty {
+                            group.cancelAll()
+                            break
+                        }
+                    case .failure:
+                        failedCountries.append(country)
+                    }
+                }
+            }
+            return failedCountries
+        }
+
+        // Query all candidate storefronts concurrently with a tight fail-fast timeout,
+        // then retry only failed storefronts once for unresolved IDs so a single transient
+        // blip does not leave genuinely delisted matches unpromoted.
+        let failedOnFirstWave = await probeWave(batch: Array(remaining), targetCountries: countries)
+        if !remaining.isEmpty, !failedOnFirstWave.isEmpty, !Task.isCancelled {
+            let failedOnRetry = await probeWave(batch: Array(remaining), targetCountries: failedOnFirstWave)
+            if !failedOnRetry.isEmpty { hadFailure = true }
+        }
+        for id in remaining {
+            statuses[id] = (!hadFailure && !Task.isCancelled) ? .delisted : .inconclusive
+        }
+        return statuses
+    }
+
+    private static func lookupChunk(
+        _ chunk: [String],
+        country: String,
+        timeoutInterval: TimeInterval? = nil,
+        retryTransient: Bool? = nil
+    ) async throws -> [(app: StoreApp, mac: Bool)] {
         let url = try endpoint("https://itunes.apple.com/lookup", items: [
             URLQueryItem(name: "id", value: chunk.joined(separator: ",")), URLQueryItem(name: "country", value: country)
         ])
-        let rows = (try await HTTPClient.shared.json(url) as? [String: Any])?["results"] as? [[String: Any]] ?? []
+        let rows = (try await HTTPClient.shared.json(url, timeoutInterval: timeoutInterval, retryTransient: retryTransient) as? [String: Any])?["results"] as? [[String: Any]] ?? []
         return rows.compactMap { row in
             let app = mapLookup(row)
             guard chunk.contains(app.id) else { return nil }
@@ -630,23 +718,44 @@ enum MacStoreOfferService {
 }
 
 actor VersionService {
-    struct Cache: Codable { var savedAt: Date; var versions: [AppVersion] }
+    struct Cache: Codable {
+        var savedAt: Date
+        var versions: [AppVersion]
+        var complete: Bool? = nil
+    }
     private var cache = LocalResources.load([String: Cache].self, filename: LocalResources.versionsFilename) ?? [:]
     private var cacheRevision = UUID()
+
+    private static func cacheKey(appID: String, enabledSources: [VersionSource]) -> String {
+        let sourceKey = enabledSources.map { "\($0.name)|\($0.urlTemplate)|\($0.containerKey)|\($0.reverse)" }.joined(separator: ";")
+        return "v3|" + appID + "|" + sourceKey
+    }
+
+    func cachedVersionMap(appID: String, sources: [VersionSource]) -> [String: String] {
+        let key = Self.cacheKey(appID: appID, enabledSources: sources.filter(\.enabled))
+        guard let versions = cache[key]?.versions else { return [:] }
+        var map: [String: String] = [:]
+        for item in versions {
+            map[item.id] = Self.preferredVersion(item.version, over: map[item.id] ?? AppVersion.unknown, rejectingID: item.id)
+        }
+        return map
+    }
 
     func thirdParty(_ appID: String, sources: [VersionSource], force: Bool = false) async throws -> [AppVersion] {
         guard !appID.isEmpty, appID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message(AppText.text("App ID 必须是数字")) }
         let enabled = sources.filter(\.enabled)
         guard !enabled.isEmpty else { throw ToolError.message(AppText.text("请在设置中启用至少一个版本来源")) }
-        let sourceKey = enabled.map { "\($0.name)|\($0.urlTemplate)|\($0.containerKey)|\($0.reverse)" }.joined(separator: ";")
-        let key = "v2|" + appID + "|" + sourceKey
-        if !force, let entry = cache[key], Date().timeIntervalSince(entry.savedAt) < 24 * 3600 { return entry.versions }
+        let key = Self.cacheKey(appID: appID, enabledSources: enabled)
+        if !force, let entry = cache[key] {
+            let ttl: TimeInterval = entry.complete == false ? 10 * 60 : 24 * 3600
+            if Date().timeIntervalSince(entry.savedAt) < ttl { return entry.versions }
+        }
         let revision = cacheRevision
         // Complete every enabled query. Taking the first provider to respond
         // makes the version list depend on network timing and hides unique IDs.
-        let sourceResults = await withTaskGroup(
+        let (sourceResults, allSucceeded) = await withTaskGroup(
             of: (Int, Result<[AppVersion], Error>).self,
-            returning: [[AppVersion]].self
+            returning: ([[AppVersion]], Bool).self
         ) { group in
             for (index, source) in enabled.enumerated() {
                 group.addTask {
@@ -655,10 +764,14 @@ actor VersionService {
                 }
             }
             var lists = Array(repeating: [AppVersion](), count: enabled.count)
+            var complete = true
             for await (index, result) in group {
-                if case .success(let versions) = result { lists[index] = versions }
+                switch result {
+                case .success(let versions): lists[index] = versions
+                case .failure: complete = false
+                }
             }
-            return lists
+            return (lists, complete)
         }
         try Task.checkCancellation()
         let versions = Self.mergeSourceResults(sourceResults)
@@ -675,17 +788,42 @@ actor VersionService {
             throw VersionListUnavailableError()
         }
         if revision == cacheRevision {
-            cache = cache.filter { Date().timeIntervalSince($0.value.savedAt) < 7 * 86400 }
+            cache = cache.filter { $0.key.hasPrefix("v3|") && Date().timeIntervalSince($0.value.savedAt) < 7 * 86400 }
             if cache.count >= 200 {
                 // Also shrink oversized caches created by earlier versions in one pass.
                 cache = Dictionary(uniqueKeysWithValues: cache.sorted { $0.value.savedAt > $1.value.savedAt }
                     .prefix(199).map { ($0.key, $0.value) })
             }
-            cache[key] = Cache(savedAt: Date(), versions: versions)
+            cache[key] = Cache(savedAt: Date(), versions: versions, complete: allSucceeded)
             // A disposable cache write failure must not hide a valid server result.
             try? LocalResources.save(cache, filename: LocalResources.versionsFilename)
         }
         return versions
+    }
+
+    /// Upgrades cached third-party version strings in place when a trustworthy
+    /// storefront or Apple source resolves a higher-preference version number.
+    func reconcile(appID: String, versionID: String, version: String) {
+        let normalized = Self.sanitizedVersion(version, rejectingID: versionID)
+        guard normalized != AppVersion.unknown else { return }
+        var changed = false
+        for (key, var entry) in cache where key.hasPrefix("v3|\(appID)|") {
+            var updated = false
+            for index in entry.versions.indices where entry.versions[index].id == versionID {
+                let better = Self.preferredVersion(normalized, over: entry.versions[index].version, rejectingID: versionID)
+                if better != entry.versions[index].version {
+                    entry.versions[index].version = better
+                    updated = true
+                }
+            }
+            if updated {
+                cache[key] = entry
+                changed = true
+            }
+        }
+        if changed {
+            try? LocalResources.save(cache, filename: LocalResources.versionsFilename)
+        }
     }
 
     static func sanitizedVersion(_ raw: String, rejectingID: String? = nil) -> String {
@@ -701,10 +839,27 @@ actor VersionService {
         return trimmed
     }
 
-    static func versionPreference(_ raw: String) -> Int {
-        let value = sanitizedVersion(raw)
+    static func versionPreference(_ raw: String, rejectingID: String? = nil) -> Int {
+        let value = sanitizedVersion(raw, rejectingID: rejectingID)
         guard value != AppVersion.unknown else { return 0 }
-        return value.contains(".") ? 2 : 1
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        let numericSegments = parts.filter { $0.contains(where: { $0.isASCII && $0.isNumber }) }.count
+        return parts.count >= 2 && numericSegments >= 2 ? 2 : 1
+    }
+
+    static func preferredVersion(_ candidate: String, over current: String, rejectingID: String? = nil) -> String {
+        let next = sanitizedVersion(candidate, rejectingID: rejectingID)
+        let existing = sanitizedVersion(current, rejectingID: rejectingID)
+        let nextScore = versionPreference(next, rejectingID: rejectingID)
+        let currentScore = versionPreference(existing, rejectingID: rejectingID)
+        if nextScore > currentScore { return next }
+        return existing != AppVersion.unknown ? existing : next
+    }
+
+    static func bestVersion(_ candidates: [String], rejectingID: String? = nil) -> String {
+        candidates.reduce(AppVersion.unknown) { current, candidate in
+            preferredVersion(candidate, over: current, rejectingID: rejectingID)
+        }
     }
 
     static func mergeSourceResults(_ sources: [[AppVersion]]) -> [AppVersion] {
@@ -715,11 +870,9 @@ actor VersionService {
         for source in sources {
             for rawVersion in source where !rawVersion.id.isEmpty {
                 var version = rawVersion
-                version.version = sanitizedVersion(version.version)
+                version.version = sanitizedVersion(version.version, rejectingID: version.id)
                 if let index = indices[version.id] {
-                    if versionPreference(version.version) > versionPreference(result[index].version) {
-                        result[index].version = version.version
-                    }
+                    result[index].version = preferredVersion(version.version, over: result[index].version, rejectingID: version.id)
                     if !result[index].source.components(separatedBy: "、").contains(version.source) {
                         result[index].source += AppText.text("、") + version.source
                     }

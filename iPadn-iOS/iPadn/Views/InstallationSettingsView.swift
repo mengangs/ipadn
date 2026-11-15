@@ -417,9 +417,18 @@ private struct PairingGuideView: View {
         let current = step == number
         return HStack(alignment: .top, spacing: 12) {
             ZStack {
-                Circle().fill(done || current ? Color.accentColor : Color.secondary.opacity(0.25)).frame(width: 26, height: 26)
-                if done { Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(.white) }
-                else { Text("\(number)").font(.caption.weight(.bold)).foregroundStyle(current ? .white : .secondary) }
+                Circle()
+                    .fill(done || current ? UX.tint : Color(.tertiarySystemFill))
+                    .frame(width: 26, height: 26)
+                if done {
+                    Image(systemName: "checkmark")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(UX.onAccent)
+                } else {
+                    Text("\(number)")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(current ? UX.onAccent : Color(.label).opacity(0.75))
+                }
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.body.weight(current ? .semibold : .regular))
@@ -428,6 +437,7 @@ private struct PairingGuideView: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("installation.pairing-step.\(number)")
     }
     /// The Developer Mode page when the system allows it, else Settings.
     private func openSettings() {

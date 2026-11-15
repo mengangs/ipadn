@@ -48,7 +48,7 @@ struct VersionDateRange: Equatable {
         var inspected = 0
         var unknownDates = 0
         func record(_ version: AppVersion, _ value: VersionMetadata?) {
-            let number = value?.version ?? version.version
+            let number = VersionService.preferredVersion(value?.version ?? "", over: version.version, rejectingID: version.id)
             if let date = value?.released ?? notes[number] {
                 if range.contains(date) { dated.append((version, date)) }
             } else { unknownDates += 1 }

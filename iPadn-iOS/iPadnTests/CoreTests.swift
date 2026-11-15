@@ -2247,5 +2247,250 @@ final class CoreTests: XCTestCase {
             XCTAssertTrue(DownloadActivity.shouldSend(faster, after: state, elapsed: 1.0))
         }
     }
+
+    func testOPlayerVersionPrecedenceAndReconciliationKeepTrustedVersions() async throws {
+        // Real-world OPlayer Lite cases: 857150582 ("4.8" vs "4800") and 853114367 ("4.7.2" vs "4720").
+        XCTAssertGreaterThan(VersionService.versionPreference("4.8", rejectingID: "857150582"),
+                             VersionService.versionPreference("4800", rejectingID: "857150582"))
+        XCTAssertGreaterThan(VersionService.versionPreference("4.7.2", rejectingID: "853114367"),
+                             VersionService.versionPreference("4720", rejectingID: "853114367"))
+        XCTAssertEqual(VersionService.versionPreference("4800."), 1)
+        XCTAssertEqual(VersionService.preferredVersion("4800", over: "4.8", rejectingID: "857150582"), "4.8")
+        XCTAssertEqual(VersionService.preferredVersion("4.8", over: "4800", rejectingID: "857150582"), "4.8")
+        XCTAssertEqual(VersionService.bestVersion(["4720", "未知版本", "4.7.2"], rejectingID: "853114367"), "4.7.2")
+        XCTAssertEqual(VersionService.bestVersion(["4100", AppVersion.unknown], rejectingID: "834116228"), "4100",
+                       "Dotless versions remain fallback when no dotted version exists")
+
+        // Reading an IPA whose Info.plist carries "4800" must not downgrade Apple's ticket version "4.8".
+        let ipa = FileManager.default.temporaryDirectory.appendingPathComponent("reconcile-" + UUID().uuidString + ".ipa")
+        defer { try? FileManager.default.removeItem(at: ipa) }
+        let archive = try Archive(url: ipa, accessMode: .create)
+        let plistData = try HTTPClient.encodePlist(["CFBundleShortVersionString": "4800"])
+        try archive.addEntry(with: "Payload/OPlayerLite.app/Info.plist", type: .file, uncompressedSize: Int64(plistData.count),
+                             compressionMethod: .deflate, provider: { pos, len in plistData.subdata(in: Int(pos)..<Int(pos) + len) })
+        let reader = MemoryRangeReader(data: try Data(contentsOf: ipa))
+
+        let raw = try await RemoteZip.versionResources(reader, includingIcon: false)
+        XCTAssertEqual(raw.metadata.version, "4800")
+
+        let streamedVersions = LockedList<String>()
+        let reconciled = try await RemoteZip.versionResources(reader, includingIcon: false, preferredVersion: "4.8") { partial in
+            streamedVersions.append(partial.version)
+        }
+        XCTAssertEqual(streamedVersions.values, ["4.8"])
+        XCTAssertEqual(reconciled.metadata.version, "4.8")
+
+        // A dotless record without ticketChecked re-checks Apple ticket metadata once, then stays cached.
+        let store = VersionMetadataStore()
+        let key = "oplayer-" + UUID().uuidString
+        let unverifiedCalls = LockedCount()
+        _ = try await store.load(key, requiringPackageSize: true, requiringIcon: false) {
+            unverifiedCalls.increment()
+            return VersionMetadata(version: "4800", released: nil, packageSize: 107_223_040, iconAvailable: false, ticketChecked: nil)
+        }
+        XCTAssertEqual(unverifiedCalls.value, 1)
+
+        // Because ticketChecked was nil and version was dotless, one verification runs and upgrades to "4.8".
+        let upgraded = try await store.load(key, requiringPackageSize: true, requiringIcon: false) {
+            unverifiedCalls.increment()
+            return VersionMetadata(version: "4.8", released: nil, packageSize: 107_223_040, iconAvailable: false, ticketChecked: true)
+        }
+        XCTAssertEqual(upgraded.version, "4.8")
+        XCTAssertEqual(unverifiedCalls.value, 2)
+
+        // Subsequent reads serve the settled "4.8" from cache without another network check.
+        let cachedHit = try await store.load(key, requiringPackageSize: true, requiringIcon: false) {
+            unverifiedCalls.increment()
+            return VersionMetadata(version: "9.9.9", released: nil, packageSize: 1, iconAvailable: false, ticketChecked: true)
+        }
+        XCTAssertEqual(cachedHit.version, "4.8")
+        XCTAssertEqual(unverifiedCalls.value, 2)
+    }
+
+    func testToolSettingsDecodesPrioritizeDelistedSearchResultsWithDefaultTrue() throws {
+        let defaults = ToolSettings()
+        XCTAssertTrue(defaults.prioritizeDelistedSearchResults)
+
+        let legacy = try JSONDecoder().decode(ToolSettings.self, from: Data(#"{"searchLimit":50}"#.utf8))
+        XCTAssertTrue(legacy.prioritizeDelistedSearchResults)
+
+        var disabled = ToolSettings()
+        disabled.prioritizeDelistedSearchResults = false
+        let roundTrip = try JSONDecoder().decode(ToolSettings.self, from: JSONEncoder().encode(disabled))
+        XCTAssertFalse(roundTrip.prioritizeDelistedSearchResults)
+    }
+
+    func testDelistedSearchPrioritizationPreservesRelevanceAndRejectsFalsePositives() async {
+        // 1. Confirmed delisted exact match promotes ahead of live partial matches when enabled.
+        var forwardDelisted = StoreApp(id: "6503940939", name: "Forward", price: "")
+        forwardDelisted.delisted = true
+        let liveRemote = [
+            StoreApp(id: "1", name: "Forward Mail", price: ""),
+            StoreApp(id: "2", name: "Port Forward Utility", price: "")
+        ]
+        let promoted = AppSearchRanking.arrange(
+            remote: liveRemote,
+            local: [forwardDelisted],
+            aliasesByID: ["6503940939": ["Forward - AI Media Hub", "新视界"]],
+            query: "Forward",
+            prioritizeDelisted: true
+        )
+        XCTAssertEqual(promoted.results.map(\.id), ["6503940939", "1", "2"])
+        XCTAssertTrue(promoted.localResults.isEmpty)
+
+        // Turning the switch off restores the original live results order and separate local group.
+        let original = AppSearchRanking.arrange(
+            remote: liveRemote,
+            local: [forwardDelisted],
+            aliasesByID: ["6503940939": ["Forward - AI Media Hub", "新视界"]],
+            query: "Forward",
+            prioritizeDelisted: false
+        )
+        XCTAssertEqual(original.results.map(\.id), ["1", "2"])
+        XCTAssertEqual(original.localResults.map(\.id), ["6503940939"])
+
+        // 2. Weak substring delisted match stays below stronger exact live matches while rising above weak live ones.
+        var helperDelisted = StoreApp(id: "9001", name: "WeChat Backup Helper", price: "")
+        helperDelisted.delisted = true
+        let wechatRemote = [
+            StoreApp(id: "414478124", name: "WeChat", price: ""),
+            StoreApp(id: "414478125", name: "My WeChat Theme Pack", price: "")
+        ]
+        let ranked = AppSearchRanking.arrange(
+            remote: wechatRemote,
+            local: [helperDelisted],
+            query: "WeChat",
+            prioritizeDelisted: true
+        )
+        XCTAssertEqual(ranked.results.map(\.id), ["414478124", "9001", "414478125"])
+
+        // 3. Verification rejects region-limited apps and transient request failures as non-delisted.
+        let context = StoreContext(country: "CN", platform: .iOS)
+        let regionLimitedStatuses = await StoreService.verifyDelistedStatuses(
+            ids: ["932747118", "6503940939"],
+            store: context,
+            accountCountry: "CN"
+        ) { _, country in
+            if country == "US" {
+                return ["932747118": StoreApp(id: "932747118", name: "Shadowrocket", price: "$2.99")]
+            }
+            return [:]
+        }
+        XCTAssertEqual(regionLimitedStatuses["932747118"], .listed, "Available in US storefront must never be marked delisted")
+        XCTAssertEqual(regionLimitedStatuses["6503940939"], .delisted)
+
+        let errorStatuses = await StoreService.verifyDelistedStatuses(
+            ids: ["6503940939"],
+            store: context,
+            accountCountry: "CN"
+        ) { _, country in
+            if country == "JP" { throw HTTPStatusError(code: 503) }
+            return [:]
+        }
+        XCTAssertEqual(errorStatuses["6503940939"], .inconclusive, "Persistent HTTP failures must never mark an app delisted")
+
+        // 4. Single-storefront transient failure recovers cleanly on retry without masking delisted matches.
+        let jpAttempts = LockedCount()
+        let recoveredStatuses = await StoreService.verifyDelistedStatuses(
+            ids: ["6503940939"],
+            store: context,
+            accountCountry: "CN"
+        ) { _, country in
+            if country == "JP", jpAttempts.next() == 1 { throw HTTPStatusError(code: 503) }
+            return [:]
+        }
+        XCTAssertEqual(jpAttempts.value, 2)
+        XCTAssertEqual(recoveredStatuses["6503940939"], .delisted)
+    }
+
+    func testPairingBadgeColorsMeetContrastInLightAndDarkModes() throws {
+        func relativeLuminance(_ color: UIColor, traits: UITraitCollection, over backdrop: UIColor? = nil) -> CGFloat {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            XCTAssertTrue(color.resolvedColor(with: traits).getRed(&r, green: &g, blue: &b, alpha: &a))
+            if let backdrop, a < 1 {
+                var br: CGFloat = 0, bg: CGFloat = 0, bb: CGFloat = 0, ba: CGFloat = 0
+                XCTAssertTrue(backdrop.resolvedColor(with: traits).getRed(&br, green: &bg, blue: &bb, alpha: &ba))
+                r = r * a + br * (1 - a)
+                g = g * a + bg * (1 - a)
+                b = b * a + bb * (1 - a)
+            }
+            func linear(_ c: CGFloat) -> CGFloat { c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+            return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+        }
+        func contrast(_ a: CGFloat, _ b: CGFloat) -> CGFloat {
+            (max(a, b) + 0.05) / (min(a, b) + 0.05)
+        }
+        let accent = try XCTUnwrap(UIColor(named: "AccentColor", in: Bundle(for: ToolStore.self), compatibleWith: nil) ?? UIColor(named: "AccentColor"))
+        let onAccent = UIColor.systemBackground
+        let groupedBg = UIColor.secondarySystemGroupedBackground
+        let inactiveFill = UIColor.tertiarySystemFill
+
+        for style in [UIUserInterfaceStyle.light, UIUserInterfaceStyle.dark] {
+            let traits = UITraitCollection(userInterfaceStyle: style)
+            let inactiveText = UIColor.label.resolvedColor(with: traits).withAlphaComponent(0.75)
+            let activeRatio = contrast(
+                relativeLuminance(onAccent, traits: traits),
+                relativeLuminance(accent, traits: traits)
+            )
+            XCTAssertGreaterThanOrEqual(activeRatio, 7.0, "Active pairing step badge must stay high-contrast in style \(style.rawValue)")
+
+            let inactiveBgLum = relativeLuminance(inactiveFill, traits: traits, over: groupedBg)
+            let inactiveFgLum = relativeLuminance(inactiveText, traits: traits, over: groupedBg)
+            let inactiveRatio = contrast(inactiveFgLum, inactiveBgLum)
+            XCTAssertGreaterThanOrEqual(inactiveRatio, 4.5, "Inactive pairing step badge must meet WCAG AA contrast in style \(style.rawValue)")
+        }
+    }
+
+    func testVersionMetadataStoreUpgradesCachedDotlessEntriesWithKnownVersion() async throws {
+        let store = VersionMetadataStore()
+        let key48 = "iOS|385907472-" + UUID().uuidString + "|857150582"
+        let key472 = "iOS|385907472-" + UUID().uuidString + "|853114367"
+
+        // Seed a dotless settled record (e.g. from an earlier query without knownVersion).
+        _ = try await store.load(key48, requiringPackageSize: true, requiringIcon: false) {
+            VersionMetadata(version: "4800", released: nil, packageSize: 65_000_000, iconAvailable: false, ticketChecked: true)
+        }
+        let upgradedHit = try await store.load(key48, requiringPackageSize: true, requiringIcon: false, knownVersion: "4.8") {
+            XCTFail("Upgrading settled dotless cache with knownVersion must not re-fetch")
+            return VersionMetadata(version: "4800", released: nil, packageSize: 65_000_000)
+        }
+        XCTAssertEqual(upgradedHit.version, "4.8")
+        let cachedAfterHit = await store.cached(key48)
+        XCTAssertEqual(cachedAfterHit?.version, "4.8")
+
+        // Version ID must never replace an already resolved version number.
+        let preserved = try await store.load(key48, requiringPackageSize: false, requiringIcon: false, knownVersion: "857150582") {
+            XCTFail("Version ID fallback must not re-fetch")
+            return VersionMetadata(version: "857150582", released: nil)
+        }
+        XCTAssertEqual(preserved.version, "4.8")
+
+        // When a fetch still returns a dotless build string, knownVersion takes precedence.
+        let resolvedFetch = try await store.load(key472, requiringPackageSize: true, requiringIcon: false, knownVersion: "4.7.2") {
+            VersionMetadata(version: "4720", released: nil, packageSize: 60_900_000, iconAvailable: false, ticketChecked: true)
+        }
+        XCTAssertEqual(resolvedFetch.version, "4.7.2")
+
+        try await store.clearCache()
+        let cleared48 = await store.cached(key48)
+        let cleared472 = await store.cached(key472)
+        XCTAssertNil(cleared48)
+        XCTAssertNil(cleared472)
+    }
+}
+
+private final class LockedCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage = 0
+    var value: Int { lock.lock(); defer { lock.unlock() }; return storage }
+    func increment() { lock.lock(); storage += 1; lock.unlock() }
+    func next() -> Int { lock.lock(); defer { lock.unlock() }; storage += 1; return storage }
+}
+
+private final class LockedList<Element: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [Element] = []
+    var values: [Element] { lock.lock(); defer { lock.unlock() }; return storage }
+    func append(_ element: Element) { lock.lock(); storage.append(element); lock.unlock() }
 }
 

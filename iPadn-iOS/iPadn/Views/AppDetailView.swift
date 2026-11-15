@@ -87,7 +87,25 @@ struct AppDetailView: View {
         }
     }
     private func versionInfo(_ id: String) -> VersionMetadata? { metadata[id] ?? dateQuery.values[id] }
-    private func displayVersion(_ version: AppVersion) -> String { versionInfo(version.id)?.version ?? version.version }
+    private func displayVersion(_ version: AppVersion) -> String {
+        let metaVersion = versionInfo(version.id)?.version ?? AppVersion.unknown
+        return VersionService.preferredVersion(metaVersion, over: version.version, rejectingID: version.id)
+    }
+
+    private func reconcileVersionDisplay(_ incoming: VersionMetadata, for versionID: String) {
+        let rowVersion = versions.first(where: { $0.id == versionID })?.version ?? AppVersion.unknown
+        let currentMetaVersion = metadata[versionID]?.version ?? AppVersion.unknown
+        let resolvedVersion = VersionService.bestVersion([incoming.version, currentMetaVersion, rowVersion], rejectingID: versionID)
+        var updated = incoming
+        if resolvedVersion != AppVersion.unknown { updated.version = resolvedVersion }
+        metadata[versionID] = updated
+        if resolvedVersion != AppVersion.unknown,
+           let index = versions.firstIndex(where: { $0.id == versionID }),
+           VersionService.versionPreference(resolvedVersion, rejectingID: versionID) >
+           VersionService.versionPreference(versions[index].version, rejectingID: versionID) {
+            versions[index].version = resolvedVersion
+        }
+    }
     /// Lists from Apple carry only version IDs; each row then reads its own
     /// number and date. Other lists use what is already known.
     /// Apple's list needs a signed-in account; otherwise the public list is shown.
@@ -657,15 +675,23 @@ struct AppDetailView: View {
         guard let range = VersionDateRange(from: dateFrom, through: dateThrough) else { return }
         versionPageLimit = 20
         var cached = dateQuery.values.merging(metadata) { _, row in row }
-        if !readsMetadata {
-            for version in versions where cached[version.id] == nil {
+        for version in versions {
+            if !readsMetadata, cached[version.id] == nil {
                 cached[version.id] = VersionMetadata(version: version.version, released: nil)
+            } else if var existing = cached[version.id] {
+                let better = VersionService.preferredVersion(version.version, over: existing.version, rejectingID: version.id)
+                if better != existing.version {
+                    existing.version = better
+                    cached[version.id] = existing
+                }
             }
         }
         dateQuery.start(versions: versions, range: range, cached: cached,
                         notes: releaseNotes.compactMapValues(\.date)) { version in
             guard readsMetadata else { throw RemoteZip.Failure.notFound }
-            return try await store.versionMetadata(app: app, versionID: version.id, includingIcon: false)
+            return try await store.versionMetadata(app: app, versionID: version.id,
+                                                   includingIcon: false,
+                                                   knownVersion: version.version)
         }
     }
 
@@ -772,13 +798,14 @@ struct AppDetailView: View {
         defer { if metadataLoading[version.id] == requestID { metadataLoading[version.id] = nil } }
         do {
             let value = try await store.versionMetadata(app: app, versionID: version.id,
-                                                        includingIcon: store.settings.showHistoryIcons) { partial in
+                                                        includingIcon: store.settings.showHistoryIcons,
+                                                        knownVersion: version.version) { partial in
                 guard !Task.isCancelled, context == versionsKey else { return }
                 // Publish the number/date/size before the icon's extra range reads.
-                metadata[version.id] = partial
+                reconcileVersionDisplay(partial, for: version.id)
             }
             guard !Task.isCancelled, context == versionsKey else { return }
-            metadata[version.id] = value
+            reconcileVersionDisplay(value, for: version.id)
             metadataFailures = 0
         } catch {
             // Scrolled away: not a failure.
@@ -856,7 +883,17 @@ struct AppDetailView: View {
             if versionsStale { showAllVersions = false }
             if force { metadataStopped = false; metadataFailures = 0 }
             let cached = await store.cachedVersionMetadata(app: app, versionIDs: result.map(\.id))
-            metadata.merge(cached) { current, _ in current }
+            let rowVersions = Dictionary(result.map { ($0.id, $0.version) }, uniquingKeysWith: { first, _ in first })
+            for (id, entry) in cached {
+                reconcileVersionDisplay(entry, for: id)
+                if let rowVersion = rowVersions[id],
+                   VersionService.versionPreference(rowVersion, rejectingID: id) >
+                   VersionService.versionPreference(entry.version, rejectingID: id) {
+                    let platform = store.settings.store.platform
+                    let app = self.app
+                    Task { await store.reconcileVersionNumber(platform: platform, appID: app.id, versionID: id, version: rowVersion) }
+                }
+            }
             return true
         } catch is CancellationError { }
         catch AppleAuthError.reauthenticationRequired {

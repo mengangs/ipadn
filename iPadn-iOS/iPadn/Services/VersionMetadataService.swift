@@ -14,6 +14,9 @@ struct VersionMetadata: Codable, Hashable, Sendable {
     var packageSize: Int64? = nil
     /// nil: not checked/retryable; false: no readable primary PNG; true: cached PNG.
     var iconAvailable: Bool? = nil
+    /// nil in legacy caches; ensures dotless versions written solely from IPA Info.plist
+    /// are reconciled once against Apple's DownloadDispatch ticket metadata.
+    var ticketChecked: Bool? = nil
 }
 
 /// Reads byte ranges of a remote file.
@@ -67,6 +70,7 @@ enum RemoteZip {
     }
 
     static func versionResources(_ reader: RangeReader, includingIcon: Bool = true,
+                                 preferredVersion: String? = nil,
                                  onMetadata: (@Sendable (VersionMetadata) async -> Void)? = nil) async throws
         -> (metadata: VersionMetadata, icon: Data?) {
         let (entries, size) = try await centralDirectory(reader)
@@ -75,14 +79,20 @@ enum RemoteZip {
         guard let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
             throw Failure.unreadable
         }
-        let version = plistString(plist["CFBundleShortVersionString"] ?? plist["bundleShortVersionString"])
+        let rawVersion = plistString(plist["CFBundleShortVersionString"] ?? plist["bundleShortVersionString"])
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        let sanitizedPlist = VersionService.sanitizedVersion(rawVersion)
+        let reconciled = preferredVersion.map {
+            VersionService.preferredVersion(sanitizedPlist, over: $0)
+        } ?? sanitizedPlist
+        let version = reconciled == AppVersion.unknown ? rawVersion : reconciled
         guard !version.isEmpty else { throw Failure.unreadable }
         let explicitDate = releaseDate(plist["releaseDate"] ?? plist["ReleaseDate"])
         var metadata = VersionMetadata(version: version,
                                        released: explicitDate ?? entry.modified,
                                        releaseDateIsEstimated: explicitDate == nil,
-                                       packageSize: size)
+                                       packageSize: size,
+                                       ticketChecked: preferredVersion != nil ? true : nil)
         await onMetadata?(metadata)
         try Task.checkCancellation()
         var icon: Data?
@@ -338,26 +348,81 @@ actor VersionMetadataStore {
         decodedIcons.removeObject(forKey: key as NSString)
     }
     private func satisfies(_ value: VersionMetadata, key: String, size: Bool, icon: Bool) -> Bool {
-        (!size || value.packageSize != nil) && (!icon || (value.iconAvailable != nil &&
+        let versionSettled = VersionService.versionPreference(value.version) >= 2 || value.ticketChecked == true
+        return versionSettled && (!size || value.packageSize != nil) && (!icon || (value.iconAvailable != nil &&
             (value.iconAvailable != true || FileManager.default.fileExists(atPath: Self.iconURL(key).path))))
     }
 
+    static func versionID(from key: String) -> String? {
+        key.split(separator: "|", maxSplits: 2).last.map(String.init)
+    }
+
+    func upgradeCachedVersion(_ key: String, version: String) {
+        guard var existing = cache[key] else { return }
+        let rejectingID = Self.versionID(from: key)
+        let better = VersionService.preferredVersion(version, over: existing.version, rejectingID: rejectingID)
+        guard better != existing.version else { return }
+        existing.version = better
+        cache[key] = existing
+        try? LocalResources.save(cache, filename: Self.filename)
+    }
+
+    func clearCache() throws {
+        try LocalResources.save([String: VersionMetadata](), filename: Self.filename)
+        cache.removeAll()
+        decodedIcons.removeAllObjects()
+        let iconsDir = LocalResources.support.appendingPathComponent("VersionIcons", isDirectory: true)
+        if FileManager.default.fileExists(atPath: iconsDir.path) {
+            try? FileManager.default.removeItem(at: iconsDir)
+        }
+    }
+
+    private func reconciledCachedHit(for key: String, requiringPackageSize: Bool, requiringIcon: Bool,
+                                     knownVersion: String?) -> VersionMetadata? {
+        guard var value = cache[key],
+              satisfies(value, key: key, size: requiringPackageSize, icon: requiringIcon) else { return nil }
+        if let knownVersion {
+            let better = VersionService.preferredVersion(knownVersion, over: value.version, rejectingID: Self.versionID(from: key))
+            if better != value.version {
+                value.version = better
+                cache[key] = value
+                try? LocalResources.save(cache, filename: Self.filename)
+            }
+        }
+        return value
+    }
+
     func load(_ key: String, requiringPackageSize: Bool = false, requiringIcon: Bool = false,
+              knownVersion: String? = nil,
               fetch: @Sendable () async throws -> VersionMetadata) async throws -> VersionMetadata {
         // Old records retain their useful version/date, but are refreshed once
-        // when an IPA row also needs its size. Mac metadata need not have one.
-        if let value = cache[key], satisfies(value, key: key, size: requiringPackageSize, icon: requiringIcon) { return value }
+        // when an IPA row also needs its size or a legacy dotless version wasn't checked against ticket metadata.
+        if let hit = reconciledCachedHit(for: key, requiringPackageSize: requiringPackageSize,
+                                         requiringIcon: requiringIcon, knownVersion: knownVersion) {
+            return hit
+        }
         try await acquire()
         defer { release() }
         // A row scrolled away while waiting: skip its request.
         try Task.checkCancellation()
-        if let value = cache[key], satisfies(value, key: key, size: requiringPackageSize, icon: requiringIcon) { return value }
-        var value = try await fetch()
-        if !requiringIcon, value.iconAvailable == nil,
-           let previous = cache[key], previous.iconAvailable == true,
-           FileManager.default.fileExists(atPath: Self.iconURL(key).path) {
-            value.iconAvailable = true
+        if let hit = reconciledCachedHit(for: key, requiringPackageSize: requiringPackageSize,
+                                         requiringIcon: requiringIcon, knownVersion: knownVersion) {
+            return hit
         }
+        var value = try await fetch()
+        let rejectingID = Self.versionID(from: key)
+        if let knownVersion {
+            value.version = VersionService.preferredVersion(knownVersion, over: value.version, rejectingID: rejectingID)
+        }
+        if let previous = cache[key] {
+            value.version = VersionService.preferredVersion(value.version, over: previous.version, rejectingID: rejectingID)
+            if !requiringIcon, value.iconAvailable == nil,
+               previous.iconAvailable == true,
+               FileManager.default.fileExists(atPath: Self.iconURL(key).path) {
+                value.iconAvailable = true
+            }
+        }
+        if value.ticketChecked == nil { value.ticketChecked = true }
         cache[key] = value
         if cache.count > 5_000 { cache.removeAll(); cache[key] = value }
         try? LocalResources.save(cache, filename: Self.filename)

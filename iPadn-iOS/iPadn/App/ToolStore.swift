@@ -79,6 +79,10 @@ final class ToolStore: ObservableObject {
             // Region or platform changed: refresh the results here, so it also
             // happens when the search page is not on screen (iPad sidebar).
             if oldValue.store != settings.store, hasSearched { search() }
+            else if oldValue.prioritizeDelistedSearchResults != settings.prioritizeDelistedSearchResults,
+                    hasSearched, !searching {
+                reapplySearchOrdering()
+            }
         }
     }
     /// The selected tab lives in its own object: only the tab bar observes
@@ -159,6 +163,10 @@ final class ToolStore: ObservableObject {
     private var localSearchTask: Task<Void, Never>?
     private var localSearchID = UUID()
     private var searchID = UUID()
+    private var lastRemoteResults: [StoreApp] = []
+    private var lastLocalCandidates: [StoreApp] = []
+    private var lastLocalAliases: [String: [String]] = [:]
+    private var delistedStatusCache: [String: (date: Date, delisted: Bool)] = [:]
     private var ownedByAccount: [String: [OwnedApp]] = [:]
     private var subscriptions = Set<AnyCancellable>()
     private var lastAccountID: String?
@@ -243,7 +251,12 @@ final class ToolStore: ObservableObject {
         let id = UUID(); searchID = id
         let context = settings.store
         let limit = settings.searchLimit
-        if input != lastSearchTerm || resultsContext != context { results = [] }
+        if input != lastSearchTerm || resultsContext != context {
+            results = []
+            lastRemoteResults = []
+            lastLocalCandidates = []
+            lastLocalAliases = [:]
+        }
         resultsContext = context
         localResults = []
         updateLocalResults(for: input)
@@ -255,6 +268,47 @@ final class ToolStore: ObservableObject {
                 // Public search must never trigger purchase or download authorization.
                 // Searching an App ID should work even if saved Apple credentials expired.
                 let accountCountry = StoreService.country(forStorefront: apple.active?.storeFront ?? "")
+                let prioritizeDelisted = settings.prioritizeDelistedSearchResults
+                var snapshotCandidates: [StoreApp] = []
+                var snapshotAliases: [String: [String]] = [:]
+                var probeIDs: [String] = []
+                var probeTask: Task<[String: StoreService.DelistedVerification], Never>?
+                defer { if Task.isCancelled { probeTask?.cancel() } }
+                if case .keyword(let term) = query {
+                    let known = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app) + (appCatalog[context.platform.rawValue] ?? [])
+                    let directory = nameCatalog
+                    let localMatch = await Task.detached(priority: .userInitiated) {
+                        Self.findLocalMatches(term: term, platform: context.platform, known: known, directory: directory)
+                    }.value
+                    try Task.checkCancellation()
+                    guard searchID == id else { return }
+                    snapshotAliases = localMatch.aliases
+                    snapshotCandidates = applyCachedDelistedStatuses(to: localMatch.candidates)
+                    if prioritizeDelisted, term.count >= 2 {
+                        probeIDs = snapshotCandidates.enumerated()
+                            .compactMap { offset, candidate -> (id: String, tier: Int, sparse: Bool, offset: Int)? in
+                                guard !candidate.isDelisted, freshDelistedCache(for: candidate.id) == nil else { return nil }
+                                let tier = AppSearchRanking.relevanceTier(
+                                    for: candidate, query: term, aliases: snapshotAliases[candidate.id] ?? []
+                                )
+                                guard tier >= 2 else { return nil }
+                                return (candidate.id, tier, candidate.version.isEmpty && candidate.category.isEmpty, offset)
+                            }
+                            .sorted { lhs, rhs in
+                                if lhs.tier != rhs.tier { return lhs.tier > rhs.tier }
+                                if lhs.sparse != rhs.sparse { return lhs.sparse && !rhs.sparse }
+                                return lhs.offset < rhs.offset
+                            }
+                            .prefix(30)
+                            .map(\.id)
+                        if !probeIDs.isEmpty {
+                            let targetIDs = probeIDs
+                            probeTask = Task {
+                                await StoreService.verifyDelistedStatuses(ids: targetIDs, store: context, accountCountry: accountCountry)
+                            }
+                        }
+                    }
+                }
                 var apps = try await StoreService.search(query, store: context, limit: limit, accountCountry: accountCountry)
                 if case .appID(let appID, _) = query, apps.isEmpty {
                     // Delisted or region-limited apps have no public listing;
@@ -270,18 +324,49 @@ final class ToolStore: ObservableObject {
                         return result
                     }
                 }
+                let remoteListedIDs = apps.filter { $0.delisted != true }.map(\.id)
+                let now = Date()
+                for appID in remoteListedIDs { delistedStatusCache[appID] = (now, false) }
+                if let probeTask {
+                    let remoteListedSet = Set(remoteListedIDs)
+                    let hasPendingLocal = probeIDs.contains { !remoteListedSet.contains($0) }
+                    if hasPendingLocal {
+                        if let verified = await Self.awaitProbeWithGrace(probeTask, nanoseconds: 1_200_000_000) {
+                            snapshotCandidates = applyVerifiedDelistedStatuses(verified, to: snapshotCandidates, excludingIDs: remoteListedSet)
+                        } else {
+                            scheduleLateDelistedWarmup(probeTask, excluding: remoteListedSet, for: id, context: context)
+                        }
+                    } else {
+                        probeTask.cancel()
+                    }
+                }
                 try Task.checkCancellation()
                 guard searchID == id else { return }
-                results = apps
-                let remoteIDs = Set(apps.map(\.id))
-                localResults.removeAll { remoteIDs.contains($0.id) }
-                let key = context.platform.rawValue
+                let catalogPlatformKey = context.platform.rawValue
                 // Cache real listings only, without the long descriptions (kept small for quick saves).
                 let listed = apps.filter { $0.delisted != true }.map { app -> StoreApp in var app = app; app.description = ""; return app }
-                appCatalog[key] = Array(AppSearchIndex.unique(listed + (appCatalog[key] ?? [])).prefix(1000))
+                appCatalog[catalogPlatformKey] = Array(AppSearchIndex.unique(listed + (appCatalog[catalogPlatformKey] ?? [])).prefix(1000))
                 let snapshot = appCatalog
                 cacheWrites.async { try? LocalResources.save(snapshot, filename: "app-catalog.json") }
                 remember(input)
+                if case .keyword(let term) = query {
+                    let knownAfterSearch = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app) + (appCatalog[catalogPlatformKey] ?? [])
+                    let refreshed = Self.findLocalMatches(term: term, platform: context.platform, known: knownAfterSearch, directory: nameCatalog)
+                    let enriched = applyCachedDelistedStatuses(to: AppSearchRanking.mergeUnique(snapshotCandidates + refreshed.candidates))
+                    let aliases = snapshotAliases.merging(refreshed.aliases) { first, _ in first }
+                    localSearchTask?.cancel()
+                    lastRemoteResults = apps
+                    lastLocalCandidates = enriched
+                    lastLocalAliases = aliases
+                    applySearchArrangement(for: term)
+                } else {
+                    lastRemoteResults = apps
+                    lastLocalCandidates = []
+                    lastLocalAliases = [:]
+                    results = apps
+                    let remoteIDs = Set(apps.map(\.id))
+                    localResults.removeAll { remoteIDs.contains($0.id) }
+                }
                 // The results are in: missing artwork fills in quietly.
                 searching = false
                 await fillMissingArtwork(searchID: id, store: context, accountCountry: accountCountry)
@@ -339,6 +424,126 @@ final class ToolStore: ObservableObject {
         }
         results = filled(results)
         localResults = filled(localResults)
+        lastRemoteResults = filled(lastRemoteResults)
+        lastLocalCandidates = filled(lastLocalCandidates)
+    }
+
+    nonisolated private static func findLocalMatches(
+        term: String,
+        platform: AppPlatform,
+        known: [StoreApp],
+        directory: [AppNameEntry]
+    ) -> (candidates: [StoreApp], aliases: [String: [String]]) {
+        let saved = AppSearchIndex.search(term, apps: known)
+        let named = AppNameCatalog.searchWithAliases(term, platform: platform, entries: directory)
+        let aliases = Dictionary(named.map { ($0.app.id, $0.aliases) }, uniquingKeysWith: { first, _ in first })
+        let candidates = AppSearchRanking.mergeUnique(saved + named.map(\.app))
+        return (candidates, aliases)
+    }
+
+    private static func awaitProbeWithGrace(
+        _ task: Task<[String: StoreService.DelistedVerification], Never>,
+        nanoseconds: UInt64
+    ) async -> [String: StoreService.DelistedVerification]? {
+        await withTaskGroup(of: [String: StoreService.DelistedVerification]?.self) { group in
+            group.addTask { await task.value }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: nanoseconds)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
+    private func freshDelistedCache(for appID: String) -> Bool? {
+        guard let cached = delistedStatusCache[appID],
+              Date().timeIntervalSince(cached.date) < 600 else { return nil }
+        return cached.delisted
+    }
+
+    private func applyCachedDelistedStatuses(to candidates: [StoreApp]) -> [StoreApp] {
+        candidates.map { candidate in
+            var item = candidate
+            if !item.isDelisted, freshDelistedCache(for: item.id) == true {
+                item.delisted = true
+            }
+            return item
+        }
+    }
+
+    private func applyVerifiedDelistedStatuses(
+        _ statuses: [String: StoreService.DelistedVerification],
+        to candidates: [StoreApp],
+        excludingIDs: Set<String>
+    ) -> [StoreApp] {
+        let now = Date()
+        for (appID, status) in statuses where !excludingIDs.contains(appID) {
+            switch status {
+            case .delisted: delistedStatusCache[appID] = (now, true)
+            case .listed: delistedStatusCache[appID] = (now, false)
+            case .inconclusive: break
+            }
+        }
+        return applyCachedDelistedStatuses(to: candidates)
+    }
+
+    private func applySearchArrangement(for term: String) {
+        let enriched = applyCachedDelistedStatuses(to: lastLocalCandidates)
+        lastLocalCandidates = enriched
+        let arranged = AppSearchRanking.arrange(
+            remote: lastRemoteResults,
+            local: enriched,
+            aliasesByID: lastLocalAliases,
+            query: term,
+            prioritizeDelisted: settings.prioritizeDelistedSearchResults
+        )
+        results = arranged.results
+        localResults = arranged.localResults
+    }
+
+    private func scheduleLateDelistedWarmup(
+        _ probeTask: Task<[String: StoreService.DelistedVerification], Never>,
+        excluding remoteListedSet: Set<String>,
+        for queryID: UUID,
+        context: StoreContext
+    ) {
+        Task { @MainActor [weak self] in
+            let late = await probeTask.value
+            guard let self else { return }
+            let previouslyDelisted = Set(self.results.filter(\.isDelisted).map(\.id))
+            _ = self.applyVerifiedDelistedStatuses(late, to: [], excludingIDs: remoteListedSet)
+            guard self.searchID == queryID,
+                  self.settings.store == context,
+                  self.settings.prioritizeDelistedSearchResults,
+                  case .keyword(let term)? = try? SearchQuery.parse(self.lastSearchTerm) else { return }
+            let hasNewPromotion = late.contains { id, status in
+                status == .delisted && !remoteListedSet.contains(id) && !previouslyDelisted.contains(id)
+            }
+            if hasNewPromotion {
+                self.applySearchArrangement(for: term)
+            }
+        }
+    }
+
+    private func reapplySearchOrdering() {
+        guard case .keyword(let term)? = try? SearchQuery.parse(lastSearchTerm) else { return }
+        let enriched = applyCachedDelistedStatuses(to: lastLocalCandidates)
+        if settings.prioritizeDelistedSearchResults {
+            let remoteListed = Set(lastRemoteResults.filter { $0.delisted != true }.map(\.id))
+            let needsProbe = term.count >= 2 && enriched.contains { candidate in
+                !remoteListed.contains(candidate.id) &&
+                !candidate.isDelisted &&
+                freshDelistedCache(for: candidate.id) == nil &&
+                AppSearchRanking.relevanceTier(for: candidate, query: term, aliases: lastLocalAliases[candidate.id] ?? []) >= 2
+            }
+            if needsProbe {
+                search(lastSearchTerm)
+                return
+            }
+        }
+        applySearchArrangement(for: term)
     }
 
     private func updateLocalResults(for input: String? = nil) {
@@ -347,15 +552,32 @@ final class ToolStore: ObservableObject {
         guard case .keyword(let term)? = try? SearchQuery.parse(input ?? lastSearchTerm) else { return }
         let context = settings.store, queryID = searchID, directory = nameCatalog
         let known = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app) + (appCatalog[settings.store.platform.rawValue] ?? [])
+        let prioritize = settings.prioritizeDelistedSearchResults
         localSearchTask = Task {
-            let candidates = await Task.detached(priority: .userInitiated) {
-                let saved = AppSearchIndex.search(term, apps: known)
-                let named = AppNameCatalog.search(term, platform: context.platform, entries: directory)
-                return AppSearchIndex.unique(saved + named)
+            let match = await Task.detached(priority: .userInitiated) {
+                Self.findLocalMatches(term: term, platform: context.platform, known: known, directory: directory)
             }.value
             guard !Task.isCancelled, localSearchID == request, searchID == queryID, settings.store == context else { return }
-            let remoteIDs = Set(results.map(\.id))
-            localResults = candidates.filter { !remoteIDs.contains($0.id) }
+            let enriched = applyCachedDelistedStatuses(to: match.candidates)
+            lastLocalCandidates = enriched
+            lastLocalAliases = match.aliases
+            let currentRemote = lastRemoteResults.isEmpty ? results : lastRemoteResults
+            let arranged = AppSearchRanking.arrange(remote: currentRemote,
+                                                    local: enriched, aliasesByID: match.aliases,
+                                                    query: term, prioritizeDelisted: prioritize)
+            if !searching && !lastRemoteResults.isEmpty {
+                // Background catalogs or late delisted probes can promote local matches;
+                // update `results` together when promotions change so items never vanish.
+                if results.map(\.id) != arranged.results.map(\.id) || results.map(\.isDelisted) != arranged.results.map(\.isDelisted) {
+                    results = arranged.results
+                }
+                localResults = arranged.localResults
+            } else {
+                // Keep skeletons clear while remote search is in flight (or offline/preview)
+                // without losing promoted local candidates into an unassigned `results` array.
+                let displayedIDs = Set(results.map(\.id))
+                localResults = (arranged.results + arranged.localResults).filter { !displayedIDs.contains($0.id) }
+            }
         }
     }
 
@@ -412,7 +634,10 @@ final class ToolStore: ObservableObject {
     }
 
     func cancelSearch() { searchTask?.cancel(); localSearchTask?.cancel(); searchID = UUID(); searching = false; hasSearched = !results.isEmpty || !localResults.isEmpty; searchError = nil }
-    func clearSearch() { cancelSearch(); searchText = ""; results = []; localResults = []; hasSearched = false; lastSearchTerm = "" }
+    func clearSearch() {
+        cancelSearch(); searchText = ""; results = []; localResults = []; hasSearched = false; lastSearchTerm = ""
+        lastRemoteResults = []; lastLocalCandidates = []; lastLocalAliases = [:]
+    }
     func isFavorite(_ app: StoreApp) -> Bool { favorites.contains { $0.id == app.id } }
     func toggleFavorite(_ app: StoreApp) {
         let previous = favoriteTask
@@ -678,7 +903,12 @@ final class ToolStore: ObservableObject {
             // Apple's list costs a signed request: reuse it for a while, so
             // opening the same app again does not ask Apple again.
             let key = "\(account)|\(context.platform.rawValue)|\(context.country)|\(app.id)"
-            if !force, let hit = officialVersionCache[key], Date().timeIntervalSince(hit.date) < 30 * 60 { return hit.versions }
+            if !force, let hit = officialVersionCache[key], Date().timeIntervalSince(hit.date) < 30 * 60 {
+                let cachedNames = context.platform == .iOS ? await versions.cachedVersionMap(appID: app.id, sources: settings.versionSources) : [:]
+                let reconciled = await reconcileVersionEntries(hit.versions, for: app, platform: context.platform, extraNames: cachedNames)
+                if reconciled != hit.versions { officialVersionCache[key] = (hit.date, reconciled) }
+                return reconciled
+            }
             let list = try await appleVersions(for: app, context: context, force: force)
             officialVersionCache[key] = (Date(), list)
             return list
@@ -695,16 +925,50 @@ final class ToolStore: ObservableObject {
             return [AppVersion(id: id, version: listing.version.isEmpty ? AppVersion.unknown : listing.version, source: "Apple TV")]
         }
         var list = try await versions.thirdParty(app.id, sources: settings.versionSources, force: force)
-        if let latestID = app.externalVersionID, !latestID.isEmpty {
-            let storeVersion = VersionService.sanitizedVersion(app.version)
-            if storeVersion != AppVersion.unknown {
-                for index in list.indices where list[index].id == latestID &&
-                    VersionService.versionPreference(storeVersion) > VersionService.versionPreference(list[index].version) {
-                    list[index].version = storeVersion
+        list = await reconcileVersionEntries(list, for: app, platform: context.platform, extraNames: [:])
+        if let account = apple.activeID {
+            let key = "\(account)|\(context.platform.rawValue)|\(context.country)|\(app.id)"
+            if let hit = officialVersionCache[key] {
+                var names: [String: String] = [:]
+                for item in list {
+                    names[item.id] = VersionService.preferredVersion(item.version, over: names[item.id] ?? AppVersion.unknown, rejectingID: item.id)
                 }
+                let reconciled = await reconcileVersionEntries(hit.versions, for: app, platform: context.platform, extraNames: names)
+                if reconciled != hit.versions { officialVersionCache[key] = (hit.date, reconciled) }
             }
         }
         return list
+    }
+
+    private func reconcileVersionEntries(
+        _ entries: [AppVersion],
+        for app: StoreApp,
+        platform: AppPlatform,
+        extraNames: [String: String]
+    ) async -> [AppVersion] {
+        guard !entries.isEmpty else { return entries }
+        let cachedMeta = await metadataStore.cached(entries.map {
+            VersionMetadataStore.key(platform: platform, appID: app.id, versionID: $0.id)
+        })
+        let storeVersion = VersionService.sanitizedVersion(app.version, rejectingID: app.externalVersionID)
+        return entries.map { entry in
+            var updated = entry
+            let key = VersionMetadataStore.key(platform: platform, appID: app.id, versionID: entry.id)
+            let storeCandidate = entry.id == app.externalVersionID ? storeVersion : AppVersion.unknown
+            updated.version = VersionService.bestVersion([
+                storeCandidate,
+                cachedMeta[key]?.version ?? "",
+                extraNames[entry.id] ?? "",
+                entry.version
+            ], rejectingID: entry.id)
+            return updated
+        }
+    }
+
+    func clearVersionCaches() async throws {
+        try await versions.clearCache()
+        try await metadataStore.clearCache()
+        officialVersionCache.removeAll()
     }
 
     /// Every version Apple lists for the active account. Never claims a license.
@@ -720,13 +984,23 @@ final class ToolStore: ObservableObject {
         let asset = try await apple.asset(appID: app.id, versionID: nil, store: context,
                                           useCache: settings.useSignerCache, allowLicenseAcquisition: false)
         let third = context.platform == .iOS ? (try? await versions.thirdParty(app.id, sources: settings.versionSources, force: force)) ?? [] : []
-        let names = Dictionary(third.map { ($0.id, $0.version) }, uniquingKeysWith: { first, _ in first })
+        var names: [String: String] = [:]
+        for item in third {
+            names[item.id] = VersionService.preferredVersion(item.version, over: names[item.id] ?? AppVersion.unknown, rejectingID: item.id)
+        }
         let ids = asset.externalVersionIDs.isEmpty ? [asset.app.externalVersionID ?? ""] : Array(asset.externalVersionIDs.reversed())
-        let latestVersion = VersionService.sanitizedVersion(asset.app.version.isEmpty ? app.version : asset.app.version)
-        return ids.filter { !$0.isEmpty && seen.insert($0).inserted }.map { id in
-            let known = id == asset.app.externalVersionID && latestVersion != AppVersion.unknown
-                ? latestVersion
-                : (names[id] ?? (id == app.externalVersionID ? VersionService.sanitizedVersion(app.version) : AppVersion.unknown))
+        let filteredIDs = ids.filter { !$0.isEmpty && seen.insert($0).inserted }
+        let cachedMeta = await metadataStore.cached(filteredIDs.map {
+            VersionMetadataStore.key(platform: context.platform, appID: app.id, versionID: $0)
+        })
+        return filteredIDs.map { id in
+            let metaKey = VersionMetadataStore.key(platform: context.platform, appID: app.id, versionID: id)
+            let known = VersionService.bestVersion([
+                id == asset.app.externalVersionID ? asset.app.version : "",
+                id == app.externalVersionID ? app.version : "",
+                cachedMeta[metaKey]?.version ?? "",
+                names[id] ?? ""
+            ], rejectingID: id)
             return AppVersion(id: id, version: known, source: "Apple")
         }
     }
@@ -746,9 +1020,30 @@ final class ToolStore: ObservableObject {
         return Dictionary(found.compactMap { key, value in keys[key].map { ($0, value) } }, uniquingKeysWith: { first, _ in first })
     }
 
+    /// Reconciles any cached version list entries when higher-preference metadata arrives.
+    func reconcileVersionNumber(platform: AppPlatform, appID: String, versionID: String, version: String) async {
+        let normalized = VersionService.sanitizedVersion(version, rejectingID: versionID)
+        guard normalized != AppVersion.unknown else { return }
+        for (cacheKey, var cached) in officialVersionCache where cacheKey.hasSuffix("|\(platform.rawValue)|\(settings.store.country)|\(appID)") || cacheKey.contains("|\(platform.rawValue)|") && cacheKey.hasSuffix("|\(appID)") {
+            var changed = false
+            for index in cached.versions.indices where cached.versions[index].id == versionID {
+                let next = VersionService.preferredVersion(normalized, over: cached.versions[index].version, rejectingID: versionID)
+                if next != cached.versions[index].version {
+                    cached.versions[index].version = next
+                    changed = true
+                }
+            }
+            if changed { officialVersionCache[cacheKey] = cached }
+        }
+        await versions.reconcile(appID: appID, versionID: versionID, version: normalized)
+        let metaKey = VersionMetadataStore.key(platform: platform, appID: appID, versionID: versionID)
+        await metadataStore.upgradeCachedVersion(metaKey, version: normalized)
+    }
+
     /// The version number and date of one version, read from Apple. Lookups
     /// are cached and run one at a time.
     func versionMetadata(app: StoreApp, versionID: String, includingIcon: Bool = true,
+                         knownVersion: String? = nil,
                          onMetadata: (@MainActor @Sendable (VersionMetadata) -> Void)? = nil) async throws -> VersionMetadata {
         #if DEBUG
         if visualPreview {
@@ -766,33 +1061,61 @@ final class ToolStore: ObservableObject {
         let useCache = settings.useSignerCache
         let metadataStore = self.metadataStore
         let key = VersionMetadataStore.key(platform: platform, appID: app.id, versionID: versionID)
-        return try await metadataStore.load(key, requiringPackageSize: platform.supportsIPA, requiringIcon: includingIcon && platform.supportsIPA) { @MainActor [apple] in
+        let baselineKnown = VersionService.bestVersion([
+            knownVersion ?? "",
+            versionID == app.externalVersionID ? app.version : ""
+        ], rejectingID: versionID)
+        let loaded = try await metadataStore.load(
+            key,
+            requiringPackageSize: platform.supportsIPA,
+            requiringIcon: includingIcon && platform.supportsIPA,
+            knownVersion: baselineKnown == AppVersion.unknown ? nil : baselineKnown
+        ) { @MainActor [apple] in
             if platform == .macOS {
                 // A Mac package cannot be read in part; Apple's ticket names the version.
                 let offer = try await apple.macPackageOffer(app, versionID: versionID, useCache: useCache,
                                                             allowLicenseAcquisition: false)
                 guard !offer.displayVersion.isEmpty else { throw RemoteZip.Failure.notFound }
-                return VersionMetadata(version: offer.displayVersion, released: nil)
+                return VersionMetadata(version: VersionService.preferredVersion(offer.displayVersion, over: baselineKnown, rejectingID: versionID),
+                                       released: nil, ticketChecked: true)
             }
             let ticket = try await apple.versionTicketDetails(appID: app.id, versionID: versionID, useCache: useCache)
-            if !ticket.displayVersion.isEmpty {
-                await onMetadata?(VersionMetadata(version: ticket.displayVersion, released: nil, packageSize: ticket.fileSize))
+            let ticketPref = VersionService.versionPreference(ticket.displayVersion, rejectingID: versionID)
+            let baselinePref = VersionService.versionPreference(baselineKnown, rejectingID: versionID)
+            let preferredFromTicket = (ticketPref >= baselinePref && !ticket.displayVersion.isEmpty)
+                ? ticket.displayVersion
+                : baselineKnown
+            if preferredFromTicket != AppVersion.unknown {
+                onMetadata?(VersionMetadata(version: preferredFromTicket, released: nil,
+                                            packageSize: ticket.fileSize, ticketChecked: true))
             }
             do {
-                let resources = try await RemoteZip.versionResources(HTTPRangeReader(url: ticket.url), includingIcon: includingIcon,
-                                                                    onMetadata: { value in await onMetadata?(value) })
+                let resources = try await RemoteZip.versionResources(
+                    HTTPRangeReader(url: ticket.url),
+                    includingIcon: includingIcon,
+                    preferredVersion: preferredFromTicket == AppVersion.unknown ? nil : preferredFromTicket,
+                    onMetadata: { value in await onMetadata?(value) }
+                )
                 var metadata = resources.metadata
+                if preferredFromTicket != AppVersion.unknown {
+                    metadata.version = VersionService.preferredVersion(preferredFromTicket, over: metadata.version, rejectingID: versionID)
+                }
+                metadata.ticketChecked = true
                 if metadata.packageSize == nil { metadata.packageSize = ticket.fileSize }
                 if let icon = resources.icon {
                     do { try await metadataStore.saveIcon(icon, key: key) }
                     catch { metadata.iconAvailable = nil }
                 }
                 return metadata
-            } catch RemoteZip.Failure.notFound, RemoteZip.Failure.unreadable where !ticket.displayVersion.isEmpty {
-                return VersionMetadata(version: ticket.displayVersion, released: nil,
-                                       packageSize: ticket.fileSize, iconAvailable: includingIcon ? false : nil)
+            } catch RemoteZip.Failure.notFound where preferredFromTicket != AppVersion.unknown,
+                    RemoteZip.Failure.unreadable where preferredFromTicket != AppVersion.unknown {
+                return VersionMetadata(version: preferredFromTicket, released: nil,
+                                       packageSize: ticket.fileSize, iconAvailable: includingIcon ? false : nil,
+                                       ticketChecked: true)
             }
         }
+        await reconcileVersionNumber(platform: platform, appID: app.id, versionID: versionID, version: loaded.version)
+        return loaded
     }
 
     func cachedVersionImage(app: StoreApp, versionID: String) async -> UIImage? {

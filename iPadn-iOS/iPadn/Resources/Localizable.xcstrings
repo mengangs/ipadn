@@ -85322,6 +85322,146 @@
           }
         }
       }
+    },
+    "搜索时优先显示已下架应用": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索时优先显示已下架应用"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prioritize Delisted Apps in Search"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜尋時優先顯示已下架 App"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索時に配信終了アプリを優先表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검색 시 판매 중단된 앱 우선 표시"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поднимать удалённые приложения в поиске"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Priorizar apps retiradas al buscar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prioriser les apps retirées dans la recherche"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entfernte Apps bei der Suche bevorzugen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Priorizar apps removidos na busca"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إعطاء الأولوية للتطبيقات المحذوفة في البحث"
+          }
+        }
+      }
+    },
+    "开启「搜索时优先显示已下架应用」后，关键词搜索会优先将已确认下架并匹配关键词的应用排在结果前排；关闭后恢复原有搜索排序。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启「搜索时优先显示已下架应用」后，关键词搜索会优先将已确认下架并匹配关键词的应用排在结果前排；关闭后恢复原有搜索排序。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When enabled, keyword searches rank confirmed-delisted apps that match your query near the top. Turn it off to restore standard store ordering."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開啟「搜尋時優先顯示已下架 App」後，關鍵字搜尋會優先將已確認下架並符合關鍵字的 App 排在結果前排；關閉後恢復原有搜尋排序。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オンにすると、キーワード検索で配信終了が確認されクエリに一致するアプリが上位に表示されます。オフにすると通常の並び順に戻ります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "켜면 키워드 검색 시 판매 중단이 확인되고 검색어와 일치하는 앱이 상단에 우선 표시됩니다. 끄면 기본 검색 정렬로 돌아갑니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Когда параметр включён, приложения с подтверждённым удалением из App Store, соответствующие запросу, поднимаются вверх результатов поиска. Выключите для стандартной сортировки."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Al activarlo, las búsquedas por palabra clave muestran primero las apps confirmadas como retiradas que coinciden con la consulta. Desactívalo para restaurar el orden original."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une fois activé, les recherches par mot-clé placent en haut les apps confirmées comme retirées qui correspondent à la requête. Désactivez-le pour rétablir l'ordre d'origine."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wenn aktiviert, werden bestätigt aus dem Store entfernte und passende Apps bei Stichwortsuchen weiter oben angezeigt. Deaktivieren stellt die ursprüngliche Sortierung wieder her."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quando ativado, buscas por palavra-chave priorizam apps confirmadamente removidos que correspondem à pesquisa. Desative para restaurar a ordenação padrão."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "عند التفعيل، تعرض عمليات البحث بالكلمات المفتاحية التطبيقات المؤكد إزالتها والمطابقة للبحث في المقدمة. أوقفه لاستعادة الترتيب الأصلي."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -833,6 +833,25 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["任务详情"].waitForExistence(timeout: 5))
     }
 
+    func testPrioritizeDelistedSearchToggleDefaultOnAndTogglesCleanly() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--accounts"]
+        app.launch()
+        let settings = app.buttons["accounts.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10)); settings.tap()
+        openSettingsPage("downloads", in: app)
+        let toggle = app.switches["settings.prioritize-delisted-search"]
+        for _ in 0..<5 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+        XCTAssertEqual(toggle.value as? String, "1", "Prioritize delisted apps toggle must default to ON")
+        let target = toggle.switches.firstMatch.exists ? toggle.switches.firstMatch : toggle
+        target.tap()
+        XCTAssertEqual(toggle.value as? String, "0")
+        target.tap()
+        XCTAssertEqual(toggle.value as? String, "1")
+        app.terminate()
+    }
+
     private func revealActions(on element: XCUIElement) {
         // A partial swipe deliberately tests the revealed button separately
         // from the full-swipe commit threshold.

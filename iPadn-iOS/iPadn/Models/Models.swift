@@ -312,6 +312,8 @@ struct ToolSettings: Codable, Equatable {
     var downloadLiveActivity = true
     /// Shows app icons beside historical versions and fetches them on demand.
     var showHistoryIcons = true
+    /// Ranks confirmed-delisted matching apps ahead of listed results in keyword search.
+    var prioritizeDelistedSearchResults = true
     /// Opt in to on-device translation; the system sheet remains the default.
     var directTranslation = false
     var useSignerCache = true
@@ -341,7 +343,7 @@ struct ToolSettings: Codable, Equatable {
         case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency, appUpdateCheck, targetPrices
         case appearanceSchema, compatibleDownloadMode, nativeInstallation, versionSourcesSchema, appLock, appLockDelay, showDiscover
         case wifiOnlyDownloads, autoInstall
-        case downloadLiveActivity, showHistoryIcons, directTranslation
+        case downloadLiveActivity, showHistoryIcons, prioritizeDelistedSearchResults, directTranslation
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -360,6 +362,7 @@ struct ToolSettings: Codable, Equatable {
         autoInstall = try values.decodeIfPresent(Bool.self, forKey: .autoInstall) ?? autoInstall
         downloadLiveActivity = try values.decodeIfPresent(Bool.self, forKey: .downloadLiveActivity) ?? downloadLiveActivity
         showHistoryIcons = try values.decodeIfPresent(Bool.self, forKey: .showHistoryIcons) ?? showHistoryIcons
+        prioritizeDelistedSearchResults = try values.decodeIfPresent(Bool.self, forKey: .prioritizeDelistedSearchResults) ?? prioritizeDelistedSearchResults
         directTranslation = try values.decodeIfPresent(Bool.self, forKey: .directTranslation) ?? directTranslation
         watchNotifications = try values.decodeIfPresent(Bool.self, forKey: .watchNotifications) ?? watchNotifications
         targetPrices = try values.decodeIfPresent(Bool.self, forKey: .targetPrices) ?? targetPrices
