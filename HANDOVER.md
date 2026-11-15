@@ -1,11 +1,22 @@
 # iPadn 项目全面交接与问题排查文档 (HANDOVER.md)
 
-> **更新时间**：2026-11-14（2.1.1 / build 31 已正式发布；家庭共享暂停）
+> **更新时间**：2026-11-15（2.1.2 / build 32 发布准备；家庭共享暂停）
 > **代码仓库**：`https://github.com/mengangs/ipadn.git` (`main` 分支)  
 > **本地工作区**：`D:\iOS-Dev\projects\ipadn` (映射到 WSL2: `/mnt/d/iOS-Dev/projects/ipadn`)  
 > **目标产品**：iOS 原生应用 `iPadn` (`app.local.iPadn`)
 
 ---
+
+## 2026-11-15 iPadn 2.1.2（build 32）与当前交接
+
+### 当前代码与发布状态
+
+- 已合并 PR [#89](https://github.com/mengangs/ipadn/pull/89)（`docs/2.1.1-handover`，提交 `4c9f025` → 合并 `3861f82`），补全 2.1.1 发布与核验记录；家庭共享功能（#82）仍维持暂停状态。
+- 功能分支 `feat/experience-and-install-polish`（最终提交 `aea4634`）在完整 GitHub Actions CI [43704876456](https://github.com/mengangs/ipadn/actions/runs/43704876456) 全通过后合并至 `main`（合并提交 `6ff7b15`）：
+  - `iPadnTests.xctest`：224 项执行，0 失败；
+  - `iPadnUITests.xctest`（`full` 范围，`iPhone 18 Pro` iOS 27.2 Simulator）：34 项执行，33 通过，1 项因机型条件跳过（`testDuoLayoutScreens`），0 失败；`test-summary.json` 汇总 257 通过、1 跳过、0 失败；`ipa-verification.json` 通过（含高刷新率声明）。可选折叠屏步骤 `iPhone Duo screenshots`（`continue-on-error: true`）15 分钟超时未产出截图，不影响主测试门禁。
+- **2.1.2 真机验收（iPhone 15 Pro）**：已通过 `python scripts/xtool_build.py --deploy`（含 `xtool_postbuild.py` Mach-O SDK 兼容标记 26.0 与高刷新率校验）在 `iPhone 15 Pro` 部署并验证最终 UI 改动（含 `2.1.2 / build 32` 正常启动）：操作按钮居中形变、云朵与 `3.0pt` 等宽底轨黑白 `ProgressRing`、侧滑原生动画、底部标签栏搜索/账号动效、下载与历史版本交互；配对灵动岛/后台策略及历史版本校准逻辑同步由 CI `43704876456` 的 `CoreTests` / `NativeInstallerTests` / `iPadnUITests` 覆盖验证。真实设备账号（`1251098224@qq.com`）、已导入配对文件与最近搜索（`forward`）均完整保留，临时测试下载任务已清理。
+- **2.1.2 / build 32 发布准备**：`generate_project.py` 与生成的 `iPadn.xcodeproj`（含应用与扩展共享配置）以及本地不入库 `Config/xtool/*.plist` 已更新为 `2.1.2 / 32`，`RELEASE_NOTES.md`、`README.md`、`README_EN.md` 与本文档已同步；待本发布提交在 `main` 触发并完成完整 CI（`run_tests=true`、`run_ui_tests=true`、`ui_test_scope=full`、`publish_release=true`）后自动生成 `v2.1.2` 标签、发布标准版与精简版 IPA 及校验文件，并更新 `altstore-source.json`。
 
 ## 2026-11-14 iPadn 2.1.1（build 31）与当前交接
 

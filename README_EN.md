@@ -34,11 +34,13 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 ---
 
-## In development (not released)
+## What’s new in 2.1.2
 
-- Swipe icons play a complete sequence once revealed: Telegram’s open-source trash artwork animates the lid and bounce, while the original share glyph lifts, returns and settles. Native Core Animation handles playback; closing resets it, and Reduce Motion shows the complete static icon.
-- Download swipe deletion skips confirmation and offers a five-second countdown with Undo, including consecutive deletions. Long-press Delete task and file and batch deletion retain confirmation. Search-history deletion no longer offers a countdown or Undo.
-- Translation uses the original system sheet by default. On iOS 18+, enable Translate in place under Account › Settings › Appearance & icon › Translation, choose a source language and prepare its languages. Translations follow the iPadn interface language, with Show original.
+- **Centered action morph & equalized rings**: Action pills, cloud buttons and monochrome progress rings align on one centered column, morph smoothly around their center, and share an equal track/progress stroke width.
+- **Swipe animations & 5-second Undo**: Revealed swipe icons play native Core Animation sequences (respecting Reduce Motion). Swipe-deleting downloads shows a 5-second Undo countdown (including consecutive deletions); search-history deletion removes the countdown.
+- **Vector tab bar & in-place translation**: Adaptive vector tab animations with balanced Search/Account strokes, plus opt-in Translate in place on iOS 18+ with Show original under Account › Settings › Appearance & icon › Translation.
+- **Live Activity pairing, native install & version matching**: Delivers background pairing Live Activity progress/codes (with notification fallback only when inactive), fixes dark-mode pairing badge contrast, runs blocking native install/lookup FFI on a 4 MiB stack thread with cancellation, improves delisted search priority, and prevents `external_identifier` values from replacing real version numbers.
+- Standard and lite packages remain available for iOS / iPadOS 16 and later. See the [release notes](RELEASE_NOTES.md).
 
 ## What’s new in 2.1.1
 
