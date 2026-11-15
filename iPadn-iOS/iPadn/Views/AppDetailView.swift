@@ -83,27 +83,152 @@ struct AppDetailView: View {
     private var filtered: [AppVersion] {
         let source = dateQuery.range == nil ? versions : dateQuery.matches
         return versionSearch.isEmpty ? source : source.filter {
-            displayVersion($0).localizedCaseInsensitiveContains(versionSearch) || $0.id.contains(versionSearch)
+            displayVersion($0).localizedCaseInsensitiveContains(versionSearch) ||
+            (versionInfo($0.id)?.bundleShortVersion?.localizedCaseInsensitiveContains(versionSearch) ?? false) ||
+            $0.id.contains(versionSearch)
         }
     }
     private func versionInfo(_ id: String) -> VersionMetadata? { metadata[id] ?? dateQuery.values[id] }
     private func displayVersion(_ version: AppVersion) -> String {
-        let metaVersion = versionInfo(version.id)?.version ?? AppVersion.unknown
-        return VersionService.preferredVersion(metaVersion, over: version.version, rejectingID: version.id)
+        guard let info = versionInfo(version.id) else {
+            return VersionService.sanitizedVersion(version.version, rejectingID: version.id)
+        }
+        let isLegacyUnseparated = info.bundleShortVersion == nil && (info.metadataSchema ?? 0) < VersionMetadata.currentSchema
+        if isLegacyUnseparated && VersionService.versionPreference(version.version, rejectingID: version.id) >= 2 {
+            return VersionService.preferredVersion(version.version, over: info.version, rejectingID: version.id)
+        }
+        return VersionService.preferredVersion(info.version, over: version.version, rejectingID: version.id)
+    }
+    private func bundleVersionSubtitle(_ version: AppVersion, displayed: String) -> String? {
+        if let info = versionInfo(version.id) {
+            let rawBundle = info.bundleShortVersion ??
+                ((info.bundleShortVersion == nil && (info.metadataSchema ?? 0) < VersionMetadata.currentSchema && info.version != displayed)
+                    ? info.version : nil)
+            if let rawBundle = rawBundle?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !rawBundle.isEmpty, rawBundle != AppVersion.unknown, rawBundle != displayed {
+                return AppText.text("包内版本 \(rawBundle)")
+            }
+        }
+        if displayed != AppVersion.unknown && VersionService.versionPreference(displayed, rejectingID: version.id) < 2 {
+            return AppText.text("仅包内版本号")
+        }
+        return nil
+    }
+
+    private func isLegacyStaleFallback(_ version: String, versionID: String, schema: Int?, released: Date?,
+                                       in list: [AppVersion], cachedMetadata: [String: VersionMetadata],
+                                       rowIndex: Int? = nil) -> Bool {
+        let level = schema ?? 0
+        if version == AppVersion.unknown, level < VersionMetadata.currentSchema {
+            return true
+        }
+        return level < 2 &&
+        VersionService.versionPreference(version, rejectingID: versionID) < 2 &&
+        VersionService.isLikelyStaleLatestFallback(
+            version, versionID: versionID, appVersion: app.version,
+            versions: list, cachedMetadata: cachedMetadata,
+            rowIndex: rowIndex, rowReleased: released
+        )
     }
 
     private func reconcileVersionDisplay(_ incoming: VersionMetadata, for versionID: String) {
-        let rowVersion = versions.first(where: { $0.id == versionID })?.version ?? AppVersion.unknown
-        let currentMetaVersion = metadata[versionID]?.version ?? AppVersion.unknown
-        let resolvedVersion = VersionService.bestVersion([incoming.version, currentMetaVersion, rowVersion], rejectingID: versionID)
+        let rowIndex = versions.firstIndex(where: { $0.id == versionID })
+        let incomingStale = isLegacyStaleFallback(incoming.version, versionID: versionID, schema: incoming.metadataSchema,
+                                                  released: incoming.released, in: versions, cachedMetadata: metadata,
+                                                  rowIndex: rowIndex)
+        let incomingVersion = incomingStale ? AppVersion.unknown : incoming.version
+        let rawRowVersion = rowIndex.map { versions[$0].version } ?? AppVersion.unknown
+        let rowStale = rowIndex != nil && VersionService.versionPreference(rawRowVersion, rejectingID: versionID) < 2 &&
+            VersionService.isLikelyStaleLatestFallback(rawRowVersion, versionID: versionID, appVersion: app.version,
+                                                     versions: versions, cachedMetadata: metadata, rowIndex: rowIndex)
+        let rowVersion = rowStale ? AppVersion.unknown : rawRowVersion
+        let currentMeta = metadata[versionID]
+        let currentMetaStale = currentMeta.map {
+            isLegacyStaleFallback($0.version, versionID: versionID, schema: $0.metadataSchema,
+                                  released: $0.released, in: versions, cachedMetadata: metadata, rowIndex: rowIndex)
+        } ?? false
+        let currentMetaVersion = currentMetaStale ? AppVersion.unknown : (currentMeta?.version ?? AppVersion.unknown)
+
+        let incomingIsLegacyUnseparated = incoming.bundleShortVersion == nil &&
+            (incoming.metadataSchema ?? 0) < VersionMetadata.currentSchema
+        let incomingPref = VersionService.versionPreference(incomingVersion, rejectingID: versionID)
+        let rowPref = VersionService.versionPreference(rowVersion, rejectingID: versionID)
+        let incomingMatchesRawBundle = incoming.bundleShortVersion == incomingVersion && incomingVersion != rowVersion
+
+        var resolvedVersion: String
+        if rowPref >= 2 && (incomingIsLegacyUnseparated || incomingMatchesRawBundle) && incomingPref >= 2 {
+            resolvedVersion = rowVersion
+        } else {
+            resolvedVersion = VersionService.bestVersion([incomingVersion, currentMetaVersion, rowVersion], rejectingID: versionID)
+        }
+        let resolvedReleased = incoming.released ?? currentMeta?.released
         var updated = incoming
-        if resolvedVersion != AppVersion.unknown { updated.version = resolvedVersion }
-        metadata[versionID] = updated
+        if updated.bundleShortVersion == nil {
+            updated.bundleShortVersion = currentMeta?.bundleShortVersion ??
+                ((incomingIsLegacyUnseparated && rowPref >= 2 && incomingPref >= 2 && incomingVersion != rowVersion) ? incomingVersion : nil)
+        }
+        if updated.buildVersion == nil {
+            updated.buildVersion = currentMeta?.buildVersion
+        }
         if resolvedVersion != AppVersion.unknown,
-           let index = versions.firstIndex(where: { $0.id == versionID }),
-           VersionService.versionPreference(resolvedVersion, rejectingID: versionID) >
-           VersionService.versionPreference(versions[index].version, rejectingID: versionID) {
-            versions[index].version = resolvedVersion
+           !releaseNotes.isEmpty,
+           VersionService.versionPreference(resolvedVersion, rejectingID: versionID) < 2,
+           let upgraded = VersionService.reconcileSingleWithReleaseNotes(
+               versionID: versionID, rawVersion: resolvedVersion, released: resolvedReleased,
+               versions: versions, metadata: metadata, notes: Array(releaseNotes.values),
+               appVersion: app.version, rowIndex: rowIndex
+           ) {
+            resolvedVersion = upgraded
+            let platform = store.settings.store.platform
+            let appID = app.id
+            Task {
+                await store.reconcileVersionNumber(
+                    platform: platform, appID: appID, versionID: versionID,
+                    version: upgraded, replaceStaleDotless: true
+                )
+            }
+        }
+        updated.version = resolvedVersion != AppVersion.unknown ? resolvedVersion : (incomingStale ? AppVersion.unknown : incoming.version)
+        metadata[versionID] = updated
+        guard let rowIndex else { return }
+        if resolvedVersion != AppVersion.unknown {
+            let currentScore = VersionService.versionPreference(versions[rowIndex].version, rejectingID: versionID)
+            let resolvedScore = VersionService.versionPreference(resolvedVersion, rejectingID: versionID)
+            if resolvedScore > currentScore || rowVersion == AppVersion.unknown {
+                versions[rowIndex].version = resolvedVersion
+            }
+        } else if rowStale {
+            versions[rowIndex].version = AppVersion.unknown
+        }
+    }
+
+    private func reconcileWithReleaseNotes(persist: Bool = true) {
+        guard !versions.isEmpty, !releaseNotes.isEmpty else { return }
+        let updates = VersionService.reconcileWithReleaseNotes(
+            versions: versions,
+            metadata: metadata,
+            notes: Array(releaseNotes.values),
+            appVersion: app.version
+        )
+        guard !updates.isEmpty else { return }
+        let platform = store.settings.store.platform
+        let appID = app.id
+        for update in updates {
+            if let index = versions.firstIndex(where: { $0.id == update.id }) {
+                versions[index].version = update.version
+            }
+            if var meta = metadata[update.id] {
+                meta.version = update.version
+                metadata[update.id] = meta
+            }
+            if persist {
+                Task {
+                    await store.reconcileVersionNumber(
+                        platform: platform, appID: appID, versionID: update.id,
+                        version: update.version, replaceStaleDotless: true
+                    )
+                }
+            }
         }
     }
     /// Lists from Apple carry only version IDs; each row then reads its own
@@ -300,7 +425,7 @@ struct AppDetailView: View {
             guard autoStart, !autoStarted else { return }
             autoStarted = true
             if apple.active == nil { showLogin = true }
-            else if store.settings.store.platform.supportsIPA { download(versionID: app.externalVersionID) }
+            else if store.settings.store.platform.supportsIPA { download(versionID: app.externalVersionID, marketingVersion: app.version) }
             else { downloadAppleMacPKG() }
         }
         .task(id: versionsKey) {
@@ -332,7 +457,10 @@ struct AppDetailView: View {
             if !countries.contains(store.watchCountry) { countries.append(store.watchCountry) }
             let notes = await ReleaseNotesService.notes(appID: app.id, countries: countries)
             guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.2)) { releaseNotes = notes }
+            withAnimation(.easeOut(duration: 0.2)) {
+                releaseNotes = notes
+                reconcileWithReleaseNotes()
+            }
         }
         .task(id: "extras-\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
             // Demo data stays offline.
@@ -418,7 +546,7 @@ struct AppDetailView: View {
             RowCapsule(title: "登录", filled: true) { showLogin = true }
         } else if store.settings.store.platform.supportsIPA {
             RowCapsule(title: app.isFree ? "获取" : "下载", filled: true) {
-                download(versionID: app.externalVersionID)
+                download(versionID: app.externalVersionID, marketingVersion: app.version)
             }
             .accessibilityIdentifier("detail.get")
         } else {
@@ -691,7 +819,8 @@ struct AppDetailView: View {
             guard readsMetadata else { throw RemoteZip.Failure.notFound }
             return try await store.versionMetadata(app: app, versionID: version.id,
                                                    includingIcon: false,
-                                                   knownVersion: version.version)
+                                                   knownVersion: version.version,
+                                                   knownVersions: versions)
         }
     }
 
@@ -725,9 +854,16 @@ struct AppDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityIdentifier("detail.version.number." + version.id)
-                    RowCapsule(title: "下载", enabled: !downloadLoading && !macOfficialLoading) { download(versionID: version.id) }
+                    RowCapsule(title: "下载", enabled: !downloadLoading && !macOfficialLoading) {
+                        download(versionID: version.id, marketingVersion: known ? name : nil)
+                    }
                         .fixedSize()
                         .accessibilityLabel(known ? AppText.text("下载版本 \(name)") : AppText.text("下载版本 ID \(version.id)"))
+                }
+                if let bundleNote = bundleVersionSubtitle(version, displayed: name) {
+                    Text(verbatim: bundleNote)
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 factsLayout {
                     if let date {
@@ -799,7 +935,8 @@ struct AppDetailView: View {
         do {
             let value = try await store.versionMetadata(app: app, versionID: version.id,
                                                         includingIcon: store.settings.showHistoryIcons,
-                                                        knownVersion: version.version) { partial in
+                                                        knownVersion: version.version,
+                                                        knownVersions: versions) { partial in
                 guard !Task.isCancelled, context == versionsKey else { return }
                 // Publish the number/date/size before the icon's extra range reads.
                 reconcileVersionDisplay(partial, for: version.id)
@@ -813,7 +950,7 @@ struct AppDetailView: View {
             // Never prompt from a list row; the next download asks to sign in.
             if error is AppleAuthError || error is AppleLoginError { metadataStopped = true; return }
             metadataFailures += 1
-            if metadataFailures >= 3 { metadataStopped = true }
+            if metadataFailures >= 5 { metadataStopped = true }
         }
     }
 
@@ -879,21 +1016,49 @@ struct AppDetailView: View {
                     throw error
                 }
             }
-            try Task.checkCancellation(); versions = result; versionError = nil
+            try Task.checkCancellation()
+            var sanitizedResult = result
             if versionsStale { showAllVersions = false }
             if force { metadataStopped = false; metadataFailures = 0 }
-            let cached = await store.cachedVersionMetadata(app: app, versionIDs: result.map(\.id))
-            let rowVersions = Dictionary(result.map { ($0.id, $0.version) }, uniquingKeysWith: { first, _ in first })
+            let cached = await store.cachedVersionMetadata(app: app, versionIDs: sanitizedResult.map(\.id))
+            try Task.checkCancellation()
+            let platform = store.settings.store.platform
+            let currentApp = self.app
+            for index in sanitizedResult.indices {
+                let rowID = sanitizedResult[index].id
+                let rawVersion = sanitizedResult[index].version
+                if VersionService.versionPreference(rawVersion, rejectingID: rowID) < 2,
+                   VersionService.isLikelyStaleLatestFallback(
+                       rawVersion, versionID: rowID, appVersion: currentApp.version,
+                       versions: sanitizedResult, cachedMetadata: cached, rowIndex: index
+                   ) {
+                    sanitizedResult[index].version = AppVersion.unknown
+                    Task {
+                        await store.reconcileVersionNumber(
+                            platform: platform, appID: currentApp.id, versionID: rowID,
+                            version: AppVersion.unknown, replaceStaleDotless: true
+                        )
+                    }
+                }
+            }
+            versions = sanitizedResult; versionError = nil
+            let indexByID = Dictionary(sanitizedResult.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let rowVersions = Dictionary(sanitizedResult.map { ($0.id, $0.version) }, uniquingKeysWith: { first, _ in first })
             for (id, entry) in cached {
+                if isLegacyStaleFallback(entry.version, versionID: id, schema: entry.metadataSchema,
+                                         released: entry.released, in: sanitizedResult, cachedMetadata: cached,
+                                         rowIndex: indexByID[id]) {
+                    metadata.removeValue(forKey: id)
+                    continue
+                }
                 reconcileVersionDisplay(entry, for: id)
                 if let rowVersion = rowVersions[id],
                    VersionService.versionPreference(rowVersion, rejectingID: id) >
                    VersionService.versionPreference(entry.version, rejectingID: id) {
-                    let platform = store.settings.store.platform
-                    let app = self.app
-                    Task { await store.reconcileVersionNumber(platform: platform, appID: app.id, versionID: id, version: rowVersion) }
+                    Task { await store.reconcileVersionNumber(platform: platform, appID: currentApp.id, versionID: id, version: rowVersion) }
                 }
             }
+            reconcileWithReleaseNotes()
             return true
         } catch is CancellationError { }
         catch AppleAuthError.reauthenticationRequired {
@@ -986,7 +1151,7 @@ struct AppDetailView: View {
         }
     }
 
-    private func download(versionID: String?) {
+    private func download(versionID: String?, marketingVersion: String? = nil) {
         guard !downloadLoading else { return }
         if let versionID, !versionID.isEmpty, !versionID.allSatisfy({ $0.isASCII && $0.isNumber }) { store.errorMessage = AppText.text("版本 ID 只能包含数字"); return }
         guard store.settings.store.platform.supportsIPA else {
@@ -998,7 +1163,7 @@ struct AppDetailView: View {
         downloadTask = Task {
             defer { downloadLoading = false; downloadTask = nil }
             do {
-                try await store.startDownload(app: app, versionID: versionID?.isEmpty == true ? nil : versionID)
+                try await store.startDownload(app: app, versionID: versionID?.isEmpty == true ? nil : versionID, marketingVersion: marketingVersion)
                 reloadIfLicenseWasMissing()
             }
             catch AppleLoginError.verificationRequired {

@@ -38,7 +38,9 @@ final class DownloadActivity {
                 .merge(with: manager.$autoInstalling.map { _ in () },
                        manager.$autoInstalled.map { _ in () },
                        manager.$autoInstallFailed.map { _ in () },
-                       manager.$waitingForWiFi.map { _ in () })
+                       manager.$autoInstallCancelled.map { _ in () },
+                       manager.$waitingForWiFi.map { _ in () },
+                       manager.$isLoaded.map { _ in () })
                 .sink { [weak self] _ in self?.scheduleRefresh() }
         }
         refresh()
@@ -97,9 +99,7 @@ final class DownloadActivity {
 
         // Installing automatically after the download: the same activity follows it.
         if active.isEmpty, let install = manager.autoInstalling {
-            let state = DownloadActivityAttributes.ContentState(
-                phase: 4, name: install.name, count: 1, written: Int64(install.fraction * 1000), expected: 1000,
-                updated: Date(), estimatedEnd: nil, speed: 0)
+            let state = Self.autoInstallState(for: install, now: Date())
             if let current { send(state, to: current) }
             else if UIApplication.shared.applicationState == .active, ActivityAuthorizationInfo().areActivitiesEnabled {
                 activity = try? Activity.request(attributes: DownloadActivityAttributes(),
@@ -107,6 +107,13 @@ final class DownloadActivity {
                 lastSent = state; lastSentAt = Date()
             }
             startTimer()
+            return
+        }
+        if active.isEmpty, let current, manager.autoInstallCancelled != nil,
+           (lastSent as? DownloadActivityAttributes.ContentState)?.phase == 4 || current.content.state.phase == 4 {
+            stopTimer()
+            activity = nil; lastSent = nil; shownIDs = []
+            Task { await current.end(nil, dismissalPolicy: .immediate) }
             return
         }
         // The install did not finish: say so and end with it, rather than stay on "Installing".
@@ -126,6 +133,15 @@ final class DownloadActivity {
             let done = DownloadActivityAttributes.ContentState(phase: 5, name: installed, count: 0, written: 1000, expected: 1000,
                                                                updated: Date(), estimatedEnd: nil, speed: 0)
             finish(current, with: done)
+            return
+        }
+        if active.isEmpty, !manager.isLoaded {
+            if let current, current.content.state.phase == 4 {
+                // Clean up an orphaned phase-4 crash/termination leftover immediately on relaunch.
+                stopTimer()
+                activity = nil; lastSent = nil; shownIDs = []
+                Task { await current.end(nil, dismissalPolicy: .immediate) }
+            }
             return
         }
         // Downloaded and about to install silently: keep the activity for the install.
@@ -244,6 +260,22 @@ final class DownloadActivity {
     }
 
     @available(iOS 16.1, *)
+    nonisolated static func autoInstallState(
+        for install: DownloadManager.AutoInstallProgress,
+        now: Date = Date()
+    ) -> DownloadActivityAttributes.ContentState {
+        let speedStage: Int64 = install.stage == .installing || !install.canCancel ? 2 : install.stage == .uploading ? 1 : 0
+        guard install.hasProgress || speedStage == 2 else {
+            return .init(phase: 4, name: install.name, count: 1, written: 0, expected: 0,
+                         updated: now, estimatedEnd: nil, speed: speedStage)
+        }
+        let scaled = Int64((install.fraction * 1000).rounded())
+        let written = speedStage == 2 ? min(1000, max(700, scaled)) : min(1000, max(10, scaled))
+        return .init(phase: 4, name: install.name, count: 1, written: written, expected: 1000,
+                     updated: now, estimatedEnd: nil, speed: speedStage)
+    }
+
+    @available(iOS 16.1, *)
     nonisolated static func shouldSend(
         _ state: DownloadActivityAttributes.ContentState,
         after last: DownloadActivityAttributes.ContentState?,
@@ -254,10 +286,12 @@ final class DownloadActivity {
             || last.name != state.name
             || last.count != state.count
             || (last.estimatedEnd == nil) != (state.estimatedEnd == nil)
+            || (state.phase == 4 && (last.speed != state.speed || (last.expected > 0) != (state.expected > 0)))
         if changed { return true }
         guard elapsed >= 1 else { return false }
         let moved = last.written != state.written || last.expected != state.expected
         if moved { return true }
+        if state.phase == 4 && elapsed >= 60 { return true }
         if let prevEnd = last.estimatedEnd, let nextEnd = state.estimatedEnd,
            abs(nextEnd.timeIntervalSince(prevEnd)) >= 3 {
             return true
@@ -307,7 +341,8 @@ final class DownloadActivity {
     /// Updates come every few seconds while iPadn runs; much later, it no longer does.
     @available(iOS 16.2, *)
     private static func staleDate(_ state: DownloadActivityAttributes.ContentState) -> Date? {
-        [0, 1, 4].contains(state.phase) ? Date().addingTimeInterval(90) : nil
+        if state.phase == 4 { return Date().addingTimeInterval(180) }
+        return [0, 1].contains(state.phase) ? Date().addingTimeInterval(90) : nil
     }
 
     @available(iOS 16.2, *)

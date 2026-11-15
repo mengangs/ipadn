@@ -90,8 +90,10 @@ final class DownloadManager: NSObject, ObservableObject {
     private var silentInstall = false
     private var silentQueue: [UUID] = []
     private var silentInstallTask: Task<Void, Never>?
+    private var activeSilentAttemptTask: Task<NativeInstaller.Outcome, Error>?
     private var silentCancelledIDs = Set<UUID>()
     private var silentRunning = false { didSet { updateInstallKeepAlive() } }
+    @Published private(set) var isLoaded = false
     /// iOS suspends iPadn soon after it leaves the screen, which would stop the
     /// install (and the Live Activity) until iPadn is opened again. From the
     /// download to the end of its silent installation, iPadn keeps running.
@@ -110,30 +112,46 @@ final class DownloadManager: NSObject, ObservableObject {
     /// A line for iPadn's top notice while it is open (notifications only
     /// appear in the background).
     @Published var autoInstallNotice: String?
+    enum AutoInstallStage: Int, Equatable, Sendable { case connecting, uploading, installing }
     /// The automatic installation in progress, for the Live Activity and downloads banner.
     struct AutoInstallProgress: Equatable {
         var id: UUID
         var name: String
         var fraction: Double
         var canCancel: Bool = true
+        var stage: AutoInstallStage = .connecting
+        var hasProgress: Bool { stage != .connecting && fraction >= 0.005 }
     }
     enum AutoInstallCancelOutcome: Equatable { case idle, cancelled, irreversible }
     @Published private(set) var autoInstalling: AutoInstallProgress?
     #if DEBUG
     func setAutoInstallingForTesting(_ progress: AutoInstallProgress?) { autoInstalling = progress }
+    func setWaitingAutoInstallForTesting(_ id: UUID, waiting: Bool) { markWaiting(id, waiting) }
+    func setInFlightAutoInstallForTesting(_ id: UUID?) { inFlightAutoInstallID = id?.uuidString }
+    func recoverInterruptedAutoInstallForTesting() { recoverInterruptedAutoInstall() }
     #endif
     /// The app just installed automatically (Live Activity "Installed").
     @Published private(set) var autoInstalled: String?
     /// The automatic installation that did not finish (Live Activity "Not installed").
     @Published private(set) var autoInstallFailed: String?
+    /// The automatic installation stopped by the user so the Live Activity dismisses cleanly.
+    @Published private(set) var autoInstallCancelled: String?
     /// A finished download about to be installed silently.
     func waitsForSilentInstall(_ id: UUID) -> Bool { silentInstall && waitingInstalls.contains(id.uuidString) }
     /// Finished downloads still waiting to be installed automatically. Kept
     /// across launches: iOS can end iPadn in the background mid-install.
     private static let autoInstallKey = "autoInstallWaiting"
+    private static let autoInstallInFlightKey = "autoInstallInFlight"
     private var waitingInstalls: [String] {
         get { LocalResources.defaults.stringArray(forKey: Self.autoInstallKey) ?? [] }
         set { LocalResources.defaults.set(newValue, forKey: Self.autoInstallKey) }
+    }
+    private var inFlightAutoInstallID: String? {
+        get { LocalResources.defaults.string(forKey: Self.autoInstallInFlightKey) }
+        set {
+            if let newValue { LocalResources.defaults.set(newValue, forKey: Self.autoInstallInFlightKey) }
+            else { LocalResources.defaults.removeObject(forKey: Self.autoInstallInFlightKey) }
+        }
     }
     private func markWaiting(_ id: UUID, _ waiting: Bool) {
         var list = waitingInstalls.filter { $0 != id.uuidString }
@@ -298,6 +316,7 @@ final class DownloadManager: NSObject, ObservableObject {
         super.init()
         jobs = previewJobs
         self.saveJobs = saveJobs
+        isLoaded = true
         // Screenshots never create a URLSession or start real transfers.
         tasks = activeTasks
         restoring = activeTasks.isEmpty
@@ -335,8 +354,25 @@ final class DownloadManager: NSObject, ObservableObject {
                 }.value
             } catch { storageError = AppText.text("任务文件读取失败；已保留原文件，请先导出诊断再处理。") + "\n" + error.localizedDescription }
             loadingJobs = false
+            recoverInterruptedAutoInstall()
             await restore()
+            isLoaded = true
             startBackgroundProbeIfNeeded()
+        }
+    }
+
+    /// If the previous launch terminated abnormally while NativeInstaller was
+    /// running, prevent an immediate silent auto-install crash loop on relaunch.
+    private func recoverInterruptedAutoInstall() {
+        guard let rawID = inFlightAutoInstallID else { return }
+        inFlightAutoInstallID = nil
+        guard let id = UUID(uuidString: rawID) else { return }
+        markWaiting(id, false)
+        if let job = jobs.first(where: { $0.id == id && $0.status == .completed }) {
+            let name = job.userFacingTitle
+            autoInstallFailed = name
+            autoInstallNotice = AppText.text("上次自动安装未完成，请在下载列表中重试 \(name)")
+            InstallLog.shared.add("cleared interrupted silent auto-install on launch: \(name)")
         }
     }
 
@@ -431,6 +467,7 @@ final class DownloadManager: NSObject, ObservableObject {
             }
         }
         for index in jobs.indices {
+            jobs[index].reconcileDispatchVersionFromMetadata()
             let id = jobs[index].id
             if jobs[index].status == .running && tasks[id] == nil { jobs[index].status = .paused }
             if jobs[index].status == .pausing { jobs[index].status = .paused }
@@ -449,12 +486,22 @@ final class DownloadManager: NSObject, ObservableObject {
         persist(); schedule()
     }
 
+    static func isSameDownloadVersion(_ lhs: StoreApp, _ rhs: StoreApp) -> Bool {
+        guard lhs.id == rhs.id else { return false }
+        let lhsExt = (lhs.externalVersionID ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let rhsExt = (rhs.externalVersionID ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !lhsExt.isEmpty && !rhsExt.isEmpty {
+            return lhsExt == rhsExt
+        }
+        return lhs.version == rhs.version
+    }
+
     func enqueue(_ asset: DownloadAsset) throws {
         guard storageError == nil else { throw ToolError.message(storageError!) }
         guard jobs.filter({ $0.status != .completed && $0.status != .failed }).count < maxQueued else {
             throw DownloadQueueLimitError()
         }
-        guard !jobs.contains(where: { $0.app.id == asset.app.id && $0.app.version == asset.app.version &&
+        guard !jobs.contains(where: { Self.isSameDownloadVersion($0.app, asset.app) &&
             $0.account == asset.account && ![.failed, .completed].contains($0.status) }) else {
             throw ToolError.message(AppText.text("这个版本已有下载任务"))
         }
@@ -538,15 +585,24 @@ final class DownloadManager: NSObject, ObservableObject {
               jobs[index].account == asset.account, jobs[index].app.id == asset.app.id else {
             throw ToolError.message(AppText.text("账号已切换，请重新下载"))
         }
+        let existingExt = (jobs[index].app.externalVersionID ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let incomingExt = (asset.app.externalVersionID ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !existingExt.isEmpty && !incomingExt.isEmpty && existingExt != incomingExt {
+            throw ToolError.message(AppText.text("所选版本暂时无法下载，请换个版本重试"))
+        }
         var next = jobs
         if next[index].foregroundFallback == true || next[index].error?.contains("无法创建") == true {
             fallbackForegroundIDs.insert(id)
         }
-        next[index].asset = asset; next[index].sourceURL = asset.url; next[index].app = asset.app
+        var refreshedAsset = asset
+        if refreshedAsset.app.storeMarketingVersion == nil {
+            refreshedAsset.app.storeMarketingVersion = next[index].resolvedMarketingVersion
+        }
+        next[index].asset = refreshedAsset; next[index].sourceURL = refreshedAsset.url; next[index].app = refreshedAsset.app
         next[index].error = nil
         let staged = FileManager.default.fileExists(atPath: LocalResources.stagingURL(id).path)
         next[index].status = staged ? .processing : .queued
-        if !staged { next[index].downloaded = 0; next[index].expected = asset.app.size }
+        if !staged { next[index].downloaded = 0; next[index].expected = refreshedAsset.app.size }
         try saveNewJobs(next)
         try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
         if staged { process(id) } else { schedule() }
@@ -1316,10 +1372,32 @@ final class DownloadManager: NSObject, ObservableObject {
         }
         silentCancelledIDs.insert(active.id)
         markWaiting(active.id, false)
-        silentInstallTask?.cancel()
+        activeSilentAttemptTask?.cancel()
+        if id == nil || silentQueue.isEmpty { silentInstallTask?.cancel() }
         NativeInstaller.cancel()
         updateInstallKeepAlive()
         return .cancelled
+    }
+
+    private final class AutoInstallProgressRelay: @unchecked Sendable {
+        private let lock = NSLock()
+        private var lastStage: AutoInstallStage?
+        private var lastFraction: Double = -1
+        private var lastSentAt: TimeInterval = 0
+
+        func accept(stage: AutoInstallStage, fraction: Double) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            let now = ProcessInfo.processInfo.systemUptime
+            let stageChanged = lastStage != stage
+            let complete = fraction >= 0.999 && lastFraction < 0.999
+            let movedEnough = abs(fraction - lastFraction) >= 0.01 && now - lastSentAt >= 0.1
+            guard stageChanged || complete || movedEnough else { return false }
+            lastStage = stage
+            lastFraction = fraction
+            lastSentAt = now
+            return true
+        }
     }
 
     /// Installs finished downloads one at a time through native installation,
@@ -1335,7 +1413,11 @@ final class DownloadManager: NSObject, ObservableObject {
         silentRunning = true
         silentInstallTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { self.silentRunning = false; self.silentInstallTask = nil }
+            defer {
+                self.activeSilentAttemptTask = nil
+                self.silentRunning = false
+                self.silentInstallTask = nil
+            }
             while !self.silentQueue.isEmpty {
                 let id = self.silentQueue.removeFirst()
                 guard self.autoInstall, self.silentInstall, !self.silentCancelledIDs.contains(id),
@@ -1343,30 +1425,52 @@ final class DownloadManager: NSObject, ObservableObject {
                       let file = self.fileURL(job) else {
                     self.markWaiting(id, false); continue
                 }
-                let name = [job.app.name, job.app.version].filter { !$0.isEmpty }.joined(separator: " ")
+                let name = job.userFacingTitle
                 self.autoInstallNotice = AppText.text("正在自动安装 \(name)")
                 self.autoInstalled = nil
                 self.autoInstallFailed = nil
-                self.autoInstalling = AutoInstallProgress(id: id, name: name, fraction: 0, canCancel: true)
+                self.autoInstallCancelled = nil
+                self.autoInstalling = AutoInstallProgress(id: id, name: name, fraction: 0, canCancel: true, stage: .connecting)
+                self.inFlightAutoInstallID = id.uuidString
                 defer {
+                    if self.inFlightAutoInstallID == id.uuidString { self.inFlightAutoInstallID = nil }
                     if self.autoInstalling?.id == id { self.autoInstalling = nil }
+                    self.activeSilentAttemptTask = nil
                 }
                 do {
-                    _ = try await NativeInstaller.install(package: file, bundleID: job.app.bundleID) { phase in
-                        // Sending the package is most of the wait; the system's own step follows.
-                        let fraction: Double
-                        switch phase {
-                        case .uploading(let done): fraction = done * 0.7
-                        case .installing(let done): fraction = 0.7 + done * 0.3
-                        default: fraction = 0
-                        }
-                        let cancellable = phase.isCancellable
-                        Task { @MainActor [weak self] in
-                            guard let self, self.autoInstalling?.id == id else { return }
-                            self.autoInstalling?.fraction = fraction
-                            self.autoInstalling?.canCancel = cancellable
+                    let relay = AutoInstallProgressRelay()
+                    let attemptTask = Task {
+                        try await NativeInstaller.install(package: file, bundleID: job.app.bundleID) { phase in
+                            // Sending the package is most of the wait; the system's own step follows.
+                            let stage: AutoInstallStage
+                            let fraction: Double
+                            switch phase {
+                            case .uploading(let done):
+                                stage = .uploading
+                                fraction = done * 0.7
+                            case .installing(let done):
+                                stage = .installing
+                                fraction = 0.7 + done * 0.3
+                            case .connecting:
+                                stage = .connecting
+                                fraction = 0
+                            }
+                            let cancellable = phase.isCancellable
+                            guard relay.accept(stage: stage, fraction: fraction) else { return }
+                            Task { @MainActor [weak self] in
+                                guard let self, var current = self.autoInstalling, current.id == id else { return }
+                                // Keep stage progression monotonic across concurrent MainActor hops.
+                                if stage.rawValue >= current.stage.rawValue {
+                                    current.stage = stage
+                                    current.fraction = max(stage == current.stage ? current.fraction : 0, fraction)
+                                    current.canCancel = cancellable
+                                    self.autoInstalling = current
+                                }
+                            }
                         }
                     }
+                    self.activeSilentAttemptTask = attemptTask
+                    _ = try await attemptTask.value
                     self.markWaiting(id, false)
                     self.silentCancelledIDs.remove(id)
                     self.autoInstalled = name
@@ -1377,6 +1481,7 @@ final class DownloadManager: NSObject, ObservableObject {
                     self.silentCancelledIDs.remove(id)
                     self.pendingAutoInstalls.removeAll { $0 == id }
                     self.autoInstallFailed = nil
+                    self.autoInstallCancelled = name
                     self.autoInstallNotice = AppText.text("已取消自动安装 \(name)")
                     InstallLog.shared.add("silent install cancelled: \(name)")
                 } catch {

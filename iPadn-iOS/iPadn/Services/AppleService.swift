@@ -363,11 +363,15 @@ final class AppleService: ObservableObject {
         let artwork = song["artwork-urls"] as? [String: Any]
         let defaultArt = artwork?["default"] as? [String: Any]
         let assetInfo = song["asset-info"] as? [String: Any]
+        let rawShort = plistString(metadata["bundleShortVersionString"])
+        let rawBuild = plistString(metadata["bundleVersion"])
+        let resolvedVersion = VersionService.reconcileTicketVersion(shortVersion: rawShort, buildVersion: rawBuild)
         let app = StoreApp(id: plistString(song["songId"]).isEmpty ? appID : plistString(song["songId"]),
             name: plistString(metadata["bundleDisplayName"]), bundleID: plistString(metadata["softwareVersionBundleId"]),
-            version: plistString(metadata["bundleShortVersionString"]), iconURL: StoreService.icon(plistString(defaultArt?["url"])),
+            version: resolvedVersion.isEmpty ? rawShort : resolvedVersion, iconURL: StoreService.icon(plistString(defaultArt?["url"])),
             size: (assetInfo?["file-size"] as? NSNumber)?.int64Value ?? 0,
-            minimumOS: plistString(metadata["minimumOSVersion"] ?? metadata["minimumOsVersion"]), externalVersionID: externalID)
+            minimumOS: plistString(metadata["minimumOSVersion"] ?? metadata["minimumOsVersion"]), externalVersionID: externalID,
+            bundleVersion: rawBuild.isEmpty ? nil : rawBuild)
         // The server order is positional: SC_Info/Manifest.plist.SinfPaths
         // uses the same order. Sorting by the opaque `id`, or compacting a
         // missing item, assigns licenses to the wrong extension/framework.
@@ -383,6 +387,8 @@ final class AppleService: ObservableObject {
     struct VersionTicket: Sendable {
         let url: URL
         let displayVersion: String
+        let rawShortVersion: String
+        let buildVersion: String
         let fileSize: Int64?
     }
 
@@ -415,11 +421,17 @@ final class AppleService: ObservableObject {
               [versionID, ""].contains(plistString(metadata["softwareVersionExternalIdentifier"])) else {
             throw ToolError.message(AppText.text("Apple 没有返回该版本的信息"))
         }
-        let displayVersion = VersionService.sanitizedVersion(plistString(metadata["bundleShortVersionString"]))
+        let sanitizedShort = VersionService.sanitizedVersion(plistString(metadata["bundleShortVersionString"]), rejectingID: versionID)
+        let sanitizedBuild = VersionService.sanitizedVersion(plistString(metadata["bundleVersion"]), rejectingID: versionID)
+        let rawShortVersion = sanitizedShort == AppVersion.unknown ? "" : sanitizedShort
+        let buildVersion = sanitizedBuild == AppVersion.unknown ? "" : sanitizedBuild
+        let displayVersion = VersionService.reconcileTicketVersion(shortVersion: rawShortVersion, buildVersion: buildVersion)
         let assetInfo = song["asset-info"] as? [String: Any]
         let fileSize = (assetInfo?["file-size"] as? NSNumber)?.int64Value
         return VersionTicket(url: url,
-                             displayVersion: displayVersion == AppVersion.unknown ? "" : displayVersion,
+                             displayVersion: displayVersion,
+                             rawShortVersion: rawShortVersion,
+                             buildVersion: buildVersion,
                              fileSize: fileSize.flatMap { $0 > 0 ? $0 : nil })
     }
 

@@ -147,7 +147,7 @@ async fn connect(request: &Request) -> Result<Session, Failure> {
     .map_err(|_| failure("pairing", "timed out"))?
     .map_err(fail("pairing"))?;
 
-    tokio::time::timeout(HANDSHAKE_TIMEOUT, open_tunnel(&mut client, address))
+    tokio::time::timeout(HANDSHAKE_TIMEOUT, Box::pin(open_tunnel(&mut client, address)))
         .await
         .map_err(|_| failure("tunnel", "timed out"))?
         .map_err(fail("tunnel"))
@@ -159,7 +159,7 @@ async fn open_tunnel(
 ) -> Result<Session, IdeviceError> {
     address.set_port(client.create_tcp_listener().await?);
     let stream = tokio::net::TcpStream::connect(address).await?;
-    let tunnel = connect_tls_psk_tunnel_native(stream, client.encryption_key()).await?;
+    let tunnel = Box::pin(connect_tls_psk_tunnel_native(stream, client.encryption_key())).await?;
 
     let invalid = |what: &str| IdeviceError::InternalError(format!("invalid tunnel {what}"));
     let client_ip: IpAddr =
@@ -172,7 +172,8 @@ async fn open_tunnel(
     let mut adapter = Adapter::new(Box::new(tunnel.into_inner()), client_ip, server_ip);
     adapter.set_mss(mtu.clamp(576, 8192) - 60);
     let mut adapter = adapter.to_async_handle();
-    let handshake = RsdHandshake::new(adapter.connect(rsd_port).await?).await?;
+    let stream = Box::pin(adapter.connect(rsd_port)).await?;
+    let handshake = Box::pin(RsdHandshake::new(stream)).await?;
     Ok(Session { adapter, handshake })
 }
 
@@ -402,11 +403,11 @@ async fn checked_list(session: &mut Session) -> Result<Json, Failure> {
 async fn install(request: &Request, progress: Progress) -> Result<Json, Failure> {
     let package = request.ipa.as_deref().ok_or_else(|| failure("request", "missing ipa"))?;
     progress.report(PHASE_CONNECT, 0, 1);
-    let mut session = cancellable(connect(request)).await?;
-    let before = cancellable(checked_lookup(&mut session, &request.bundle_id)).await?;
+    let mut session = cancellable(Box::pin(connect(request))).await?;
+    let before = cancellable(Box::pin(checked_lookup(&mut session, &request.bundle_id))).await?;
     progress.report(PHASE_CONNECT, 1, 1);
 
-    upload(&mut session, package, progress).await?;
+    Box::pin(upload(&mut session, package, progress)).await?;
     if CANCELLED.load(Ordering::SeqCst) {
         remove_staged(&mut session).await;
         return Err(failure("cancelled", "cancelled"));
@@ -462,9 +463,9 @@ async fn install(request: &Request, progress: Progress) -> Result<Json, Failure>
 
 fn run<R, F, Fut>(request: *const c_char, work: F) -> *mut c_char
 where
-    R: serde::de::DeserializeOwned,
-    F: FnOnce(R) -> Fut,
-    Fut: std::future::Future<Output = Result<Json, Failure>>,
+    R: serde::de::DeserializeOwned + Send + 'static,
+    F: FnOnce(R) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<Json, Failure>> + Send + 'static,
 {
     let reply = (|| {
         if request.is_null() {
@@ -472,15 +473,26 @@ where
         }
         let text = unsafe { CStr::from_ptr(request) }.to_str().map_err(fail("request"))?;
         let request: R = serde_json::from_str(text).map_err(fail("request"))?;
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .enable_all()
-            .build()
+        let execute = move || -> Result<Json, Failure> {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .thread_stack_size(4 * 1024 * 1024)
+                .enable_all()
+                .build()
+                .map_err(fail("runtime"))?;
+            let reply = runtime.block_on(Box::pin(work(request)));
+            // Tunnel tasks hold sockets; do not wait on them indefinitely.
+            runtime.shutdown_timeout(Duration::from_secs(2));
+            reply
+        };
+        // iOS cooperative threads carry ~512 KB stacks, which overflow inside
+        // TLS-PSK / userspace TCP tunnel futures. Always execute on a 4 MB thread.
+        let handle = std::thread::Builder::new()
+            .name("ipadn-native".into())
+            .stack_size(4 * 1024 * 1024)
+            .spawn(execute)
             .map_err(fail("runtime"))?;
-        let reply = runtime.block_on(work(request));
-        // Tunnel tasks hold sockets; do not wait on them indefinitely.
-        runtime.shutdown_timeout(Duration::from_secs(2));
-        reply
+        handle.join().map_err(|_| failure("runtime", "native thread panicked"))?
     })();
     let reply = reply.unwrap_or_else(|failure| {
         json!({ "ok": false, "stage": failure.stage, "message": failure.message })
@@ -505,7 +517,7 @@ pub unsafe extern "C" fn iPadnNativeInstall(
 ) -> *mut c_char {
     CANCELLED.store(false, Ordering::SeqCst);
     let progress = Progress { callback: progress, context };
-    run(request, |request: Request| async move { install(&request, progress).await })
+    run(request, move |request: Request| async move { install(&request, progress).await })
 }
 
 /// Connects and reports what the system has installed for `bundle_id`.
@@ -553,7 +565,7 @@ pub unsafe extern "C" fn iPadnNativePair(
     context: *mut c_void,
 ) -> *mut c_char {
     let events = pairing::Events { callback: events, context };
-    run(request, |request: pairing::PairRequest| async move { pairing::pair(request, events).await })
+    run(request, move |request: pairing::PairRequest| async move { pairing::pair(request, events).await })
 }
 
 /// Stops a pairing that is waiting for the device.

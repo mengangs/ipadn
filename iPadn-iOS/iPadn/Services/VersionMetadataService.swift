@@ -5,6 +5,8 @@ import UIKit
 /// The version number, date and package size of one App Store version, read from the
 /// package itself (ipatool's get-version-metadata).
 struct VersionMetadata: Codable, Hashable, Sendable {
+    static let currentSchema = 4
+
     var version: String
     var released: Date?
     /// nil in legacy caches; those dates must also be treated as approximate.
@@ -17,6 +19,13 @@ struct VersionMetadata: Codable, Hashable, Sendable {
     /// nil in legacy caches; ensures dotless versions written solely from IPA Info.plist
     /// are reconciled once against Apple's DownloadDispatch ticket metadata.
     var ticketChecked: Bool? = nil
+    /// nil in legacy caches created before stale latest-version fallback filtering.
+    var metadataSchema: Int? = nil
+    /// Raw `Info.plist` `CFBundleShortVersionString`, preserved separately from the
+    /// App Store public marketing version (e.g. `10.0.22` when Store says `1.9.5`).
+    var bundleShortVersion: String? = nil
+    /// Raw `Info.plist` `CFBundleVersion` build number (e.g. `80`, `48000`).
+    var buildVersion: String? = nil
 }
 
 /// Reads byte ranges of a remote file.
@@ -79,20 +88,35 @@ enum RemoteZip {
         guard let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
             throw Failure.unreadable
         }
-        let rawVersion = plistString(plist["CFBundleShortVersionString"] ?? plist["bundleShortVersionString"])
+        let rawShort = plistString(plist["CFBundleShortVersionString"] ?? plist["bundleShortVersionString"])
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let sanitizedPlist = VersionService.sanitizedVersion(rawVersion)
-        let reconciled = preferredVersion.map {
-            VersionService.preferredVersion(sanitizedPlist, over: $0)
-        } ?? sanitizedPlist
-        let version = reconciled == AppVersion.unknown ? rawVersion : reconciled
+        let rawBuild = plistString(plist["CFBundleVersion"] ?? plist["bundleVersion"])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let plistCandidate = VersionService.reconcileTicketVersion(shortVersion: rawShort, buildVersion: rawBuild)
+        let sanitizedPlist = VersionService.sanitizedVersion(plistCandidate)
+        let plistScore = VersionService.versionPreference(sanitizedPlist)
+        let sanitizedPref = preferredVersion.map { VersionService.sanitizedVersion($0) } ?? AppVersion.unknown
+        let prefScore = VersionService.versionPreference(sanitizedPref)
+        let version: String
+        if prefScore > plistScore {
+            version = sanitizedPref
+        } else if sanitizedPlist != AppVersion.unknown {
+            version = sanitizedPlist
+        } else if sanitizedPref != AppVersion.unknown {
+            version = sanitizedPref
+        } else {
+            version = !rawShort.isEmpty ? rawShort : rawBuild
+        }
         guard !version.isEmpty else { throw Failure.unreadable }
         let explicitDate = releaseDate(plist["releaseDate"] ?? plist["ReleaseDate"])
         var metadata = VersionMetadata(version: version,
                                        released: explicitDate ?? entry.modified,
                                        releaseDateIsEstimated: explicitDate == nil,
                                        packageSize: size,
-                                       ticketChecked: preferredVersion != nil ? true : nil)
+                                       ticketChecked: preferredVersion != nil ? true : nil,
+                                       metadataSchema: VersionMetadata.currentSchema,
+                                       bundleShortVersion: rawShort.isEmpty ? nil : rawShort,
+                                       buildVersion: rawBuild.isEmpty ? nil : rawBuild)
         await onMetadata?(metadata)
         try Task.checkCancellation()
         var icon: Data?
@@ -348,7 +372,8 @@ actor VersionMetadataStore {
         decodedIcons.removeObject(forKey: key as NSString)
     }
     private func satisfies(_ value: VersionMetadata, key: String, size: Bool, icon: Bool) -> Bool {
-        let versionSettled = VersionService.versionPreference(value.version) >= 2 || value.ticketChecked == true
+        let pref = VersionService.versionPreference(value.version)
+        let versionSettled = pref >= 2 || (value.ticketChecked == true && (pref >= 1 || (value.metadataSchema ?? 0) >= VersionMetadata.currentSchema))
         return versionSettled && (!size || value.packageSize != nil) && (!icon || (value.iconAvailable != nil &&
             (value.iconAvailable != true || FileManager.default.fileExists(atPath: Self.iconURL(key).path))))
     }
@@ -357,12 +382,33 @@ actor VersionMetadataStore {
         key.split(separator: "|", maxSplits: 2).last.map(String.init)
     }
 
-    func upgradeCachedVersion(_ key: String, version: String) {
+    func upgradeCachedVersion(_ key: String, version: String, replaceDotless: Bool = false) {
         guard var existing = cache[key] else { return }
         let rejectingID = Self.versionID(from: key)
-        let better = VersionService.preferredVersion(version, over: existing.version, rejectingID: rejectingID)
-        guard better != existing.version else { return }
+        let incoming = VersionService.sanitizedVersion(version, rejectingID: rejectingID)
+        let incomingScore = VersionService.versionPreference(incoming, rejectingID: rejectingID)
+        let existingScore = VersionService.versionPreference(existing.version, rejectingID: rejectingID)
+        if replaceDotless && incoming == AppVersion.unknown && existingScore <= 1 {
+            cache.removeValue(forKey: key)
+            try? LocalResources.save(cache, filename: Self.filename)
+            return
+        }
+        let better: String
+        if replaceDotless && existingScore <= 1 && incomingScore >= existingScore {
+            better = incoming
+        } else {
+            better = VersionService.preferredVersion(version, over: existing.version, rejectingID: rejectingID)
+        }
+        guard better != existing.version || (replaceDotless && existing.metadataSchema != VersionMetadata.currentSchema) else { return }
+        if existing.bundleShortVersion == nil,
+           existingScore >= 2,
+           better != existing.version {
+            existing.bundleShortVersion = existing.version
+        }
         existing.version = better
+        if existingScore >= 2 || replaceDotless {
+            existing.metadataSchema = VersionMetadata.currentSchema
+        }
         cache[key] = existing
         try? LocalResources.save(cache, filename: Self.filename)
     }
@@ -378,12 +424,33 @@ actor VersionMetadataStore {
     }
 
     private func reconciledCachedHit(for key: String, requiringPackageSize: Bool, requiringIcon: Bool,
-                                     knownVersion: String?) -> VersionMetadata? {
+                                     knownVersion: String?,
+                                     allowCached: (VersionMetadata) -> Bool) -> VersionMetadata? {
         guard var value = cache[key],
+              allowCached(value),
               satisfies(value, key: key, size: requiringPackageSize, icon: requiringIcon) else { return nil }
         if let knownVersion {
-            let better = VersionService.preferredVersion(knownVersion, over: value.version, rejectingID: Self.versionID(from: key))
+            let rejectingID = Self.versionID(from: key)
+            let cleanKnown = VersionService.sanitizedVersion(knownVersion, rejectingID: rejectingID)
+            let knownScore = VersionService.versionPreference(cleanKnown, rejectingID: rejectingID)
+            let cachedScore = VersionService.versionPreference(value.version, rejectingID: rejectingID)
+            if value.bundleShortVersion == nil,
+               (value.metadataSchema ?? 0) < VersionMetadata.currentSchema,
+               knownScore >= 2, cachedScore >= 2, cleanKnown != value.version {
+                // Legacy schema stored `CFBundleShortVersionString` (e.g. 10.0.22) in `version`,
+                // overwriting the public App Store marketing version (e.g. 1.9.5).
+                value.bundleShortVersion = value.version
+                value.version = cleanKnown
+                value.metadataSchema = VersionMetadata.currentSchema
+                cache[key] = value
+                try? LocalResources.save(cache, filename: Self.filename)
+                return value
+            }
+            let better = VersionService.preferredVersion(knownVersion, over: value.version, rejectingID: rejectingID)
             if better != value.version {
+                if value.bundleShortVersion == nil, cachedScore >= 2 {
+                    value.bundleShortVersion = value.version
+                }
                 value.version = better
                 cache[key] = value
                 try? LocalResources.save(cache, filename: Self.filename)
@@ -394,11 +461,13 @@ actor VersionMetadataStore {
 
     func load(_ key: String, requiringPackageSize: Bool = false, requiringIcon: Bool = false,
               knownVersion: String? = nil,
+              allowCached: @Sendable (VersionMetadata) -> Bool = { _ in true },
               fetch: @Sendable () async throws -> VersionMetadata) async throws -> VersionMetadata {
         // Old records retain their useful version/date, but are refreshed once
         // when an IPA row also needs its size or a legacy dotless version wasn't checked against ticket metadata.
         if let hit = reconciledCachedHit(for: key, requiringPackageSize: requiringPackageSize,
-                                         requiringIcon: requiringIcon, knownVersion: knownVersion) {
+                                         requiringIcon: requiringIcon, knownVersion: knownVersion,
+                                         allowCached: allowCached) {
             return hit
         }
         try await acquire()
@@ -406,16 +475,29 @@ actor VersionMetadataStore {
         // A row scrolled away while waiting: skip its request.
         try Task.checkCancellation()
         if let hit = reconciledCachedHit(for: key, requiringPackageSize: requiringPackageSize,
-                                         requiringIcon: requiringIcon, knownVersion: knownVersion) {
+                                         requiringIcon: requiringIcon, knownVersion: knownVersion,
+                                         allowCached: allowCached) {
             return hit
         }
         var value = try await fetch()
         let rejectingID = Self.versionID(from: key)
         if let knownVersion {
-            value.version = VersionService.preferredVersion(knownVersion, over: value.version, rejectingID: rejectingID)
+            let cleanKnown = VersionService.sanitizedVersion(knownVersion, rejectingID: rejectingID)
+            if VersionService.versionPreference(cleanKnown, rejectingID: rejectingID) >= 2 {
+                if value.bundleShortVersion == nil, VersionService.versionPreference(value.version, rejectingID: rejectingID) >= 1 {
+                    value.bundleShortVersion = value.version
+                }
+                value.version = cleanKnown
+            } else {
+                value.version = VersionService.preferredVersion(knownVersion, over: value.version, rejectingID: rejectingID)
+            }
         }
         if let previous = cache[key] {
-            value.version = VersionService.preferredVersion(value.version, over: previous.version, rejectingID: rejectingID)
+            if value.bundleShortVersion == nil { value.bundleShortVersion = previous.bundleShortVersion }
+            if value.buildVersion == nil { value.buildVersion = previous.buildVersion }
+            if allowCached(previous) {
+                value.version = VersionService.preferredVersion(value.version, over: previous.version, rejectingID: rejectingID)
+            }
             if !requiringIcon, value.iconAvailable == nil,
                previous.iconAvailable == true,
                FileManager.default.fileExists(atPath: Self.iconURL(key).path) {
@@ -423,6 +505,7 @@ actor VersionMetadataStore {
             }
         }
         if value.ticketChecked == nil { value.ticketChecked = true }
+        if value.metadataSchema == nil { value.metadataSchema = VersionMetadata.currentSchema }
         cache[key] = value
         if cache.count > 5_000 { cache.removeAll(); cache[key] = value }
         try? LocalResources.save(cache, filename: Self.filename)

@@ -43,7 +43,7 @@ struct PackageInstallationView: View {
                         AppIcon(url: job.displayApp(packageIcon: manager.packageIconURL(job)).iconURL, size: 96)
                         VStack(spacing: 4) {
                             Text(job.app.name).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
-                            Text([job.app.version.isEmpty ? "" : AppText.text("版本 \(job.app.version)"), job.app.size > 0 ? job.app.size.byteLabel : ""]
+                            Text([job.userFacingVersion.isEmpty ? "" : AppText.text("版本 \(job.userFacingVersion)"), job.app.size > 0 ? job.app.size.byteLabel : ""]
                                 .filter { !$0.isEmpty }.joined(separator: " · "))
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }

@@ -127,4 +127,18 @@ final class NativeInstallerTests: XCTestCase {
         cache.invalidate()
         XCTAssertNil(cache.freshEntry(now: t0))
     }
+
+    func testNativeInstallerIdleCancelAndUnavailableBlockingRunnerDoesNotDeadlock() async {
+        // Calling cancel() when no native install is active must be an idempotent no-op.
+        NativeInstaller.cancel()
+
+        if !NativeInstaller.isAvailable {
+            do {
+                _ = try await NativeInstaller.lookup(bundleID: "com.example.missing")
+                XCTFail("Unavailable NativeInstaller component must throw")
+            } catch {
+                XCTAssertFalse(error.localizedDescription.isEmpty)
+            }
+        }
+    }
 }

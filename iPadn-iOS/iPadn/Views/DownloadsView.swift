@@ -275,15 +275,29 @@ struct DownloadsView: View {
                 if let autoInstall = manager.autoInstalling {
                     Section {
                         HStack(spacing: 12) {
-                            ProgressView(value: autoInstall.fraction)
-                                .progressViewStyle(.circular)
-                                .tint(UX.tint)
-                                .frame(width: 24, height: 24)
+                            Group {
+                                if autoInstall.hasProgress || !autoInstall.canCancel {
+                                    ProgressView(value: autoInstall.fraction)
+                                        .progressViewStyle(.circular)
+                                } else {
+                                    ProgressView()
+                                        .progressViewStyle(.circular)
+                                }
+                            }
+                            .tint(UX.tint)
+                            .frame(width: 24, height: 24)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("正在自动安装 \(autoInstall.name)")
+                                Text(autoInstall.hasProgress || !autoInstall.canCancel
+                                     ? AppText.text("正在自动安装 \(autoInstall.name)（\(Int((autoInstall.fraction * 100).rounded()))%）")
+                                     : AppText.text("正在准备自动安装 \(autoInstall.name)"))
                                     .font(.subheadline.weight(.medium))
+                                    .monospacedDigit()
                                     .lineLimit(1)
-                                Text(autoInstall.canCancel ? AppText.text("准备或传输中，可随时取消") : AppText.text("已进入系统安装阶段，无法取消"))
+                                Text(autoInstall.stage == .installing || !autoInstall.canCancel
+                                     ? AppText.text("已进入系统安装阶段，无法取消")
+                                     : autoInstall.stage == .uploading
+                                     ? AppText.text("正在传输安装包，可随时取消")
+                                     : AppText.text("正在连接本机安装服务，可随时取消"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -414,11 +428,16 @@ struct DownloadsView: View {
         }
     }
 
+    private func showsVersionID(for job: DownloadJob) -> Bool {
+        job.isOlderVersion || job.status == .failed || manager.jobs.count(where: { $0.app.id == job.app.id }) > 1
+    }
+
     /// A compact row for edit mode: selection mark, icon, name and state.
     private func editRow(_ job: DownloadJob) -> some View {
         let app = job.displayApp(packageIcon: manager.packageIconURL(job))
         let selected = selection.contains(job.id)
-        let details = [app.version.isEmpty ? "" : "v" + app.version, job.status.title].filter { !$0.isEmpty }.joined(separator: " · ")
+        let versionSummary = job.displayVersionSummary(displayedVersion: app.version, includeVersionID: showsVersionID(for: job))
+        let details = [versionSummary, job.status.title].filter { !$0.isEmpty }.joined(separator: " · ")
         return Button { toggleSelection(job.id) } label: {
             HStack(spacing: 12) {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
@@ -556,6 +575,8 @@ struct DownloadTaskRow: View {
     }
     private var appHeading: some View {
         let displayedApp = self.displayedApp
+        let showVersionID = job.isOlderVersion || job.status == .failed || manager.jobs.count(where: { $0.app.id == job.app.id }) > 1
+        let versionSummary = job.displayVersionSummary(displayedVersion: displayedApp.version, includeVersionID: showVersionID)
         return HStack(alignment: .center, spacing: 14) {
             AppIcon(url: displayedApp.iconURL, size: 64)
             VStack(alignment: .leading, spacing: 4) {
@@ -563,7 +584,7 @@ struct DownloadTaskRow: View {
                 HStack(spacing: 6) {
                     platformIcon
                     // Version and size scroll once in place when the row is too narrow.
-                    MarqueeText(text: [displayedApp.version.isEmpty ? "" : "v\(displayedApp.version)",
+                    MarqueeText(text: [versionSummary,
                                        displayedApp.size > 0 ? displayedApp.size.byteLabel : ""]
                                     .filter { !$0.isEmpty }.joined(separator: " · "))
                         .foregroundStyle(.secondary)

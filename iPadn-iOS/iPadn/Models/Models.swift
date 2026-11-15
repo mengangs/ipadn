@@ -116,13 +116,17 @@ struct StoreApp: Codable, Identifiable, Hashable {
     // No public listing in any storefront (removed from sale); the App ID
     // still works for accounts that own it.
     var delisted: Bool?
+    /// Internal `CFBundleVersion` read from Info.plist or dispatch ticket.
+    var bundleVersion: String? = nil
+    /// App Store public marketing version when tracked separately from `CFBundleShortVersionString`.
+    var storeMarketingVersion: String? = nil
     static let delistedPlaceholder = "未在公开商店找到"
     var isDelisted: Bool { delisted == true || category == Self.delistedPlaceholder }
     /// Category for display; never the legacy delisted placeholder.
     var displayCategory: String { category == Self.delistedPlaceholder ? "" : category }
 }
 
-struct AppVersion: Codable, Identifiable, Hashable {
+struct AppVersion: Codable, Identifiable, Hashable, Sendable {
     /// Version lists from Apple carry only IDs. The placeholder is data, not
     /// display text: it is stored, merged and compared, so it stays fixed.
     static let unknown = "未知版本"
@@ -171,6 +175,14 @@ struct DownloadAsset: Codable {
         self.externalVersionIDs = externalVersionIDs
         self.platform = platform
         self.account = account
+    }
+
+    var decodedMetadata: [String: Any]? {
+        guard let metadata, !metadata.isEmpty,
+              let plist = try? PropertyListSerialization.propertyList(from: metadata, format: nil) as? [String: Any] else {
+            return nil
+        }
+        return plist
     }
 }
 
@@ -230,12 +242,66 @@ struct DownloadJob: Codable, Identifiable {
     func completing(with inspected: StoreApp) -> StoreApp {
         var completed = inspected
         completed.iconURL = inspected.iconURL ?? app.iconURL ?? asset?.app.iconURL
+        completed.storeMarketingVersion = inspected.storeMarketingVersion ?? app.storeMarketingVersion ?? asset?.app.storeMarketingVersion
+        if completed.bundleVersion == nil {
+            completed.bundleVersion = app.bundleVersion ?? asset?.app.bundleVersion
+        }
         return completed
     }
     func displayApp(packageIcon: URL?) -> StoreApp {
         var displayed = app
         displayed.iconURL = packageIcon ?? app.iconURL ?? asset?.app.iconURL
         return displayed
+    }
+    var resolvedMarketingVersion: String? {
+        for candidate in [app.storeMarketingVersion, asset?.app.storeMarketingVersion] {
+            if let value = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+    /// User-facing version prioritizing verified App Store marketing version over `CFBundleShortVersionString`.
+    var userFacingVersion: String { resolvedMarketingVersion ?? app.version }
+    /// App name paired with user-facing version for Live Activity, alerts, and auto-install notices.
+    var userFacingTitle: String { [app.name, userFacingVersion].filter { !$0.isEmpty }.joined(separator: " ") }
+    func displayVersionSummary(displayedVersion: String, includeVersionID: Bool) -> String {
+        var parts: [String] = []
+        if let marketing = resolvedMarketingVersion {
+            if !displayedVersion.isEmpty && displayedVersion != marketing {
+                parts.append(AppText.text("v\(marketing)（包内 \(displayedVersion)）"))
+            } else {
+                parts.append("v\(marketing)")
+            }
+        } else if !displayedVersion.isEmpty {
+            parts.append("v\(displayedVersion)")
+        }
+        if includeVersionID, let extID = app.externalVersionID, !extID.isEmpty {
+            parts.append("ID \(extID)")
+        }
+        return parts.joined(separator: " · ")
+    }
+    /// Upgrades incomplete or failed jobs loaded from older app saves whose
+    /// `app.version` took a stale dotless dispatch short string instead of a dotted `bundleVersion`.
+    mutating func reconcileDispatchVersionFromMetadata() {
+        guard let plist = asset?.decodedMetadata else { return }
+        let dispatchBuild = plistString(plist["bundleVersion"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let dispatchExternalID = plistString(plist["softwareVersionExternalIdentifier"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if app.bundleVersion == nil, !dispatchBuild.isEmpty {
+            app.bundleVersion = dispatchBuild
+        }
+        if (app.externalVersionID ?? "").isEmpty, !dispatchExternalID.isEmpty {
+            app.externalVersionID = dispatchExternalID
+        }
+        guard status != .completed, !dispatchBuild.isEmpty else { return }
+        let reconciled = VersionService.reconcileTicketVersion(shortVersion: app.version, buildVersion: dispatchBuild)
+        if !reconciled.isEmpty && reconciled != app.version {
+            app.version = reconciled
+            asset?.app.version = reconciled
+        }
+        if asset?.app.bundleVersion == nil {
+            asset?.app.bundleVersion = dispatchBuild
+        }
     }
     /// Where a newer version of this download would come from; nil for
     /// developer-site installers and files without an App ID.
@@ -262,6 +328,9 @@ struct DownloadJob: Codable, Identifiable {
     }
 
     var storeVersion: String {
+        if let marketing = resolvedMarketingVersion {
+            return marketing
+        }
         let ticket = asset?.app.version ?? ""
         return ticket.isEmpty ? app.version : ticket
     }

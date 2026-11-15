@@ -940,6 +940,16 @@ final class ToolStore: ObservableObject {
         return list
     }
 
+    private func cachedOfficialVersions(platform: AppPlatform, appID: String) -> [AppVersion] {
+        let countryKey = "|\(platform.rawValue)|\(settings.store.country)|\(appID)"
+        if let direct = officialVersionCache.first(where: { $0.key.hasSuffix(countryKey) })?.value.versions {
+            return direct
+        }
+        return officialVersionCache.first(where: {
+            $0.key.contains("|\(platform.rawValue)|") && $0.key.hasSuffix("|\(appID)")
+        })?.value.versions ?? []
+    }
+
     private func reconcileVersionEntries(
         _ entries: [AppVersion],
         for app: StoreApp,
@@ -951,16 +961,46 @@ final class ToolStore: ObservableObject {
             VersionMetadataStore.key(platform: platform, appID: app.id, versionID: $0.id)
         })
         let storeVersion = VersionService.sanitizedVersion(app.version, rejectingID: app.externalVersionID)
-        return entries.map { entry in
+        return entries.enumerated().map { index, entry in
             var updated = entry
             let key = VersionMetadataStore.key(platform: platform, appID: app.id, versionID: entry.id)
             let storeCandidate = entry.id == app.externalVersionID ? storeVersion : AppVersion.unknown
-            updated.version = VersionService.bestVersion([
-                storeCandidate,
-                cachedMeta[key]?.version ?? "",
-                extraNames[entry.id] ?? "",
-                entry.version
-            ], rejectingID: entry.id)
+            let meta = cachedMeta[key]
+            let cachedCandidate: String = {
+                guard let meta else { return "" }
+                if (meta.metadataSchema ?? 0) < 2,
+                   VersionService.versionPreference(meta.version, rejectingID: entry.id) < 2,
+                   VersionService.isLikelyStaleLatestFallback(
+                       meta.version, versionID: entry.id, appVersion: app.version,
+                       versions: entries, cachedMetadata: cachedMeta,
+                       rowIndex: index, rowReleased: meta.released
+                   ) {
+                    return ""
+                }
+                if meta.version == AppVersion.unknown, (meta.metadataSchema ?? 0) < VersionMetadata.currentSchema {
+                    return ""
+                }
+                return meta.version
+            }()
+            let extraRaw = extraNames[entry.id] ?? ""
+            let extraCandidate = (VersionService.versionPreference(extraRaw, rejectingID: entry.id) < 2 &&
+                VersionService.isLikelyStaleLatestFallback(
+                    extraRaw, versionID: entry.id, appVersion: app.version,
+                    versions: entries, cachedMetadata: cachedMeta, rowIndex: index
+                )) ? "" : extraRaw
+            let entryCandidate = (VersionService.versionPreference(entry.version, rejectingID: entry.id) < 2 &&
+                VersionService.isLikelyStaleLatestFallback(
+                    entry.version, versionID: entry.id, appVersion: app.version,
+                    versions: entries, cachedMetadata: cachedMeta, rowIndex: index
+                )) ? "" : entry.version
+            let metaIsLegacyUnseparated = meta != nil && meta?.bundleShortVersion == nil &&
+                (meta?.metadataSchema ?? 0) < VersionMetadata.currentSchema
+            updated.version = VersionService.bestVersion(
+                metaIsLegacyUnseparated
+                    ? [storeCandidate, extraCandidate, entryCandidate, cachedCandidate]
+                    : [storeCandidate, cachedCandidate, extraCandidate, entryCandidate],
+                rejectingID: entry.id
+            )
             return updated
         }
     }
@@ -995,12 +1035,19 @@ final class ToolStore: ObservableObject {
         })
         return filteredIDs.map { id in
             let metaKey = VersionMetadataStore.key(platform: context.platform, appID: app.id, versionID: id)
-            let known = VersionService.bestVersion([
-                id == asset.app.externalVersionID ? asset.app.version : "",
-                id == app.externalVersionID ? app.version : "",
-                cachedMeta[metaKey]?.version ?? "",
-                names[id] ?? ""
-            ], rejectingID: id)
+            let meta = cachedMeta[metaKey]
+            let metaIsLegacyUnseparated = meta != nil && meta?.bundleShortVersion == nil &&
+                (meta?.metadataSchema ?? 0) < VersionMetadata.currentSchema
+            let ticketVersion = id == asset.app.externalVersionID ? asset.app.version : ""
+            let storeVersion = id == app.externalVersionID ? app.version : ""
+            let thirdPartyVersion = names[id] ?? ""
+            let cachedVersion = meta?.version ?? ""
+            let known = VersionService.bestVersion(
+                metaIsLegacyUnseparated
+                    ? [storeVersion, thirdPartyVersion, cachedVersion, ticketVersion]
+                    : [storeVersion, cachedVersion, thirdPartyVersion, ticketVersion],
+                rejectingID: id
+            )
             return AppVersion(id: id, version: known, source: "Apple")
         }
     }
@@ -1021,29 +1068,40 @@ final class ToolStore: ObservableObject {
     }
 
     /// Reconciles any cached version list entries when higher-preference metadata arrives.
-    func reconcileVersionNumber(platform: AppPlatform, appID: String, versionID: String, version: String) async {
+    func reconcileVersionNumber(platform: AppPlatform, appID: String, versionID: String, version: String, replaceStaleDotless: Bool = false) async {
         let normalized = VersionService.sanitizedVersion(version, rejectingID: versionID)
-        guard normalized != AppVersion.unknown else { return }
+        let incomingScore = VersionService.versionPreference(normalized, rejectingID: versionID)
+        if !replaceStaleDotless && normalized == AppVersion.unknown { return }
         for (cacheKey, var cached) in officialVersionCache where cacheKey.hasSuffix("|\(platform.rawValue)|\(settings.store.country)|\(appID)") || cacheKey.contains("|\(platform.rawValue)|") && cacheKey.hasSuffix("|\(appID)") {
             var changed = false
             for index in cached.versions.indices where cached.versions[index].id == versionID {
-                let next = VersionService.preferredVersion(normalized, over: cached.versions[index].version, rejectingID: versionID)
-                if next != cached.versions[index].version {
+                let current = cached.versions[index].version
+                let currentScore = VersionService.versionPreference(current, rejectingID: versionID)
+                let next: String
+                if replaceStaleDotless && currentScore <= 1 && (incomingScore >= currentScore || normalized == AppVersion.unknown) {
+                    next = normalized
+                } else if normalized != AppVersion.unknown {
+                    next = VersionService.preferredVersion(normalized, over: current, rejectingID: versionID)
+                } else {
+                    continue
+                }
+                if next != current {
                     cached.versions[index].version = next
                     changed = true
                 }
             }
             if changed { officialVersionCache[cacheKey] = cached }
         }
-        await versions.reconcile(appID: appID, versionID: versionID, version: normalized)
+        await versions.reconcile(appID: appID, versionID: versionID, version: normalized, replaceDotless: replaceStaleDotless)
         let metaKey = VersionMetadataStore.key(platform: platform, appID: appID, versionID: versionID)
-        await metadataStore.upgradeCachedVersion(metaKey, version: normalized)
+        await metadataStore.upgradeCachedVersion(metaKey, version: normalized, replaceDotless: replaceStaleDotless)
     }
 
     /// The version number and date of one version, read from Apple. Lookups
     /// are cached and run one at a time.
     func versionMetadata(app: StoreApp, versionID: String, includingIcon: Bool = true,
                          knownVersion: String? = nil,
+                         knownVersions: [AppVersion] = [],
                          onMetadata: (@MainActor @Sendable (VersionMetadata) -> Void)? = nil) async throws -> VersionMetadata {
         #if DEBUG
         if visualPreview {
@@ -1061,15 +1119,41 @@ final class ToolStore: ObservableObject {
         let useCache = settings.useSignerCache
         let metadataStore = self.metadataStore
         let key = VersionMetadataStore.key(platform: platform, appID: app.id, versionID: versionID)
+        let effectiveVersions = knownVersions.isEmpty ? cachedOfficialVersions(platform: platform, appID: app.id) : knownVersions
+        let sanitizedKnown = knownVersion.map { VersionService.sanitizedVersion($0, rejectingID: versionID) } ?? AppVersion.unknown
+        let knownWasStaleFallback = VersionService.versionPreference(sanitizedKnown, rejectingID: versionID) < 2 &&
+            VersionService.isLikelyStaleLatestFallback(
+                sanitizedKnown, versionID: versionID, appVersion: app.version, versions: effectiveVersions
+            )
+        let safeKnown = knownWasStaleFallback ? AppVersion.unknown : sanitizedKnown
         let baselineKnown = VersionService.bestVersion([
-            knownVersion ?? "",
+            safeKnown,
             versionID == app.externalVersionID ? app.version : ""
         ], rejectingID: versionID)
+        let appVersionSnapshot = app.version
+        let allowCachedMeta: @Sendable (VersionMetadata) -> Bool = { candidate in
+            let schema = candidate.metadataSchema ?? 0
+            if candidate.version == AppVersion.unknown, schema < VersionMetadata.currentSchema {
+                return false
+            }
+            if schema < 2,
+               VersionService.versionPreference(candidate.version, rejectingID: versionID) < 2,
+               VersionService.isLikelyStaleLatestFallback(
+                   candidate.version, versionID: versionID, appVersion: appVersionSnapshot,
+                   versions: effectiveVersions, rowReleased: candidate.released
+               ) {
+                return false
+            }
+            return true
+        }
+        let previousCached = await metadataStore.cached(key)
+        let previousWasStale = previousCached.map { !allowCachedMeta($0) } ?? false
         let loaded = try await metadataStore.load(
             key,
             requiringPackageSize: platform.supportsIPA,
             requiringIcon: includingIcon && platform.supportsIPA,
-            knownVersion: baselineKnown == AppVersion.unknown ? nil : baselineKnown
+            knownVersion: baselineKnown == AppVersion.unknown ? nil : baselineKnown,
+            allowCached: allowCachedMeta
         ) { @MainActor [apple] in
             if platform == .macOS {
                 // A Mac package cannot be read in part; Apple's ticket names the version.
@@ -1077,44 +1161,63 @@ final class ToolStore: ObservableObject {
                                                             allowLicenseAcquisition: false)
                 guard !offer.displayVersion.isEmpty else { throw RemoteZip.Failure.notFound }
                 return VersionMetadata(version: VersionService.preferredVersion(offer.displayVersion, over: baselineKnown, rejectingID: versionID),
-                                       released: nil, ticketChecked: true)
+                                       released: nil, ticketChecked: true, metadataSchema: VersionMetadata.currentSchema)
             }
             let ticket = try await apple.versionTicketDetails(appID: app.id, versionID: versionID, useCache: useCache)
-            let ticketPref = VersionService.versionPreference(ticket.displayVersion, rejectingID: versionID)
+            var ticketVersion = ticket.displayVersion
+            if VersionService.isLikelyStaleLatestFallback(
+                   ticketVersion, versionID: versionID, appVersion: appVersionSnapshot, versions: effectiveVersions
+               ) {
+                let buildCandidate = VersionService.sanitizedVersion(ticket.buildVersion, rejectingID: versionID)
+                if buildCandidate != AppVersion.unknown,
+                   !VersionService.isLikelyStaleLatestFallback(
+                       buildCandidate, versionID: versionID, appVersion: appVersionSnapshot, versions: effectiveVersions
+                   ) {
+                    ticketVersion = buildCandidate
+                } else {
+                    ticketVersion = ""
+                }
+            }
             let baselinePref = VersionService.versionPreference(baselineKnown, rejectingID: versionID)
-            let preferredFromTicket = (ticketPref >= baselinePref && !ticket.displayVersion.isEmpty)
-                ? ticket.displayVersion
-                : baselineKnown
-            if preferredFromTicket != AppVersion.unknown {
-                onMetadata?(VersionMetadata(version: preferredFromTicket, released: nil,
-                                            packageSize: ticket.fileSize, ticketChecked: true))
+            let ticketPref = VersionService.versionPreference(ticketVersion, rejectingID: versionID)
+            let trustedMarketing = baselinePref >= 2 ? baselineKnown : nil
+            let preferredForRemoteZip = trustedMarketing ?? ((ticketPref >= baselinePref && !ticketVersion.isEmpty && baselinePref == 0) ? nil : (baselineKnown == AppVersion.unknown ? nil : baselineKnown))
+            let previewVersion = trustedMarketing ?? ((ticketPref >= baselinePref && !ticketVersion.isEmpty) ? ticketVersion : baselineKnown)
+            if previewVersion != AppVersion.unknown || ticket.fileSize != nil {
+                onMetadata?(VersionMetadata(version: previewVersion, released: nil,
+                                            packageSize: ticket.fileSize, ticketChecked: true,
+                                            metadataSchema: VersionMetadata.currentSchema))
             }
             do {
                 let resources = try await RemoteZip.versionResources(
                     HTTPRangeReader(url: ticket.url),
                     includingIcon: includingIcon,
-                    preferredVersion: preferredFromTicket == AppVersion.unknown ? nil : preferredFromTicket,
+                    preferredVersion: preferredForRemoteZip,
                     onMetadata: { value in await onMetadata?(value) }
                 )
                 var metadata = resources.metadata
-                if preferredFromTicket != AppVersion.unknown {
-                    metadata.version = VersionService.preferredVersion(preferredFromTicket, over: metadata.version, rejectingID: versionID)
+                if let trustedMarketing {
+                    metadata.version = trustedMarketing
+                } else if metadata.version == AppVersion.unknown && !ticketVersion.isEmpty {
+                    metadata.version = ticketVersion
                 }
                 metadata.ticketChecked = true
+                metadata.metadataSchema = VersionMetadata.currentSchema
                 if metadata.packageSize == nil { metadata.packageSize = ticket.fileSize }
                 if let icon = resources.icon {
                     do { try await metadataStore.saveIcon(icon, key: key) }
                     catch { metadata.iconAvailable = nil }
                 }
                 return metadata
-            } catch RemoteZip.Failure.notFound where preferredFromTicket != AppVersion.unknown,
-                    RemoteZip.Failure.unreadable where preferredFromTicket != AppVersion.unknown {
-                return VersionMetadata(version: preferredFromTicket, released: nil,
+            } catch RemoteZip.Failure.notFound where previewVersion != AppVersion.unknown || ticket.fileSize != nil,
+                    RemoteZip.Failure.unreadable where previewVersion != AppVersion.unknown || ticket.fileSize != nil {
+                return VersionMetadata(version: previewVersion, released: nil,
                                        packageSize: ticket.fileSize, iconAvailable: includingIcon ? false : nil,
-                                       ticketChecked: true)
+                                       ticketChecked: true, metadataSchema: VersionMetadata.currentSchema)
             }
         }
-        await reconcileVersionNumber(platform: platform, appID: app.id, versionID: versionID, version: loaded.version)
+        await reconcileVersionNumber(platform: platform, appID: app.id, versionID: versionID,
+                                     version: loaded.version, replaceStaleDotless: previousWasStale || knownWasStaleFallback)
         return loaded
     }
 
@@ -1148,13 +1251,20 @@ final class ToolStore: ObservableObject {
             platform: settings.store.platform, appID: app.id, versionID: versionID))
     }
 
-    func startDownload(app: StoreApp, versionID: String?) async throws {
+    func startDownload(app: StoreApp, versionID: String?, marketingVersion: String? = nil) async throws {
         var asset = try await SAPSigner.$userInitiated.withValue(true) {
             try await apple.asset(appID: app.id, versionID: versionID, store: settings.store, useCache: settings.useSignerCache)
         }
         // Apple DownloadDispatch often omits artwork even when the store
         // listing showed it. Do not lose that listing before enqueuing.
         if asset.app.iconURL == nil { asset.app.iconURL = app.iconURL }
+        let selectedMarketing = marketingVersion ?? ((versionID == nil || versionID == app.externalVersionID) ? app.version : nil)
+        if let selectedMarketing {
+            let clean = VersionService.sanitizedVersion(selectedMarketing, rejectingID: asset.app.externalVersionID ?? versionID)
+            if clean != AppVersion.unknown && VersionService.versionPreference(clean) >= 2 {
+                asset.app.storeMarketingVersion = clean
+            }
+        }
         try downloads.enqueue(asset)
         // A delisted app's only artwork may arrive with the download itself.
         if let icon = asset.app.iconURL {
@@ -1454,8 +1564,11 @@ final class ToolStore: ObservableObject {
         case "ipad": platform = .iPadOS
         default: platform = .iOS
         }
-        let asset = try await apple.asset(appID: job.app.id, versionID: job.asset?.app.externalVersionID,
+        var asset = try await apple.asset(appID: job.app.id, versionID: job.asset?.app.externalVersionID ?? job.app.externalVersionID,
             store: StoreContext(country: settings.store.country, platform: platform), useCache: settings.useSignerCache)
+        if asset.app.storeMarketingVersion == nil {
+            asset.app.storeMarketingVersion = job.resolvedMarketingVersion
+        }
         try downloads.refreshFailed(job.id, asset: asset)
         tab = 1
     }

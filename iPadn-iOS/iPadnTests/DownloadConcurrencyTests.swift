@@ -239,6 +239,118 @@ final class DownloadConcurrencyTests: XCTestCase {
         manager.setAutoInstallingForTesting(nil)
     }
 
+    @MainActor
+    func testAutoInstallLiveActivityStagesDistinguishIndeterminateAndTransfer() {
+        if #available(iOS 16.1, *) {
+            let jobID = UUID()
+            let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+            let connecting = DownloadManager.AutoInstallProgress(id: jobID, name: "Sample 1.0", fraction: 0, canCancel: true, stage: .connecting)
+            let connectingState = DownloadActivity.autoInstallState(for: connecting, now: now)
+            XCTAssertFalse(connecting.hasProgress)
+            XCTAssertEqual(connectingState.phase, 4)
+            XCTAssertEqual(connectingState.expected, 0, "Connecting stage must report indeterminate instead of 0%")
+            XCTAssertEqual(connectingState.speed, 0)
+
+            let preTransferUpload = DownloadManager.AutoInstallProgress(id: jobID, name: "Sample 1.0", fraction: 0, canCancel: true, stage: .uploading)
+            let preTransferState = DownloadActivity.autoInstallState(for: preTransferUpload, now: now)
+            XCTAssertFalse(preTransferUpload.hasProgress)
+            XCTAssertEqual(preTransferState.expected, 0, "Zero-fraction uploading must stay indeterminate until transfer bytes move")
+            XCTAssertEqual(preTransferState.speed, 1)
+            XCTAssertTrue(DownloadActivity.shouldSend(preTransferState, after: connectingState, elapsed: 0.05))
+
+            let activeUpload = DownloadManager.AutoInstallProgress(id: jobID, name: "Sample 1.0", fraction: 0.4, canCancel: true, stage: .uploading)
+            let activeUploadState = DownloadActivity.autoInstallState(for: activeUpload, now: now)
+            XCTAssertTrue(activeUpload.hasProgress)
+            XCTAssertEqual(activeUploadState.expected, 1000)
+            XCTAssertEqual(activeUploadState.written, 400)
+            XCTAssertEqual(activeUploadState.speed, 1)
+            XCTAssertTrue(DownloadActivity.shouldSend(activeUploadState, after: preTransferState, elapsed: 0.05),
+                          "Transition from indeterminate to determinate progress must push immediately")
+
+            let installing = DownloadManager.AutoInstallProgress(id: jobID, name: "Sample 1.0", fraction: 0, canCancel: false, stage: .installing)
+            let installingState = DownloadActivity.autoInstallState(for: installing, now: now)
+            XCTAssertEqual(installingState.expected, 1000)
+            XCTAssertEqual(installingState.written, 700, "System install stage must keep at least 70% progress floor")
+            XCTAssertEqual(installingState.speed, 2)
+            XCTAssertTrue(DownloadActivity.shouldSend(installingState, after: activeUploadState, elapsed: 0.05))
+        }
+    }
+
+    @MainActor
+    func testInterruptedAutoInstallRecoveryClearsInFlightAndWaitingLoop() {
+        let job = DownloadJob(app: StoreApp(id: "auto-crash-1", name: "Crash Guard App", version: "2.0"), status: .completed)
+        let manager = DownloadManager(previewJobs: [job])
+        let prevWaiting = LocalResources.defaults.stringArray(forKey: "autoInstallWaiting")
+        let prevInFlight = LocalResources.defaults.string(forKey: "autoInstallInFlight")
+        defer {
+            if let prevWaiting { LocalResources.defaults.set(prevWaiting, forKey: "autoInstallWaiting") }
+            else { LocalResources.defaults.removeObject(forKey: "autoInstallWaiting") }
+            if let prevInFlight { LocalResources.defaults.set(prevInFlight, forKey: "autoInstallInFlight") }
+            else { LocalResources.defaults.removeObject(forKey: "autoInstallInFlight") }
+        }
+
+        manager.setWaitingAutoInstallForTesting(job.id, waiting: true)
+        manager.setInFlightAutoInstallForTesting(job.id)
+        manager.recoverInterruptedAutoInstallForTesting()
+
+        XCTAssertNil(LocalResources.defaults.string(forKey: "autoInstallInFlight"))
+        XCTAssertFalse((LocalResources.defaults.stringArray(forKey: "autoInstallWaiting") ?? []).contains(job.id.uuidString),
+                       "Interrupted auto-install ID must be removed from waiting queue so relaunch does not loop-crash")
+        XCTAssertEqual(manager.autoInstallFailed, "Crash Guard App 2.0")
+        XCTAssertNotNil(manager.autoInstallNotice)
+    }
+
+    @MainActor
+    func testEnqueueDeduplicatesByExternalVersionIDNotStaleDispatchVersion() throws {
+        LocalResources.ensureDirectoriesExist()
+        let url = URL(string: "https://example.com/oplayer.ipa")!
+        let assetA = DownloadAsset(
+            app: StoreApp(id: "385907472", name: "OPlayer Lite", bundleID: "com.olimsoft.oplayer.lite",
+                          version: "4800", externalVersionID: "7100658"),
+            url: url, sinf: Data([1]), metadata: Data(), externalVersionIDs: ["7100658", "7752498", "857150582"],
+            platform: "ios", account: "user@example.com"
+        )
+        let assetB = DownloadAsset(
+            app: StoreApp(id: "385907472", name: "OPlayer Lite", bundleID: "com.olimsoft.oplayer.lite",
+                          version: "4800", externalVersionID: "7752498"),
+            url: url, sinf: Data([1]), metadata: Data(), externalVersionIDs: ["7100658", "7752498", "857150582"],
+            platform: "ios", account: "user@example.com"
+        )
+        let manager = DownloadManager(previewJobs: [
+            DownloadJob(app: assetA.app, asset: assetA, sourceURL: url, status: .paused)
+        ])
+        XCTAssertNoThrow(try manager.enqueue(assetB), "Different externalVersionID must not collide even if dispatch short version matches")
+        XCTAssertEqual(manager.jobs.count, 2)
+        XCTAssertThrowsError(try manager.enqueue(assetB), "Same externalVersionID must still deduplicate")
+
+        // Persisted failed job with stale "4800" and metadata bundleVersion="2.0.02" reconciles cleanly and blocks wrong-ID retry.
+        let legacyPlist = try HTTPClient.encodePlist([
+            "itemId": 385907472,
+            "softwareVersionBundleId": "com.olimsoft.oplayer.lite",
+            "bundleShortVersionString": "4800",
+            "bundleVersion": "2.0.02",
+            "softwareVersionExternalIdentifier": 7752498
+        ])
+        let failedLegacyAsset = DownloadAsset(
+            app: StoreApp(id: "385907472", name: "OPlayer Lite", bundleID: "com.olimsoft.oplayer.lite",
+                          version: "4800", externalVersionID: "7752498"),
+            url: url, sinf: Data([1]), metadata: legacyPlist, externalVersionIDs: [], platform: "ios", account: "user@example.com"
+        )
+        var failedJob = DownloadJob(app: failedLegacyAsset.app, asset: failedLegacyAsset, sourceURL: url, status: .failed, error: "mismatch")
+        failedJob.reconcileDispatchVersionFromMetadata()
+        XCTAssertEqual(failedJob.app.version, "2.0.02")
+        XCTAssertEqual(failedJob.app.bundleVersion, "2.0.02")
+
+        let retryManager = DownloadManager(previewJobs: [failedJob])
+        let wrongRetry = DownloadAsset(
+            app: StoreApp(id: "385907472", name: "OPlayer Lite", bundleID: "com.olimsoft.oplayer.lite",
+                          version: "4800", externalVersionID: "857150582"),
+            url: url, sinf: Data([1]), metadata: Data(), externalVersionIDs: [], platform: "ios", account: "user@example.com"
+        )
+        XCTAssertThrowsError(try retryManager.refreshFailed(failedJob.id, asset: wrongRetry))
+    }
+
     private final class SaveCounter: @unchecked Sendable {
         private let lock = NSLock()
         private var _slow = false

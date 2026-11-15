@@ -309,6 +309,26 @@ enum NativeInstaller {
         return Outcome(upgraded: reply.upgraded ?? false, after: reply.after)
     }
 
+    private static let blockingStackSize = 4 * 1024 * 1024
+
+    /// Runs blocking Rust/C tunnel FFI off the Swift cooperative thread pool
+    /// (whose ~512 KB stack overflows inside userspace TCP tunnel setup).
+    private static func runBlocking<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            let thread = Thread {
+                do {
+                    continuation.resume(returning: try work())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+            thread.name = "iPadn.NativeInstaller"
+            thread.qualityOfService = .userInitiated
+            thread.stackSize = blockingStackSize
+            thread.start()
+        }
+    }
+
     /// Reports what the system has installed for `bundleID`. Also the
     /// connection check: it goes through the VPN, the pairing and the tunnel.
     static func lookup(bundleID: String) async throws -> InstalledApp {
@@ -319,12 +339,12 @@ enum NativeInstaller {
             let body = try request(bundleID: bundleID, package: nil, port: port)
             InstallLog.shared.add("native lookup (port \(port))")
             return try await withTaskCancellationHandler {
-                try await Task.detached(priority: .userInitiated) {
+                try await runBlocking {
                     guard let lookupFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
                     let reply = try decode(body.withCString { lookupFunction($0) })
                     guard let app = reply.app else { throw Failure(stage: "reply", detail: "missing app") }
                     return app
-                }.value
+                }
             } onCancel: {
                 cancelIfActive(token)
             }
@@ -340,12 +360,12 @@ enum NativeInstaller {
             let body = try request(bundleID: "*", package: nil, port: port)
             InstallLog.shared.add("native list (port \(port))")
             return try await withTaskCancellationHandler {
-                try await Task.detached(priority: .userInitiated) {
+                try await runBlocking {
                     guard let listFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
                     let reply = try decode(body.withCString { listFunction($0) })
                     guard let apps = reply.apps else { throw Failure(stage: "reply", detail: "missing apps") }
                     return apps
-                }.value
+                }
             } onCancel: {
                 cancelIfActive(token)
             }
@@ -401,7 +421,7 @@ enum NativeInstaller {
                 let body = try request(bundleID: bundleID, package: package, port: port, metadata: metadata)
                 InstallLog.shared.add("native install started (port \(port))")
                 return try await withTaskCancellationHandler {
-                    try await Task.detached(priority: .userInitiated) {
+                    try await runBlocking {
                         guard let installFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
                         let box = Unmanaged.passRetained(ProgressBox(progress))
                         defer { box.release() }
@@ -417,7 +437,7 @@ enum NativeInstaller {
                         }
                         let reply = try decode(body.withCString { installFunction($0, callback, box.toOpaque()) })
                         return Outcome(upgraded: reply.upgraded ?? false, after: reply.after)
-                    }.value
+                    }
                 } onCancel: {
                     cancelIfActive(token)
                 }
@@ -476,7 +496,7 @@ enum NativeInstaller {
         let token = try await acquireGate(waitForCancelled: true)
         defer { end(token: token) }
         let body = String(decoding: try JSONSerialization.data(withJSONObject: ["name": name]), as: UTF8.self)
-        return try await Task.detached(priority: .userInitiated) {
+        return try await runBlocking {
             guard let pairFunction, let freeFunction else { throw ToolError.message(AppText.text("当前版本不包含本机配对组件。")) }
             let box = Unmanaged.passRetained(EventBox(events))
             defer { box.release() }
@@ -496,7 +516,7 @@ enum NativeInstaller {
             }
             defer { freeFunction(reply) }
             return try pairingFile(fromReply: Data(String(cString: reply).utf8))
-        }.value
+        }
     }
 
     static func cancelPairing() { pairCancelFunction?() }

@@ -14,7 +14,11 @@ private extension DownloadActivityAttributes.ContentState {
         case 0: return String(localized: "正在下载")
         case 1: return String(localized: "正在准备安装包")
         case 2: return String(localized: "下载完成")
-        case 4: return String(localized: "正在安装")
+        case 4:
+            if isInstallIndeterminate {
+                return speed == 1 ? String(localized: "准备传输安装") : String(localized: "正在准备安装")
+            }
+            return speed == 2 ? String(localized: "系统正在安装") : String(localized: "正在传输安装包")
         case 5: return String(localized: "已安装")
         case 6: return String(localized: "安装未完成")
         case 7: return String(localized: "已暂停")
@@ -22,6 +26,7 @@ private extension DownloadActivityAttributes.ContentState {
         default: return String(localized: "等待下载")
         }
     }
+    var isInstallIndeterminate: Bool { phase == 4 && (expected <= 0 || written <= 0) }
     var finished: Bool { phase == 2 || phase == 5 }
     var failed: Bool { phase == 6 || phase == 8 }
     var paused: Bool { phase == 7 }
@@ -39,9 +44,13 @@ private extension DownloadActivityAttributes.ContentState {
         return start...end
     }
     var bytes: String {
+        if phase == 4 {
+            if isInstallIndeterminate { return String(localized: "正在连接本机安装服务") }
+            return speed == 2 ? String(localized: "系统正在安装，无法取消") : String(localized: "正在传输安装包，可回 App 取消")
+        }
         if phase == 6 { return String(localized: "回到 \("iPadn") 继续安装") }
         if phase == 8 { return String(localized: "回到 \("iPadn") 查看或重试") }
-        guard phase != 4, phase != 5 else { return "" }
+        guard phase != 5 else { return "" }
         let volume: String
         if expected > 0 {
             volume = Self.byteFormatter.string(fromByteCount: written) + " / " + Self.byteFormatter.string(fromByteCount: expected)
@@ -71,7 +80,8 @@ private extension DownloadActivityAttributes.ContentState {
     /// A word or a percentage beside it.
     var short: String {
         switch phase {
-        case 0, 4: return fraction.formatted(.percent.precision(.fractionLength(0)))
+        case 0: return fraction.formatted(.percent.precision(.fractionLength(0)))
+        case 4: return isInstallIndeterminate ? String(localized: "准备中") : fraction.formatted(.percent.precision(.fractionLength(0)))
         case 1: return String(localized: "准备中")
         case 2: return String(localized: "完成")
         case 5: return String(localized: "已安装")
@@ -89,6 +99,8 @@ private struct DownloadBar: View {
         Group {
             if let interval = state.interval {
                 ProgressView(timerInterval: interval, countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() }
+            } else if state.isInstallIndeterminate {
+                ProgressView()
             } else {
                 ProgressView(value: state.fraction)
             }
@@ -107,6 +119,8 @@ private struct DownloadRing: View {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
             } else if state.paused {
                 Image(systemName: "pause.circle.fill").foregroundStyle(.secondary)
+            } else if state.isInstallIndeterminate {
+                ProgressView().progressViewStyle(.circular)
             } else if let interval = state.interval {
                 ProgressView(timerInterval: interval, countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() }
                     .progressViewStyle(.circular)
@@ -126,6 +140,8 @@ private struct DownloadTrailing: View {
         if let interval = state.interval, interval.upperBound > .now {
             Text(timerInterval: Date.now...interval.upperBound, countsDown: true)
                 .monospacedDigit().multilineTextAlignment(.trailing)
+        } else if state.isInstallIndeterminate {
+            Text(String(localized: "准备中"))
         } else if state.phase == 0 || state.phase == 4 || (state.paused && state.expected > 0) {
             Text(state.fraction, format: .percent.precision(.fractionLength(0))).monospacedDigit()
         } else {

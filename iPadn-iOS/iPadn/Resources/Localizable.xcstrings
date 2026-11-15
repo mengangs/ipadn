@@ -771,6 +771,81 @@
         }
       }
     },
+    "商店版本": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Store version" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "商店版本" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ストアバージョン" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "스토어 버전" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Версия в магазине" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Versión de la tienda" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Version boutique" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Store-Version" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Versão da loja" } },
+        "ar": { "stringUnit": { "state": "translated", "value": "إصدار المتجر" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "商店版本" } }
+      }
+    },
+    "包内版本": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Package version" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "套件版本" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "パッケージバージョン" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "패키지 버전" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Версия в пакете" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Versión del paquete" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Version du paquet" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Paketversion" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Versão do pacote" } },
+        "ar": { "stringUnit": { "state": "translated", "value": "إصدار الحزمة" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "包内版本" } }
+      }
+    },
+    "包内版本 %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "IPA %@" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "套件版本 %@" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "パッケージ版 %@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "패키지 버전 %@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "В пакете %@" } },
+        "es": { "stringUnit": { "state": "translated", "value": "En paquete %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Paquet %@" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Paketversion %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "No pacote %@" } },
+        "ar": { "stringUnit": { "state": "translated", "value": "داخل الحزمة %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "包内版本 %@" } }
+      }
+    },
+    "仅包内版本号": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Package number only" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "僅套件版本號" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "パッケージ内バージョンのみ" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "패키지 내부 버전만 있음" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Только номер из пакета" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Solo versión del paquete" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Numéro interne uniquement" } },
+        "de": { "stringUnit": { "state": "translated", "value": "Nur Paketversionsnummer" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Apenas número do pacote" } },
+        "ar": { "stringUnit": { "state": "translated", "value": "رقم الحزمة الداخلي فقط" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "仅包内版本号" } }
+      }
+    },
+    "v%@（包内 %@）": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "v%@ (IPA %@)" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "v%@（套件 %@）" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "v%@（パッケージ %@）" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "v%@ (패키지 %@)" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "v%@ (пакет %@)" } },
+        "es": { "stringUnit": { "state": "translated", "value": "v%@ (paquete %@)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "v%@ (paquet %@)" } },
+        "de": { "stringUnit": { "state": "translated", "value": "v%@ (Paket %@)" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "v%@ (pacote %@)" } },
+        "ar": { "stringUnit": { "state": "translated", "value": "v%@ (الحزمة %@)" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "v%@（包内 %@）" } }
+      }
+    },
     "签名标识": {
       "localizations": {
         "en": {
@@ -85459,6 +85534,356 @@
           "stringUnit": {
             "state": "translated",
             "value": "عند التفعيل، تعرض عمليات البحث بالكلمات المفتاحية التطبيقات المؤكد إزالتها والمطابقة للبحث في المقدمة. أوقفه لاستعادة الترتيب الأصلي."
+          }
+        }
+      }
+    },
+    "上次自动安装未完成，请在下载列表中重试 %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次自动安装未完成，请在下载列表中重试 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The previous automatic installation didn't finish. Retry %@ in Downloads."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次自動安裝未完成，請在下載列表中重試 %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前回の自動インストールが完了しませんでした。ダウンロード一覧で %@ を再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 자동 설치가 완료되지 않았습니다. 다운로드 목록에서 %@을(를) 다시 시도하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Предыдущая автоустановка не завершилась. Повторите %@ в списке загрузок."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La instalación automática anterior no terminó. Vuelve a intentar %@ en Descargas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'installation automatique précédente ne s'est pas terminée. Réessayez %@ dans Téléchargements."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die vorherige automatische Installation wurde nicht abgeschlossen. %@ in „Downloads“ erneut versuchen."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A instalação automática anterior não foi concluída. Tente %@ novamente em Downloads."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لم يكتمل التثبيت التلقائي السابق. أعد محاولة %@ من قائمة التنزيلات."
+          }
+        }
+      }
+    },
+    "正在自动安装 %@（%lld%%）": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在自动安装 %@（%lld%%）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installing %@ automatically (%lld%%)"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在自動安裝 %@（%lld%%）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を自動インストール中（%lld%%）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 자동 설치 중(%lld%%)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Автоустановка %@ (%lld%%)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalando %@ automáticamente (%lld%%)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installation automatique de %@ (%lld %%)"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wird automatisch installiert (%lld %%)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalando %@ automaticamente (%lld%%)"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ تثبيت %@ تلقائيًا (%lld%%)"
+          }
+        }
+      }
+    },
+    "正在准备自动安装 %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在准备自动安装 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing automatic install for %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在準備自動安裝 %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の自動インストールを準備中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 자동 설치 준비 중"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подготовка автоустановки %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparando la instalación automática de %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Préparation de l'installation automatique de %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatische Installation für %@ wird vorbereitet"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparando instalação automática de %@"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ تجهيز التثبيت التلقائي لـ %@"
+          }
+        }
+      }
+    },
+    "正在传输安装包，可随时取消": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在传输安装包，可随时取消"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transferring package — cancel anytime"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在傳輸安裝包，可隨時取消"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パッケージを転送中です。いつでもキャンセルできます"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "패키지 전송 중 — 언제든 취소할 수 있습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Передача пакета — можно отменить в любой момент"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transfiriendo el paquete; puedes cancelar en cualquier momento"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transfert du paquet — annulable à tout moment"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paket wird übertragen – jederzeit abbrechbar"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transferindo o pacote — cancele a qualquer momento"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ نقل الحزمة — يمكنك الإلغاء في أي وقت"
+          }
+        }
+      }
+    },
+    "正在连接本机安装服务，可随时取消": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在连接本机安装服务，可随时取消"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting to on-device installer — cancel anytime"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在連接本機安裝服務，可隨時取消"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバイス内のインストールサービスに接続中です。いつでもキャンセルできます"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기기 내 설치 서비스에 연결 중 — 언제든 취소할 수 있습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подключение к системному установщику — можно отменить"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conectando con el instalador del dispositivo; cancela cuando quieras"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion au service d'installation local — annulable à tout moment"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbindung zum lokalen Installationsdienst – jederzeit abbrechbar"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conectando ao instalador local — cancele a qualquer momento"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ الاتصال بخدمة التثبيت المحلية — يمكنك الإلغاء في أي وقت"
           }
         }
       }

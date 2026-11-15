@@ -803,15 +803,24 @@ actor VersionService {
 
     /// Upgrades cached third-party version strings in place when a trustworthy
     /// storefront or Apple source resolves a higher-preference version number.
-    func reconcile(appID: String, versionID: String, version: String) {
+    func reconcile(appID: String, versionID: String, version: String, replaceDotless: Bool = false) {
         let normalized = Self.sanitizedVersion(version, rejectingID: versionID)
-        guard normalized != AppVersion.unknown else { return }
+        let incomingScore = Self.versionPreference(normalized, rejectingID: versionID)
         var changed = false
         for (key, var entry) in cache where key.hasPrefix("v3|\(appID)|") {
             var updated = false
             for index in entry.versions.indices where entry.versions[index].id == versionID {
-                let better = Self.preferredVersion(normalized, over: entry.versions[index].version, rejectingID: versionID)
-                if better != entry.versions[index].version {
+                let current = entry.versions[index].version
+                let currentScore = Self.versionPreference(current, rejectingID: versionID)
+                let better: String
+                if replaceDotless && currentScore <= 1 && (incomingScore >= currentScore || normalized == AppVersion.unknown) {
+                    better = normalized
+                } else if normalized != AppVersion.unknown {
+                    better = Self.preferredVersion(normalized, over: current, rejectingID: versionID)
+                } else {
+                    continue
+                }
+                if better != current {
                     entry.versions[index].version = better
                     updated = true
                 }
@@ -862,12 +871,250 @@ actor VersionService {
         }
     }
 
+    static func reconcileTicketVersion(shortVersion: String, buildVersion: String) -> String {
+        let cleanShort = sanitizedVersion(shortVersion)
+        let cleanBuild = sanitizedVersion(buildVersion)
+        let short = cleanShort == AppVersion.unknown ? "" : cleanShort
+        let build = cleanBuild == AppVersion.unknown ? "" : cleanBuild
+        if versionPreference(short) >= 2 { return short }
+        if versionPreference(build) >= 2 { return build }
+        return !short.isEmpty ? short : build
+    }
+
+    /// Precision rank for matching a compact build string (e.g. `"4600"`, `"2109"`)
+    /// to an official App Store marketing version (`"4.6"`, `"2.1.09"`).
+    enum MarketingMatchPrecision: Int, Comparable {
+        case padded = 1
+        case zeroExtended = 2
+        case exact = 3
+
+        static func < (lhs: MarketingMatchPrecision, rhs: MarketingMatchPrecision) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
+
+    private static func isASCIIDigitToken(_ value: String) -> Bool {
+        !value.isEmpty && value.allSatisfy { $0.isASCII && $0.isNumber }
+    }
+
+    private static func marketingSegments(_ version: String) -> [String]? {
+        let trimmed = sanitizedVersion(version)
+        guard trimmed != AppVersion.unknown else { return nil }
+        let segments = trimmed.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        guard segments.count >= 2, segments.allSatisfy(isASCIIDigitToken) else { return nil }
+        return segments
+    }
+
+    static func compatibleMarketingPrecision(_ dottedVersion: String, buildRaw: String) -> MarketingMatchPrecision? {
+        let build = sanitizedVersion(buildRaw)
+        guard build != AppVersion.unknown,
+              versionPreference(build) == 1,
+              isASCIIDigitToken(build),
+              let segments = marketingSegments(dottedVersion) else { return nil }
+        let joined = segments.joined()
+        if build == joined { return .exact }
+        if build.hasPrefix(joined) {
+            let suffix = build.dropFirst(joined.count)
+            if !suffix.isEmpty && suffix.count <= 2 && suffix.allSatisfy({ $0 == "0" }) {
+                return .zeroExtended
+            }
+        }
+        let padded = segments.enumerated().map { item in
+            item.offset == 0 ? item.element : (item.element.count == 1 ? "0" + item.element : item.element)
+        }.joined()
+        if padded != joined {
+            if build == padded { return .padded }
+            if build.hasPrefix(padded) {
+                let suffix = build.dropFirst(padded.count)
+                if !suffix.isEmpty && suffix.count <= 2 && suffix.allSatisfy({ $0 == "0" }) {
+                    return .padded
+                }
+            }
+        }
+        return nil
+    }
+
+    static func matchesReleaseVersion(_ candidate: String, reference: String) -> Bool {
+        let a = sanitizedVersion(candidate)
+        let b = sanitizedVersion(reference)
+        guard a != AppVersion.unknown, b != AppVersion.unknown else { return false }
+        if a.caseInsensitiveCompare(b) == .orderedSame { return true }
+        if versionPreference(b) >= 2 && versionPreference(a) == 1 {
+            return compatibleMarketingPrecision(b, buildRaw: a) != nil
+        }
+        if versionPreference(a) >= 2 && versionPreference(b) == 1 {
+            return compatibleMarketingPrecision(a, buildRaw: b) != nil
+        }
+        return false
+    }
+
+    /// Detects when Apple's DownloadDispatch returned the app's current live version
+    /// (for example `"4800"`) for a historical build whose older position already precedes
+    /// strictly distinct newer releases.
+    static func isLikelyStaleLatestFallback(
+        _ candidate: String,
+        versionID: String,
+        appVersion: String,
+        versions: [AppVersion],
+        cachedMetadata: [String: VersionMetadata] = [:],
+        rowIndex: Int? = nil,
+        rowReleased: Date? = nil,
+        latestReleased: Date? = nil
+    ) -> Bool {
+        guard !versions.isEmpty,
+              let index = rowIndex ?? versions.firstIndex(where: { $0.id == versionID }),
+              index > 0,
+              versions.first?.id != versionID else { return false }
+        let clean = sanitizedVersion(candidate, rejectingID: versionID)
+        guard clean != AppVersion.unknown else { return false }
+
+        let latestReferences = [
+            appVersion,
+            versions[0].version,
+            cachedMetadata[versions[0].id]?.version ?? ""
+        ].compactMap { ref -> String? in
+            let sanitized = sanitizedVersion(ref, rejectingID: versions[0].id)
+            return sanitized == AppVersion.unknown ? nil : sanitized
+        }
+        guard latestReferences.contains(where: { matchesReleaseVersion(clean, reference: $0) }) else {
+            return false
+        }
+
+        let hasDistinctNewerVersion = versions[1..<index].contains { entry in
+            let known = bestVersion([
+                cachedMetadata[entry.id]?.version ?? "",
+                entry.version
+            ], rejectingID: entry.id)
+            guard known != AppVersion.unknown else { return false }
+            return !matchesReleaseVersion(known, reference: clean)
+                && !latestReferences.contains(where: { matchesReleaseVersion(known, reference: $0) })
+        }
+        if hasDistinctNewerVersion { return true }
+
+        if let rowReleased,
+           let latestReleased = latestReleased ?? cachedMetadata[versions[0].id]?.released,
+           latestReleased.timeIntervalSince(rowReleased) > 180 * 86400,
+           index >= 3 {
+            return true
+        }
+        return false
+    }
+
+    static func reconcileSingleWithReleaseNotes(
+        versionID: String,
+        rawVersion: String,
+        released: Date?,
+        versions: [AppVersion],
+        metadata: [String: VersionMetadata],
+        notes: [ReleaseNote],
+        appVersion: String,
+        rowIndex: Int? = nil
+    ) -> String? {
+        guard !notes.isEmpty,
+              let index = rowIndex ?? versions.firstIndex(where: { $0.id == versionID }) else { return nil }
+        let clean = sanitizedVersion(rawVersion, rejectingID: versionID)
+        guard clean != AppVersion.unknown,
+              versionPreference(clean) < 2,
+              !isLikelyStaleLatestFallback(clean, versionID: versionID, appVersion: appVersion,
+                                            versions: versions, cachedMetadata: metadata,
+                                            rowIndex: index, rowReleased: released) else {
+            return nil
+        }
+
+        let structuralMatches = notes.compactMap { note -> (note: ReleaseNote, precision: MarketingMatchPrecision)? in
+            guard let precision = compatibleMarketingPrecision(note.version, buildRaw: clean) else { return nil }
+            return (note, precision)
+        }
+        guard !structuralMatches.isEmpty else { return nil }
+
+        let uniqueWinner: ([ (note: ReleaseNote, precision: MarketingMatchPrecision) ]) -> ReleaseNote? = { pool in
+            guard let bestRank = pool.map(\.precision).max() else { return nil }
+            let top = pool.filter { $0.precision == bestRank }
+            let distinctVersions = Set(top.map { sanitizedVersion($0.note.version) })
+            return distinctVersions.count == 1 ? top[0].note : nil
+        }
+
+        if let released {
+            let datedMatches = structuralMatches.filter { item in
+                guard let noteDate = item.note.date else { return false }
+                let delta = noteDate.timeIntervalSince(released)
+                return delta >= -5 * 86400 && delta <= 60 * 86400
+            }
+            if !datedMatches.isEmpty {
+                return uniqueWinner(datedMatches)?.version
+            }
+            // If notes carry dates and none matched the IPA's package date window, do not guess.
+            if structuralMatches.contains(where: { $0.note.date != nil }) {
+                return nil
+            }
+        }
+
+        guard let winner = uniqueWinner(structuralMatches) else { return nil }
+        guard let winnerDate = winner.date else {
+            return structuralMatches.count == 1 ? winner.version : nil
+        }
+
+        let noteDatesByVersion = Dictionary(
+            notes.compactMap { note -> (String, Date)? in
+                let key = sanitizedVersion(note.version)
+                guard key != AppVersion.unknown, let date = note.date else { return nil }
+                return (key, date)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let myNumericID = UInt64(versionID)
+        let newerRowDate = versions[0..<index].reversed().compactMap { entry -> Date? in
+            if let myNumericID, let otherID = UInt64(entry.id), otherID < myNumericID { return nil }
+            if let metaDate = metadata[entry.id]?.released { return metaDate }
+            let known = bestVersion([metadata[entry.id]?.version ?? "", entry.version], rejectingID: entry.id)
+            return noteDatesByVersion[known]
+        }.first
+        let olderRowDate = versions[(index + 1)...].compactMap { entry -> Date? in
+            if let myNumericID, let otherID = UInt64(entry.id), otherID > myNumericID { return nil }
+            if let metaDate = metadata[entry.id]?.released { return metaDate }
+            let known = bestVersion([metadata[entry.id]?.version ?? "", entry.version], rejectingID: entry.id)
+            return noteDatesByVersion[known]
+        }.first
+
+        if let newerRowDate, winnerDate > newerRowDate.addingTimeInterval(45 * 86400) { return nil }
+        if let olderRowDate, winnerDate < olderRowDate.addingTimeInterval(-10 * 86400) { return nil }
+        return winner.version
+    }
+
+    static func reconcileWithReleaseNotes(
+        versions: [AppVersion],
+        metadata: [String: VersionMetadata],
+        notes: [ReleaseNote],
+        appVersion: String
+    ) -> [(id: String, version: String)] {
+        guard !versions.isEmpty, !notes.isEmpty else { return [] }
+        var updates: [(id: String, version: String)] = []
+        for (index, entry) in versions.enumerated() {
+            let current = bestVersion([metadata[entry.id]?.version ?? "", entry.version], rejectingID: entry.id)
+            guard let resolved = reconcileSingleWithReleaseNotes(
+                versionID: entry.id,
+                rawVersion: current,
+                released: metadata[entry.id]?.released,
+                versions: versions,
+                metadata: metadata,
+                notes: notes,
+                appVersion: appVersion,
+                rowIndex: index
+            ) else { continue }
+            if resolved != entry.version || (metadata[entry.id] != nil && metadata[entry.id]?.version != resolved) {
+                updates.append((entry.id, resolved))
+            }
+        }
+        return updates
+    }
+
     static func mergeSourceResults(_ sources: [[AppVersion]]) -> [AppVersion] {
         var result: [AppVersion] = []
         var indices: [String: Int] = [:]
-        // Preserve the configured source priority and the order returned by
-        // each source. Prefer user-facing dotted versions over dotless build numbers.
+        // Preserve the configured source priority and relative chronological
+        // anchor order when later sources contribute versions missing from earlier ones.
         for source in sources {
+            var insertCursor = 0
             for rawVersion in source where !rawVersion.id.isEmpty {
                 var version = rawVersion
                 version.version = sanitizedVersion(version.version, rejectingID: version.id)
@@ -876,9 +1123,14 @@ actor VersionService {
                     if !result[index].source.components(separatedBy: "、").contains(version.source) {
                         result[index].source += AppText.text("、") + version.source
                     }
+                    insertCursor = max(insertCursor, index + 1)
                 } else {
-                    indices[version.id] = result.count
-                    result.append(version)
+                    let targetIndex = min(insertCursor, result.count)
+                    result.insert(version, at: targetIndex)
+                    for i in targetIndex..<result.count {
+                        indices[result[i].id] = i
+                    }
+                    insertCursor = targetIndex + 1
                 }
             }
         }
