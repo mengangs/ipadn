@@ -2,7 +2,7 @@ import ActivityKit
 import AVFoundation
 import Foundation
 import UIKit
-import UserNotifications
+@preconcurrency import UserNotifications
 
 /// Creates the pairing file on the device itself (iOS 27 and later): iPadn
 /// presents itself as a computer, the user picks it in Settings › Privacy &
@@ -28,12 +28,17 @@ final class OnDevicePairing: ObservableObject {
         return false
     }
     /// The name Settings shows for iPadn.
-    static let hostName = "iPadn"
+    nonisolated static let hostName = "iPadn"
     static let serviceType = "_remotepairing-pairable-host._tcp."
+    nonisolated static let activityLifetime: TimeInterval = 310
 
     private var service: NetService?
     // ActivityKit is unavailable on iOS 16.0. Access the handle only in guarded methods.
     private var activity: Any?
+    private var activityTask: Task<Void, Never>?
+    private var activityGeneration = 0
+    private var stateGeneration = 0
+    private var activityStartedAt = Date.distantPast
     private let keepAlive = BackgroundKeepAlive(name: "iPadn pairing")
     private var running = false
 
@@ -41,26 +46,33 @@ final class OnDevicePairing: ObservableObject {
         guard !running else { return }
         running = true
         phase = .waiting
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         // iPadn must keep answering while Settings is in front; a background
         // task alone ends within seconds, which stops the pairing.
         keepAlive.start()
         startActivity()
-        InstallLog.shared.add("on-device pairing started (live activity: \(activity == nil ? "off" : "on"))")
-        Task {
+        let liveActivityActive = hasActiveLiveActivity
+        if Self.shouldSendFallbackNotification(hasActiveLiveActivity: liveActivityActive) {
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        }
+        InstallLog.shared.add("on-device pairing started (live activity: \(liveActivityActive ? "on" : "off"))")
+        Task { [weak self] in
             do {
                 let data = try await NativeInstaller.pair(name: Self.hostName) { [weak self] event in
                     Task { @MainActor in self?.handle(event) }
                 }
+                guard let self else { return }
                 try NativeInstaller.importPairingFile(data)
                 InstallLog.shared.add("on-device pairing finished")
+                let hadLiveActivity = hasActiveLiveActivity
                 finish(.finished)
-                if activity == nil { notify(AppText.text("配对完成"), body: AppText.text("回到 iPadn 继续。")) }
+                if Self.shouldSendFallbackNotification(hasActiveLiveActivity: hadLiveActivity) {
+                    notify(AppText.text("配对完成"), body: AppText.text("回到 iPadn 继续。"))
+                }
             } catch is CancellationError {
-                finish(.idle)
+                self?.finish(.idle)
             } catch {
                 InstallLog.shared.add("on-device pairing failed: \(error.localizedDescription)")
-                finish(.failed(error.localizedDescription))
+                self?.finish(.failed(error.localizedDescription))
             }
         }
     }
@@ -70,6 +82,63 @@ final class OnDevicePairing: ObservableObject {
         NativeInstaller.cancelPairing()
     }
 
+    static func formattedCode(_ code: String) -> String {
+        let digits = Array(code)
+        guard digits.count == 6 else { return code }
+        return String(digits[0..<3]) + " " + String(digits[3...])
+    }
+
+    static func activityStaleDate(forStep step: Int, now: Date = Date()) -> Date? {
+        (1...3).contains(step) ? now.addingTimeInterval(activityLifetime) : nil
+    }
+
+    static func shouldSendFallbackNotification(hasActiveLiveActivity: Bool) -> Bool {
+        !hasActiveLiveActivity
+    }
+
+    @available(iOS 16.2, *)
+    static func alertConfiguration(step: Int, code: String? = nil, host: String = hostName, message: String? = nil) -> AlertConfiguration? {
+        switch step {
+        case 2:
+            return AlertConfiguration(
+                title: LocalizedStringResource("正在与 \(host) 配对"),
+                body: LocalizedStringResource("设备已连接，正在生成配对码"),
+                sound: .default
+            )
+        case 3:
+            let display = code.map(formattedCode) ?? ""
+            return AlertConfiguration(
+                title: LocalizedStringResource("iPadn 配对码：\(display)"),
+                body: LocalizedStringResource("在「设置」中输入这个配对码"),
+                sound: .default
+            )
+        case 4:
+            return AlertConfiguration(
+                title: LocalizedStringResource("配对完成"),
+                body: LocalizedStringResource("回到 \(host) 继续安装"),
+                sound: .default
+            )
+        case 0:
+            let detail = message.flatMap { $0.isEmpty ? nil : $0 } ?? "请回到 \(host) 重试"
+            return AlertConfiguration(
+                title: LocalizedStringResource("配对未完成"),
+                body: LocalizedStringResource(String.LocalizationValue(detail)),
+                sound: .default
+            )
+        default:
+            return nil
+        }
+    }
+
+    private var hasActiveLiveActivity: Bool {
+        guard #available(iOS 16.2, *),
+              let current = activity as? Activity<PairingActivityAttributes>,
+              ActivityAuthorizationInfo().areActivitiesEnabled else {
+            return false
+        }
+        return current.activityState == .active
+    }
+
     private func handle(_ event: NativeInstaller.PairingEvent) {
         guard running else { return }
         switch event {
@@ -77,12 +146,17 @@ final class OnDevicePairing: ObservableObject {
             advertise(port: port, identifier: identifier, txt: txt)
         case .connected:
             phase = .connected
+            if UIApplication.shared.applicationState != .active {
+                keepAlive.pauseForHandoff()
+            }
             update(step: 2)
         case .code(let code):
             phase = .code(code)
             update(step: 3, code: code)
-            // Also as a notification, for devices without Live Activities.
-            notify(AppText.text("iPadn 配对码：\(code)"), body: AppText.text("在「设置」中输入这个配对码。"))
+            if Self.shouldSendFallbackNotification(hasActiveLiveActivity: hasActiveLiveActivity) {
+                let display = Self.formattedCode(code)
+                notify(AppText.text("iPadn 配对码：\(display)"), body: AppText.text("在「设置」中输入这个配对码。"))
+            }
         }
     }
 
@@ -96,48 +170,105 @@ final class OnDevicePairing: ObservableObject {
     }
 
     private func finish(_ phase: Phase) {
+        guard running else { return }
         service?.stop(); service = nil
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["ipadn-pairing-code"])
+        // Hold a background assertion BEFORE stopping keep-alive so the final
+        // Live Activity update/end never drops between keepAlive.stop() and Task scheduling.
+        let bg = UIApplication.shared.applicationState != .active ? PairingBackgroundTime(name: "iPadn pairing finish") : nil
         keepAlive.stop()
         running = false
         self.phase = phase
         switch phase {
-        case .finished: endActivity(step: 4, message: nil)
-        case .failed(let message): endActivity(step: 0, message: message)
-        default: endActivity(step: nil, message: nil)
+        case .finished: endActivity(step: 4, message: nil, keepingAlive: bg)
+        case .failed(let message): endActivity(step: 0, message: message, keepingAlive: bg)
+        default: endActivity(step: nil, message: nil, keepingAlive: bg)
         }
     }
 
     // MARK: Live Activity
 
+    private func enqueueActivityWork(_ work: @escaping @MainActor () async -> Void) {
+        let previous = activityTask
+        activityTask = Task { @MainActor in
+            await previous?.value
+            await work()
+        }
+    }
+
     private func startActivity() {
         guard #available(iOS 16.2, *), ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        // A pairing left over from an earlier run is no longer true.
-        for old in Activity<PairingActivityAttributes>.activities {
-            Task { await old.end(nil, dismissalPolicy: .immediate) }
-        }
+        activityGeneration += 1
+        stateGeneration += 1
+        let stale = Activity<PairingActivityAttributes>.activities
         let state = PairingActivityAttributes.ContentState(step: 1)
-        activity = try? Activity.request(attributes: PairingActivityAttributes(hostName: Self.hostName),
-                                         content: ActivityContent(state: state, staleDate: nil))
+        do {
+            let created = try Activity.request(
+                attributes: PairingActivityAttributes(hostName: Self.hostName),
+                content: ActivityContent(state: state, staleDate: Self.activityStaleDate(forStep: 1))
+            )
+            activity = created
+            activityStartedAt = Date()
+            let toEnd = stale.filter { $0.id != created.id }
+            if !toEnd.isEmpty {
+                enqueueActivityWork {
+                    for old in toEnd { await old.end(nil, dismissalPolicy: .immediate) }
+                }
+            }
+        } catch {
+            activity = nil
+            InstallLog.shared.add("pairing live activity unavailable: \(error.localizedDescription)")
+        }
     }
 
     private func update(step: Int, code: String? = nil) {
-        guard #available(iOS 16.2, *), let activity = activity as? Activity<PairingActivityAttributes> else { return }
+        guard #available(iOS 16.2, *), let current = activity as? Activity<PairingActivityAttributes> else { return }
+        stateGeneration += 1
+        let generation = activityGeneration
+        let targetStateGeneration = stateGeneration
+        let startedAt = activityStartedAt
         let state = PairingActivityAttributes.ContentState(step: step, code: code)
-        // An alert expands the Dynamic Island when the code arrives.
-        let alert = code.map { AlertConfiguration(title: "iPadn 配对码", body: "\($0)", sound: .default) }
-        Task { await activity.update(ActivityContent(state: state, staleDate: nil), alertConfiguration: alert) }
+        let content = ActivityContent(state: state, staleDate: Self.activityStaleDate(forStep: step))
+        let alert = Self.alertConfiguration(step: step, code: code)
+        let bg = UIApplication.shared.applicationState != .active ? PairingBackgroundTime(name: "iPadn pairing activity update") : nil
+        enqueueActivityWork { [weak self] in
+            defer { bg?.end() }
+            guard let self,
+                  self.activityGeneration == generation,
+                  self.stateGeneration == targetStateGeneration else { return }
+            await self.keepAlive.waitUntilActivityUpdatePermitted(activityStartedAt: startedAt)
+            guard self.activityGeneration == generation,
+                  self.stateGeneration == targetStateGeneration else { return }
+            await current.update(content, alertConfiguration: alert)
+        }
     }
 
-    private func endActivity(step: Int?, message: String?) {
-        guard #available(iOS 16.2, *), let activity = activity as? Activity<PairingActivityAttributes> else { return }
+    private func endActivity(step: Int?, message: String?, keepingAlive bg: PairingBackgroundTime? = nil) {
+        activityGeneration += 1
+        stateGeneration += 1
+        let startedAt = activityStartedAt
+        guard #available(iOS 16.2, *), let current = activity as? Activity<PairingActivityAttributes> else {
+            bg?.end()
+            return
+        }
         self.activity = nil
-        Task {
+        let finishBg = bg ?? (UIApplication.shared.applicationState != .active ? PairingBackgroundTime(name: "iPadn pairing finish") : nil)
+        enqueueActivityWork { [weak self] in
+            defer { finishBg?.end() }
             if let step {
+                if let self {
+                    await self.keepAlive.waitUntilActivityUpdatePermitted(activityStartedAt: startedAt)
+                }
                 let state = PairingActivityAttributes.ContentState(step: step, message: message)
-                await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .after(.now + 8))
+                let content = ActivityContent(state: state, staleDate: Self.activityStaleDate(forStep: step))
+                let alert = Self.alertConfiguration(step: step, message: message)
+                await current.update(content, alertConfiguration: alert)
+                if UIApplication.shared.applicationState != .active {
+                    try? await Task.sleep(nanoseconds: 2_500_000_000)
+                }
+                await current.end(content, dismissalPolicy: .after(.now + 6))
             } else {
-                await activity.end(nil, dismissalPolicy: .immediate)
+                await current.end(nil, dismissalPolicy: .immediate)
             }
         }
     }
@@ -145,10 +276,28 @@ final class OnDevicePairing: ObservableObject {
     private func notify(_ title: String, body: String) {
         // Only useful while the user is away from iPadn.
         guard UIApplication.shared.applicationState != .active else { return }
-        let content = UNMutableNotificationContent()
-        content.title = title; content.body = body
-        content.interruptionLevel = .timeSensitive
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "ipadn-pairing-code", content: content, trigger: nil))
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = title; content.body = body
+            content.interruptionLevel = .timeSensitive
+            center.add(UNNotificationRequest(identifier: "ipadn-pairing-code", content: content, trigger: nil))
+        }
+    }
+}
+
+@MainActor
+private final class PairingBackgroundTime {
+    private var id = UIBackgroundTaskIdentifier.invalid
+    init(name: String) {
+        id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            MainActor.assumeIsolated { self?.end() }
+        }
+    }
+    func end() {
+        guard id != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(id); id = .invalid
     }
 }
 
@@ -157,16 +306,26 @@ final class OnDevicePairing: ObservableObject {
 /// automatic installation. Runs only during those.
 @MainActor
 final class BackgroundKeepAlive {
+    /// audiomxd holds background MediaPlayback assertions for ~5.0s after pause/stop
+    /// via CMSMSleep_ExtendPlaybackProcessAssertion; ActivityKit permits background
+    /// updates once that assertion invalidates (or within ActivityKit's ~30s launch grant).
+    private static let mediaAssertionGraceSeconds: TimeInterval = 5.4
+    private static let deliveryWindowSeconds: TimeInterval = 24.0
+
     private let name: String
     private var player: AVAudioPlayer?
     private var background = UIBackgroundTaskIdentifier.invalid
+    private var releasedAt: Date?
+    private var activeSession = false
+    private var safetyResumeTask: Task<Void, Never>?
 
     init(name: String) { self.name = name }
 
     func start() {
-        background = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
-            MainActor.assumeIsolated { self?.endBackgroundTask() }
-        }
+        safetyResumeTask?.cancel(); safetyResumeTask = nil
+        releasedAt = nil
+        activeSession = true
+        beginBackgroundTask()
         do {
             let session = AVAudioSession.sharedInstance()
             // Mixing leaves the user's music alone and adds no Now Playing entry.
@@ -182,10 +341,78 @@ final class BackgroundKeepAlive {
         }
     }
 
+    /// Pauses silent audio during active device-connected -> PIN handoff while keeping
+    /// a finite UIBackgroundTask alive, so Live Activity updates deliver immediately
+    /// without blocking on audiomxd's 5s MediaPlayback cooldown at every step.
+    func pauseForHandoff(resumeAfter seconds: TimeInterval = 22) {
+        guard activeSession else { return }
+        safetyResumeTask?.cancel()
+        beginBackgroundTask()
+        if let player, player.isPlaying {
+            let session = AVAudioSession.sharedInstance()
+            player.pause()
+            try? session.setCategory(.ambient)
+            try? session.setActive(false, options: [])
+            if releasedAt == nil { releasedAt = Date() }
+        }
+        safetyResumeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.resumeIfPaused()
+        }
+    }
+
     func stop() {
+        activeSession = false
+        safetyResumeTask?.cancel(); safetyResumeTask = nil
+        let wasPlaying = player?.isPlaying == true
         player?.stop(); player = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        if wasPlaying {
+            let session = AVAudioSession.sharedInstance()
+            try? session.setCategory(.ambient)
+            try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+            releasedAt = Date()
+        }
         endBackgroundTask()
+    }
+
+    func waitUntilActivityUpdatePermitted(activityStartedAt: Date) async {
+        guard UIApplication.shared.applicationState != .active else { return }
+        if Date().timeIntervalSince(activityStartedAt) < Self.deliveryWindowSeconds {
+            return
+        }
+        if player?.isPlaying == true {
+            pauseForHandoff()
+        }
+        guard let releasedAt else { return }
+        let remaining = Self.mediaAssertionGraceSeconds - Date().timeIntervalSince(releasedAt)
+        if remaining > 0 {
+            try? await Task.sleep(nanoseconds: UInt64((remaining * 1_000_000_000).rounded(.up)))
+        }
+    }
+
+    private func resumeIfPaused() {
+        guard activeSession, let player, !player.isPlaying else { return }
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, options: [.mixWithOthers])
+            try session.setActive(true)
+            player.play()
+            releasedAt = nil
+        } catch {
+            InstallLog.shared.add("pairing keep-alive resume failed: \(error.localizedDescription)")
+        }
+        endBackgroundTask()
+    }
+
+    private func beginBackgroundTask() {
+        endBackgroundTask()
+        background = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            MainActor.assumeIsolated {
+                self?.resumeIfPaused()
+                self?.endBackgroundTask()
+            }
+        }
     }
 
     private func endBackgroundTask() {

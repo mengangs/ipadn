@@ -30,7 +30,6 @@ struct ChartView: View {
     @State private var apps: [StoreApp] = []
     @State private var loading = true
     @State private var issue: String?
-    @State private var getting: StoreApp?
 
     private var platform: AppPlatform { store.settings.store.platform }
     /// Another storefront picked on this page; nil follows the search page.
@@ -57,7 +56,10 @@ struct ChartView: View {
             if let issue, apps.isEmpty {
                 Section { InlineIssue(message: issue) { Task { await load() } } }
             } else if loading && apps.isEmpty {
-                Section { HStack(spacing: 10) { ProgressView(); Text("正在读取排行榜…").foregroundStyle(.secondary) } }
+                Section {
+                    HStack(spacing: 10) { ProgressView(); Text("正在读取排行榜…").foregroundStyle(.secondary) }
+                    AppSkeleton(); AppSkeleton(); AppSkeleton()
+                }
             } else if apps.isEmpty {
                 Section { Text("这个排行榜暂时没有内容。").foregroundStyle(.secondary) }
             }
@@ -66,8 +68,14 @@ struct ChartView: View {
                     NavigationLink { AppDetailView(app: app) } label: {
                         // The rank leads the category line, so the name keeps the full width.
                         AppRow(app: app, subtitle: ["\(index + 1)", app.displayCategory].filter { !$0.isEmpty }.joined(separator: " · ")) {
-                            RowCapsule(title: app.isFree ? "获取" : LocalizedStringKey(app.priceLabel)) { getting = app; UX.feedback() }
-                                .accessibilityLabel(AppText.text("获取 \(app.name)"))
+                            StoreDownloadActionButton(
+                                app: app,
+                                idleTitle: store.settings.store.platform.supportsIPA ? (app.isFree ? "获取" : app.priceLabel) : "获取 PKG",
+                                filled: false,
+                                insideNavigationLink: true,
+                                alignment: .center,
+                                idleAccessibilityLabel: AppText.text("获取 \(app.name)")
+                            )
                         }
                     }
                     .contextMenu {
@@ -108,7 +116,6 @@ struct ChartView: View {
                 }
             }
         }
-        .compatibleNavigationDestination(item: $getting) { app in AppDetailView(app: app, autoStart: true) }
         .task(id: "\(chart.rawValue)-\(genre.rawValue)-\(country)-\(platform.rawValue)") { await load() }
     }
 

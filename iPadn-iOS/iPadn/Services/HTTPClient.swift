@@ -60,7 +60,7 @@ final class HTTPClient: Sendable {
     func request(_ url: URL, method: String = "GET", body: Data? = nil,
                  headers: [String: String] = [:], appleRedirects: Bool = false,
                  authentication: Bool = false, allowRedirects: Bool = true,
-                 retryTransient: Bool? = nil,
+                 retryTransient: Bool? = nil, timeoutInterval: TimeInterval? = nil,
                  refreshHeaders: ((URL) async throws -> [String: String])? = nil) async throws -> (Data, HTTPURLResponse) {
         let retries = (retryTransient ?? (method == "GET")) ? 2 : 0
         var attempt = 0
@@ -68,7 +68,7 @@ final class HTTPClient: Sendable {
             do {
                 return try await requestOnce(url, method: method, body: body, headers: headers, appleRedirects: appleRedirects,
                                              authentication: authentication, allowRedirects: allowRedirects,
-                                             refreshHeaders: refreshHeaders)
+                                             timeoutInterval: timeoutInterval, refreshHeaders: refreshHeaders)
             } catch {
                 guard attempt < retries, Self.isTransient(error), !Task.isCancelled else { throw error }
                 attempt += 1
@@ -80,6 +80,7 @@ final class HTTPClient: Sendable {
     private func requestOnce(_ url: URL, method: String, body: Data?,
                              headers: [String: String], appleRedirects: Bool,
                              authentication: Bool, allowRedirects: Bool,
+                             timeoutInterval: TimeInterval?,
                              refreshHeaders: ((URL) async throws -> [String: String])?) async throws -> (Data, HTTPURLResponse) {
         guard url.scheme?.lowercased() == "https", url.host != nil, url.user == nil, url.password == nil else {
             throw ToolError.message(AppText.text("链接无效"))
@@ -92,6 +93,7 @@ final class HTTPClient: Sendable {
         for _ in 0..<5 {
             try Task.checkCancellation()
             var request = URLRequest(url: current)
+            if let timeoutInterval { request.timeoutInterval = timeoutInterval }
             request.httpMethod = activeMethod; request.httpBody = activeBody
             request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
             activeHeaders.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
@@ -192,8 +194,8 @@ final class HTTPClient: Sendable {
         throw ToolError.message(AppText.text("服务器响应异常，请稍后重试"))
     }
 
-    func json(_ url: URL) async throws -> Any {
-        let (data, _) = try await request(url)
+    func json(_ url: URL, timeoutInterval: TimeInterval? = nil, retryTransient: Bool? = nil) async throws -> Any {
+        let (data, _) = try await request(url, retryTransient: retryTransient, timeoutInterval: timeoutInterval)
         return try JSONSerialization.jsonObject(with: data)
     }
 

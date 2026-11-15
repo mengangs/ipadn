@@ -222,6 +222,31 @@ final class InstallationTests: XCTestCase {
         XCTAssertNoThrow(try ManifestBuilder.localHost(ManifestBuilder.defaultLocalHost))
         XCTAssertTrue(ManifestBuilder.addresses(of: "127.0.0.1").contains("127.0.0.1"))
     }
+    func testLoopbackHostCacheHitsExpiresAndInvalidates() {
+        let cache = ManifestBuilder.LoopbackHostCache(ttl: 30)
+        let key = ManifestBuilder.LoopbackHostCache.Key(hosts: ["ipadn.localtest.me"], proxied: false)
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+
+        cache.store("ipadn.localtest.me", for: key, now: t0)
+        XCTAssertEqual(cache.freshHost(for: key, now: t0.addingTimeInterval(15)), "ipadn.localtest.me")
+        XCTAssertNil(cache.freshHost(for: key, now: t0.addingTimeInterval(30)), "Expired cache must re-probe")
+
+        // Negative results are never cached.
+        cache.store(nil, for: key, now: t0)
+        XCTAssertNil(cache.freshHost(for: key, now: t0))
+
+        cache.store("ipadn.localtest.me", for: key, now: t0)
+        cache.invalidate()
+        XCTAssertNil(cache.freshHost(for: key, now: t0.addingTimeInterval(1)))
+    }
+    func testLoopbackHostConcurrentLookupResolvesConsistentResult() async {
+        ManifestBuilder.invalidateLoopbackHostCache()
+        async let a = ManifestBuilder.firstLoopbackHost(["ipadn-test.invalid", "127.0.0.1"], proxied: false)
+        async let b = ManifestBuilder.firstLoopbackHost(["ipadn-test.invalid", "127.0.0.1"], proxied: false)
+        let results = await (a, b)
+        XCTAssertEqual(results.0, "127.0.0.1")
+        XCTAssertEqual(results.1, "127.0.0.1")
+    }
     private func fixture() throws -> InstallationCertificate.Identity {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "localhost-test-only", withExtension: "p12"))
         return try InstallationCertificate.importPKCS12(Data(contentsOf: url), password: "test-only")

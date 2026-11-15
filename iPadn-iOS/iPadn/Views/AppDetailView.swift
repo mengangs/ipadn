@@ -11,8 +11,6 @@ struct AppDetailView: View {
     @State private var autoStarted = false
     @State private var versions: [AppVersion] = []
     @State private var versionsLoading = false
-    @State private var downloadLoading = false
-    @State private var downloadTask: Task<Void, Never>?
     @State private var manualID = ""
     @State private var versionSearch = ""
     @State private var versionError: String?
@@ -47,12 +45,12 @@ struct AppDetailView: View {
     @State private var versionsLoadID = UUID()
     @State private var showLogin = false
     @State private var reauthenticationID: String?
-    @State private var retryAfterLoginVersion: String?
     @State private var showVerification = false
-    @State private var pendingDownloadVersion: String?
     @State private var retryVersionsAfterVerification = false
     @State private var verifiedForRetry = false
     @State private var showDescription = false
+    @State private var collapsedDescriptionHeight: CGFloat = 0
+    @State private var fullDescriptionHeight: CGFloat = 0
     @State private var reloadID = 0
     @State private var loadedVersionsKey: String?
     @State private var loadedReloadID = 0
@@ -62,8 +60,6 @@ struct AppDetailView: View {
     @State private var macWebsite: URL?
     @State private var macInstallers: [MacInstallerService.Installer] = []
     @State private var macLoading = false
-    @State private var macOfficialLoading = false
-    @State private var macOfficialTask: Task<Void, Never>?
     @State private var enteringMacDownloadURL = false
     @State private var macDownloadURL = ""
     @State private var headerAway = false
@@ -81,11 +77,154 @@ struct AppDetailView: View {
     private var filtered: [AppVersion] {
         let source = dateQuery.range == nil ? versions : dateQuery.matches
         return versionSearch.isEmpty ? source : source.filter {
-            displayVersion($0).localizedCaseInsensitiveContains(versionSearch) || $0.id.contains(versionSearch)
+            displayVersion($0).localizedCaseInsensitiveContains(versionSearch) ||
+            (versionInfo($0.id)?.bundleShortVersion?.localizedCaseInsensitiveContains(versionSearch) ?? false) ||
+            $0.id.contains(versionSearch)
         }
     }
     private func versionInfo(_ id: String) -> VersionMetadata? { metadata[id] ?? dateQuery.values[id] }
-    private func displayVersion(_ version: AppVersion) -> String { versionInfo(version.id)?.version ?? version.version }
+    private func displayVersion(_ version: AppVersion) -> String {
+        guard let info = versionInfo(version.id) else {
+            return VersionService.sanitizedVersion(version.version, rejectingID: version.id)
+        }
+        let isLegacyUnseparated = info.bundleShortVersion == nil && (info.metadataSchema ?? 0) < VersionMetadata.currentSchema
+        if isLegacyUnseparated && VersionService.versionPreference(version.version, rejectingID: version.id) >= 2 {
+            return VersionService.preferredVersion(version.version, over: info.version, rejectingID: version.id)
+        }
+        return VersionService.preferredVersion(info.version, over: version.version, rejectingID: version.id)
+    }
+    private func bundleVersionSubtitle(_ version: AppVersion, displayed: String) -> String? {
+        if let info = versionInfo(version.id) {
+            let rawBundle = info.bundleShortVersion ??
+                ((info.bundleShortVersion == nil && (info.metadataSchema ?? 0) < VersionMetadata.currentSchema && info.version != displayed)
+                    ? info.version : nil)
+            if let rawBundle = rawBundle?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !rawBundle.isEmpty, rawBundle != AppVersion.unknown, rawBundle != displayed {
+                return AppText.text("包内版本 \(rawBundle)")
+            }
+        }
+        if displayed != AppVersion.unknown && VersionService.versionPreference(displayed, rejectingID: version.id) < 2 {
+            return AppText.text("仅包内版本号")
+        }
+        return nil
+    }
+
+    private func isLegacyStaleFallback(_ version: String, versionID: String, schema: Int?, released: Date?,
+                                       in list: [AppVersion], cachedMetadata: [String: VersionMetadata],
+                                       rowIndex: Int? = nil) -> Bool {
+        let level = schema ?? 0
+        if version == AppVersion.unknown, level < VersionMetadata.currentSchema {
+            return true
+        }
+        return level < 2 &&
+        VersionService.versionPreference(version, rejectingID: versionID) < 2 &&
+        VersionService.isLikelyStaleLatestFallback(
+            version, versionID: versionID, appVersion: app.version,
+            versions: list, cachedMetadata: cachedMetadata,
+            rowIndex: rowIndex, rowReleased: released
+        )
+    }
+
+    private func reconcileVersionDisplay(_ incoming: VersionMetadata, for versionID: String) {
+        let rowIndex = versions.firstIndex(where: { $0.id == versionID })
+        let incomingStale = isLegacyStaleFallback(incoming.version, versionID: versionID, schema: incoming.metadataSchema,
+                                                  released: incoming.released, in: versions, cachedMetadata: metadata,
+                                                  rowIndex: rowIndex)
+        let incomingVersion = incomingStale ? AppVersion.unknown : incoming.version
+        let rawRowVersion = rowIndex.map { versions[$0].version } ?? AppVersion.unknown
+        let rowStale = rowIndex != nil && VersionService.versionPreference(rawRowVersion, rejectingID: versionID) < 2 &&
+            VersionService.isLikelyStaleLatestFallback(rawRowVersion, versionID: versionID, appVersion: app.version,
+                                                     versions: versions, cachedMetadata: metadata, rowIndex: rowIndex)
+        let rowVersion = rowStale ? AppVersion.unknown : rawRowVersion
+        let currentMeta = metadata[versionID]
+        let currentMetaStale = currentMeta.map {
+            isLegacyStaleFallback($0.version, versionID: versionID, schema: $0.metadataSchema,
+                                  released: $0.released, in: versions, cachedMetadata: metadata, rowIndex: rowIndex)
+        } ?? false
+        let currentMetaVersion = currentMetaStale ? AppVersion.unknown : (currentMeta?.version ?? AppVersion.unknown)
+
+        let incomingIsLegacyUnseparated = incoming.bundleShortVersion == nil &&
+            (incoming.metadataSchema ?? 0) < VersionMetadata.currentSchema
+        let incomingPref = VersionService.versionPreference(incomingVersion, rejectingID: versionID)
+        let rowPref = VersionService.versionPreference(rowVersion, rejectingID: versionID)
+        let incomingMatchesRawBundle = incoming.bundleShortVersion == incomingVersion && incomingVersion != rowVersion
+
+        var resolvedVersion: String
+        if rowPref >= 2 && (incomingIsLegacyUnseparated || incomingMatchesRawBundle) && incomingPref >= 2 {
+            resolvedVersion = rowVersion
+        } else {
+            resolvedVersion = VersionService.bestVersion([incomingVersion, currentMetaVersion, rowVersion], rejectingID: versionID)
+        }
+        let resolvedReleased = incoming.released ?? currentMeta?.released
+        var updated = incoming
+        if updated.bundleShortVersion == nil {
+            updated.bundleShortVersion = currentMeta?.bundleShortVersion ??
+                ((incomingIsLegacyUnseparated && rowPref >= 2 && incomingPref >= 2 && incomingVersion != rowVersion) ? incomingVersion : nil)
+        }
+        if updated.buildVersion == nil {
+            updated.buildVersion = currentMeta?.buildVersion
+        }
+        if resolvedVersion != AppVersion.unknown,
+           !releaseNotes.isEmpty,
+           VersionService.versionPreference(resolvedVersion, rejectingID: versionID) < 2,
+           let upgraded = VersionService.reconcileSingleWithReleaseNotes(
+               versionID: versionID, rawVersion: resolvedVersion, released: resolvedReleased,
+               versions: versions, metadata: metadata, notes: Array(releaseNotes.values),
+               appVersion: app.version, rowIndex: rowIndex
+           ) {
+            resolvedVersion = upgraded
+            let platform = store.settings.store.platform
+            let appID = app.id
+            Task {
+                await store.reconcileVersionNumber(
+                    platform: platform, appID: appID, versionID: versionID,
+                    version: upgraded, replaceStaleDotless: true
+                )
+            }
+        }
+        updated.version = resolvedVersion != AppVersion.unknown ? resolvedVersion : (incomingStale ? AppVersion.unknown : incoming.version)
+        metadata[versionID] = updated
+        guard let rowIndex else { return }
+        if resolvedVersion != AppVersion.unknown {
+            let currentScore = VersionService.versionPreference(versions[rowIndex].version, rejectingID: versionID)
+            let resolvedScore = VersionService.versionPreference(resolvedVersion, rejectingID: versionID)
+            if resolvedScore > currentScore || rowVersion == AppVersion.unknown {
+                versions[rowIndex].version = resolvedVersion
+            }
+        } else if rowStale {
+            versions[rowIndex].version = AppVersion.unknown
+        }
+    }
+
+    private func reconcileWithReleaseNotes(persist: Bool = true) {
+        guard !versions.isEmpty, !releaseNotes.isEmpty else { return }
+        let updates = VersionService.reconcileWithReleaseNotes(
+            versions: versions,
+            metadata: metadata,
+            notes: Array(releaseNotes.values),
+            appVersion: app.version
+        )
+        guard !updates.isEmpty else { return }
+        let platform = store.settings.store.platform
+        let appID = app.id
+        for update in updates {
+            if let index = versions.firstIndex(where: { $0.id == update.id }) {
+                versions[index].version = update.version
+            }
+            if var meta = metadata[update.id] {
+                meta.version = update.version
+                metadata[update.id] = meta
+            }
+            if persist {
+                Task {
+                    await store.reconcileVersionNumber(
+                        platform: platform, appID: appID, versionID: update.id,
+                        version: update.version, replaceStaleDotless: true
+                    )
+                }
+            }
+        }
+    }
     /// Lists from Apple carry only version IDs; each row then reads its own
     /// number and date. Other lists use what is already known.
     /// Apple's list needs a signed-in account; otherwise the public list is shown.
@@ -110,13 +249,28 @@ struct AppDetailView: View {
                 versionSection
                 if store.settings.store.platform == .macOS { macSection }
                 if !app.description.isEmpty {
+                    let displayed = translatedDescription ?? app.description
+                    let truncated = fullDescriptionHeight - collapsedDescriptionHeight > 2
                     CardSection {
-                        Text(translatedDescription ?? app.description).font(.subheadline)
+                        Text(displayed).font(.subheadline)
                             .lineLimit(showDescription ? nil : 4).textSelection(.enabled)
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                                collapsedDescriptionHeight = $0
+                            }
+                            .background {
+                                Text(displayed).font(.subheadline)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .hidden()
+                                    .accessibilityHidden(true)
+                                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                                        fullDescriptionHeight = $0
+                                    }
+                            }
                         let translates = TranslateButton.offered(for: app.description, translation: translatedDescription)
-                        if !showDescription || translates {
+                        let showMore = !showDescription && truncated
+                        if showMore || translates {
                             HStack {
-                                if !showDescription {
+                                if showMore {
                                     Button("更多") { withAnimation { showDescription = true } }
                                 }
                                 Spacer()
@@ -128,6 +282,9 @@ struct AppDetailView: View {
                             .font(.subheadline).buttonStyle(.borderless)
                         }
                     } header: { sectionTitle("简介") }
+                    .compatibleOnChange(of: translatedDescription) { value in
+                        if value != nil, truncated { withAnimation { showDescription = true } }
+                    }
                 }
                 if !app.isDelisted { ReviewsCard(app: app) }
                 if !app.isDelisted {
@@ -223,17 +380,10 @@ struct AppDetailView: View {
         .navigationDestination(isPresented: $showLogin) {
             LoginView(initialAccountID: reauthenticationID, onSignedIn: {
                 reauthenticationID = nil
-                guard let pending = retryAfterLoginVersion else { return }
-                retryAfterLoginVersion = nil
-                Task { @MainActor in
-                    await Task.yield()
-                    download(versionID: pending.isEmpty ? nil : pending)
-                }
             })
         }
         .sheet(isPresented: $showVerification, onDismiss: {
             guard verifiedForRetry else {
-                pendingDownloadVersion = nil
                 retryVersionsAfterVerification = false
                 return
             }
@@ -241,10 +391,6 @@ struct AppDetailView: View {
             if retryVersionsAfterVerification {
                 retryVersionsAfterVerification = false
                 reloadID += 1
-            } else {
-                let pending = pendingDownloadVersion
-                pendingDownloadVersion = nil
-                if let pending { download(versionID: pending.isEmpty ? nil : pending) }
             }
         }) {
             if let accountID = apple.activeID {
@@ -255,15 +401,21 @@ struct AppDetailView: View {
                 .environmentObject(apple)
             }
         }
-        .onDisappear { downloadTask?.cancel(); macOfficialTask?.cancel(); dateQuery.cancel() }
+        .onDisappear { dateQuery.cancel() }
         .task {
             // Getting the app needs the signing runtime; load it while the page is read.
             if apple.active != nil, store.settings.useSignerCache { store.signer.prewarm() }
             guard autoStart, !autoStarted else { return }
             autoStarted = true
             if apple.active == nil { showLogin = true }
-            else if store.settings.store.platform.supportsIPA { download(versionID: app.externalVersionID) }
-            else { downloadAppleMacPKG() }
+            else {
+                store.triggerAppStoreAction(
+                    for: app,
+                    versionID: app.externalVersionID,
+                    marketingVersion: app.version,
+                    onEnqueued: reloadIfLicenseWasMissing
+                )
+            }
         }
         .task(id: versionsKey) {
             // Coming back to the page (e.g. from the Downloads tab) keeps the
@@ -287,14 +439,18 @@ struct AppDetailView: View {
         .task(id: "\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
             await loadMacInstallers()
         }
-        .task(id: "notes-\(app.id)-\(store.settings.store.country)") {
+        .task(id: "notes-\(app.id)-\(store.settings.store.country)-\(reloadID)") {
             guard !LocalResources.isPreview, !app.isDelisted else { return }
-            // The search region's page, else the account's.
+            // The search region's page, else the account's, then CN fallback when overseas storefronts geo-redirect.
             var countries = [store.settings.store.country.uppercased()]
             if !countries.contains(store.watchCountry) { countries.append(store.watchCountry) }
-            let notes = await ReleaseNotesService.notes(appID: app.id, countries: countries)
+            if !countries.contains("CN") { countries.append("CN") }
+            let notes = await ReleaseNotesService.notes(appID: app.id, countries: countries, force: reloadID > 0)
             guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.2)) { releaseNotes = notes }
+            withAnimation(.easeOut(duration: 0.2)) {
+                releaseNotes = notes
+                reconcileWithReleaseNotes()
+            }
         }
         .task(id: "extras-\(app.id)-\(store.settings.store.platform.rawValue)-\(store.settings.store.country)") {
             // Demo data stays offline.
@@ -366,26 +522,19 @@ struct AppDetailView: View {
     }
 
     @ViewBuilder private var primaryButton: some View {
-        let busy = downloadLoading || macOfficialLoading
-        if busy {
-            HStack(spacing: 10) {
-                Button {
-                    downloadTask?.cancel(); macOfficialTask?.cancel()
-                } label: { ProgressRing(progress: nil) }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("取消准备下载")
-                Text("正在准备…").font(.caption).foregroundStyle(.secondary)
-            }
-        } else if apple.active == nil {
+        if apple.active == nil {
             RowCapsule(title: "登录", filled: true) { showLogin = true }
-        } else if store.settings.store.platform.supportsIPA {
-            RowCapsule(title: app.isFree ? "获取" : "下载", filled: true) {
-                download(versionID: app.externalVersionID)
-            }
-            .accessibilityIdentifier("detail.get")
         } else {
-            RowCapsule(title: "获取 PKG", filled: true) { downloadAppleMacPKG() }
-                .accessibilityIdentifier("mac.official-pkg")
+            StoreDownloadActionButton(
+                app: app,
+                versionID: app.externalVersionID,
+                marketingVersion: app.version,
+                idleTitle: store.settings.store.platform.supportsIPA ? (app.isFree ? "获取" : "下载") : "获取 PKG",
+                filled: true,
+                alignment: .center,
+                onEnqueued: reloadIfLicenseWasMissing
+            )
+            .accessibilityIdentifier(store.settings.store.platform.supportsIPA ? "detail.get" : "mac.official-pkg")
         }
     }
 
@@ -452,7 +601,7 @@ struct AppDetailView: View {
                 versionRow(version)
                     .opacity(versionsStale ? 0.4 : 1)
                     .disabled(versionsStale)
-                    .task(id: "\(version.id)-\(versionsKey)-\(readsMetadata)-\(versionsStale)") {
+                    .task(id: "\(version.id)-\(versionsKey)-\(readsMetadata)-\(versionsStale)-\(store.settings.showHistoryIcons)") {
                         // Fast scrolling should not queue tickets for rows already gone.
                         do { try await Task.sleep(nanoseconds: 180_000_000) } catch { return }
                         if !Task.isCancelled && !versionsStale { await loadMetadata(version) }
@@ -491,7 +640,16 @@ struct AppDetailView: View {
             DisclosureGroup("手动指定版本 ID") {
                 HStack {
                     TextField("内部版本 ID", text: $manualID).keyboardType(.numberPad)
-                    RowCapsule(title: "下载", enabled: !manualID.isEmpty && !downloadLoading) { download(versionID: manualID) }
+                    let manual = manualID.trimmingCharacters(in: .whitespacesAndNewlines)
+                    StoreDownloadActionButton(
+                        app: app,
+                        versionID: manual,
+                        idleTitle: "下载",
+                        filled: false,
+                        enabled: !manual.isEmpty,
+                        alignment: .center,
+                        onEnqueued: reloadIfLicenseWasMissing
+                    )
                 }
             }
         } header: {
@@ -637,15 +795,24 @@ struct AppDetailView: View {
         guard let range = VersionDateRange(from: dateFrom, through: dateThrough) else { return }
         versionPageLimit = 20
         var cached = dateQuery.values.merging(metadata) { _, row in row }
-        if !readsMetadata {
-            for version in versions where cached[version.id] == nil {
+        for version in versions {
+            if !readsMetadata, cached[version.id] == nil {
                 cached[version.id] = VersionMetadata(version: version.version, released: nil)
+            } else if var existing = cached[version.id] {
+                let better = VersionService.preferredVersion(version.version, over: existing.version, rejectingID: version.id)
+                if better != existing.version {
+                    existing.version = better
+                    cached[version.id] = existing
+                }
             }
         }
         dateQuery.start(versions: versions, range: range, cached: cached,
                         notes: releaseNotes.compactMapValues(\.date)) { version in
             guard readsMetadata else { throw RemoteZip.Failure.notFound }
-            return try await store.versionMetadata(app: app, versionID: version.id, includingIcon: false)
+            return try await store.versionMetadata(app: app, versionID: version.id,
+                                                   includingIcon: false,
+                                                   knownVersion: version.version,
+                                                   knownVersions: versions)
         }
     }
 
@@ -666,8 +833,11 @@ struct AppDetailView: View {
         let factsLayout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 12))
+        let idNotesLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
         return HStack(alignment: .top, spacing: 12) {
-            if store.settings.store.platform.supportsIPA {
+            if store.settings.store.platform.supportsIPA && store.settings.showHistoryIcons {
                 VersionHistoryIcon(app: app, versionID: version.id, available: info?.iconAvailable,
                                    loading: metadataLoading[version.id] != nil, context: versionsKey)
             }
@@ -679,9 +849,22 @@ struct AppDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .accessibilityIdentifier("detail.version.number." + version.id)
-                    RowCapsule(title: "下载", enabled: !downloadLoading && !macOfficialLoading) { download(versionID: version.id) }
-                        .fixedSize()
-                        .accessibilityLabel(known ? AppText.text("下载版本 \(name)") : AppText.text("下载版本 ID \(version.id)"))
+                    StoreDownloadActionButton(
+                        app: app,
+                        versionID: version.id,
+                        marketingVersion: known ? name : nil,
+                        idleTitle: "下载",
+                        filled: false,
+                        alignment: .center,
+                        idleAccessibilityLabel: known ? AppText.text("下载版本 \(name)") : AppText.text("下载版本 ID \(version.id)"),
+                        onEnqueued: reloadIfLicenseWasMissing
+                    )
+                    .fixedSize()
+                }
+                if let bundleNote = bundleVersionSubtitle(version, displayed: name) {
+                    Text(verbatim: bundleNote)
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 factsLayout {
                     if let date {
@@ -696,41 +879,48 @@ struct AppDetailView: View {
                     }
                 }
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                Text("版本 ID \(version.id)")
-                    .font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("detail.version.id." + version.id)
-                if let note, !note.text.isEmpty {
-                    Button {
-                        withAnimation(.compatibleSnappy) {
-                            if expanded { expandedNotes.remove(version.id) } else { expandedNotes.insert(version.id) }
+                idNotesLayout {
+                    Text("版本 ID \(version.id)")
+                        .font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1.0 : 0.85)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("detail.version.id." + version.id)
+                    if let note, !note.text.isEmpty {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                if expanded { expandedNotes.remove(version.id) } else { expandedNotes.insert(version.id) }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(expanded ? "收起更新说明" : "更新说明")
+                                    .transaction { $0.animation = nil }
+                                Image(systemName: "chevron.down").rotationEffect(.degrees(expanded ? 180 : 0))
+                            }
+                            .font(.caption.weight(.medium))
+                            .contentShape(Rectangle())
                         }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(expanded ? "收起更新说明" : "更新说明")
-                            Image(systemName: "chevron.down").rotationEffect(.degrees(expanded ? 180 : 0))
-                        }
-                        .font(.caption.weight(.medium))
-                        .contentShape(Rectangle())
+                        .buttonStyle(.borderless)
+                        .fixedSize()
+                        .accessibilityIdentifier("detail.version.notes." + version.id)
                     }
-                    .buttonStyle(.borderless)
-                    .accessibilityIdentifier("detail.version.notes." + version.id)
-                    if expanded {
-                        Text(translatedNotes[version.id] ?? note.text).font(.footnote).foregroundStyle(.secondary)
-                            .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                            .transition(.opacity)
-                        if TranslateButton.offered(for: note.text, translation: translatedNotes[version.id]) {
-                            TranslateButton(text: note.text, translation: Binding(
-                                get: { translatedNotes[version.id] }, set: { translatedNotes[version.id] = $0 }))
-                                .font(.caption.weight(.medium)).buttonStyle(.borderless)
-                                .accessibilityIdentifier("detail.version.translate." + version.id)
-                        }
+                }
+                if let note, !note.text.isEmpty, expanded {
+                    Text(translatedNotes[version.id] ?? note.text).font(.footnote).foregroundStyle(.secondary)
+                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    if TranslateButton.offered(for: note.text, translation: translatedNotes[version.id]) {
+                        TranslateButton(text: note.text, translation: Binding(
+                            get: { translatedNotes[version.id] }, set: { translatedNotes[version.id] = $0 }))
+                            .font(.caption.weight(.medium)).buttonStyle(.borderless)
+                            .accessibilityIdentifier("detail.version.translate." + version.id)
                     }
                 }
             }
         }
         .padding(.vertical, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
         .contentShape(Rectangle())
         .contextMenu {
             if known {
@@ -751,13 +941,16 @@ struct AppDetailView: View {
         metadataLoading[version.id] = requestID
         defer { if metadataLoading[version.id] == requestID { metadataLoading[version.id] = nil } }
         do {
-            let value = try await store.versionMetadata(app: app, versionID: version.id) { partial in
+            let value = try await store.versionMetadata(app: app, versionID: version.id,
+                                                        includingIcon: store.settings.showHistoryIcons,
+                                                        knownVersion: version.version,
+                                                        knownVersions: versions) { partial in
                 guard !Task.isCancelled, context == versionsKey else { return }
                 // Publish the number/date/size before the icon's extra range reads.
-                metadata[version.id] = partial
+                reconcileVersionDisplay(partial, for: version.id)
             }
             guard !Task.isCancelled, context == versionsKey else { return }
-            metadata[version.id] = value
+            reconcileVersionDisplay(value, for: version.id)
             metadataFailures = 0
         } catch {
             // Scrolled away: not a failure.
@@ -765,7 +958,7 @@ struct AppDetailView: View {
             // Never prompt from a list row; the next download asks to sign in.
             if error is AppleAuthError || error is AppleLoginError { metadataStopped = true; return }
             metadataFailures += 1
-            if metadataFailures >= 3 { metadataStopped = true }
+            if metadataFailures >= 5 { metadataStopped = true }
         }
     }
 
@@ -831,11 +1024,49 @@ struct AppDetailView: View {
                     throw error
                 }
             }
-            try Task.checkCancellation(); versions = result; versionError = nil
+            try Task.checkCancellation()
+            var sanitizedResult = result
             if versionsStale { showAllVersions = false }
             if force { metadataStopped = false; metadataFailures = 0 }
-            let cached = await store.cachedVersionMetadata(app: app, versionIDs: result.map(\.id))
-            metadata.merge(cached) { current, _ in current }
+            let cached = await store.cachedVersionMetadata(app: app, versionIDs: sanitizedResult.map(\.id))
+            try Task.checkCancellation()
+            let platform = store.settings.store.platform
+            let currentApp = self.app
+            for index in sanitizedResult.indices {
+                let rowID = sanitizedResult[index].id
+                let rawVersion = sanitizedResult[index].version
+                if VersionService.versionPreference(rawVersion, rejectingID: rowID) < 2,
+                   VersionService.isLikelyStaleLatestFallback(
+                       rawVersion, versionID: rowID, appVersion: currentApp.version,
+                       versions: sanitizedResult, cachedMetadata: cached, rowIndex: index
+                   ) {
+                    sanitizedResult[index].version = AppVersion.unknown
+                    Task {
+                        await store.reconcileVersionNumber(
+                            platform: platform, appID: currentApp.id, versionID: rowID,
+                            version: AppVersion.unknown, replaceStaleDotless: true
+                        )
+                    }
+                }
+            }
+            versions = sanitizedResult; versionError = nil
+            let indexByID = Dictionary(sanitizedResult.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let rowVersions = Dictionary(sanitizedResult.map { ($0.id, $0.version) }, uniquingKeysWith: { first, _ in first })
+            for (id, entry) in cached {
+                if isLegacyStaleFallback(entry.version, versionID: id, schema: entry.metadataSchema,
+                                         released: entry.released, in: sanitizedResult, cachedMetadata: cached,
+                                         rowIndex: indexByID[id]) {
+                    metadata.removeValue(forKey: id)
+                    continue
+                }
+                reconcileVersionDisplay(entry, for: id)
+                if let rowVersion = rowVersions[id],
+                   VersionService.versionPreference(rowVersion, rejectingID: id) >
+                   VersionService.versionPreference(entry.version, rejectingID: id) {
+                    Task { await store.reconcileVersionNumber(platform: platform, appID: currentApp.id, versionID: id, version: rowVersion) }
+                }
+            }
+            reconcileWithReleaseNotes()
             return true
         } catch is CancellationError { }
         catch AppleAuthError.reauthenticationRequired {
@@ -865,36 +1096,6 @@ struct AppDetailView: View {
         }
         return false
     }
-    private func downloadAppleMacPKG(versionID: String? = nil) {
-        guard !macOfficialLoading else { return }
-        guard apple.active != nil else {
-            showLogin = true
-            return
-        }
-        macOfficialLoading = true
-        macOfficialTask = Task {
-            defer { macOfficialLoading = false; macOfficialTask = nil }
-            do {
-                let offer = try await SAPSigner.$userInitiated.withValue(true) {
-                    try await apple.macPackageOffer(app, versionID: versionID, useCache: store.settings.useSignerCache)
-                }
-                try Task.checkCancellation()
-                try store.downloads.enqueueOfficialMacPackage(offer, for: app)
-                store.infoMessage = AppText.text("已开始下载")
-                store.tab = 1
-                reloadIfLicenseWasMissing()
-            } catch AppleAuthError.reauthenticationRequired {
-                reauthenticationID = apple.activeID
-                showLogin = true
-            } catch AppleLoginError.verificationRequired {
-                store.requestVerification { downloadAppleMacPKG(versionID: versionID) }
-            } catch is CancellationError { }
-            catch {
-                store.errorMessage = error.localizedDescription
-            }
-        }
-    }
-
     /// A download claims a free app's license, so a list that failed for
     /// lack of one can load now.
     private func reloadIfLicenseWasMissing() {
@@ -925,36 +1126,6 @@ struct AppDetailView: View {
         if let website, let installers = try? await MacInstallerService.find(on: website),
            !Task.isCancelled {
             macInstallers = installers
-        }
-    }
-
-    private func download(versionID: String?) {
-        guard !downloadLoading else { return }
-        if let versionID, !versionID.isEmpty, !versionID.allSatisfy({ $0.isASCII && $0.isNumber }) { store.errorMessage = AppText.text("版本 ID 只能包含数字"); return }
-        guard store.settings.store.platform.supportsIPA else {
-            downloadAppleMacPKG(versionID: versionID?.isEmpty == true ? nil : versionID)
-            return
-        }
-        guard apple.active != nil else { showLogin = true; return }
-        downloadLoading = true
-        downloadTask = Task {
-            defer { downloadLoading = false; downloadTask = nil }
-            do {
-                try await store.startDownload(app: app, versionID: versionID?.isEmpty == true ? nil : versionID)
-                reloadIfLicenseWasMissing()
-            }
-            catch AppleLoginError.verificationRequired {
-                pendingDownloadVersion = versionID ?? ""
-                retryVersionsAfterVerification = false
-                showVerification = true
-            }
-            catch AppleAuthError.reauthenticationRequired {
-                reauthenticationID = apple.activeID
-                retryAfterLoginVersion = versionID ?? ""
-                showLogin = true
-            }
-            catch is CancellationError { }
-            catch { store.errorMessage = error.localizedDescription }
         }
     }
 }
@@ -1070,6 +1241,7 @@ private struct VersionRowSkeleton: View {
             Spacer(minLength: 8)
             Capsule().fill(Color(.tertiarySystemFill)).frame(width: 74, height: 30)
         }
+        .monochromeShimmer()
         .padding(.vertical, 2)
         .accessibilityHidden(true)
     }

@@ -24,12 +24,10 @@ struct WiFiTransferView: View {
     @State private var resumeOnReturn = false
     private static let idleLimit: TimeInterval = 600
 
-    private var items: [WiFiTransferServer.Item] {
+    private var completedJobFiles: [(job: DownloadJob, file: URL)] {
         manager.jobs.compactMap { job in
             guard job.status == .completed, let file = manager.fileURL(job) else { return nil }
-            return .init(id: job.id.uuidString, name: job.app.name.isEmpty ? file.deletingPathExtension().lastPathComponent : job.app.name,
-                         version: job.app.version, filename: Self.publicName(file.lastPathComponent, id: job.id), file: file,
-                         size: ((try? FileManager.default.attributesOfItem(atPath: file.path)[.size]) as? NSNumber)?.int64Value ?? job.app.size)
+            return (job, file)
         }
     }
 
@@ -69,7 +67,7 @@ struct WiFiTransferView: View {
                         .accessibilityIdentifier("transfer.start")
                 }
             } footer: {
-                Text("在同一 Wi‑Fi 下的电脑浏览器中打开这个地址，即可下载已完成的安装包（\(items.count) 个）。")
+                Text("在同一 Wi‑Fi 下的电脑浏览器中打开这个地址，即可下载已完成的安装包（\(completedJobFiles.count) 个）。")
             }
             if !accesses.isEmpty {
                 Section("访问记录") {
@@ -109,7 +107,14 @@ struct WiFiTransferView: View {
             default: break
             }
         }
-        .compatibleOnChange(of: items.map(\.id)) { _ in server?.update(items: items) }
+        .compatibleOnChange(of: completedJobFiles.map { $0.job.id }) { _ in
+            guard let running = server else { return }
+            let entries = completedJobFiles
+            Task {
+                let snapshot = await Task.detached(priority: .utility) { Self.items(for: entries) }.value
+                running.update(items: snapshot)
+            }
+        }
         .task(id: address) {
             // Stops after ten minutes without a download.
             while address != nil, !Task.isCancelled {
@@ -124,12 +129,19 @@ struct WiFiTransferView: View {
     private func start() async {
         guard server == nil, !starting else { return }
         issue = nil; stoppedReason = nil
-        guard let host = WiFiTransferServer.wifiAddress() else {
+        starting = true
+        defer { starting = false }
+        let host = await Task.detached(priority: .userInitiated) { WiFiTransferServer.wifiAddress() }.value
+        guard !Task.isCancelled else { return }
+        guard let host else {
             issue = AppText.text("请先连接 Wi‑Fi，电脑也需要在同一网络中。")
             return
         }
-        starting = true
-        defer { starting = false }
+        let entries = completedJobFiles
+        let items = await Task.detached(priority: .userInitiated) {
+            Self.items(for: entries)
+        }.value
+        guard !Task.isCancelled else { return }
         let next = WiFiTransferServer(key: sessionKey)
         next.onAccess = { access in
             accesses.append(access); lastActivity = Date()
@@ -142,11 +154,12 @@ struct WiFiTransferView: View {
             var reused: UInt16?
             if let previous = sessionPort {
                 // After a suspension the old listener can hold the port a moment longer.
-                for attempt in 0..<5 where reused == nil {
-                    if attempt > 0 { try? await Task.sleep(for: .milliseconds(400)) }
+                for attempt in 0..<3 where reused == nil && !Task.isCancelled {
+                    if attempt > 0 { try? await Task.sleep(for: .milliseconds(120)) }
                     reused = try? await next.start(items: items, port: previous)
                 }
             }
+            guard !Task.isCancelled else { next.stop(); return }
             // Still taken: same key, new port.
             let port: UInt16
             if let reused { port = reused } else { port = try await next.start(items: items) }
@@ -157,6 +170,14 @@ struct WiFiTransferView: View {
         } catch {
             next.stop()
             issue = error.localizedDescription
+        }
+    }
+
+    nonisolated private static func items(for entries: [(job: DownloadJob, file: URL)]) -> [WiFiTransferServer.Item] {
+        entries.map { job, file in
+            .init(id: job.id.uuidString, name: job.app.name.isEmpty ? file.deletingPathExtension().lastPathComponent : job.app.name,
+                  version: job.app.version, filename: Self.publicName(file.lastPathComponent, id: job.id), file: file,
+                  size: ((try? FileManager.default.attributesOfItem(atPath: file.path)[.size]) as? NSNumber)?.int64Value ?? job.app.size)
         }
     }
 

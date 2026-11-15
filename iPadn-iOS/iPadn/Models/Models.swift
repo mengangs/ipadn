@@ -116,13 +116,17 @@ struct StoreApp: Codable, Identifiable, Hashable {
     // No public listing in any storefront (removed from sale); the App ID
     // still works for accounts that own it.
     var delisted: Bool?
+    /// Internal `CFBundleVersion` read from Info.plist or dispatch ticket.
+    var bundleVersion: String? = nil
+    /// App Store public marketing version when tracked separately from `CFBundleShortVersionString`.
+    var storeMarketingVersion: String? = nil
     static let delistedPlaceholder = "未在公开商店找到"
     var isDelisted: Bool { delisted == true || category == Self.delistedPlaceholder }
     /// Category for display; never the legacy delisted placeholder.
     var displayCategory: String { category == Self.delistedPlaceholder ? "" : category }
 }
 
-struct AppVersion: Codable, Identifiable, Hashable {
+struct AppVersion: Codable, Identifiable, Hashable, Sendable {
     /// Version lists from Apple carry only IDs. The placeholder is data, not
     /// display text: it is stored, merged and compared, so it stays fixed.
     static let unknown = "未知版本"
@@ -171,6 +175,14 @@ struct DownloadAsset: Codable {
         self.externalVersionIDs = externalVersionIDs
         self.platform = platform
         self.account = account
+    }
+
+    var decodedMetadata: [String: Any]? {
+        guard let metadata, !metadata.isEmpty,
+              let plist = try? PropertyListSerialization.propertyList(from: metadata, format: nil) as? [String: Any] else {
+            return nil
+        }
+        return plist
     }
 }
 
@@ -230,12 +242,74 @@ struct DownloadJob: Codable, Identifiable {
     func completing(with inspected: StoreApp) -> StoreApp {
         var completed = inspected
         completed.iconURL = inspected.iconURL ?? app.iconURL ?? asset?.app.iconURL
+        completed.storeMarketingVersion = inspected.storeMarketingVersion ?? app.storeMarketingVersion ?? asset?.app.storeMarketingVersion
+        if completed.bundleVersion == nil {
+            completed.bundleVersion = app.bundleVersion ?? asset?.app.bundleVersion
+        }
         return completed
     }
     func displayApp(packageIcon: URL?) -> StoreApp {
         var displayed = app
         displayed.iconURL = packageIcon ?? app.iconURL ?? asset?.app.iconURL
         return displayed
+    }
+    var resolvedMarketingVersion: String? {
+        for candidate in [app.storeMarketingVersion, asset?.app.storeMarketingVersion] {
+            if let value = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+    /// User-facing version prioritizing verified App Store marketing version over `CFBundleShortVersionString`.
+    var userFacingVersion: String { resolvedMarketingVersion ?? app.version }
+    /// App name paired with user-facing version for Live Activity, alerts, and auto-install notices.
+    var userFacingTitle: String { [app.name, userFacingVersion].filter { !$0.isEmpty }.joined(separator: " ") }
+    /// Build number (`CFBundleVersion`) preserved on the job or dispatch ticket, if known.
+    var resolvedBundleVersion: String? {
+        for candidate in [app.bundleVersion, asset?.app.bundleVersion] {
+            if let value = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+    /// App Store external version identifier associated with the download or dispatch ticket.
+    var resolvedExternalVersionID: String? {
+        for candidate in [app.externalVersionID, asset?.app.externalVersionID] {
+            if let value = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+    /// Concise version label (`v3.8`) for download list rows without internal build numbers or IDs.
+    var conciseVersionLabel: String {
+        let version = userFacingVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !version.isEmpty, version != AppVersion.unknown else { return "" }
+        return "v\(version)"
+    }
+    /// Upgrades incomplete or failed jobs loaded from older app saves whose
+    /// `app.version` took a stale dotless dispatch short string instead of a dotted `bundleVersion`.
+    mutating func reconcileDispatchVersionFromMetadata() {
+        guard let plist = asset?.decodedMetadata else { return }
+        let dispatchBuild = plistString(plist["bundleVersion"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let dispatchExternalID = plistString(plist["softwareVersionExternalIdentifier"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if app.bundleVersion == nil, !dispatchBuild.isEmpty {
+            app.bundleVersion = dispatchBuild
+        }
+        if (app.externalVersionID ?? "").isEmpty, !dispatchExternalID.isEmpty {
+            app.externalVersionID = dispatchExternalID
+        }
+        guard status != .completed, !dispatchBuild.isEmpty else { return }
+        let reconciled = VersionService.reconcileTicketVersion(shortVersion: app.version, buildVersion: dispatchBuild)
+        if !reconciled.isEmpty && reconciled != app.version {
+            app.version = reconciled
+            asset?.app.version = reconciled
+        }
+        if asset?.app.bundleVersion == nil {
+            asset?.app.bundleVersion = dispatchBuild
+        }
     }
     /// Where a newer version of this download would come from; nil for
     /// developer-site installers and files without an App ID.
@@ -262,6 +336,9 @@ struct DownloadJob: Codable, Identifiable {
     }
 
     var storeVersion: String {
+        if let marketing = resolvedMarketingVersion {
+            return marketing
+        }
         let ticket = asset?.app.version ?? ""
         return ticket.isEmpty ? app.version : ticket
     }
@@ -310,6 +387,12 @@ struct ToolSettings: Codable, Equatable {
     var autoInstall = false
     /// Download progress on the Lock Screen and in the Dynamic Island.
     var downloadLiveActivity = true
+    /// Shows app icons beside historical versions and fetches them on demand.
+    var showHistoryIcons = true
+    /// Ranks confirmed-delisted matching apps ahead of listed results in keyword search.
+    var prioritizeDelistedSearchResults = true
+    /// Opt in to on-device translation; the system sheet remains the default.
+    var directTranslation = false
     var useSignerCache = true
     var appearance = "system"
     /// 2 once the appearance default is following the system (1.7.0 saved its dark default).
@@ -337,7 +420,7 @@ struct ToolSettings: Codable, Equatable {
         case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency, appUpdateCheck, targetPrices
         case appearanceSchema, compatibleDownloadMode, nativeInstallation, versionSourcesSchema, appLock, appLockDelay, showDiscover
         case wifiOnlyDownloads, autoInstall
-        case downloadLiveActivity
+        case downloadLiveActivity, showHistoryIcons, prioritizeDelistedSearchResults, directTranslation
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -355,6 +438,9 @@ struct ToolSettings: Codable, Equatable {
         wifiOnlyDownloads = try values.decodeIfPresent(Bool.self, forKey: .wifiOnlyDownloads) ?? wifiOnlyDownloads
         autoInstall = try values.decodeIfPresent(Bool.self, forKey: .autoInstall) ?? autoInstall
         downloadLiveActivity = try values.decodeIfPresent(Bool.self, forKey: .downloadLiveActivity) ?? downloadLiveActivity
+        showHistoryIcons = try values.decodeIfPresent(Bool.self, forKey: .showHistoryIcons) ?? showHistoryIcons
+        prioritizeDelistedSearchResults = try values.decodeIfPresent(Bool.self, forKey: .prioritizeDelistedSearchResults) ?? prioritizeDelistedSearchResults
+        directTranslation = try values.decodeIfPresent(Bool.self, forKey: .directTranslation) ?? directTranslation
         watchNotifications = try values.decodeIfPresent(Bool.self, forKey: .watchNotifications) ?? watchNotifications
         targetPrices = try values.decodeIfPresent(Bool.self, forKey: .targetPrices) ?? targetPrices
         let regions = (try values.decodeIfPresent([String].self, forKey: .priceRegions) ?? priceRegions).filter { StoreRegions.codes.contains($0) }
@@ -498,8 +584,24 @@ enum LocalResources {
     }
 }
 
+private final class FileByteFormatterCache: @unchecked Sendable {
+    static let shared = FileByteFormatterCache()
+    private let lock = NSLock()
+    private let formatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter
+    }()
+
+    func format(_ count: Int64) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return formatter.string(fromByteCount: count)
+    }
+}
+
 extension Int64 {
-    var byteLabel: String { ByteCountFormatter.string(fromByteCount: self, countStyle: .file) }
+    var byteLabel: String { FileByteFormatterCache.shared.format(self) }
 }
 
 func plistString(_ value: Any?) -> String {

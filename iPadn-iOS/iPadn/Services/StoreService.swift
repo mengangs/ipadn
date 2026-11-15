@@ -323,13 +323,22 @@ enum StoreService {
                 if firstError == nil { firstError = error }
             }
         }
+        guard !icons.isEmpty || firstError == nil else {
+            if let firstError { throw firstError }
+            return [:]
+        }
         if icons.isEmpty, let firstError { throw firstError }
         return icons
     }
 
     /// Current listings for many App IDs at once: the lookup API takes a list.
     /// `nativeMac` names the IDs whose listing is a Mac app.
-    static func lookup(ids: [String], country: String) async throws -> (apps: [String: StoreApp], nativeMac: Set<String>) {
+    static func lookup(
+        ids: [String],
+        country: String,
+        timeoutInterval: TimeInterval? = nil,
+        retryTransient: Bool? = nil
+    ) async throws -> (apps: [String: StoreApp], nativeMac: Set<String>) {
         let ids = ids.filter { UInt64($0).map { $0 > 0 } == true }
         let chunks = stride(from: 0, to: ids.count, by: 100).map { Array(ids[$0..<min($0 + 100, ids.count)]) }
         var found: [String: StoreApp] = [:]
@@ -338,24 +347,103 @@ enum StoreService {
         try await withThrowingTaskGroup(of: [(app: StoreApp, mac: Bool)].self) { group in
             var pending = chunks.makeIterator()
             for _ in 0..<4 {
-                if let chunk = pending.next() { group.addTask { try await lookupChunk(chunk, country: country) } }
+                if let chunk = pending.next() {
+                    group.addTask { try await lookupChunk(chunk, country: country, timeoutInterval: timeoutInterval, retryTransient: retryTransient) }
+                }
             }
             while let rows = try await group.next() {
                 for row in rows {
                     found[row.app.id] = row.app
                     if row.mac { nativeMac.insert(row.app.id) }
                 }
-                if let chunk = pending.next() { group.addTask { try await lookupChunk(chunk, country: country) } }
+                if let chunk = pending.next() {
+                    group.addTask { try await lookupChunk(chunk, country: country, timeoutInterval: timeoutInterval, retryTransient: retryTransient) }
+                }
             }
         }
         return (found, nativeMac)
     }
 
-    private static func lookupChunk(_ chunk: [String], country: String) async throws -> [(app: StoreApp, mac: Bool)] {
+    enum DelistedVerification: Equatable, Sendable {
+        case listed
+        case delisted
+        case inconclusive
+    }
+
+    /// Verifies across storefronts whether candidate IDs are genuinely delisted.
+    /// Returns `.listed` as soon as any checked storefront lists the ID (preventing
+    /// region-limited apps from being misclassified), `.delisted` only when every
+    /// checked storefront answers cleanly without errors and omits the ID, and
+    /// `.inconclusive` on cancellation or unrecovered request failure.
+    static func verifyDelistedStatuses(
+        ids: [String],
+        store: StoreContext,
+        accountCountry: String?,
+        fetcher: (@Sendable ([String], String) async throws -> [String: StoreApp])? = nil
+    ) async -> [String: DelistedVerification] {
+        let validIDs = Array(Set(ids.filter { UInt64($0).map { $0 > 0 } == true })).sorted()
+        guard !validIDs.isEmpty else { return [:] }
+        var seenCountry = Set<String>()
+        let countries = (searchCountries(selected: store.country, accountCountry: accountCountry) + fallbackCountries)
+            .filter { seenCountry.insert($0).inserted }
+        var remaining = Set(validIDs)
+        var statuses: [String: DelistedVerification] = [:]
+        var hadFailure = false
+        let runLookup: @Sendable ([String], String) async throws -> [String: StoreApp] = fetcher ?? { batch, country in
+            try await lookup(ids: batch, country: country, timeoutInterval: 4, retryTransient: false).apps
+        }
+
+        func probeWave(batch: [String], targetCountries: [String]) async -> [String] {
+            var failedCountries: [String] = []
+            await withTaskGroup(of: (String, Result<[String: StoreApp], Error>).self) { group in
+                for country in targetCountries {
+                    group.addTask {
+                        do { return (country, .success(try await runLookup(batch, country))) }
+                        catch { return (country, .failure(error)) }
+                    }
+                }
+                for await (country, result) in group {
+                    switch result {
+                    case .success(let found):
+                        for id in found.keys where remaining.remove(id) != nil {
+                            statuses[id] = .listed
+                        }
+                        if remaining.isEmpty {
+                            group.cancelAll()
+                            break
+                        }
+                    case .failure:
+                        failedCountries.append(country)
+                    }
+                }
+            }
+            return failedCountries
+        }
+
+        // Query all candidate storefronts concurrently with a tight fail-fast timeout,
+        // then retry only failed storefronts once for unresolved IDs so a single transient
+        // blip does not leave genuinely delisted matches unpromoted.
+        let failedOnFirstWave = await probeWave(batch: Array(remaining), targetCountries: countries)
+        if !remaining.isEmpty, !failedOnFirstWave.isEmpty, !Task.isCancelled {
+            let failedOnRetry = await probeWave(batch: Array(remaining), targetCountries: failedOnFirstWave)
+            if !failedOnRetry.isEmpty { hadFailure = true }
+        }
+        for id in remaining {
+            statuses[id] = (!hadFailure && !Task.isCancelled) ? .delisted : .inconclusive
+        }
+        return statuses
+    }
+
+    private static func lookupChunk(
+        _ chunk: [String],
+        country: String,
+        timeoutInterval: TimeInterval? = nil,
+        retryTransient: Bool? = nil
+    ) async throws -> [(app: StoreApp, mac: Bool)] {
         let url = try endpoint("https://itunes.apple.com/lookup", items: [
             URLQueryItem(name: "id", value: chunk.joined(separator: ",")), URLQueryItem(name: "country", value: country)
         ])
-        let rows = (try await HTTPClient.shared.json(url) as? [String: Any])?["results"] as? [[String: Any]] ?? []
+        let rows = (try await HTTPClient.shared.json(url, timeoutInterval: timeoutInterval, retryTransient: retryTransient) as? [String: Any])?["results"] as? [[String: Any]] ?? []
         return rows.compactMap { row in
             let app = mapLookup(row)
             guard chunk.contains(app.id) else { return nil }
@@ -630,23 +718,44 @@ enum MacStoreOfferService {
 }
 
 actor VersionService {
-    struct Cache: Codable { var savedAt: Date; var versions: [AppVersion] }
+    struct Cache: Codable {
+        var savedAt: Date
+        var versions: [AppVersion]
+        var complete: Bool? = nil
+    }
     private var cache = LocalResources.load([String: Cache].self, filename: LocalResources.versionsFilename) ?? [:]
     private var cacheRevision = UUID()
+
+    private static func cacheKey(appID: String, enabledSources: [VersionSource]) -> String {
+        let sourceKey = enabledSources.map { "\($0.name)|\($0.urlTemplate)|\($0.containerKey)|\($0.reverse)" }.joined(separator: ";")
+        return "v3|" + appID + "|" + sourceKey
+    }
+
+    func cachedVersionMap(appID: String, sources: [VersionSource]) -> [String: String] {
+        let key = Self.cacheKey(appID: appID, enabledSources: sources.filter(\.enabled))
+        guard let versions = cache[key]?.versions else { return [:] }
+        var map: [String: String] = [:]
+        for item in versions {
+            map[item.id] = Self.preferredVersion(item.version, over: map[item.id] ?? AppVersion.unknown, rejectingID: item.id)
+        }
+        return map
+    }
 
     func thirdParty(_ appID: String, sources: [VersionSource], force: Bool = false) async throws -> [AppVersion] {
         guard !appID.isEmpty, appID.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ToolError.message(AppText.text("App ID 必须是数字")) }
         let enabled = sources.filter(\.enabled)
         guard !enabled.isEmpty else { throw ToolError.message(AppText.text("请在设置中启用至少一个版本来源")) }
-        let sourceKey = enabled.map { "\($0.name)|\($0.urlTemplate)|\($0.containerKey)|\($0.reverse)" }.joined(separator: ";")
-        let key = appID + "|" + sourceKey
-        if !force, let entry = cache[key], Date().timeIntervalSince(entry.savedAt) < 24 * 3600 { return entry.versions }
+        let key = Self.cacheKey(appID: appID, enabledSources: enabled)
+        if !force, let entry = cache[key] {
+            let ttl: TimeInterval = entry.complete == false ? 10 * 60 : 24 * 3600
+            if Date().timeIntervalSince(entry.savedAt) < ttl { return entry.versions }
+        }
         let revision = cacheRevision
         // Complete every enabled query. Taking the first provider to respond
         // makes the version list depend on network timing and hides unique IDs.
-        let sourceResults = await withTaskGroup(
+        let (sourceResults, allSucceeded) = await withTaskGroup(
             of: (Int, Result<[AppVersion], Error>).self,
-            returning: [[AppVersion]].self
+            returning: ([[AppVersion]], Bool).self
         ) { group in
             for (index, source) in enabled.enumerated() {
                 group.addTask {
@@ -655,10 +764,14 @@ actor VersionService {
                 }
             }
             var lists = Array(repeating: [AppVersion](), count: enabled.count)
+            var complete = true
             for await (index, result) in group {
-                if case .success(let versions) = result { lists[index] = versions }
+                switch result {
+                case .success(let versions): lists[index] = versions
+                case .failure: complete = false
+                }
             }
-            return lists
+            return (lists, complete)
         }
         try Task.checkCancellation()
         let versions = Self.mergeSourceResults(sourceResults)
@@ -675,36 +788,364 @@ actor VersionService {
             throw VersionListUnavailableError()
         }
         if revision == cacheRevision {
-            cache = cache.filter { Date().timeIntervalSince($0.value.savedAt) < 7 * 86400 }
+            cache = cache.filter { $0.key.hasPrefix("v3|") && Date().timeIntervalSince($0.value.savedAt) < 7 * 86400 }
             if cache.count >= 200 {
                 // Also shrink oversized caches created by earlier versions in one pass.
                 cache = Dictionary(uniqueKeysWithValues: cache.sorted { $0.value.savedAt > $1.value.savedAt }
                     .prefix(199).map { ($0.key, $0.value) })
             }
-            cache[key] = Cache(savedAt: Date(), versions: versions)
+            cache[key] = Cache(savedAt: Date(), versions: versions, complete: allSucceeded)
             // A disposable cache write failure must not hide a valid server result.
             try? LocalResources.save(cache, filename: LocalResources.versionsFilename)
         }
         return versions
     }
 
+    /// Upgrades cached third-party version strings in place when a trustworthy
+    /// storefront or Apple source resolves a higher-preference version number.
+    func reconcile(appID: String, versionID: String, version: String, replaceDotless: Bool = false) {
+        let normalized = Self.sanitizedVersion(version, rejectingID: versionID)
+        let incomingScore = Self.versionPreference(normalized, rejectingID: versionID)
+        var changed = false
+        for (key, var entry) in cache where key.hasPrefix("v3|\(appID)|") {
+            var updated = false
+            for index in entry.versions.indices where entry.versions[index].id == versionID {
+                let current = entry.versions[index].version
+                let currentScore = Self.versionPreference(current, rejectingID: versionID)
+                let better: String
+                if replaceDotless && currentScore <= 1 && (incomingScore >= currentScore || normalized == AppVersion.unknown) {
+                    better = normalized
+                } else if normalized != AppVersion.unknown {
+                    better = Self.preferredVersion(normalized, over: current, rejectingID: versionID)
+                } else {
+                    continue
+                }
+                if better != current {
+                    entry.versions[index].version = better
+                    updated = true
+                }
+            }
+            if updated {
+                cache[key] = entry
+                changed = true
+            }
+        }
+        if changed {
+            try? LocalResources.save(cache, filename: LocalResources.versionsFilename)
+        }
+    }
+
+    static func sanitizedVersion(_ raw: String, rejectingID: String? = nil) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != AppVersion.unknown else { return AppVersion.unknown }
+        if let rejectingID, !rejectingID.isEmpty, trimmed == rejectingID { return AppVersion.unknown }
+        // Ignore scraper text fragments accidentally placed in bundle_version
+        // (e.g. "aktualisiert"). Do not synthesize dots for pure integers like "4800".
+        guard !trimmed.contains(where: \.isWhitespace),
+              trimmed.contains(where: { $0.isASCII && $0.isNumber }) else {
+            return AppVersion.unknown
+        }
+        return trimmed
+    }
+
+    static func versionPreference(_ raw: String, rejectingID: String? = nil) -> Int {
+        let value = sanitizedVersion(raw, rejectingID: rejectingID)
+        guard value != AppVersion.unknown else { return 0 }
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        let numericSegments = parts.filter { $0.contains(where: { $0.isASCII && $0.isNumber }) }.count
+        return parts.count >= 2 && numericSegments >= 2 ? 2 : 1
+    }
+
+    static func preferredVersion(_ candidate: String, over current: String, rejectingID: String? = nil) -> String {
+        let next = sanitizedVersion(candidate, rejectingID: rejectingID)
+        let existing = sanitizedVersion(current, rejectingID: rejectingID)
+        let nextScore = versionPreference(next, rejectingID: rejectingID)
+        let currentScore = versionPreference(existing, rejectingID: rejectingID)
+        if nextScore > currentScore { return next }
+        return existing != AppVersion.unknown ? existing : next
+    }
+
+    static func bestVersion(_ candidates: [String], rejectingID: String? = nil) -> String {
+        candidates.reduce(AppVersion.unknown) { current, candidate in
+            preferredVersion(candidate, over: current, rejectingID: rejectingID)
+        }
+    }
+
+    static func reconcileTicketVersion(shortVersion: String, buildVersion: String) -> String {
+        let cleanShort = sanitizedVersion(shortVersion)
+        let cleanBuild = sanitizedVersion(buildVersion)
+        let short = cleanShort == AppVersion.unknown ? "" : cleanShort
+        let build = cleanBuild == AppVersion.unknown ? "" : cleanBuild
+        if versionPreference(short) >= 2 { return short }
+        if versionPreference(build) >= 2 { return build }
+        return !short.isEmpty ? short : build
+    }
+
+    /// Precision rank for matching a compact build string (e.g. `"4600"`, `"2109"`)
+    /// to an official App Store marketing version (`"4.6"`, `"2.1.09"`).
+    enum MarketingMatchPrecision: Int, Comparable {
+        case padded = 1
+        case zeroExtended = 2
+        case exact = 3
+
+        static func < (lhs: MarketingMatchPrecision, rhs: MarketingMatchPrecision) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
+
+    private static func isASCIIDigitToken(_ value: String) -> Bool {
+        !value.isEmpty && value.allSatisfy { $0.isASCII && $0.isNumber }
+    }
+
+    private static func marketingSegments(_ version: String) -> [String]? {
+        let trimmed = sanitizedVersion(version)
+        guard trimmed != AppVersion.unknown else { return nil }
+        let segments = trimmed.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        guard segments.count >= 2, segments.allSatisfy(isASCIIDigitToken) else { return nil }
+        return segments
+    }
+
+    static func compatibleMarketingPrecision(_ dottedVersion: String, buildRaw: String) -> MarketingMatchPrecision? {
+        let build = sanitizedVersion(buildRaw)
+        guard build != AppVersion.unknown,
+              versionPreference(build) == 1,
+              isASCIIDigitToken(build),
+              let segments = marketingSegments(dottedVersion) else { return nil }
+        let joined = segments.joined()
+        if build == joined { return .exact }
+        if build.hasPrefix(joined) {
+            let suffix = build.dropFirst(joined.count)
+            if !suffix.isEmpty && suffix.count <= 2 && suffix.allSatisfy({ $0 == "0" }) {
+                return .zeroExtended
+            }
+        }
+        let padded = segments.enumerated().map { item in
+            item.offset == 0 ? item.element : (item.element.count == 1 ? "0" + item.element : item.element)
+        }.joined()
+        if padded != joined {
+            if build == padded { return .padded }
+            if build.hasPrefix(padded) {
+                let suffix = build.dropFirst(padded.count)
+                if !suffix.isEmpty && suffix.count <= 2 && suffix.allSatisfy({ $0 == "0" }) {
+                    return .padded
+                }
+            }
+        }
+        return nil
+    }
+
+    static func matchesReleaseVersion(_ candidate: String, reference: String) -> Bool {
+        let a = sanitizedVersion(candidate)
+        let b = sanitizedVersion(reference)
+        guard a != AppVersion.unknown, b != AppVersion.unknown else { return false }
+        if a.caseInsensitiveCompare(b) == .orderedSame { return true }
+        if versionPreference(b) >= 2 && versionPreference(a) == 1 {
+            return compatibleMarketingPrecision(b, buildRaw: a) != nil
+        }
+        if versionPreference(a) >= 2 && versionPreference(b) == 1 {
+            return compatibleMarketingPrecision(a, buildRaw: b) != nil
+        }
+        return false
+    }
+
+    /// Detects when Apple's DownloadDispatch returned the app's current live version
+    /// (for example `"4800"`) for a historical build whose older position already precedes
+    /// strictly distinct newer releases.
+    static func isLikelyStaleLatestFallback(
+        _ candidate: String,
+        versionID: String,
+        appVersion: String,
+        versions: [AppVersion],
+        cachedMetadata: [String: VersionMetadata] = [:],
+        rowIndex: Int? = nil,
+        rowReleased: Date? = nil,
+        latestReleased: Date? = nil
+    ) -> Bool {
+        guard !versions.isEmpty,
+              let index = rowIndex ?? versions.firstIndex(where: { $0.id == versionID }),
+              index > 0,
+              versions.first?.id != versionID else { return false }
+        let clean = sanitizedVersion(candidate, rejectingID: versionID)
+        guard clean != AppVersion.unknown else { return false }
+
+        let latestReferences = [
+            appVersion,
+            versions[0].version,
+            cachedMetadata[versions[0].id]?.version ?? ""
+        ].compactMap { ref -> String? in
+            let sanitized = sanitizedVersion(ref, rejectingID: versions[0].id)
+            return sanitized == AppVersion.unknown ? nil : sanitized
+        }
+        guard latestReferences.contains(where: { matchesReleaseVersion(clean, reference: $0) }) else {
+            return false
+        }
+
+        let hasDistinctNewerVersion = versions[1..<index].contains { entry in
+            let known = bestVersion([
+                cachedMetadata[entry.id]?.version ?? "",
+                entry.version
+            ], rejectingID: entry.id)
+            guard known != AppVersion.unknown else { return false }
+            return !matchesReleaseVersion(known, reference: clean)
+                && !latestReferences.contains(where: { matchesReleaseVersion(known, reference: $0) })
+        }
+        if hasDistinctNewerVersion { return true }
+
+        if let rowReleased,
+           let latestReleased = latestReleased ?? cachedMetadata[versions[0].id]?.released,
+           latestReleased.timeIntervalSince(rowReleased) > 180 * 86400,
+           index >= 3 {
+            return true
+        }
+        return false
+    }
+
+    static func reconcileSingleWithReleaseNotes(
+        versionID: String,
+        rawVersion: String,
+        released: Date?,
+        versions: [AppVersion],
+        metadata: [String: VersionMetadata],
+        notes: [ReleaseNote],
+        appVersion: String,
+        rowIndex: Int? = nil
+    ) -> String? {
+        guard !notes.isEmpty,
+              let index = rowIndex ?? versions.firstIndex(where: { $0.id == versionID }) else { return nil }
+        let clean = sanitizedVersion(rawVersion, rejectingID: versionID)
+        guard clean != AppVersion.unknown,
+              versionPreference(clean) < 2,
+              !isLikelyStaleLatestFallback(clean, versionID: versionID, appVersion: appVersion,
+                                            versions: versions, cachedMetadata: metadata,
+                                            rowIndex: index, rowReleased: released) else {
+            return nil
+        }
+
+        let structuralMatches = notes.compactMap { note -> (note: ReleaseNote, precision: MarketingMatchPrecision)? in
+            guard let precision = compatibleMarketingPrecision(note.version, buildRaw: clean) else { return nil }
+            return (note, precision)
+        }
+        guard !structuralMatches.isEmpty else { return nil }
+
+        let uniqueWinner: ([ (note: ReleaseNote, precision: MarketingMatchPrecision) ]) -> ReleaseNote? = { pool in
+            let distinctVersions = Set(pool.map { sanitizedVersion($0.note.version) })
+            guard distinctVersions.count == 1 else { return nil }
+            return pool.max(by: { $0.precision < $1.precision })?.note
+        }
+
+        if let released {
+            let datedMatches = structuralMatches.filter { item in
+                guard let noteDate = item.note.date else { return false }
+                let delta = noteDate.timeIntervalSince(released)
+                return delta >= -5 * 86400 && delta <= 60 * 86400
+            }
+            if !datedMatches.isEmpty {
+                return uniqueWinner(datedMatches)?.version
+            }
+            // If notes carry dates and none matched the IPA's package date window, do not guess.
+            if structuralMatches.contains(where: { $0.note.date != nil }) {
+                return nil
+            }
+        }
+
+        guard let winner = uniqueWinner(structuralMatches) else { return nil }
+        guard let winnerDate = winner.date else {
+            return structuralMatches.count == 1 ? winner.version : nil
+        }
+
+        let noteDatesByVersion = Dictionary(
+            notes.compactMap { note -> (String, Date)? in
+                let key = sanitizedVersion(note.version)
+                guard key != AppVersion.unknown, let date = note.date else { return nil }
+                return (key, date)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let myNumericID = UInt64(versionID)
+        let newerRowDate = versions[0..<index].reversed().compactMap { entry -> Date? in
+            if let myNumericID, let otherID = UInt64(entry.id), otherID < myNumericID { return nil }
+            if let metaDate = metadata[entry.id]?.released { return metaDate }
+            let known = bestVersion([metadata[entry.id]?.version ?? "", entry.version], rejectingID: entry.id)
+            return noteDatesByVersion[known]
+        }.first
+        let olderRowDate = versions[(index + 1)...].compactMap { entry -> Date? in
+            if let myNumericID, let otherID = UInt64(entry.id), otherID > myNumericID { return nil }
+            if let metaDate = metadata[entry.id]?.released { return metaDate }
+            let known = bestVersion([metadata[entry.id]?.version ?? "", entry.version], rejectingID: entry.id)
+            return noteDatesByVersion[known]
+        }.first
+
+        if let newerRowDate, winnerDate > newerRowDate.addingTimeInterval(45 * 86400) { return nil }
+        if let olderRowDate, winnerDate < olderRowDate.addingTimeInterval(-10 * 86400) { return nil }
+        return winner.version
+    }
+
+    static func reconcileWithReleaseNotes(
+        versions: [AppVersion],
+        metadata: [String: VersionMetadata],
+        notes: [ReleaseNote],
+        appVersion: String
+    ) -> [(id: String, version: String)] {
+        guard !versions.isEmpty, !notes.isEmpty else { return [] }
+        var updates: [(id: String, version: String)] = []
+        for (index, entry) in versions.enumerated() {
+            let current = bestVersion([metadata[entry.id]?.version ?? "", entry.version], rejectingID: entry.id)
+            guard let resolved = reconcileSingleWithReleaseNotes(
+                versionID: entry.id,
+                rawVersion: current,
+                released: metadata[entry.id]?.released,
+                versions: versions,
+                metadata: metadata,
+                notes: notes,
+                appVersion: appVersion,
+                rowIndex: index
+            ) else { continue }
+            if resolved != entry.version || (metadata[entry.id] != nil && metadata[entry.id]?.version != resolved) {
+                updates.append((entry.id, resolved))
+            }
+        }
+        return updates
+    }
+
     static func mergeSourceResults(_ sources: [[AppVersion]]) -> [AppVersion] {
         var result: [AppVersion] = []
         var indices: [String: Int] = [:]
-        // Preserve the configured source priority and the order returned by
-        // each source. The API does not provide comparable release timestamps.
+        // Preserve the configured source priority, inserting a version missing from
+        // earlier sources before its next shared anchor when one follows in order.
         for source in sources {
-            for version in source where !version.id.isEmpty {
+            let validSource: [AppVersion] = source.compactMap { rawVersion in
+                guard !rawVersion.id.isEmpty else { return nil }
+                var version = rawVersion
+                version.version = sanitizedVersion(version.version, rejectingID: version.id)
+                return version
+            }
+            var nextKnownAnchor: [String?] = Array(repeating: nil, count: validSource.count)
+            var trailingAnchor: String?
+            for idx in validSource.indices.reversed() {
+                nextKnownAnchor[idx] = trailingAnchor
+                let id = validSource[idx].id
+                if indices[id] != nil { trailingAnchor = id }
+            }
+            var insertCursor = 0
+            for (pos, version) in validSource.enumerated() {
                 if let index = indices[version.id] {
-                    if result[index].version == AppVersion.unknown && version.version != AppVersion.unknown {
-                        result[index].version = version.version
-                    }
+                    result[index].version = preferredVersion(version.version, over: result[index].version, rejectingID: version.id)
                     if !result[index].source.components(separatedBy: "、").contains(version.source) {
                         result[index].source += AppText.text("、") + version.source
                     }
+                    insertCursor = max(insertCursor, index + 1)
+                } else if let anchorID = nextKnownAnchor[pos],
+                          let anchorIndex = indices[anchorID],
+                          anchorIndex >= insertCursor {
+                    result.insert(version, at: anchorIndex)
+                    for i in anchorIndex..<result.count {
+                        indices[result[i].id] = i
+                    }
+                    insertCursor = anchorIndex + 1
                 } else {
                     indices[version.id] = result.count
                     result.append(version)
+                    insertCursor = result.count
                 }
             }
         }
@@ -738,8 +1179,8 @@ actor VersionService {
         return ordered.compactMap { record in
             let id = plistString(record["external_identifier"])
             guard !id.isEmpty, id.allSatisfy({ $0.isASCII && $0.isNumber }), seen.insert(id).inserted else { return nil }
-            let version = plistString(record["bundle_version"])
-            return AppVersion(id: id, version: version.isEmpty ? AppVersion.unknown : version, source: source.name)
+            let version = sanitizedVersion(plistString(record["bundle_version"]), rejectingID: id)
+            return AppVersion(id: id, version: version, source: source.name)
         }
     }
 

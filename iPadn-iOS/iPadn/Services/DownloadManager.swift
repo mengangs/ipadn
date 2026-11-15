@@ -66,6 +66,7 @@ final class DownloadManager: NSObject, ObservableObject {
     private var catalogArtworkAttempted = Set<UUID>()
     private var iconSizeChecked = Set<UUID>()
     private var olderIconRetried = Set<UUID>()
+    private var packageIconCache: [UUID: Bool] = [:]
     private var removalAfterCancel = Set<UUID>()
     private let persistQueue = DispatchQueue(label: "iPadn.download-jobs", qos: .utility)
     private var artworkCountry = "CN"
@@ -88,7 +89,11 @@ final class DownloadManager: NSObject, ObservableObject {
     /// so finished downloads install by themselves, also in the background.
     private var silentInstall = false
     private var silentQueue: [UUID] = []
+    private var silentInstallTask: Task<Void, Never>?
+    private var activeSilentAttemptTask: Task<NativeInstaller.Outcome, Error>?
+    private var silentCancelledIDs = Set<UUID>()
     private var silentRunning = false { didSet { updateInstallKeepAlive() } }
+    @Published private(set) var isLoaded = false
     /// iOS suspends iPadn soon after it leaves the screen, which would stop the
     /// install (and the Live Activity) until iPadn is opened again. From the
     /// download to the end of its silent installation, iPadn keeps running.
@@ -107,21 +112,46 @@ final class DownloadManager: NSObject, ObservableObject {
     /// A line for iPadn's top notice while it is open (notifications only
     /// appear in the background).
     @Published var autoInstallNotice: String?
-    /// The automatic installation in progress, for the Live Activity.
-    struct AutoInstallProgress: Equatable { var id: UUID; var name: String; var fraction: Double }
+    enum AutoInstallStage: Int, Equatable, Sendable { case connecting, uploading, installing }
+    /// The automatic installation in progress, for the Live Activity and downloads banner.
+    struct AutoInstallProgress: Equatable {
+        var id: UUID
+        var name: String
+        var fraction: Double
+        var canCancel: Bool = true
+        var stage: AutoInstallStage = .connecting
+        var hasProgress: Bool { stage != .connecting && fraction >= 0.005 }
+    }
+    enum AutoInstallCancelOutcome: Equatable { case idle, cancelled, irreversible }
     @Published private(set) var autoInstalling: AutoInstallProgress?
+    #if DEBUG
+    func setAutoInstallingForTesting(_ progress: AutoInstallProgress?) { autoInstalling = progress }
+    func setWaitingAutoInstallForTesting(_ id: UUID, waiting: Bool) { markWaiting(id, waiting) }
+    func setInFlightAutoInstallForTesting(_ id: UUID?) { inFlightAutoInstallID = id?.uuidString }
+    func recoverInterruptedAutoInstallForTesting() { recoverInterruptedAutoInstall() }
+    #endif
     /// The app just installed automatically (Live Activity "Installed").
     @Published private(set) var autoInstalled: String?
     /// The automatic installation that did not finish (Live Activity "Not installed").
     @Published private(set) var autoInstallFailed: String?
+    /// The automatic installation stopped by the user so the Live Activity dismisses cleanly.
+    @Published private(set) var autoInstallCancelled: String?
     /// A finished download about to be installed silently.
     func waitsForSilentInstall(_ id: UUID) -> Bool { silentInstall && waitingInstalls.contains(id.uuidString) }
     /// Finished downloads still waiting to be installed automatically. Kept
     /// across launches: iOS can end iPadn in the background mid-install.
     private static let autoInstallKey = "autoInstallWaiting"
+    private static let autoInstallInFlightKey = "autoInstallInFlight"
     private var waitingInstalls: [String] {
         get { LocalResources.defaults.stringArray(forKey: Self.autoInstallKey) ?? [] }
         set { LocalResources.defaults.set(newValue, forKey: Self.autoInstallKey) }
+    }
+    private var inFlightAutoInstallID: String? {
+        get { LocalResources.defaults.string(forKey: Self.autoInstallInFlightKey) }
+        set {
+            if let newValue { LocalResources.defaults.set(newValue, forKey: Self.autoInstallInFlightKey) }
+            else { LocalResources.defaults.removeObject(forKey: Self.autoInstallInFlightKey) }
+        }
     }
     private func markWaiting(_ id: UUID, _ waiting: Bool) {
         var list = waitingInstalls.filter { $0 != id.uuidString }
@@ -286,6 +316,7 @@ final class DownloadManager: NSObject, ObservableObject {
         super.init()
         jobs = previewJobs
         self.saveJobs = saveJobs
+        isLoaded = true
         // Screenshots never create a URLSession or start real transfers.
         tasks = activeTasks
         restoring = activeTasks.isEmpty
@@ -323,8 +354,25 @@ final class DownloadManager: NSObject, ObservableObject {
                 }.value
             } catch { storageError = AppText.text("任务文件读取失败；已保留原文件，请先导出诊断再处理。") + "\n" + error.localizedDescription }
             loadingJobs = false
+            recoverInterruptedAutoInstall()
             await restore()
+            isLoaded = true
             startBackgroundProbeIfNeeded()
+        }
+    }
+
+    /// If the previous launch terminated abnormally while NativeInstaller was
+    /// running, prevent an immediate silent auto-install crash loop on relaunch.
+    private func recoverInterruptedAutoInstall() {
+        guard let rawID = inFlightAutoInstallID else { return }
+        inFlightAutoInstallID = nil
+        guard let id = UUID(uuidString: rawID) else { return }
+        markWaiting(id, false)
+        if let job = jobs.first(where: { $0.id == id && $0.status == .completed }) {
+            let name = job.userFacingTitle
+            autoInstallFailed = name
+            autoInstallNotice = AppText.text("上次自动安装未完成，请在下载列表中重试 \(name)")
+            InstallLog.shared.add("cleared interrupted silent auto-install on launch: \(name)")
         }
     }
 
@@ -336,8 +384,18 @@ final class DownloadManager: NSObject, ObservableObject {
         compatibleDownloadMode = settings.compatibleDownloadMode
         autoInstall = settings.autoInstall
         silentInstall = settings.autoInstall && settings.usesNativeInstallation
+        if !autoInstall {
+            pendingAutoInstalls.removeAll()
+            silentQueue.removeAll()
+            waitingInstalls = []
+            _ = cancelAutoInstall(nil)
+        } else if !silentInstall {
+            silentQueue.removeAll()
+            for id in pendingAutoInstalls where waitsForSilentInstall(id) { markWaiting(id, false) }
+            waitingInstalls = []
+            _ = cancelAutoInstall(nil)
+        }
         updateInstallKeepAlive()
-        if !autoInstall { pendingAutoInstalls.removeAll(); silentQueue.removeAll() }
         wifiOnly = settings.wifiOnlyDownloads
         if wifiOnly { startPathMonitor() }
         applyNetworkRule()
@@ -409,6 +467,7 @@ final class DownloadManager: NSObject, ObservableObject {
             }
         }
         for index in jobs.indices {
+            jobs[index].reconcileDispatchVersionFromMetadata()
             let id = jobs[index].id
             if jobs[index].status == .running && tasks[id] == nil { jobs[index].status = .paused }
             if jobs[index].status == .pausing { jobs[index].status = .paused }
@@ -427,12 +486,22 @@ final class DownloadManager: NSObject, ObservableObject {
         persist(); schedule()
     }
 
+    static func isSameDownloadVersion(_ lhs: StoreApp, _ rhs: StoreApp) -> Bool {
+        guard lhs.id == rhs.id else { return false }
+        let lhsExt = (lhs.externalVersionID ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let rhsExt = (rhs.externalVersionID ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !lhsExt.isEmpty && !rhsExt.isEmpty {
+            return lhsExt == rhsExt
+        }
+        return lhs.version == rhs.version
+    }
+
     func enqueue(_ asset: DownloadAsset) throws {
         guard storageError == nil else { throw ToolError.message(storageError!) }
         guard jobs.filter({ $0.status != .completed && $0.status != .failed }).count < maxQueued else {
             throw DownloadQueueLimitError()
         }
-        guard !jobs.contains(where: { $0.app.id == asset.app.id && $0.app.version == asset.app.version &&
+        guard !jobs.contains(where: { Self.isSameDownloadVersion($0.app, asset.app) &&
             $0.account == asset.account && ![.failed, .completed].contains($0.status) }) else {
             throw ToolError.message(AppText.text("这个版本已有下载任务"))
         }
@@ -516,15 +585,24 @@ final class DownloadManager: NSObject, ObservableObject {
               jobs[index].account == asset.account, jobs[index].app.id == asset.app.id else {
             throw ToolError.message(AppText.text("账号已切换，请重新下载"))
         }
+        let existingExt = (jobs[index].app.externalVersionID ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let incomingExt = (asset.app.externalVersionID ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !existingExt.isEmpty && !incomingExt.isEmpty && existingExt != incomingExt {
+            throw ToolError.message(AppText.text("所选版本暂时无法下载，请换个版本重试"))
+        }
         var next = jobs
         if next[index].foregroundFallback == true || next[index].error?.contains("无法创建") == true {
             fallbackForegroundIDs.insert(id)
         }
-        next[index].asset = asset; next[index].sourceURL = asset.url; next[index].app = asset.app
+        var refreshedAsset = asset
+        if refreshedAsset.app.storeMarketingVersion == nil {
+            refreshedAsset.app.storeMarketingVersion = next[index].resolvedMarketingVersion
+        }
+        next[index].asset = refreshedAsset; next[index].sourceURL = refreshedAsset.url; next[index].app = refreshedAsset.app
         next[index].error = nil
         let staged = FileManager.default.fileExists(atPath: LocalResources.stagingURL(id).path)
         next[index].status = staged ? .processing : .queued
-        if !staged { next[index].downloaded = 0; next[index].expected = asset.app.size }
+        if !staged { next[index].downloaded = 0; next[index].expected = refreshedAsset.app.size }
         try saveNewJobs(next)
         try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
         if staged { process(id) } else { schedule() }
@@ -562,6 +640,7 @@ final class DownloadManager: NSObject, ObservableObject {
     /// Pauses a download; `requeue` puts it back in the queue instead.
     func pause(_ id: UUID, requeue: Bool = false) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        transferMetrics.removeValue(forKey: id)
         if jobs[index].status == .queued { jobs[index].status = .paused; persist(); return }
         guard jobs[index].status == .running, let task = tasks[id] else { return }
         jobs[index].status = .pausing; persist()
@@ -571,6 +650,7 @@ final class DownloadManager: NSObject, ObservableObject {
                       self.tasks[id] === task else { return }
                 if let data = data { try? data.write(to: LocalResources.resumeURL(id), options: .atomic) }
                 self.tasks.removeValue(forKey: id)
+                self.transferMetrics.removeValue(forKey: id)
                 self.updateBackgroundTask()
                 // The byte count lives in the row's progress while running;
                 // keep it on the task so everything showing it stays right.
@@ -616,6 +696,14 @@ final class DownloadManager: NSObject, ObservableObject {
             removalAfterCancel.insert(id); cancelProcessing(id); return
         }
         guard job.status != .processing, job.status != .pausing else { throw ToolError.message(AppText.text("请等待当前文件处理或暂停完成后再删除")) }
+        switch prepareAutoInstallForRemoval(ids: [id]) {
+        case .irreversible:
+            throw ToolError.message(AppText.text("正在执行系统安装，完成前无法删除该任务。"))
+        case .cancelling:
+            throw ToolError.message(AppText.text("正在取消自动安装，请稍后重试删除。"))
+        case .clear:
+            break
+        }
         let file = fileURL(job)
         let removal = LocalResources.support.appendingPathComponent("\(id.uuidString).removing.ipa")
         if let file { try FileManager.default.moveItem(at: file, to: removal) }
@@ -634,21 +722,179 @@ final class DownloadManager: NSObject, ObservableObject {
         try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
         try? FileManager.default.removeItem(at: LocalResources.stagingURL(id))
         try? FileManager.default.removeItem(at: PackageIconService.cacheURL(id))
+        packageIconCache.removeValue(forKey: id)
         try? FileManager.default.removeItem(at: Self.decryptedURL(id))
         MacPackageSecrets.delete(id)
         catalogArtworkAttempted.remove(id)
         schedule()
     }
 
+    /// A swipe removes the durable task immediately but retains its files in
+    /// the existing crash-recoverable quarantine until Undo expires.
+    private struct UndoRemoval {
+        let created: Date
+        var expires: Date
+        let jobs: [(index: Int, job: DownloadJob)]
+        let resume: Set<UUID>
+        let files: [(aside: URL, original: URL)]
+    }
+    private var undoRemovals: [UUID: UndoRemoval] = [:]
+    private var undoRemovalTimers: [UUID: Task<Void, Never>] = [:]
+    @Published private(set) var recentlyRestoredIDs: Set<UUID> = []
+    private var restoredClearTask: Task<Void, Never>?
+
+    private func markRecentlyRestored(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        recentlyRestoredIDs.formUnion(ids)
+        restoredClearTask?.cancel()
+        restoredClearTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .milliseconds(900)) } catch { return }
+            self?.recentlyRestoredIDs.removeAll()
+        }
+    }
+
+    func removeReversibly(_ id: UUID) async throws -> (token: UUID, created: Date)? {
+        let token = UUID()
+        guard try await removeBatch([id], undoToken: token) > 0,
+              let receipt = undoRemovals[token] else { return nil }
+        return (token, receipt.created)
+    }
+
+    /// Consecutive swipes share the latest notice and five-second window.
+    func extendRemovalUndo(_ tokens: [UUID], until deadline: Date) {
+        for token in tokens where undoRemovals[token] != nil {
+            undoRemovals[token]?.expires = deadline
+            armRemovalUndo(token)
+        }
+    }
+
+    private func armRemovalUndo(_ token: UUID) {
+        undoRemovalTimers.removeValue(forKey: token)?.cancel()
+        guard let receipt = undoRemovals[token] else { return }
+        let delay = max(0, receipt.expires.timeIntervalSinceNow)
+        undoRemovalTimers[token] = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            self?.finishRemovalUndo(token)
+        }
+    }
+
+    private func finishRemovalUndo(_ token: UUID) {
+        guard let receipt = undoRemovals.removeValue(forKey: token) else { return }
+        undoRemovalTimers.removeValue(forKey: token)?.cancel()
+        for item in receipt.jobs { packageIconCache.removeValue(forKey: item.job.id) }
+        persistQueue.async {
+            for file in receipt.files { try? FileManager.default.removeItem(at: file.aside) }
+            for item in receipt.jobs {
+                let id = item.job.id
+                for url in [LocalResources.resumeURL(id), LocalResources.stagingURL(id), PackageIconService.cacheURL(id), Self.decryptedURL(id)] {
+                    try? FileManager.default.removeItem(at: url)
+                }
+                MacPackageSecrets.delete(id)
+            }
+        }
+    }
+
+    func undoRemoval(_ token: UUID) async throws {
+        try await undoRemovalGroup([token])
+    }
+
+    /// Claim the whole group before the first disk await. Otherwise the expiry
+    /// timer for a later receipt can delete its files while an earlier save runs.
+    func undoRemovalGroup(_ tokens: [UUID]) async throws {
+        guard removingIDs.isEmpty, !loadingJobs else { throw ToolError.message(AppText.text("正在保存任务，请稍后重试")) }
+        guard storageError == nil else { throw ToolError.message(storageError!) }
+        let now = Date()
+        var claimed: [(token: UUID, receipt: UndoRemoval)] = []
+        var seen = Set<UUID>()
+        let unique = tokens.filter { seen.insert($0).inserted }
+        for token in unique.reversed() {
+            guard let receipt = undoRemovals[token] else { continue }
+            guard now < receipt.expires else { finishRemovalUndo(token); continue }
+            guard !receipt.jobs.contains(where: { item in jobs.contains { $0.id == item.job.id } }) else { continue }
+            claimed.append((token, receipt))
+        }
+        guard !claimed.isEmpty else { return }
+        for item in claimed {
+            undoRemovals.removeValue(forKey: item.token)
+            undoRemovalTimers.removeValue(forKey: item.token)?.cancel()
+        }
+        let entries = claimed.flatMap { $0.receipt.jobs }
+        removingIDs = Set(entries.map { $0.job.id })
+        defer { removingIDs.removeAll(); persist(); schedule(); finishBackgroundIfReady() }
+        let insert: ([DownloadJob]) -> [DownloadJob] = { current in
+            var result = current
+            // Each receipt's indices describe the list at that deletion; undo
+            // deletions in reverse order rather than sorting across receipts.
+            for item in claimed {
+                for entry in item.receipt.jobs.sorted(by: { $0.index < $1.index }) {
+                    result.insert(entry.job, at: min(entry.index, result.count))
+                }
+            }
+            return result
+        }
+        let restored = insert(currentJobs), save = saveJobs
+        let moves = claimed.flatMap { $0.receipt.files }.map { ($0.aside, $0.original) }
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                persistQueue.async {
+                    do {
+                        try DownloadRemovalTransaction.perform(moves) { try save(restored) }
+                        continuation.resume()
+                    } catch { continuation.resume(throwing: error) }
+                }
+            }
+            // Publish once, preserving unrelated updates delivered during I/O.
+            for entry in entries { packageIconCache.removeValue(forKey: entry.job.id) }
+            let restoredIDs = Set(entries.map(\.job.id))
+            jobs = insert(currentJobs)
+            markRecentlyRestored(restoredIDs)
+            for id in claimed.reduce(into: Set<UUID>(), { $0.formUnion($1.receipt.resume) }) { resume(id) }
+        } catch {
+            for item in claimed {
+                undoRemovals[item.token] = item.receipt
+                armRemovalUndo(item.token)
+            }
+            throw error
+        }
+    }
+
     /// One durable commit for a batch. Pause live transfers first; move packages
     /// aside and roll them back if the task-list write fails. Disk work is serial
     /// with earlier progress saves, and never runs on the main actor.
     func removeBatch(_ ids: Set<UUID>) async throws -> Int {
+        try await removeBatch(ids, undoToken: nil)
+    }
+
+    private func removeBatch(_ ids: Set<UUID>, undoToken: UUID?) async throws -> Int {
+        if undoToken != nil && (!removingIDs.isEmpty || loadingJobs) {
+            let queueDeadline = Date().addingTimeInterval(2)
+            while (!removingIDs.isEmpty || loadingJobs) && Date() < queueDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            try Task.checkCancellation()
+        }
         guard removingIDs.isEmpty, !loadingJobs else { throw ToolError.message(AppText.text("正在保存任务，请稍后重试")) }
         guard storageError == nil else { throw ToolError.message(storageError!) }
         let selected = jobs.filter { ids.contains($0.id) }
         guard !selected.contains(where: { $0.status == .processing || $0.status == .pausing }) else {
             throw ToolError.message(AppText.text("请等待当前文件处理或暂停完成后再删除"))
+        }
+        switch prepareAutoInstallForRemoval(ids: ids) {
+        case .irreversible:
+            throw ToolError.message(AppText.text("正在执行系统安装，完成前无法删除该任务。"))
+        case .cancelling:
+            let cancelDeadline = Date().addingTimeInterval(3)
+            while let activeID = autoInstalling?.id, ids.contains(activeID), Date() < cancelDeadline {
+                if autoInstalling?.canCancel == false {
+                    throw ToolError.message(AppText.text("正在执行系统安装，完成前无法删除该任务。"))
+                }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            if let activeID = autoInstalling?.id, ids.contains(activeID) {
+                throw ToolError.message(AppText.text("自动安装尚在停止，请稍后重试删除。"))
+            }
+        case .clear:
+            break
         }
         for job in selected where job.status == .running { pause(job.id) }
         let deadline = Date().addingTimeInterval(15)
@@ -668,34 +914,44 @@ final class DownloadManager: NSObject, ObservableObject {
         let files = targets.compactMap { job in fileURL(job).map { (job.id, $0) } }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             persistQueue.async {
-                var moved: [(URL, URL)] = []
-                do {
-                    for (id, file) in files {
-                        let aside = LocalResources.support.appendingPathComponent("\(id.uuidString).removing.ipa")
-                        try FileManager.default.moveItem(at: file, to: aside)
-                        moved.append((aside, file))
-                    }
-                    try save(next)
-                } catch {
-                    for (aside, file) in moved.reversed() { try? FileManager.default.moveItem(at: aside, to: file) }
-                    continuation.resume(throwing: error); return
+                let moves = files.map { id, file in
+                    (from: file, to: LocalResources.support.appendingPathComponent("\(id.uuidString).removing.ipa"))
                 }
-                for (aside, _) in moved { try? FileManager.default.removeItem(at: aside) }
-                for id in removed {
-                    for url in [LocalResources.resumeURL(id), LocalResources.stagingURL(id), PackageIconService.cacheURL(id), Self.decryptedURL(id)] {
-                        try? FileManager.default.removeItem(at: url)
+                do {
+                    try DownloadRemovalTransaction.perform(moves) { try save(next) }
+                } catch { continuation.resume(throwing: error); return }
+                if undoToken == nil {
+                    for move in moves { try? FileManager.default.removeItem(at: move.to) }
+                    for id in removed {
+                        for url in [LocalResources.resumeURL(id), LocalResources.stagingURL(id), PackageIconService.cacheURL(id), Self.decryptedURL(id)] {
+                            try? FileManager.default.removeItem(at: url)
+                        }
+                        MacPackageSecrets.delete(id)
                     }
-                    MacPackageSecrets.delete(id)
                 }
                 continuation.resume()
             }
         }
+        if let undoToken {
+            let created = Date()
+            undoRemovals[undoToken] = UndoRemoval(created: created,
+                expires: created.addingTimeInterval(UndoNotice.duration),
+                jobs: currentJobs.enumerated().compactMap { index, job in
+                    removed.contains(job.id) ? (index, job) : nil
+                },
+                resume: Set(selected.filter { $0.status == .running }.map(\.id)),
+                files: files.map { id, original in
+                    (LocalResources.support.appendingPathComponent("\(id.uuidString).removing.ipa"), original)
+                })
+            armRemovalUndo(undoToken)
+        }
+        recentlyRestoredIDs.subtract(removed)
         jobs.removeAll { removed.contains($0.id) }
         for id in removed {
             tasks.removeValue(forKey: id)?.cancel()
             rowProgress.removeValue(forKey: id); transferMetrics.removeValue(forKey: id)
             progressPublishedAt.removeValue(forKey: id); fallbackForegroundIDs.remove(id)
-            catalogArtworkAttempted.remove(id)
+            catalogArtworkAttempted.remove(id); packageIconCache.removeValue(forKey: id)
         }
         updateBackgroundTask()
         return removed.count
@@ -758,7 +1014,10 @@ final class DownloadManager: NSObject, ObservableObject {
 
     func packageIconURL(_ job: DownloadJob) -> URL? {
         let url = PackageIconService.cacheURL(job.id)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        if let exists = packageIconCache[job.id] { return exists ? url : nil }
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        packageIconCache[job.id] = exists
+        return exists ? url : nil
     }
 
     /// Packages whose icon scan has started but not finished.
@@ -795,8 +1054,10 @@ final class DownloadManager: NSObject, ObservableObject {
                 }.value
                 guard let index = jobs.firstIndex(where: { $0.id == job.id }) else {
                     try? FileManager.default.removeItem(at: PackageIconService.cacheURL(job.id))
+                    packageIconCache.removeValue(forKey: job.id)
                     continue
                 }
+                packageIconCache.removeValue(forKey: job.id)
                 jobs[index].packageIconScanned = true
                 interrupted.remove(job.id.uuidString)
                 UserDefaults.standard.set(Array(interrupted), forKey: Self.iconScanKey)
@@ -812,6 +1073,7 @@ final class DownloadManager: NSObject, ObservableObject {
                job.displayApp(packageIcon: nil).iconURL != nil, !job.isOlderVersion,
                PackageIconService.pixelWidth(cached) < 180 {
                 try? FileManager.default.removeItem(at: cached)
+                packageIconCache[job.id] = false
                 objectWillChange.send()
             }
             // tvOS packages keep their icon in a layered asset catalog, and the
@@ -840,8 +1102,10 @@ final class DownloadManager: NSObject, ObservableObject {
                 // A download can be deleted while the artwork request is in flight.
                 guard let index = jobs.firstIndex(where: { $0.id == job.id }) else {
                     try? FileManager.default.removeItem(at: PackageIconService.cacheURL(job.id))
+                    packageIconCache.removeValue(forKey: job.id)
                     continue
                 }
+                packageIconCache.removeValue(forKey: job.id)
                 if tvArtwork != nil {
                     jobs[index].app.iconURL = artwork
                     jobs[index].appleTVArtwork = true
@@ -910,6 +1174,9 @@ final class DownloadManager: NSObject, ObservableObject {
                     return result
                 }.value
                 guard let index = self.jobs.firstIndex(where: { $0.id == id }) else { return }
+                self.transferMetrics.removeValue(forKey: id)
+                self.rowProgress.removeValue(forKey: id)
+                self.packageIconCache.removeValue(forKey: id)
                 self.jobs[index].localFilename = result.0
                 self.jobs[index].app = job.completing(with: result.1)
                 self.jobs[index].packageIconScanned = true
@@ -1014,6 +1281,8 @@ final class DownloadManager: NSObject, ObservableObject {
     private func fail(_ id: UUID, error: Error) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
         tasks.removeValue(forKey: id)
+        rowProgress.removeValue(forKey: id)
+        transferMetrics.removeValue(forKey: id)
         progressPublishedAt.removeValue(forKey: id)
         updateBackgroundTask()
         RequestFailureLog.record(nil, status: (error as? HTTPStatusError)?.code,
@@ -1065,6 +1334,72 @@ final class DownloadManager: NSObject, ObservableObject {
         guard notifications else { return }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
+    private enum RemovalAutoInstallState { case clear, cancelling, irreversible }
+
+    private func prepareAutoInstallForRemoval(ids: Set<UUID>) -> RemovalAutoInstallState {
+        pendingAutoInstalls.removeAll { ids.contains($0) }
+        silentQueue.removeAll { ids.contains($0) }
+        for id in ids { markWaiting(id, false) }
+        guard let active = autoInstalling, ids.contains(active.id) else { return .clear }
+        guard active.canCancel else { return .irreversible }
+        _ = cancelAutoInstall(active.id)
+        return autoInstalling?.id == active.id ? .cancelling : .clear
+    }
+
+    /// Cancels a queued or active automatic installation if still in a cancellable
+    /// stage (`connecting`/`uploading`). Returns `.irreversible` once handed to installd.
+    @discardableResult
+    func cancelAutoInstall(_ id: UUID? = nil) -> AutoInstallCancelOutcome {
+        var removedAny = false
+        if let id {
+            if pendingAutoInstalls.contains(id) { pendingAutoInstalls.removeAll { $0 == id }; removedAny = true }
+            if silentQueue.contains(id) { silentQueue.removeAll { $0 == id }; removedAny = true }
+            if waitsForSilentInstall(id) { markWaiting(id, false); removedAny = true }
+        } else {
+            if !pendingAutoInstalls.isEmpty || !silentQueue.isEmpty || !waitingInstalls.isEmpty { removedAny = true }
+            pendingAutoInstalls.removeAll()
+            silentQueue.removeAll()
+            waitingInstalls = []
+        }
+        guard let active = autoInstalling, id == nil || active.id == id else {
+            updateInstallKeepAlive()
+            if removedAny { autoInstallNotice = AppText.text("已取消自动安装") }
+            return removedAny ? .cancelled : .idle
+        }
+        guard active.canCancel else {
+            autoInstallNotice = AppText.text("已进入系统安装阶段，无法取消")
+            return .irreversible
+        }
+        silentCancelledIDs.insert(active.id)
+        markWaiting(active.id, false)
+        activeSilentAttemptTask?.cancel()
+        if id == nil || silentQueue.isEmpty { silentInstallTask?.cancel() }
+        NativeInstaller.cancel()
+        updateInstallKeepAlive()
+        return .cancelled
+    }
+
+    private final class AutoInstallProgressRelay: @unchecked Sendable {
+        private let lock = NSLock()
+        private var lastStage: AutoInstallStage?
+        private var lastFraction: Double = -1
+        private var lastSentAt: TimeInterval = 0
+
+        func accept(stage: AutoInstallStage, fraction: Double) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            let now = ProcessInfo.processInfo.systemUptime
+            let stageChanged = lastStage != stage
+            let complete = fraction >= 0.999 && lastFraction < 0.999
+            let movedEnough = abs(fraction - lastFraction) >= 0.01 && now - lastSentAt >= 0.1
+            guard stageChanged || complete || movedEnough else { return false }
+            lastStage = stage
+            lastFraction = fraction
+            lastSentAt = now
+            return true
+        }
+    }
+
     /// Installs finished downloads one at a time through native installation,
     /// without the install sheet. One that can't finish (no connection, iOS
     /// ended the background time) gets the sheet when iPadn is open again.
@@ -1072,50 +1407,95 @@ final class DownloadManager: NSObject, ObservableObject {
         // Returning to the foreground resumes waiting installs. The active
         // install has already left the queue, but must not be enqueued again.
         guard autoInstalling?.id != id, !silentQueue.contains(id) else { return }
+        silentCancelledIDs.remove(id)
         silentQueue.append(id)
         guard !silentRunning else { return }
         silentRunning = true
-        Task { @MainActor in
-            defer { silentRunning = false }
-            while !silentQueue.isEmpty {
-                let id = silentQueue.removeFirst()
-                guard let job = jobs.first(where: { $0.id == id && $0.status == .completed }), let file = fileURL(job) else {
-                    markWaiting(id, false); continue
+        silentInstallTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.activeSilentAttemptTask = nil
+                self.silentRunning = false
+                self.silentInstallTask = nil
+            }
+            while !self.silentQueue.isEmpty {
+                let id = self.silentQueue.removeFirst()
+                guard self.autoInstall, self.silentInstall, !self.silentCancelledIDs.contains(id),
+                      let job = self.jobs.first(where: { $0.id == id && $0.status == .completed }),
+                      let file = self.fileURL(job) else {
+                    self.markWaiting(id, false); continue
                 }
-                let name = [job.app.name, job.app.version].filter { !$0.isEmpty }.joined(separator: " ")
-                autoInstallNotice = AppText.text("正在自动安装 \(name)")
-                autoInstalled = nil
-                autoInstallFailed = nil
-                autoInstalling = AutoInstallProgress(id: id, name: name, fraction: 0)
-                defer { autoInstalling = nil }
+                let name = job.userFacingTitle
+                self.autoInstallNotice = AppText.text("正在自动安装 \(name)")
+                self.autoInstalled = nil
+                self.autoInstallFailed = nil
+                self.autoInstallCancelled = nil
+                self.autoInstalling = AutoInstallProgress(id: id, name: name, fraction: 0, canCancel: true, stage: .connecting)
+                self.inFlightAutoInstallID = id.uuidString
+                defer {
+                    if self.inFlightAutoInstallID == id.uuidString { self.inFlightAutoInstallID = nil }
+                    if self.autoInstalling?.id == id { self.autoInstalling = nil }
+                    self.activeSilentAttemptTask = nil
+                }
                 do {
-                    _ = try await NativeInstaller.install(package: file, bundleID: job.app.bundleID) { phase in
-                        // Sending the package is most of the wait; the system's own step follows.
-                        let fraction: Double
-                        switch phase {
-                        case .uploading(let done): fraction = done * 0.7
-                        case .installing(let done): fraction = 0.7 + done * 0.3
-                        default: fraction = 0
-                        }
-                        Task { @MainActor in
-                            if self.autoInstalling?.id == id { self.autoInstalling?.fraction = fraction }
+                    let relay = AutoInstallProgressRelay()
+                    let attemptTask = Task {
+                        try await NativeInstaller.install(package: file, bundleID: job.app.bundleID) { phase in
+                            // Sending the package is most of the wait; the system's own step follows.
+                            let stage: AutoInstallStage
+                            let fraction: Double
+                            switch phase {
+                            case .uploading(let done):
+                                stage = .uploading
+                                fraction = done * 0.7
+                            case .installing(let done):
+                                stage = .installing
+                                fraction = 0.7 + done * 0.3
+                            case .connecting:
+                                stage = .connecting
+                                fraction = 0
+                            }
+                            let cancellable = phase.isCancellable
+                            guard relay.accept(stage: stage, fraction: fraction) else { return }
+                            Task { @MainActor [weak self] in
+                                guard let self, var current = self.autoInstalling, current.id == id else { return }
+                                // Keep stage progression monotonic across concurrent MainActor hops.
+                                if stage.rawValue >= current.stage.rawValue {
+                                    current.stage = stage
+                                    current.fraction = max(stage == current.stage ? current.fraction : 0, fraction)
+                                    current.canCancel = cancellable
+                                    self.autoInstalling = current
+                                }
+                            }
                         }
                     }
-                    markWaiting(id, false)
-                    autoInstalled = name
-                    autoInstallNotice = AppText.text("已自动安装 \(name)")
-                    notify(title: AppText.text("已自动安装"), body: name)
+                    self.activeSilentAttemptTask = attemptTask
+                    _ = try await attemptTask.value
+                    self.markWaiting(id, false)
+                    self.silentCancelledIDs.remove(id)
+                    self.autoInstalled = name
+                    self.autoInstallNotice = AppText.text("已自动安装 \(name)")
+                    self.notify(title: AppText.text("已自动安装"), body: name)
+                } catch is CancellationError {
+                    self.markWaiting(id, false)
+                    self.silentCancelledIDs.remove(id)
+                    self.pendingAutoInstalls.removeAll { $0 == id }
+                    self.autoInstallFailed = nil
+                    self.autoInstallCancelled = name
+                    self.autoInstallNotice = AppText.text("已取消自动安装 \(name)")
+                    InstallLog.shared.add("silent install cancelled: \(name)")
                 } catch {
-                    autoInstallNotice = nil
-                    autoInstallFailed = name
+                    self.silentCancelledIDs.remove(id)
+                    self.autoInstallNotice = nil
+                    self.autoInstallFailed = name
                     InstallLog.shared.add("silent install not finished: \(error.localizedDescription.prefix(160))")
-                    if UIApplication.shared.applicationState == .active {
+                    if UIApplication.shared.applicationState == .active, self.autoInstall {
                         // In front and still failing (e.g. LocalDevVPN not connected): the sheet explains.
-                        markWaiting(id, false)
-                        if !pendingAutoInstalls.contains(id) { pendingAutoInstalls.append(id) }
+                        self.markWaiting(id, false)
+                        if !self.pendingAutoInstalls.contains(id) { self.pendingAutoInstalls.append(id) }
                     } else {
                         // In the background iOS may simply have run out of time: retried when iPadn is back.
-                        notify(title: AppText.text("自动安装未完成"), body: AppText.text("打开 iPadn 继续安装 \(name)"))
+                        self.notify(title: AppText.text("自动安装未完成"), body: AppText.text("打开 iPadn 继续安装 \(name)"))
                     }
                 }
             }

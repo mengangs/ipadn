@@ -51,10 +51,11 @@ struct AppBackup: Codable {
 struct UndoNotice: Identifiable {
     /// How long the undo stays offered.
     static let duration: TimeInterval = 5
-    let id = UUID()
-    let created = Date()
+    var id = UUID()
+    var revision = 1
+    var created = Date()
     let message: String
-    let restore: () -> Void
+    let restore: (UndoNotice) -> Void
 }
 
 @MainActor
@@ -78,6 +79,10 @@ final class ToolStore: ObservableObject {
             // Region or platform changed: refresh the results here, so it also
             // happens when the search page is not on screen (iPad sidebar).
             if oldValue.store != settings.store, hasSearched { search() }
+            else if oldValue.prioritizeDelistedSearchResults != settings.prioritizeDelistedSearchResults,
+                    hasSearched, !searching {
+                reapplySearchOrdering()
+            }
         }
     }
     /// The selected tab lives in its own object: only the tab bar observes
@@ -151,6 +156,28 @@ final class ToolStore: ObservableObject {
         guard let id = apple.activeID else { errorMessage = "请先在「账号」中登录 Apple 账号"; return }
         verificationRequest = VerificationRequest(accountID: id, retry: retry)
     }
+    struct DownloadTargetKey: Hashable {
+        let appID: String
+        let platform: AppPlatform
+        let versionID: String?
+
+        init(appID: String, platform: AppPlatform, versionID: String? = nil) {
+            self.appID = appID
+            self.platform = platform
+            let trimmed = versionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            self.versionID = trimmed.isEmpty ? nil : trimmed
+        }
+    }
+    struct LoginPrompt: Identifiable {
+        let id = UUID()
+        let accountID: String?
+        let retry: (@MainActor () -> Void)?
+    }
+    @Published private(set) var preparingDownloads: Set<DownloadTargetKey> = []
+    @Published private(set) var resolvedLatestVersionIDs: [String: String] = [:]
+    @Published var installingJob: DownloadJob?
+    @Published var loginPrompt: LoginPrompt?
+    private var prepareTasks: [DownloadTargetKey: Task<Void, Never>] = [:]
     #if DEBUG
     private var visualPreview = false
     #endif
@@ -158,6 +185,10 @@ final class ToolStore: ObservableObject {
     private var localSearchTask: Task<Void, Never>?
     private var localSearchID = UUID()
     private var searchID = UUID()
+    private var lastRemoteResults: [StoreApp] = []
+    private var lastLocalCandidates: [StoreApp] = []
+    private var lastLocalAliases: [String: [String]] = [:]
+    private var delistedStatusCache: [String: (date: Date, delisted: Bool)] = [:]
     private var ownedByAccount: [String: [OwnedApp]] = [:]
     private var subscriptions = Set<AnyCancellable>()
     private var lastAccountID: String?
@@ -242,7 +273,12 @@ final class ToolStore: ObservableObject {
         let id = UUID(); searchID = id
         let context = settings.store
         let limit = settings.searchLimit
-        if input != lastSearchTerm || resultsContext != context { results = [] }
+        if input != lastSearchTerm || resultsContext != context {
+            results = []
+            lastRemoteResults = []
+            lastLocalCandidates = []
+            lastLocalAliases = [:]
+        }
         resultsContext = context
         localResults = []
         updateLocalResults(for: input)
@@ -254,6 +290,47 @@ final class ToolStore: ObservableObject {
                 // Public search must never trigger purchase or download authorization.
                 // Searching an App ID should work even if saved Apple credentials expired.
                 let accountCountry = StoreService.country(forStorefront: apple.active?.storeFront ?? "")
+                let prioritizeDelisted = settings.prioritizeDelistedSearchResults
+                var snapshotCandidates: [StoreApp] = []
+                var snapshotAliases: [String: [String]] = [:]
+                var probeIDs: [String] = []
+                var probeTask: Task<[String: StoreService.DelistedVerification], Never>?
+                defer { if Task.isCancelled { probeTask?.cancel() } }
+                if case .keyword(let term) = query {
+                    let known = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app) + (appCatalog[context.platform.rawValue] ?? [])
+                    let directory = nameCatalog
+                    let localMatch = await Task.detached(priority: .userInitiated) {
+                        Self.findLocalMatches(term: term, platform: context.platform, known: known, directory: directory)
+                    }.value
+                    try Task.checkCancellation()
+                    guard searchID == id else { return }
+                    snapshotAliases = localMatch.aliases
+                    snapshotCandidates = applyCachedDelistedStatuses(to: localMatch.candidates)
+                    if prioritizeDelisted, term.count >= 2 {
+                        probeIDs = snapshotCandidates.enumerated()
+                            .compactMap { offset, candidate -> (id: String, tier: Int, sparse: Bool, offset: Int)? in
+                                guard !candidate.isDelisted, freshDelistedCache(for: candidate.id) == nil else { return nil }
+                                let tier = AppSearchRanking.relevanceTier(
+                                    for: candidate, query: term, aliases: snapshotAliases[candidate.id] ?? []
+                                )
+                                guard tier >= 2 else { return nil }
+                                return (candidate.id, tier, candidate.version.isEmpty && candidate.category.isEmpty, offset)
+                            }
+                            .sorted { lhs, rhs in
+                                if lhs.tier != rhs.tier { return lhs.tier > rhs.tier }
+                                if lhs.sparse != rhs.sparse { return lhs.sparse && !rhs.sparse }
+                                return lhs.offset < rhs.offset
+                            }
+                            .prefix(30)
+                            .map(\.id)
+                        if !probeIDs.isEmpty {
+                            let targetIDs = probeIDs
+                            probeTask = Task {
+                                await StoreService.verifyDelistedStatuses(ids: targetIDs, store: context, accountCountry: accountCountry)
+                            }
+                        }
+                    }
+                }
                 var apps = try await StoreService.search(query, store: context, limit: limit, accountCountry: accountCountry)
                 if case .appID(let appID, _) = query, apps.isEmpty {
                     // Delisted or region-limited apps have no public listing;
@@ -269,18 +346,49 @@ final class ToolStore: ObservableObject {
                         return result
                     }
                 }
+                let remoteListedIDs = apps.filter { $0.delisted != true }.map(\.id)
+                let now = Date()
+                for appID in remoteListedIDs { delistedStatusCache[appID] = (now, false) }
+                if let probeTask {
+                    let remoteListedSet = Set(remoteListedIDs)
+                    let hasPendingLocal = probeIDs.contains { !remoteListedSet.contains($0) }
+                    if hasPendingLocal {
+                        if let verified = await Self.awaitProbeWithGrace(probeTask, nanoseconds: 1_200_000_000) {
+                            snapshotCandidates = applyVerifiedDelistedStatuses(verified, to: snapshotCandidates, excludingIDs: remoteListedSet)
+                        } else {
+                            scheduleLateDelistedWarmup(probeTask, excluding: remoteListedSet, for: id, context: context)
+                        }
+                    } else {
+                        probeTask.cancel()
+                    }
+                }
                 try Task.checkCancellation()
                 guard searchID == id else { return }
-                results = apps
-                let remoteIDs = Set(apps.map(\.id))
-                localResults.removeAll { remoteIDs.contains($0.id) }
-                let key = context.platform.rawValue
+                let catalogPlatformKey = context.platform.rawValue
                 // Cache real listings only, without the long descriptions (kept small for quick saves).
                 let listed = apps.filter { $0.delisted != true }.map { app -> StoreApp in var app = app; app.description = ""; return app }
-                appCatalog[key] = Array(AppSearchIndex.unique(listed + (appCatalog[key] ?? [])).prefix(1000))
+                appCatalog[catalogPlatformKey] = Array(AppSearchIndex.unique(listed + (appCatalog[catalogPlatformKey] ?? [])).prefix(1000))
                 let snapshot = appCatalog
                 cacheWrites.async { try? LocalResources.save(snapshot, filename: "app-catalog.json") }
                 remember(input)
+                if case .keyword(let term) = query {
+                    let knownAfterSearch = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app) + (appCatalog[catalogPlatformKey] ?? [])
+                    let refreshed = Self.findLocalMatches(term: term, platform: context.platform, known: knownAfterSearch, directory: nameCatalog)
+                    let enriched = applyCachedDelistedStatuses(to: AppSearchRanking.mergeUnique(snapshotCandidates + refreshed.candidates))
+                    let aliases = snapshotAliases.merging(refreshed.aliases) { first, _ in first }
+                    localSearchTask?.cancel()
+                    lastRemoteResults = apps
+                    lastLocalCandidates = enriched
+                    lastLocalAliases = aliases
+                    applySearchArrangement(for: term)
+                } else {
+                    lastRemoteResults = apps
+                    lastLocalCandidates = []
+                    lastLocalAliases = [:]
+                    results = apps
+                    let remoteIDs = Set(apps.map(\.id))
+                    localResults.removeAll { remoteIDs.contains($0.id) }
+                }
                 // The results are in: missing artwork fills in quietly.
                 searching = false
                 await fillMissingArtwork(searchID: id, store: context, accountCountry: accountCountry)
@@ -338,6 +446,126 @@ final class ToolStore: ObservableObject {
         }
         results = filled(results)
         localResults = filled(localResults)
+        lastRemoteResults = filled(lastRemoteResults)
+        lastLocalCandidates = filled(lastLocalCandidates)
+    }
+
+    nonisolated private static func findLocalMatches(
+        term: String,
+        platform: AppPlatform,
+        known: [StoreApp],
+        directory: [AppNameEntry]
+    ) -> (candidates: [StoreApp], aliases: [String: [String]]) {
+        let saved = AppSearchIndex.search(term, apps: known)
+        let named = AppNameCatalog.searchWithAliases(term, platform: platform, entries: directory)
+        let aliases = Dictionary(named.map { ($0.app.id, $0.aliases) }, uniquingKeysWith: { first, _ in first })
+        let candidates = AppSearchRanking.mergeUnique(saved + named.map(\.app))
+        return (candidates, aliases)
+    }
+
+    private static func awaitProbeWithGrace(
+        _ task: Task<[String: StoreService.DelistedVerification], Never>,
+        nanoseconds: UInt64
+    ) async -> [String: StoreService.DelistedVerification]? {
+        await withTaskGroup(of: [String: StoreService.DelistedVerification]?.self) { group in
+            group.addTask { await task.value }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: nanoseconds)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
+    private func freshDelistedCache(for appID: String) -> Bool? {
+        guard let cached = delistedStatusCache[appID],
+              Date().timeIntervalSince(cached.date) < 600 else { return nil }
+        return cached.delisted
+    }
+
+    private func applyCachedDelistedStatuses(to candidates: [StoreApp]) -> [StoreApp] {
+        candidates.map { candidate in
+            var item = candidate
+            if !item.isDelisted, freshDelistedCache(for: item.id) == true {
+                item.delisted = true
+            }
+            return item
+        }
+    }
+
+    private func applyVerifiedDelistedStatuses(
+        _ statuses: [String: StoreService.DelistedVerification],
+        to candidates: [StoreApp],
+        excludingIDs: Set<String>
+    ) -> [StoreApp] {
+        let now = Date()
+        for (appID, status) in statuses where !excludingIDs.contains(appID) {
+            switch status {
+            case .delisted: delistedStatusCache[appID] = (now, true)
+            case .listed: delistedStatusCache[appID] = (now, false)
+            case .inconclusive: break
+            }
+        }
+        return applyCachedDelistedStatuses(to: candidates)
+    }
+
+    private func applySearchArrangement(for term: String) {
+        let enriched = applyCachedDelistedStatuses(to: lastLocalCandidates)
+        lastLocalCandidates = enriched
+        let arranged = AppSearchRanking.arrange(
+            remote: lastRemoteResults,
+            local: enriched,
+            aliasesByID: lastLocalAliases,
+            query: term,
+            prioritizeDelisted: settings.prioritizeDelistedSearchResults
+        )
+        results = arranged.results
+        localResults = arranged.localResults
+    }
+
+    private func scheduleLateDelistedWarmup(
+        _ probeTask: Task<[String: StoreService.DelistedVerification], Never>,
+        excluding remoteListedSet: Set<String>,
+        for queryID: UUID,
+        context: StoreContext
+    ) {
+        Task { @MainActor [weak self] in
+            let late = await probeTask.value
+            guard let self else { return }
+            let previouslyDelisted = Set(self.results.filter(\.isDelisted).map(\.id))
+            _ = self.applyVerifiedDelistedStatuses(late, to: [], excludingIDs: remoteListedSet)
+            guard self.searchID == queryID,
+                  self.settings.store == context,
+                  self.settings.prioritizeDelistedSearchResults,
+                  case .keyword(let term)? = try? SearchQuery.parse(self.lastSearchTerm) else { return }
+            let hasNewPromotion = late.contains { id, status in
+                status == .delisted && !remoteListedSet.contains(id) && !previouslyDelisted.contains(id)
+            }
+            if hasNewPromotion {
+                self.applySearchArrangement(for: term)
+            }
+        }
+    }
+
+    private func reapplySearchOrdering() {
+        guard case .keyword(let term)? = try? SearchQuery.parse(lastSearchTerm) else { return }
+        let enriched = applyCachedDelistedStatuses(to: lastLocalCandidates)
+        if settings.prioritizeDelistedSearchResults {
+            let remoteListed = Set(lastRemoteResults.filter { $0.delisted != true }.map(\.id))
+            let needsProbe = term.count >= 2 && enriched.contains { candidate in
+                !remoteListed.contains(candidate.id) &&
+                !candidate.isDelisted &&
+                freshDelistedCache(for: candidate.id) == nil &&
+                AppSearchRanking.relevanceTier(for: candidate, query: term, aliases: lastLocalAliases[candidate.id] ?? []) >= 2
+            }
+            if needsProbe {
+                search(lastSearchTerm)
+                return
+            }
+        }
+        applySearchArrangement(for: term)
     }
 
     private func updateLocalResults(for input: String? = nil) {
@@ -346,15 +574,32 @@ final class ToolStore: ObservableObject {
         guard case .keyword(let term)? = try? SearchQuery.parse(input ?? lastSearchTerm) else { return }
         let context = settings.store, queryID = searchID, directory = nameCatalog
         let known = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app) + (appCatalog[settings.store.platform.rawValue] ?? [])
+        let prioritize = settings.prioritizeDelistedSearchResults
         localSearchTask = Task {
-            let candidates = await Task.detached(priority: .userInitiated) {
-                let saved = AppSearchIndex.search(term, apps: known)
-                let named = AppNameCatalog.search(term, platform: context.platform, entries: directory)
-                return AppSearchIndex.unique(saved + named)
+            let match = await Task.detached(priority: .userInitiated) {
+                Self.findLocalMatches(term: term, platform: context.platform, known: known, directory: directory)
             }.value
             guard !Task.isCancelled, localSearchID == request, searchID == queryID, settings.store == context else { return }
-            let remoteIDs = Set(results.map(\.id))
-            localResults = candidates.filter { !remoteIDs.contains($0.id) }
+            let enriched = applyCachedDelistedStatuses(to: match.candidates)
+            lastLocalCandidates = enriched
+            lastLocalAliases = match.aliases
+            let currentRemote = lastRemoteResults.isEmpty ? results : lastRemoteResults
+            let arranged = AppSearchRanking.arrange(remote: currentRemote,
+                                                    local: enriched, aliasesByID: match.aliases,
+                                                    query: term, prioritizeDelisted: prioritize)
+            if !searching && !lastRemoteResults.isEmpty {
+                // Background catalogs or late delisted probes can promote local matches;
+                // update `results` together when promotions change so items never vanish.
+                if results.map(\.id) != arranged.results.map(\.id) || results.map(\.isDelisted) != arranged.results.map(\.isDelisted) {
+                    results = arranged.results
+                }
+                localResults = arranged.localResults
+            } else {
+                // Keep skeletons clear while remote search is in flight (or offline/preview)
+                // without losing promoted local candidates into an unassigned `results` array.
+                let displayedIDs = Set(results.map(\.id))
+                localResults = (arranged.results + arranged.localResults).filter { !displayedIDs.contains($0.id) }
+            }
         }
     }
 
@@ -380,6 +625,9 @@ final class ToolStore: ObservableObject {
     private func accountChanged(to id: String?) {
         // Re-login and token refresh select the same account again: not a switch.
         guard id != lastAccountID else { return }
+        for task in prepareTasks.values { task.cancel() }
+        prepareTasks.removeAll()
+        preparingDownloads.removeAll()
         let previous = lastAccountID
         lastAccountID = id
         guard let id, let account = apple.accounts.first(where: { $0.id == id }) else {
@@ -411,7 +659,10 @@ final class ToolStore: ObservableObject {
     }
 
     func cancelSearch() { searchTask?.cancel(); localSearchTask?.cancel(); searchID = UUID(); searching = false; hasSearched = !results.isEmpty || !localResults.isEmpty; searchError = nil }
-    func clearSearch() { cancelSearch(); searchText = ""; results = []; localResults = []; hasSearched = false; lastSearchTerm = "" }
+    func clearSearch() {
+        cancelSearch(); searchText = ""; results = []; localResults = []; hasSearched = false; lastSearchTerm = ""
+        lastRemoteResults = []; lastLocalCandidates = []; lastLocalAliases = [:]
+    }
     func isFavorite(_ app: StoreApp) -> Bool { favorites.contains { $0.id == app.id } }
     func toggleFavorite(_ app: StoreApp) {
         let previous = favoriteTask
@@ -439,7 +690,7 @@ final class ToolStore: ObservableObject {
             let previousRecords = watch.filter { $0.value.id == app.id }
             watch = watch.filter { $0.value.id != app.id }
             persistWatch()
-            undoNotice = UndoNotice(message: AppText.text("已取消关注 \(app.name)")) { [weak self] in
+            undoNotice = UndoNotice(message: AppText.text("已取消关注 \(app.name)")) { [weak self] notice in
                 guard let self, !self.isFavorite(app) else { return }
                 let previous = self.favoriteTask
                 self.favoriteTask = Task {
@@ -453,7 +704,10 @@ final class ToolStore: ObservableObject {
                         self.watch.merge(previousRecords) { current, _ in current }
                         self.persistWatch(); self.updateLocalResults()
                     }
-                    catch { self.errorMessage = error.localizedDescription }
+                    catch {
+                        self.errorMessage = error.localizedDescription
+                        self.rearmUndoNotice(notice)
+                    }
                 }
             }
         }
@@ -607,27 +861,52 @@ final class ToolStore: ObservableObject {
         searchHistory = Array(searchHistory.prefix(50)); persistHistory()
     }
     func removeHistory(_ term: String) {
-        guard let index = searchHistory.firstIndex(where: { $0.term == term }) else { return }
-        let item = searchHistory.remove(at: index); persistHistory()
-        undoNotice = UndoNotice(message: AppText.text("已删除搜索记录")) { [weak self] in
-            guard let self, !self.searchHistory.contains(where: { $0.term == term }) else { return }
-            self.searchHistory.insert(item, at: min(index, self.searchHistory.count))
-            self.searchHistory = Array(self.searchHistory.prefix(50)); self.persistHistory()
-        }
+        searchHistory.removeAll { $0.term == term }
+        persistHistory()
     }
     func clearHistory() {
-        let previous = searchHistory
-        searchHistory.removeAll(); persistHistory()
-        undoNotice = UndoNotice(message: AppText.text("已清除最近搜索")) { [weak self] in
-            guard let self else { return }
-            let current = Set(self.searchHistory.map(\.term))
-            self.searchHistory = Array((self.searchHistory + previous.filter { !current.contains($0.term) }).prefix(50))
-            self.persistHistory()
+        searchHistory.removeAll()
+        persistHistory()
+    }
+
+    private var downloadUndoTokens: [UUID] = []
+    private var downloadUndoNoticeID: UUID?
+    func removeDownloadWithUndo(_ id: UUID) async throws {
+        guard let receipt = try await downloads.removeReversibly(id) else { return }
+        let reusingBanner = undoNotice?.id != nil
+            && undoNotice?.id == downloadUndoNoticeID
+            && Date().timeIntervalSince(undoNotice?.created ?? .distantPast) < UndoNotice.duration
+        if !reusingBanner {
+            downloadUndoTokens.removeAll()
         }
+        downloadUndoTokens.append(receipt.token)
+        let tokens = downloadUndoTokens
+        downloads.extendRemovalUndo(tokens, until: receipt.created.addingTimeInterval(UndoNotice.duration))
+        let noticeID = reusingBanner ? (undoNotice?.id ?? UUID()) : UUID()
+        let revision = reusingBanner ? (undoNotice?.revision ?? 0) + 1 : 1
+        let notice = UndoNotice(id: noticeID, revision: revision, created: receipt.created,
+            message: AppText.text("已删除 \(tokens.count) 项任务与文件")) { [weak self] notice in
+            guard let self else { return }
+            Task { @MainActor in
+                do { try await self.downloads.undoRemovalGroup(tokens) }
+                catch {
+                    self.errorMessage = error.localizedDescription
+                    self.rearmUndoNotice(notice, downloadNotice: true)
+                }
+            }
+        }
+        undoNotice = notice
+        downloadUndoNoticeID = notice.id
     }
     func undoLastAction() {
         let notice = undoNotice; undoNotice = nil
-        notice?.restore()
+        guard let notice, Date().timeIntervalSince(notice.created) < UndoNotice.duration else { return }
+        notice.restore(notice)
+    }
+    private func rearmUndoNotice(_ notice: UndoNotice, downloadNotice: Bool = false) {
+        guard undoNotice == nil, Date().timeIntervalSince(notice.created) < UndoNotice.duration else { return }
+        undoNotice = notice
+        if downloadNotice { downloadUndoNoticeID = notice.id }
     }
     private func persistHistory() {
         if let data = try? JSONEncoder().encode(searchHistory) { LocalResources.defaults.set(data, forKey: LocalResources.searchHistory) }
@@ -649,7 +928,12 @@ final class ToolStore: ObservableObject {
             // Apple's list costs a signed request: reuse it for a while, so
             // opening the same app again does not ask Apple again.
             let key = "\(account)|\(context.platform.rawValue)|\(context.country)|\(app.id)"
-            if !force, let hit = officialVersionCache[key], Date().timeIntervalSince(hit.date) < 30 * 60 { return hit.versions }
+            if !force, let hit = officialVersionCache[key], Date().timeIntervalSince(hit.date) < 30 * 60 {
+                let cachedNames = context.platform == .iOS ? await versions.cachedVersionMap(appID: app.id, sources: settings.versionSources) : [:]
+                let reconciled = await reconcileVersionEntries(hit.versions, for: app, platform: context.platform, extraNames: cachedNames)
+                if reconciled != hit.versions { officialVersionCache[key] = (hit.date, reconciled) }
+                return reconciled
+            }
             let list = try await appleVersions(for: app, context: context, force: force)
             officialVersionCache[key] = (Date(), list)
             return list
@@ -665,7 +949,91 @@ final class ToolStore: ObservableObject {
                   let id = listing.externalVersionID, !id.isEmpty else { return [] }
             return [AppVersion(id: id, version: listing.version.isEmpty ? AppVersion.unknown : listing.version, source: "Apple TV")]
         }
-        return try await versions.thirdParty(app.id, sources: settings.versionSources, force: force)
+        var list = try await versions.thirdParty(app.id, sources: settings.versionSources, force: force)
+        list = await reconcileVersionEntries(list, for: app, platform: context.platform, extraNames: [:])
+        if let account = apple.activeID {
+            let key = "\(account)|\(context.platform.rawValue)|\(context.country)|\(app.id)"
+            if let hit = officialVersionCache[key] {
+                var names: [String: String] = [:]
+                for item in list {
+                    names[item.id] = VersionService.preferredVersion(item.version, over: names[item.id] ?? AppVersion.unknown, rejectingID: item.id)
+                }
+                let reconciled = await reconcileVersionEntries(hit.versions, for: app, platform: context.platform, extraNames: names)
+                if reconciled != hit.versions { officialVersionCache[key] = (hit.date, reconciled) }
+            }
+        }
+        return list
+    }
+
+    private func cachedOfficialVersions(platform: AppPlatform, appID: String) -> [AppVersion] {
+        let countryKey = "|\(platform.rawValue)|\(settings.store.country)|\(appID)"
+        if let direct = officialVersionCache.first(where: { $0.key.hasSuffix(countryKey) })?.value.versions {
+            return direct
+        }
+        return officialVersionCache.first(where: {
+            $0.key.contains("|\(platform.rawValue)|") && $0.key.hasSuffix("|\(appID)")
+        })?.value.versions ?? []
+    }
+
+    private func reconcileVersionEntries(
+        _ entries: [AppVersion],
+        for app: StoreApp,
+        platform: AppPlatform,
+        extraNames: [String: String]
+    ) async -> [AppVersion] {
+        guard !entries.isEmpty else { return entries }
+        let cachedMeta = await metadataStore.cached(entries.map {
+            VersionMetadataStore.key(platform: platform, appID: app.id, versionID: $0.id)
+        })
+        let storeVersion = VersionService.sanitizedVersion(app.version, rejectingID: app.externalVersionID)
+        return entries.enumerated().map { index, entry in
+            var updated = entry
+            let key = VersionMetadataStore.key(platform: platform, appID: app.id, versionID: entry.id)
+            let storeCandidate = entry.id == app.externalVersionID ? storeVersion : AppVersion.unknown
+            let meta = cachedMeta[key]
+            let cachedCandidate: String = {
+                guard let meta else { return "" }
+                if (meta.metadataSchema ?? 0) < 2,
+                   VersionService.versionPreference(meta.version, rejectingID: entry.id) < 2,
+                   VersionService.isLikelyStaleLatestFallback(
+                       meta.version, versionID: entry.id, appVersion: app.version,
+                       versions: entries, cachedMetadata: cachedMeta,
+                       rowIndex: index, rowReleased: meta.released
+                   ) {
+                    return ""
+                }
+                if meta.version == AppVersion.unknown, (meta.metadataSchema ?? 0) < VersionMetadata.currentSchema {
+                    return ""
+                }
+                return meta.version
+            }()
+            let extraRaw = extraNames[entry.id] ?? ""
+            let extraCandidate = (VersionService.versionPreference(extraRaw, rejectingID: entry.id) < 2 &&
+                VersionService.isLikelyStaleLatestFallback(
+                    extraRaw, versionID: entry.id, appVersion: app.version,
+                    versions: entries, cachedMetadata: cachedMeta, rowIndex: index
+                )) ? "" : extraRaw
+            let entryCandidate = (VersionService.versionPreference(entry.version, rejectingID: entry.id) < 2 &&
+                VersionService.isLikelyStaleLatestFallback(
+                    entry.version, versionID: entry.id, appVersion: app.version,
+                    versions: entries, cachedMetadata: cachedMeta, rowIndex: index
+                )) ? "" : entry.version
+            let metaIsLegacyUnseparated = meta != nil && meta?.bundleShortVersion == nil &&
+                (meta?.metadataSchema ?? 0) < VersionMetadata.currentSchema
+            updated.version = VersionService.bestVersion(
+                metaIsLegacyUnseparated
+                    ? [storeCandidate, extraCandidate, entryCandidate, cachedCandidate]
+                    : [storeCandidate, cachedCandidate, extraCandidate, entryCandidate],
+                rejectingID: entry.id
+            )
+            return updated
+        }
+    }
+
+    func clearVersionCaches() async throws {
+        try await versions.clearCache()
+        try await metadataStore.clearCache()
+        officialVersionCache.removeAll()
     }
 
     /// Every version Apple lists for the active account. Never claims a license.
@@ -681,10 +1049,31 @@ final class ToolStore: ObservableObject {
         let asset = try await apple.asset(appID: app.id, versionID: nil, store: context,
                                           useCache: settings.useSignerCache, allowLicenseAcquisition: false)
         let third = context.platform == .iOS ? (try? await versions.thirdParty(app.id, sources: settings.versionSources, force: force)) ?? [] : []
-        let names = Dictionary(third.map { ($0.id, $0.version) }, uniquingKeysWith: { first, _ in first })
+        var names: [String: String] = [:]
+        for item in third {
+            names[item.id] = VersionService.preferredVersion(item.version, over: names[item.id] ?? AppVersion.unknown, rejectingID: item.id)
+        }
         let ids = asset.externalVersionIDs.isEmpty ? [asset.app.externalVersionID ?? ""] : Array(asset.externalVersionIDs.reversed())
-        return ids.filter { !$0.isEmpty && seen.insert($0).inserted }.map { id in
-            AppVersion(id: id, version: id == asset.app.externalVersionID ? asset.app.version : names[id] ?? AppVersion.unknown, source: "Apple")
+        let filteredIDs = ids.filter { !$0.isEmpty && seen.insert($0).inserted }
+        let cachedMeta = await metadataStore.cached(filteredIDs.map {
+            VersionMetadataStore.key(platform: context.platform, appID: app.id, versionID: $0)
+        })
+        return filteredIDs.map { id in
+            let metaKey = VersionMetadataStore.key(platform: context.platform, appID: app.id, versionID: id)
+            let meta = cachedMeta[metaKey]
+            let metaIsLegacyUnseparated = meta != nil && meta?.bundleShortVersion == nil &&
+                (meta?.metadataSchema ?? 0) < VersionMetadata.currentSchema
+            let ticketVersion = id == asset.app.externalVersionID ? asset.app.version : ""
+            let storeVersion = id == app.externalVersionID ? app.version : ""
+            let thirdPartyVersion = names[id] ?? ""
+            let cachedVersion = meta?.version ?? ""
+            let known = VersionService.bestVersion(
+                metaIsLegacyUnseparated
+                    ? [storeVersion, thirdPartyVersion, cachedVersion, ticketVersion]
+                    : [storeVersion, cachedVersion, thirdPartyVersion, ticketVersion],
+                rejectingID: id
+            )
+            return AppVersion(id: id, version: known, source: "Apple")
         }
     }
 
@@ -692,7 +1081,7 @@ final class ToolStore: ObservableObject {
         #if DEBUG
         if visualPreview {
             var result: [String: VersionMetadata] = [:]
-            for id in versionIDs { result[id] = try? await versionMetadata(app: app, versionID: id) }
+            for id in versionIDs { result[id] = try? await versionMetadata(app: app, versionID: id, includingIcon: settings.showHistoryIcons) }
             return result
         }
         #endif
@@ -703,9 +1092,41 @@ final class ToolStore: ObservableObject {
         return Dictionary(found.compactMap { key, value in keys[key].map { ($0, value) } }, uniquingKeysWith: { first, _ in first })
     }
 
+    /// Reconciles any cached version list entries when higher-preference metadata arrives.
+    func reconcileVersionNumber(platform: AppPlatform, appID: String, versionID: String, version: String, replaceStaleDotless: Bool = false) async {
+        let normalized = VersionService.sanitizedVersion(version, rejectingID: versionID)
+        let incomingScore = VersionService.versionPreference(normalized, rejectingID: versionID)
+        if !replaceStaleDotless && normalized == AppVersion.unknown { return }
+        for (cacheKey, var cached) in officialVersionCache where cacheKey.hasSuffix("|\(platform.rawValue)|\(settings.store.country)|\(appID)") || cacheKey.contains("|\(platform.rawValue)|") && cacheKey.hasSuffix("|\(appID)") {
+            var changed = false
+            for index in cached.versions.indices where cached.versions[index].id == versionID {
+                let current = cached.versions[index].version
+                let currentScore = VersionService.versionPreference(current, rejectingID: versionID)
+                let next: String
+                if replaceStaleDotless && currentScore <= 1 && (incomingScore >= currentScore || normalized == AppVersion.unknown) {
+                    next = normalized
+                } else if normalized != AppVersion.unknown {
+                    next = VersionService.preferredVersion(normalized, over: current, rejectingID: versionID)
+                } else {
+                    continue
+                }
+                if next != current {
+                    cached.versions[index].version = next
+                    changed = true
+                }
+            }
+            if changed { officialVersionCache[cacheKey] = cached }
+        }
+        await versions.reconcile(appID: appID, versionID: versionID, version: normalized, replaceDotless: replaceStaleDotless)
+        let metaKey = VersionMetadataStore.key(platform: platform, appID: appID, versionID: versionID)
+        await metadataStore.upgradeCachedVersion(metaKey, version: normalized, replaceDotless: replaceStaleDotless)
+    }
+
     /// The version number and date of one version, read from Apple. Lookups
     /// are cached and run one at a time.
     func versionMetadata(app: StoreApp, versionID: String, includingIcon: Bool = true,
+                         knownVersion: String? = nil,
+                         knownVersions: [AppVersion] = [],
                          onMetadata: (@MainActor @Sendable (VersionMetadata) -> Void)? = nil) async throws -> VersionMetadata {
         #if DEBUG
         if visualPreview {
@@ -715,7 +1136,7 @@ final class ToolStore: ObservableObject {
             return VersionMetadata(version: versionID == "123456787" ? "2.0.0" : newest ? "3.2.1" : "3.1.0",
                                    released: datesPreview ? Calendar.current.date(byAdding: .day, value: -age, to: Date()) : Date(timeIntervalSince1970: 1_714_694_400),
                                    packageSize: newest ? 128_000_000 : 96_000_000,
-                                   iconAvailable: ProcessInfo.processInfo.arguments.contains("--version-icons-preview") &&
+                                   iconAvailable: includingIcon && ProcessInfo.processInfo.arguments.contains("--version-icons-preview") &&
                                        !(ProcessInfo.processInfo.arguments.contains("--version-icon-missing-preview") && !newest))
         }
         #endif
@@ -723,24 +1144,106 @@ final class ToolStore: ObservableObject {
         let useCache = settings.useSignerCache
         let metadataStore = self.metadataStore
         let key = VersionMetadataStore.key(platform: platform, appID: app.id, versionID: versionID)
-        return try await metadataStore.load(key, requiringPackageSize: platform.supportsIPA, requiringIcon: includingIcon && platform.supportsIPA) { @MainActor [apple] in
+        let effectiveVersions = knownVersions.isEmpty ? cachedOfficialVersions(platform: platform, appID: app.id) : knownVersions
+        let sanitizedKnown = knownVersion.map { VersionService.sanitizedVersion($0, rejectingID: versionID) } ?? AppVersion.unknown
+        let knownWasStaleFallback = VersionService.versionPreference(sanitizedKnown, rejectingID: versionID) < 2 &&
+            VersionService.isLikelyStaleLatestFallback(
+                sanitizedKnown, versionID: versionID, appVersion: app.version, versions: effectiveVersions
+            )
+        let safeKnown = knownWasStaleFallback ? AppVersion.unknown : sanitizedKnown
+        let baselineKnown = VersionService.bestVersion([
+            safeKnown,
+            versionID == app.externalVersionID ? app.version : ""
+        ], rejectingID: versionID)
+        let appVersionSnapshot = app.version
+        let allowCachedMeta: @Sendable (VersionMetadata) -> Bool = { candidate in
+            let schema = candidate.metadataSchema ?? 0
+            if candidate.version == AppVersion.unknown, schema < VersionMetadata.currentSchema {
+                return false
+            }
+            if schema < 2,
+               VersionService.versionPreference(candidate.version, rejectingID: versionID) < 2,
+               VersionService.isLikelyStaleLatestFallback(
+                   candidate.version, versionID: versionID, appVersion: appVersionSnapshot,
+                   versions: effectiveVersions, rowReleased: candidate.released
+               ) {
+                return false
+            }
+            return true
+        }
+        let previousCached = await metadataStore.cached(key)
+        let previousWasStale = previousCached.map { !allowCachedMeta($0) } ?? false
+        let loaded = try await metadataStore.load(
+            key,
+            requiringPackageSize: platform.supportsIPA,
+            requiringIcon: includingIcon && platform.supportsIPA,
+            knownVersion: baselineKnown == AppVersion.unknown ? nil : baselineKnown,
+            allowCached: allowCachedMeta
+        ) { @MainActor [apple] in
             if platform == .macOS {
                 // A Mac package cannot be read in part; Apple's ticket names the version.
                 let offer = try await apple.macPackageOffer(app, versionID: versionID, useCache: useCache,
                                                             allowLicenseAcquisition: false)
                 guard !offer.displayVersion.isEmpty else { throw RemoteZip.Failure.notFound }
-                return VersionMetadata(version: offer.displayVersion, released: nil)
+                return VersionMetadata(version: VersionService.preferredVersion(offer.displayVersion, over: baselineKnown, rejectingID: versionID),
+                                       released: nil, ticketChecked: true, metadataSchema: VersionMetadata.currentSchema)
             }
-            let url = try await apple.versionTicket(appID: app.id, versionID: versionID, useCache: useCache)
-            let resources = try await RemoteZip.versionResources(HTTPRangeReader(url: url), includingIcon: includingIcon,
-                                                                onMetadata: { value in await onMetadata?(value) })
-            var metadata = resources.metadata
-            if let icon = resources.icon {
-                do { try await metadataStore.saveIcon(icon, key: key) }
-                catch { metadata.iconAvailable = nil }
+            let ticket = try await apple.versionTicketDetails(appID: app.id, versionID: versionID, useCache: useCache)
+            var ticketVersion = ticket.displayVersion
+            if VersionService.isLikelyStaleLatestFallback(
+                   ticketVersion, versionID: versionID, appVersion: appVersionSnapshot, versions: effectiveVersions
+               ) {
+                let buildCandidate = VersionService.sanitizedVersion(ticket.buildVersion, rejectingID: versionID)
+                if buildCandidate != AppVersion.unknown,
+                   !VersionService.isLikelyStaleLatestFallback(
+                       buildCandidate, versionID: versionID, appVersion: appVersionSnapshot, versions: effectiveVersions
+                   ) {
+                    ticketVersion = buildCandidate
+                } else {
+                    ticketVersion = ""
+                }
             }
-            return metadata
+            let baselinePref = VersionService.versionPreference(baselineKnown, rejectingID: versionID)
+            let ticketPref = VersionService.versionPreference(ticketVersion, rejectingID: versionID)
+            let trustedMarketing = baselinePref >= 2 ? baselineKnown : nil
+            let preferredForRemoteZip = trustedMarketing ?? ((ticketPref >= baselinePref && !ticketVersion.isEmpty && baselinePref == 0) ? nil : (baselineKnown == AppVersion.unknown ? nil : baselineKnown))
+            let previewVersion = trustedMarketing ?? ((ticketPref >= baselinePref && !ticketVersion.isEmpty) ? ticketVersion : baselineKnown)
+            if previewVersion != AppVersion.unknown || ticket.fileSize != nil {
+                onMetadata?(VersionMetadata(version: previewVersion, released: nil,
+                                            packageSize: ticket.fileSize, ticketChecked: true,
+                                            metadataSchema: VersionMetadata.currentSchema))
+            }
+            do {
+                let resources = try await RemoteZip.versionResources(
+                    HTTPRangeReader(url: ticket.url),
+                    includingIcon: includingIcon,
+                    preferredVersion: preferredForRemoteZip,
+                    onMetadata: { value in await onMetadata?(value) }
+                )
+                var metadata = resources.metadata
+                if let trustedMarketing {
+                    metadata.version = trustedMarketing
+                } else if metadata.version == AppVersion.unknown && !ticketVersion.isEmpty {
+                    metadata.version = ticketVersion
+                }
+                metadata.ticketChecked = true
+                metadata.metadataSchema = VersionMetadata.currentSchema
+                if metadata.packageSize == nil { metadata.packageSize = ticket.fileSize }
+                if let icon = resources.icon {
+                    do { try await metadataStore.saveIcon(icon, key: key) }
+                    catch { metadata.iconAvailable = nil }
+                }
+                return metadata
+            } catch RemoteZip.Failure.notFound where previewVersion != AppVersion.unknown || ticket.fileSize != nil,
+                    RemoteZip.Failure.unreadable where previewVersion != AppVersion.unknown || ticket.fileSize != nil {
+                return VersionMetadata(version: previewVersion, released: nil,
+                                       packageSize: ticket.fileSize, iconAvailable: includingIcon ? false : nil,
+                                       ticketChecked: true, metadataSchema: VersionMetadata.currentSchema)
+            }
         }
+        await reconcileVersionNumber(platform: platform, appID: app.id, versionID: versionID,
+                                     version: loaded.version, replaceStaleDotless: previousWasStale || knownWasStaleFallback)
+        return loaded
     }
 
     func cachedVersionImage(app: StoreApp, versionID: String) async -> UIImage? {
@@ -773,14 +1276,243 @@ final class ToolStore: ObservableObject {
             platform: settings.store.platform, appID: app.id, versionID: versionID))
     }
 
-    func startDownload(app: StoreApp, versionID: String?) async throws {
+    func resolvedLatestVersionID(appID: String, platform: AppPlatform) -> String? {
+        resolvedLatestVersionIDs["\(platform.rawValue)|\(appID)"]
+    }
+
+    func isPreparingDownload(appID: String, platform: AppPlatform, versionID: String? = nil) -> Bool {
+        let direct = DownloadTargetKey(appID: appID, platform: platform, versionID: versionID)
+        if preparingDownloads.contains(direct) { return true }
+        if direct.versionID == nil, let latest = resolvedLatestVersionID(appID: appID, platform: platform) {
+            return preparingDownloads.contains(DownloadTargetKey(appID: appID, platform: platform, versionID: latest))
+        }
+        if let versionID = direct.versionID, versionID == resolvedLatestVersionID(appID: appID, platform: platform) {
+            return preparingDownloads.contains(DownloadTargetKey(appID: appID, platform: platform, versionID: nil))
+        }
+        return false
+    }
+
+    func cancelDownloadPreparation(appID: String, platform: AppPlatform, versionID: String? = nil) {
+        let direct = DownloadTargetKey(appID: appID, platform: platform, versionID: versionID)
+        var keys = [direct]
+        if direct.versionID == nil, let latest = resolvedLatestVersionID(appID: appID, platform: platform) {
+            keys.append(DownloadTargetKey(appID: appID, platform: platform, versionID: latest))
+        } else if let versionID = direct.versionID, versionID == resolvedLatestVersionID(appID: appID, platform: platform) {
+            keys.append(DownloadTargetKey(appID: appID, platform: platform, versionID: nil))
+        }
+        for key in keys {
+            prepareTasks.removeValue(forKey: key)?.cancel()
+            preparingDownloads.remove(key)
+        }
+    }
+
+    private func jobMatchesPlatform(_ job: DownloadJob, platform: AppPlatform) -> Bool {
+        if platform == .macOS { return job.rawFormat != nil }
+        guard job.rawFormat == nil else { return false }
+        return (job.updatePlatform ?? .iOS) == platform
+    }
+
+    private static func jobPriorityRank(_ status: DownloadStatus) -> Int {
+        switch status {
+        case .running, .queued, .pausing, .processing, .paused: return 3
+        case .completed: return 2
+        case .failed: return 1
+        }
+    }
+
+    func matchingDownloadJob(
+        for app: StoreApp,
+        platform: AppPlatform,
+        versionID: String? = nil,
+        treatOutdatedCompletedAsIdle: Bool = true
+    ) -> DownloadJob? {
+        let candidates = downloads.jobs.filter { $0.app.id == app.id && jobMatchesPlatform($0, platform: platform) }
+        guard !candidates.isEmpty else { return nil }
+        let explicitExt = versionID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetExt = (explicitExt?.isEmpty == false ? explicitExt : nil)
+            ?? (app.externalVersionID?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+            ?? resolvedLatestVersionID(appID: app.id, platform: platform)
+
+        let matched: [DownloadJob]
+        if let targetExt {
+            matched = candidates.filter { $0.resolvedExternalVersionID == targetExt }
+        } else {
+            let storeVersion = app.version.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !storeVersion.isEmpty && storeVersion != AppVersion.unknown {
+                matched = candidates.filter {
+                    let jobVersion = $0.userFacingVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return jobVersion == storeVersion || ($0.app.externalVersionID == nil && $0.status != .completed)
+                }
+            } else {
+                matched = candidates
+            }
+        }
+        guard let best = matched.max(by: { lhs, rhs in
+            Self.jobPriorityRank(lhs.status) < Self.jobPriorityRank(rhs.status)
+        }) else {
+            return nil
+        }
+        if treatOutdatedCompletedAsIdle, best.status == .completed,
+           explicitExt?.isEmpty != false,
+           let key = best.updateKey, availableUpdates[key] != nil {
+            return nil
+        }
+        return best
+    }
+
+    func triggerAppStoreAction(
+        for app: StoreApp,
+        platform: AppPlatform? = nil,
+        versionID: String? = nil,
+        marketingVersion: String? = nil,
+        treatOutdatedCompletedAsIdle: Bool = true,
+        onEnqueued: (@MainActor () -> Void)? = nil,
+        onRequireVerification: (@MainActor () -> Void)? = nil,
+        onRequireReauthentication: (@MainActor (String?) -> Void)? = nil
+    ) {
+        let targetPlatform = platform ?? settings.store.platform
+        if let versionID, !versionID.isEmpty, !versionID.allSatisfy({ $0.isASCII && $0.isNumber }) {
+            errorMessage = AppText.text("版本 ID 只能包含数字")
+            return
+        }
+        if isPreparingDownload(appID: app.id, platform: targetPlatform, versionID: versionID) {
+            cancelDownloadPreparation(appID: app.id, platform: targetPlatform, versionID: versionID)
+            return
+        }
+        if let job = matchingDownloadJob(for: app, platform: targetPlatform, versionID: versionID,
+                                         treatOutdatedCompletedAsIdle: treatOutdatedCompletedAsIdle) {
+            switch job.status {
+            case .queued, .running:
+                downloads.pause(job.id)
+                return
+            case .pausing, .processing:
+                if job.protectedMacPackage == true { downloads.cancelProcessing(job.id) }
+                return
+            case .paused:
+                downloads.resume(job.id)
+                return
+            case .completed:
+                if job.rawFormat == nil {
+                    installingJob = job
+                } else {
+                    tab = 1
+                }
+                return
+            case .failed:
+                if job.asset != nil {
+                    let key = DownloadTargetKey(appID: app.id, platform: targetPlatform, versionID: versionID ?? job.resolvedExternalVersionID)
+                    runDownloadPreparation(
+                        key: key,
+                        onRequireVerification: onRequireVerification,
+                        onRequireReauthentication: onRequireReauthentication,
+                        retry: {
+                            self.triggerAppStoreAction(
+                                for: app, platform: targetPlatform, versionID: versionID,
+                                marketingVersion: marketingVersion,
+                                treatOutdatedCompletedAsIdle: treatOutdatedCompletedAsIdle,
+                                onEnqueued: onEnqueued
+                            )
+                        },
+                        operation: {
+                            try await SAPSigner.$userInitiated.withValue(true) {
+                                try await self.refreshDownload(job, switchToDownloadsTab: false)
+                            }
+                            onEnqueued?()
+                        }
+                    )
+                    return
+                } else {
+                    downloads.resume(job.id)
+                    return
+                }
+            }
+        }
+        let retryAction: @MainActor () -> Void = {
+            self.triggerAppStoreAction(
+                for: app, platform: targetPlatform, versionID: versionID,
+                marketingVersion: marketingVersion,
+                treatOutdatedCompletedAsIdle: treatOutdatedCompletedAsIdle,
+                onEnqueued: onEnqueued
+            )
+        }
+        guard apple.active != nil else {
+            if let onRequireReauthentication {
+                onRequireReauthentication(nil)
+            } else {
+                loginPrompt = LoginPrompt(accountID: nil, retry: retryAction)
+            }
+            return
+        }
+        let targetVersionID = versionID?.isEmpty == true ? nil : versionID
+        let key = DownloadTargetKey(appID: app.id, platform: targetPlatform, versionID: targetVersionID)
+        runDownloadPreparation(
+            key: key,
+            onRequireVerification: onRequireVerification,
+            onRequireReauthentication: onRequireReauthentication,
+            retry: retryAction,
+            operation: {
+                if targetPlatform.supportsIPA {
+                    try await self.startDownload(app: app, versionID: targetVersionID, marketingVersion: marketingVersion,
+                                                 switchToDownloadsTab: false)
+                } else {
+                    let offer = try await SAPSigner.$userInitiated.withValue(true) {
+                        try await self.apple.macPackageOffer(app, versionID: targetVersionID, useCache: self.settings.useSignerCache)
+                    }
+                    try Task.checkCancellation()
+                    try self.downloads.enqueueOfficialMacPackage(offer, for: app)
+                }
+                onEnqueued?()
+            }
+        )
+    }
+
+    private func runDownloadPreparation(
+        key: DownloadTargetKey,
+        onRequireVerification: (@MainActor () -> Void)?,
+        onRequireReauthentication: (@MainActor (String?) -> Void)?,
+        retry: @escaping @MainActor () -> Void,
+        operation: @escaping @MainActor () async throws -> Void
+    ) {
+        guard prepareTasks[key] == nil else { return }
+        preparingDownloads.insert(key)
+        prepareTasks[key] = Task {
+            defer {
+                preparingDownloads.remove(key)
+                prepareTasks.removeValue(forKey: key)
+            }
+            do {
+                try await operation()
+            } catch AppleLoginError.verificationRequired {
+                if let onRequireVerification { onRequireVerification() }
+                else { requestVerification(retry: retry) }
+            } catch AppleAuthError.reauthenticationRequired {
+                if let onRequireReauthentication { onRequireReauthentication(apple.activeID) }
+                else { loginPrompt = LoginPrompt(accountID: apple.activeID, retry: retry) }
+            } catch is CancellationError { }
+            catch { errorMessage = error.localizedDescription }
+        }
+    }
+
+    func startDownload(app: StoreApp, versionID: String?, marketingVersion: String? = nil, switchToDownloadsTab: Bool = false) async throws {
         var asset = try await SAPSigner.$userInitiated.withValue(true) {
             try await apple.asset(appID: app.id, versionID: versionID, store: settings.store, useCache: settings.useSignerCache)
         }
         // Apple DownloadDispatch often omits artwork even when the store
         // listing showed it. Do not lose that listing before enqueuing.
         if asset.app.iconURL == nil { asset.app.iconURL = app.iconURL }
+        let selectedMarketing = marketingVersion ?? ((versionID == nil || versionID == app.externalVersionID) ? app.version : nil)
+        if let selectedMarketing {
+            let clean = VersionService.sanitizedVersion(selectedMarketing, rejectingID: asset.app.externalVersionID ?? versionID)
+            if clean != AppVersion.unknown && VersionService.versionPreference(clean) >= 2 {
+                asset.app.storeMarketingVersion = clean
+            }
+        }
         try downloads.enqueue(asset)
+        if versionID == nil,
+           let extID = asset.app.externalVersionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !extID.isEmpty {
+            resolvedLatestVersionIDs["\(settings.store.platform.rawValue)|\(app.id)"] = extID
+        }
         // A delisted app's only artwork may arrive with the download itself.
         if let icon = asset.app.iconURL {
             func patched(_ apps: [StoreApp]) -> [StoreApp] {
@@ -789,7 +1521,7 @@ final class ToolStore: ObservableObject {
             results = patched(results)
             localResults = patched(localResults)
         }
-        tab = 1
+        if switchToDownloadsTab { tab = 1 }
     }
 
     /// Compares finished downloads with the store's current versions. Runs
@@ -1070,7 +1802,7 @@ final class ToolStore: ObservableObject {
         return (added, failures)
     }
 
-    func refreshDownload(_ job: DownloadJob) async throws {
+    func refreshDownload(_ job: DownloadJob, switchToDownloadsTab: Bool = true) async throws {
         guard job.status == .failed, job.asset != nil else { throw ToolError.message(AppText.text("此任务无法重试")) }
         guard apple.activeID == job.account else { throw ToolError.message(AppText.text("请先切换至原下载账号：\(job.account ?? "")")) }
         let platform: AppPlatform
@@ -1079,10 +1811,13 @@ final class ToolStore: ObservableObject {
         case "ipad": platform = .iPadOS
         default: platform = .iOS
         }
-        let asset = try await apple.asset(appID: job.app.id, versionID: job.asset?.app.externalVersionID,
+        var asset = try await apple.asset(appID: job.app.id, versionID: job.asset?.app.externalVersionID ?? job.app.externalVersionID,
             store: StoreContext(country: settings.store.country, platform: platform), useCache: settings.useSignerCache)
+        if asset.app.storeMarketingVersion == nil {
+            asset.app.storeMarketingVersion = job.resolvedMarketingVersion
+        }
         try downloads.refreshFailed(job.id, asset: asset)
-        tab = 1
+        if switchToDownloadsTab { tab = 1 }
     }
 
     func refreshOwned() async {
@@ -1275,6 +2010,9 @@ extension ToolStore {
         visualPreview = true
         cacheLoading = false
         results = []; hasSearched = false; searchText = ""
+        if ProcessInfo.processInfo.arguments.contains("--skeleton-preview") {
+            searching = true
+        }
         favorites = [PreviewData.favorite]
         if ProcessInfo.processInfo.arguments.contains("--updates") {
             for app in PreviewData.updatable {

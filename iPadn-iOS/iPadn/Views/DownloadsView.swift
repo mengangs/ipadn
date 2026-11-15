@@ -18,6 +18,7 @@ struct DownloadsView: View {
     @State private var link = ""
     @State private var share: SharedFile?
     @State private var pendingDelete: Set<UUID> = []
+    @State private var swipingDelete: Set<UUID> = []
     @State private var confirmingDelete = false
     @State private var installing: DownloadJob?
     /// The LiveContainer setup tip, once read, stays closed.
@@ -33,7 +34,7 @@ struct DownloadsView: View {
     @State private var switchingMode = false
     @State private var actionBusy = false
     private var filteredJobs: [DownloadJob] {
-        manager.jobs.filter { filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
+        manager.jobs.filter { !swipingDelete.contains($0.id) && filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
     }
     /// The newest finished download of each app with a newer store version.
     private var updateTargets: [UUID: StoreApp] {
@@ -177,6 +178,19 @@ struct DownloadsView: View {
                         Section("任务信息") {
                             LabeledContent("添加时间", value: job.createdAt.formatted(date: .abbreviated, time: .shortened))
                             TaskSizeRows(job: job, progress: manager.progress(for: job.id))
+                            if let marketing = job.resolvedMarketingVersion {
+                                LabeledContent("商店版本", value: marketing)
+                            }
+                            let packageShort = job.app.version.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !packageShort.isEmpty && packageShort != AppVersion.unknown {
+                                LabeledContent("包内版本", value: packageShort)
+                            }
+                            if let build = job.resolvedBundleVersion {
+                                LabeledContent("构建号", value: build)
+                            }
+                            if let versionID = job.resolvedExternalVersionID {
+                                LabeledContent("商店版本 ID", value: versionID)
+                            }
                             if let account = job.account { LabeledContent("Apple 账号", value: account) }
                         }
                         if let error = job.error { Section("未完成原因") { Text(error).font(.subheadline) } }
@@ -271,6 +285,48 @@ struct DownloadsView: View {
                         LiveContainerTip { withAnimation { liveContainerTipDismissed = true } }
                     }
                 }
+                if let autoInstall = manager.autoInstalling {
+                    Section {
+                        HStack(spacing: 12) {
+                            Group {
+                                if autoInstall.hasProgress || !autoInstall.canCancel {
+                                    ProgressView(value: autoInstall.fraction)
+                                        .progressViewStyle(.circular)
+                                } else {
+                                    ProgressView()
+                                        .progressViewStyle(.circular)
+                                }
+                            }
+                            .tint(UX.tint)
+                            .frame(width: 24, height: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(autoInstall.hasProgress || !autoInstall.canCancel
+                                     ? AppText.text("正在自动安装 \(autoInstall.name)（\(Int((autoInstall.fraction * 100).rounded()))%）")
+                                     : AppText.text("正在准备自动安装 \(autoInstall.name)"))
+                                    .font(.subheadline.weight(.medium))
+                                    .monospacedDigit()
+                                    .lineLimit(1)
+                                Text(autoInstall.stage == .installing || !autoInstall.canCancel
+                                     ? AppText.text("已进入系统安装阶段，无法取消")
+                                     : autoInstall.stage == .uploading
+                                     ? AppText.text("正在传输安装包，可随时取消")
+                                     : AppText.text("正在连接本机安装服务，可随时取消"))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            if autoInstall.canCancel {
+                                Button("取消") {
+                                    UX.feedback()
+                                    _ = manager.cancelAutoInstall(autoInstall.id)
+                                }
+                                .buttonStyle(CapsuleButtonStyle())
+                                .accessibilityIdentifier("downloads.auto-install.cancel")
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
             if manager.waitingForWiFi, manager.jobs.contains(where: { [.queued, .pausing].contains($0.status) }) {
                 Section { WiFiWaitRow() }
             }
@@ -303,65 +359,44 @@ struct DownloadsView: View {
                 } else {
                     ForEach(Array(visible.enumerated()), id: \.element.id) { index, job in
                         Section {
-                            // One row in both modes, so entering edit mode slides the
-                            // selection mark in.
-                            HStack(spacing: 12) {
-                                if edit {
-                                    Image(systemName: selection.contains(job.id) ? "checkmark.circle.fill" : "circle")
-                                        .font(.title2)
-                                        .foregroundStyle(selection.contains(job.id) ? Color.accentColor : Color.secondary)
-                                        .frame(width: 32)
-                                        .transition(.move(edge: .leading).combined(with: .opacity))
-                                }
-                                taskContent(job, update: updates[job.id], editing: edit)
-                                    .allowsHitTesting(!edit)
-                            }
-                            .overlay {
-                                if edit {
-                                    Button { toggleSelection(job.id) } label: { Color.clear.contentShape(Rectangle()) }
-                                        .buttonStyle(.plain)
-                                        .accessibilityLabel(selection.contains(job.id) ? AppText.text("取消选择 \(job.app.name)") : AppText.text("选择 \(job.app.name)"))
-                                        .accessibilityIdentifier("download.select." + job.id.uuidString)
-                                }
-                            }
+                            taskContent(job, update: updates[job.id], editing: false)
                             .accessibilityElement(children: .contain)
                             .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
                             // Swipe for Delete (full swipe) and, with a file, Share: the row keeps its room for the version.
                             .revealActions(id: "download." + job.id.uuidString,
-                                           enabled: !edit && !actionBusy && job.status != .processing && job.status != .pausing,
-                                           [.delete { askDelete([job.id]) }] + shareAction(job))
+                                           enabled: !actionBusy && job.status != .processing && job.status != .pausing,
+                                           restored: manager.recentlyRestoredIDs.contains(job.id),
+                                           [.delete(fills: true) { swipeDelete(job.id) }] + shareAction(job))
                             .contextMenu {
-                                if !edit {
-                                    if let latest = updates[job.id] {
-                                        Button("下载新版本 \(latest.version)", systemImage: "arrow.down.circle") { downloadUpdate(job) }
-                                    }
-                                    if job.status == .completed && job.updateKey != nil {
-                                        if store.keepsVersion(job) {
-                                            Button("恢复更新提醒", systemImage: "bell") { store.keepVersion(false, of: job); UX.feedback() }
-                                        } else {
-                                            Button("保留此版本", systemImage: "pin") {
-                                                store.keepVersion(true, of: job); UX.feedback()
-                                                store.infoMessage = AppText.text("已保留此版本，不再提醒更新")
-                                            }
+                                if let latest = updates[job.id] {
+                                    Button("下载新版本 \(latest.version)", systemImage: "arrow.down.circle") { downloadUpdate(job) }
+                                }
+                                if job.status == .completed && job.updateKey != nil {
+                                    if store.keepsVersion(job) {
+                                        Button("恢复更新提醒", systemImage: "bell") { store.keepVersion(false, of: job); UX.feedback() }
+                                    } else {
+                                        Button("保留此版本", systemImage: "pin") {
+                                            store.keepVersion(true, of: job); UX.feedback()
+                                            store.infoMessage = AppText.text("已保留此版本，不再提醒更新")
                                         }
                                     }
-                                    Button("任务详情", systemImage: "info.circle") { inspecting = job }
-                                    if let file = manager.fileURL(job) {
-                                        Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: manager.exportURL(job) ?? file) }
-                                        if job.rawFormat == nil {
-                                            Button("安装", systemImage: "square.and.arrow.down") { installing = job }
-                                        }
-                                        Button("复制本机链接", systemImage: "link") {
-                                            perform {
-                                                let url = try await store.installation.localURL(file: file)
-                                                UIPasteboard.general.string = url.absoluteString
-                                                store.infoMessage = AppText.text("已复制链接")
-                                            }
+                                }
+                                Button("任务详情", systemImage: "info.circle") { inspecting = job }
+                                if let file = manager.fileURL(job) {
+                                    Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: manager.exportURL(job) ?? file) }
+                                    if job.rawFormat == nil {
+                                        Button("安装", systemImage: "square.and.arrow.down") { installing = job }
+                                    }
+                                    Button("复制本机链接", systemImage: "link") {
+                                        perform {
+                                            let url = try await store.installation.localURL(file: file)
+                                            UIPasteboard.general.string = url.absoluteString
+                                            store.infoMessage = AppText.text("已复制链接")
                                         }
                                     }
-                                    if job.status != .processing && job.status != .pausing {
-                                        Button("删除任务及文件", systemImage: "trash", role: .destructive) { askDelete([job.id]) }
-                                    }
+                                }
+                                if job.status != .processing && job.status != .pausing {
+                                    Button("删除任务及文件", systemImage: "trash", role: .destructive) { askDelete([job.id]) }
                                 }
                             }
                             // Outside the card background, so the whole card slides.
@@ -372,7 +407,7 @@ struct DownloadsView: View {
                                     Text(headerSummary(visible: visible, updates: updates))
                                     Spacer()
                                     // One update has its own button on the row.
-                                    if updates.count > 1, !edit {
+                                    if updates.count > 1 {
                                         Button("全部更新") { downloadAllUpdates() }
                                             .font(.body.weight(.semibold)).textCase(nil).buttonStyle(.borderless)
                                             .disabled(actionBusy)
@@ -410,7 +445,7 @@ struct DownloadsView: View {
     private func editRow(_ job: DownloadJob) -> some View {
         let app = job.displayApp(packageIcon: manager.packageIconURL(job))
         let selected = selection.contains(job.id)
-        let details = [app.version.isEmpty ? "" : "v" + app.version, job.status.title].filter { !$0.isEmpty }.joined(separator: " · ")
+        let details = [job.conciseVersionLabel, job.status.title].filter { !$0.isEmpty }.joined(separator: " · ")
         return Button { toggleSelection(job.id) } label: {
             HStack(spacing: 12) {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
@@ -452,12 +487,12 @@ struct DownloadsView: View {
         }
     }
     private func packageDisplayApp(_ job: DownloadJob) -> StoreApp {
-        var app = job.app
-        app.iconURL = job.displayApp(packageIcon: manager.packageIconURL(job)).iconURL
+        var app = job.displayApp(packageIcon: manager.packageIconURL(job))
+        app.version = job.userFacingVersion
         return app
     }
     private func primary(_ job: DownloadJob) {
-        UX.feedback()
+        UX.tapLight()
         #if DEBUG
         if LocalResources.isPreview, ProcessInfo.processInfo.arguments.contains("--completion-preview"), job.status == .running {
             manager.completePreviewDownload(job.id)
@@ -474,6 +509,21 @@ struct DownloadsView: View {
                 share = SharedFile(url: file)
             } else { installing = job }
         default: break
+        }
+    }
+    private func swipeDelete(_ id: UUID) {
+        guard !actionBusy, !swipingDelete.contains(id) else { return }
+        withAnimation(UX.motion(reduceMotion)) { _ = swipingDelete.insert(id) }
+        Task { @MainActor in
+            defer { _ = withAnimation(UX.motion(reduceMotion)) { swipingDelete.remove(id) } }
+            do {
+                try await SAPSigner.$userInitiated.withValue(true) {
+                    try await store.removeDownloadWithUndo(id)
+                }
+            } catch is CancellationError {
+            } catch {
+                store.errorMessage = error.localizedDescription
+            }
         }
     }
     private func askDelete(_ ids: Set<UUID>) {
@@ -511,6 +561,7 @@ struct DownloadTaskRow: View {
     /// Just finished: the ring closes into a check before Install appears.
     @State private var celebrating = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private var displayedApp: StoreApp {
         job.displayApp(packageIcon: manager.packageIconURL(job))
     }
@@ -533,22 +584,44 @@ struct DownloadTaskRow: View {
     }
     private var appHeading: some View {
         let displayedApp = self.displayedApp
+        let versionText = job.conciseVersionLabel
+        let sizeText = displayedApp.size > 0 ? displayedApp.size.byteLabel : ""
         return HStack(alignment: .center, spacing: 14) {
             AppIcon(url: displayedApp.iconURL, size: 64)
             VStack(alignment: .leading, spacing: 4) {
                 Text(displayedApp.name).font(.body.weight(.medium)).lineLimit(2)
                 HStack(spacing: 6) {
                     platformIcon
-                    // Version and size scroll once in place when the row is too narrow.
-                    MarqueeText(text: [displayedApp.version.isEmpty ? "" : "v\(displayedApp.version)",
-                                       displayedApp.size > 0 ? displayedApp.size.byteLabel : ""]
-                                    .filter { !$0.isEmpty }.joined(separator: " · "))
+                    if !versionText.isEmpty || !sizeText.isEmpty {
+                        // Keep file size visible when version labels are long or screens are narrow.
+                        HStack(spacing: 4) {
+                            if !versionText.isEmpty {
+                                Text(verbatim: versionText)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .layoutPriority(0)
+                            }
+                            if !versionText.isEmpty && !sizeText.isEmpty {
+                                Text(verbatim: "·")
+                                    .layoutPriority(1)
+                            }
+                            if !sizeText.isEmpty {
+                                Text(verbatim: sizeText)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.8 : 1.0)
+                                    .fixedSize(horizontal: !dynamicTypeSize.isAccessibilitySize, vertical: false)
+                                    .layoutPriority(2)
+                            }
+                        }
+                        .font(.subheadline.monospacedDigit())
                         .foregroundStyle(.secondary)
+                        .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("download.size." + job.app.id)
+                    }
                 }
                 statusLine
                     .id(controlKey)
-                    .transition(.statusSwap)
+                    .transition(.statusSwap(reduceMotion: reduceMotion))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -610,9 +683,9 @@ struct DownloadTaskRow: View {
             SpinningRing()
                 .accessibilityLabel(job.status == .pausing ? job.status.title : AppText.text("正在处理"))
         case .paused:
-            RowCapsule(title: "继续", action: primary)
+            RowCapsule(title: "继续", haptic: false, action: primary)
         case .failed:
-            RowCapsule(title: "重试", action: primary)
+            RowCapsule(title: "重试", haptic: false, action: primary)
         case .completed where celebrating:
             CompletionRing()
         case .completed:
@@ -624,17 +697,24 @@ struct DownloadTaskRow: View {
             }
         }
     }
+    private var showsTrailingControl: Bool {
+        job.status != .completed || job.rawFormat == nil
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Button(action: inspecting) { appHeading }.buttonStyle(RevealRowButtonStyle())
-                trailingControl
-                    .id(controlKey + (celebrating ? "-done" : ""))
-                    .transition(.statusSwap)
+                if showsTrailingControl {
+                    trailingControl
+                        .id(controlKey + (celebrating ? "-done" : ""))
+                        .transition(.statusSwap(reduceMotion: reduceMotion))
+                        .frame(minWidth: 74, minHeight: 44, alignment: .center)
+                }
             }
-            if job.status == .running || job.status == .paused, job.expected > 0 {
-                ProgressView(value: job.progress).tint(job.status == .paused ? .secondary : UX.tint)
-                    .animation(.linear(duration: 0.25), value: job.progress)
+            if [.running, .pausing, .paused].contains(job.status), job.expected > 0 {
+                ProgressView(value: job.progress).tint(job.status == .running ? UX.tint : .secondary)
+                    .animation(reduceMotion ? nil : .linear(duration: 0.25), value: job.progress)
+                    .transition(.opacity)
                     .accessibilityLabel("下载进度").accessibilityValue("\(Int(job.progress * 100))%")
             }
             if job.status == .completed && kept {
@@ -659,20 +739,31 @@ struct DownloadTaskRow: View {
                     Text(error).lineLimit(3).fixedSize(horizontal: false, vertical: true)
                 }
                 .font(.caption).foregroundStyle(.red)
+                .transition(.opacity)
             }
         }
         .padding(.vertical, 8)
-        .animation(.compatibleSnappy, value: controlKey)
-        .animation(.compatibleSnappy, value: celebrating)
-        .animation(.easeOut(duration: 0.2), value: update?.version)
+        .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.34), value: controlKey)
+        .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.34), value: celebrating)
+        .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.34), value: job.error)
+        .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.34), value: job.expected > 0)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: update?.version)
         .onAppear { seenStatus = job.status }
         .compatibleOnChange(of: job.status) { status in
             let before = seenStatus
             seenStatus = status
-            // Finished while on screen: show it, then offer Install.
-            guard status == .completed, before == .running || before == .processing, !reduceMotion else { return }
+            if status != .completed { celebrating = false }
+            // Finished while on screen: give tactile confirmation and celebrate briefly.
+            guard status == .completed, before == .running || before == .processing else { return }
+            UX.success()
+            guard !reduceMotion else { return }
             celebrating = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { celebrating = false }
+        }
+        .task(id: celebrating) {
+            guard celebrating else { return }
+            try? await Task.sleep(for: .milliseconds(1100))
+            guard !Task.isCancelled else { return }
+            celebrating = false
         }
     }
 }

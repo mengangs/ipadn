@@ -363,11 +363,15 @@ final class AppleService: ObservableObject {
         let artwork = song["artwork-urls"] as? [String: Any]
         let defaultArt = artwork?["default"] as? [String: Any]
         let assetInfo = song["asset-info"] as? [String: Any]
+        let rawShort = plistString(metadata["bundleShortVersionString"])
+        let rawBuild = plistString(metadata["bundleVersion"])
+        let resolvedVersion = VersionService.reconcileTicketVersion(shortVersion: rawShort, buildVersion: rawBuild)
         let app = StoreApp(id: plistString(song["songId"]).isEmpty ? appID : plistString(song["songId"]),
             name: plistString(metadata["bundleDisplayName"]), bundleID: plistString(metadata["softwareVersionBundleId"]),
-            version: plistString(metadata["bundleShortVersionString"]), iconURL: StoreService.icon(plistString(defaultArt?["url"])),
+            version: resolvedVersion.isEmpty ? rawShort : resolvedVersion, iconURL: StoreService.icon(plistString(defaultArt?["url"])),
             size: (assetInfo?["file-size"] as? NSNumber)?.int64Value ?? 0,
-            minimumOS: plistString(metadata["minimumOSVersion"] ?? metadata["minimumOsVersion"]), externalVersionID: externalID)
+            minimumOS: plistString(metadata["minimumOSVersion"] ?? metadata["minimumOsVersion"]), externalVersionID: externalID,
+            bundleVersion: rawBuild.isEmpty ? nil : rawBuild)
         // The server order is positional: SC_Info/Manifest.plist.SinfPaths
         // uses the same order. Sorting by the opaque `id`, or compacting a
         // missing item, assigns licenses to the wrong extension/framework.
@@ -380,10 +384,22 @@ final class AppleService: ObservableObject {
             platform: plistString(metadata["software-platform"]), account: account.id)
     }
 
+    struct VersionTicket: Sendable {
+        let url: URL
+        let displayVersion: String
+        let rawShortVersion: String
+        let buildVersion: String
+        let fileSize: Int64?
+    }
+
     /// Download ticket for one version, used only to read that version's
     /// Info.plist. Unlike a download it never acquires a license or signs in
     /// again, so browsing a version list cannot trigger a verification prompt.
     func versionTicket(appID: String, versionID: String, useCache: Bool) async throws -> URL {
+        try await versionTicketDetails(appID: appID, versionID: versionID, useCache: useCache).url
+    }
+
+    func versionTicketDetails(appID: String, versionID: String, useCache: Bool) async throws -> VersionTicket {
         guard let account = active, !account.dsid.isEmpty else { throw AppleAuthError.reauthenticationRequired }
         guard let app = UInt64(appID), app > 0, UInt64(versionID).map({ $0 > 0 }) == true else {
             throw ToolError.message(AppText.text("版本 ID 只能包含数字"))
@@ -405,7 +421,18 @@ final class AppleService: ObservableObject {
               [versionID, ""].contains(plistString(metadata["softwareVersionExternalIdentifier"])) else {
             throw ToolError.message(AppText.text("Apple 没有返回该版本的信息"))
         }
-        return url
+        let sanitizedShort = VersionService.sanitizedVersion(plistString(metadata["bundleShortVersionString"]), rejectingID: versionID)
+        let sanitizedBuild = VersionService.sanitizedVersion(plistString(metadata["bundleVersion"]), rejectingID: versionID)
+        let rawShortVersion = sanitizedShort == AppVersion.unknown ? "" : sanitizedShort
+        let buildVersion = sanitizedBuild == AppVersion.unknown ? "" : sanitizedBuild
+        let displayVersion = VersionService.reconcileTicketVersion(shortVersion: rawShortVersion, buildVersion: buildVersion)
+        let assetInfo = song["asset-info"] as? [String: Any]
+        let fileSize = (assetInfo?["file-size"] as? NSNumber)?.int64Value
+        return VersionTicket(url: url,
+                             displayVersion: displayVersion,
+                             rawShortVersion: rawShortVersion,
+                             buildVersion: buildVersion,
+                             fileSize: fileSize.flatMap { $0 > 0 ? $0 : nil })
     }
 
     static var noOfferMessage: String { AppText.text("Apple 没有返回该版本的下载信息") }

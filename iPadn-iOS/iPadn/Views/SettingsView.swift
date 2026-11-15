@@ -49,6 +49,7 @@ struct SettingsView: View {
             .accessibilityIdentifier(identifier)
     }
     var body: some View {
+        ScrollViewReader { reader in
         Form {
             if page == .root {
             Section {
@@ -83,6 +84,10 @@ struct SettingsView: View {
                 .accessibilityIdentifier("settings.auto-install")
                 Toggle("实时活动显示下载进度", isOn: $store.settings.downloadLiveActivity)
                     .accessibilityIdentifier("settings.download-activity")
+                Toggle("显示历史版本图标", isOn: $store.settings.showHistoryIcons)
+                    .accessibilityIdentifier("settings.history-icons")
+                Toggle("搜索时优先显示已下架应用", isOn: $store.settings.prioritizeDelistedSearchResults)
+                    .accessibilityIdentifier("settings.prioritize-delisted-search")
                 Toggle("兼容下载模式", isOn: $store.settings.compatibleDownloadMode)
                 if store.downloads.backgroundDownloadsUnavailable && !store.settings.compatibleDownloadMode {
                     Button(AppText.text("重新尝试后台下载")) { store.downloads.retryBackgroundDownloads(); store.infoMessage = AppText.text("下一个下载任务会重新尝试后台下载") }
@@ -94,6 +99,8 @@ struct SettingsView: View {
                     Text("关闭「新版本提醒」后，下载页不再显示新版本提示，也不发送通知。")
                     Text("开启「仅使用 Wi‑Fi 下载」后，只有蜂窝数据时下载会暂停排队，连上 Wi‑Fi 后自动继续。「下载完成后自动安装」使用原生安装时会在后台直接安装，不需要确认（LocalDevVPN 需保持连接）；其他安装方式会在 iPadn 打开时弹出安装。")
                     Text("下载时在锁定屏幕和灵动岛显示进度。iPadn 在后台时按测得的速度估算进度，回到 iPadn 后更新为实际进度。")
+                    Text("关闭「显示历史版本图标」可跳过读取历史版本图标以节省流量和加载时间；已缓存的图标文件仍会保留。")
+                    Text("开启「搜索时优先显示已下架应用」后，关键词搜索会优先将已确认下架并匹配关键词的应用排在结果前排；关闭后恢复原有搜索排序。")
                     if store.downloads.backgroundDownloadsUnavailable && !store.settings.compatibleDownloadMode {
                         Text("当前签名下系统后台下载无法保存文件，已自动改用应用内下载，下载时请保持 iPadn 在前台。更换签名后可以点按「重新尝试后台下载」。")
                     } else {
@@ -205,6 +212,7 @@ struct SettingsView: View {
                     Text("默认使用深色图标。「跟随系统」会随主屏幕的浅色、深色和着色外观切换（iOS 18 及更新版本），也可以固定使用浅色图标。")
                 }
             }
+            TranslationSettingsSections()
             }
             if page == .sources {
             ForEach($store.settings.versionSources) { $source in
@@ -222,7 +230,7 @@ struct SettingsView: View {
                         }
                     }
                     .accessibilityIdentifier("settings.source." + source.name)
-                    .revealDelete(id: "source." + source.id.uuidString, title: "移除") {
+                    .revealDelete(id: "source." + source.id.uuidString, title: "移除", fills: true) {
                         let id = source.id
                         withAnimation { store.settings.versionSources.removeAll { $0.id == id } }
                     }
@@ -279,6 +287,12 @@ struct SettingsView: View {
                 NavigationLink { StorageView() } label: { Label("存储空间", systemImage: "internaldrive") }
                     .accessibilityIdentifier("settings.storage")
                 Button("清除历史版本缓存") { clearCache = true }
+                    .confirmationDialog("清除历史版本缓存？", isPresented: $clearCache, titleVisibility: .visible) {
+                        Button("清除缓存", role: .destructive) {
+                            Task { do { try await store.clearVersionCaches(); store.infoMessage = AppText.text("已清除缓存") } catch { store.errorMessage = error.localizedDescription } }
+                        }
+                        Button("取消", role: .cancel) {}
+                    }
                 Button("导出诊断信息") {
                     do { share = SharedFile(url: try store.exportDiagnostics()) } catch { store.errorMessage = error.localizedDescription }
                 }
@@ -341,6 +355,15 @@ struct SettingsView: View {
             }
             }
         }
+        .compatibleOnChange(of: store.settings.directTranslation) { on in
+            guard on, page == .appearance else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(150))
+                guard store.settings.directTranslation else { return }
+                withAnimation { reader.scrollTo("settings.translation.resources", anchor: .bottom) }
+            }
+        }
+        }
         .toolPage().navigationTitle(page.title).navigationBarTitleDisplayMode(.inline)
         .compatibleOnChange(of: scenePhase) { phase in if phase == .active { icons.refresh() } }
         .alert("图标未更改", isPresented: Binding(get: { iconIssue != nil }, set: { if !$0 { iconIssue = nil } })) {
@@ -370,9 +393,6 @@ struct SettingsView: View {
         }
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
         .actionConfirmation(isPresented: $resetSettings, title: "恢复默认设置？", message: "账号、已下载的安装包和已购记录不受影响。", confirmTitle: "恢复默认设置") { store.settings = ToolSettings() }
-        .actionConfirmation(isPresented: $clearCache, title: "清除历史版本缓存？", confirmTitle: "清除缓存") {
-            Task { do { try await store.versions.clearCache(); store.infoMessage = AppText.text("已清除缓存") } catch { store.errorMessage = error.localizedDescription } }
-        }
     }
 }
 

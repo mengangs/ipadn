@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import QuartzCore
 
 // Visual language modeled on the App Store with the iPadn monochrome accent:
 // grouped backgrounds, capsule action buttons, ring progress, large titles.
@@ -16,8 +17,34 @@ enum UX {
         traits.userInterfaceStyle == .dark ? .systemGreen : (UIColor(named: "AccentColor") ?? .label)
     })
     static let iconCorner: CGFloat = 0.2237
-    static func feedback() { UISelectionFeedbackGenerator().selectionChanged() }
-    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    @MainActor private static let selectionGenerator = UISelectionFeedbackGenerator()
+    @MainActor private static let lightImpactGenerator = UIImpactFeedbackGenerator(style: .light)
+    @MainActor private static let softImpactGenerator = UIImpactFeedbackGenerator(style: .soft)
+    @MainActor private static let notificationGenerator = UINotificationFeedbackGenerator()
+    @MainActor static func prepare() {
+        selectionGenerator.prepare()
+        lightImpactGenerator.prepare()
+    }
+    @MainActor static func feedback() {
+        selectionGenerator.selectionChanged()
+        selectionGenerator.prepare()
+    }
+    @MainActor static func tapLight() {
+        lightImpactGenerator.impactOccurred(intensity: 0.72)
+        lightImpactGenerator.prepare()
+    }
+    @MainActor static func tapSoft() {
+        softImpactGenerator.impactOccurred(intensity: 0.6)
+        softImpactGenerator.prepare()
+    }
+    @MainActor static func success() {
+        notificationGenerator.notificationOccurred(.success)
+        notificationGenerator.prepare()
+    }
+    @MainActor static func warning() {
+        notificationGenerator.notificationOccurred(.warning)
+        notificationGenerator.prepare()
+    }
 }
 
 /// Full-width primary action (App Store sign-in "继续" style).
@@ -34,6 +61,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .opacity(enabled ? 1 : 0.35)
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
             .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.15), value: configuration.isPressed)
+            .compatibleOnChange(of: configuration.isPressed) { down in if down { UX.prepare() } }
     }
 }
 typealias MonochromeButtonStyle = PrimaryButtonStyle
@@ -45,13 +73,19 @@ struct TintedSwitchToggleStyle: ToggleStyle {
     }
 }
 
-/// App Store "获取 / 打开" capsule. `filled` is the prominent variant.
-struct CapsuleButtonStyle: ButtonStyle {
-    var filled = false
-    @Environment(\.isEnabled) private var enabled
-    @Environment(\.revealSuppressesPress) private var suppressesPress
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+private struct CapsuleAppearanceModifier: ViewModifier {
+    let filled: Bool
+    let pressed: Bool
+    let enabled: Bool
+    let suppressesPress: Bool
+    let pressScale: CGFloat
+    let pressOpacity: Double
+    var managesPressAndEnabled = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        let down = pressed && !suppressesPress
+        content
             .environment(\.isEnabled, enabled || suppressesPress)
             .font(.subheadline.weight(.bold))
             .lineLimit(1)
@@ -60,57 +94,504 @@ struct CapsuleButtonStyle: ButtonStyle {
             .foregroundStyle(filled ? UX.onAccent : UX.tint)
             .padding(.horizontal, 16).frame(minWidth: 74, minHeight: 30)
             .background(filled ? AnyShapeStyle(UX.tint) : AnyShapeStyle(Color(.tertiarySystemFill)), in: Capsule())
-            .opacity(configuration.isPressed && !suppressesPress ? 0.6 : enabled || suppressesPress ? 1 : 0.4)
+            .opacity(managesPressAndEnabled ? (down ? pressOpacity : enabled || suppressesPress ? 1 : 0.4) : 1)
+            .scaleEffect(managesPressAndEnabled && down && !reduceMotion ? pressScale : 1)
+            .animation(managesPressAndEnabled && !reduceMotion ? .compatibleSnappy(duration: 0.14) : nil, value: down)
             .contentShape(Capsule())
     }
 }
 
-/// Capsule action inside a navigable List row. A Button there would be
-/// swallowed by the row's link, so it uses a high-priority tap instead.
+/// Shared touch-down tracker so custom UIKit tap targets highlight on finger-down
+/// while cancelling cleanly during list scroll or horizontal swipe gestures.
+final class TactileContainerView: UIView {
+    var onPressChange: ((Bool) -> Void)?
+    private var pressed = false
+
+    private func setPressed(_ down: Bool) {
+        guard pressed != down else { return }
+        pressed = down
+        if down { UX.prepare() }
+        onPressChange?(down)
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        setPressed(true)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        setPressed(bounds.insetBy(dx: -12, dy: -12).contains(touch.location(in: self)))
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        setPressed(false)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        setPressed(false)
+    }
+}
+
+private struct TactileTapOverlay: UIViewRepresentable {
+    let enabled: Bool
+    let onPressChange: (Bool) -> Void
+    let onTap: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    func makeUIView(context: Context) -> TactileContainerView {
+        let view = TactileContainerView()
+        view.backgroundColor = .clear
+        view.isOpaque = false
+        view.isAccessibilityElement = false
+        view.onPressChange = { [weak coordinator = context.coordinator] down in
+            coordinator?.handlePressChange(down)
+        }
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped))
+        tap.cancelsTouchesInView = true
+        tap.delaysTouchesBegan = false
+        tap.delaysTouchesEnded = false
+        tap.delegate = context.coordinator
+        view.addGestureRecognizer(tap)
+        return view
+    }
+
+    func updateUIView(_ uiView: TactileContainerView, context: Context) {
+        context.coordinator.parent = self
+        uiView.isUserInteractionEnabled = enabled
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: TactileTapOverlay
+        init(parent: TactileTapOverlay) { self.parent = parent }
+
+        func handlePressChange(_ down: Bool) {
+            parent.onPressChange(down)
+        }
+
+        @objc func tapped() {
+            guard parent.enabled else { return }
+            parent.onTap()
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            parent.enabled
+        }
+    }
+}
+
+private struct TactileNavigationTapModifier: ViewModifier {
+    let enabled: Bool
+    let pressScale: CGFloat
+    let pressOpacity: Double
+    let onTap: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.revealSuppressesPress) private var suppressesPress
+    @State private var pressed = false
+    @State private var downAt: CFTimeInterval = 0
+    @State private var pulseClearWork: DispatchWorkItem?
+
+    func body(content: Content) -> some View {
+        let active = pressed && enabled && !suppressesPress
+        content
+            .opacity(active ? pressOpacity : (enabled || suppressesPress ? 1 : 0.4))
+            .scaleEffect(active && !reduceMotion ? pressScale : 1)
+            .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.14), value: active)
+            .overlay {
+                TactileTapOverlay(
+                    enabled: enabled && !suppressesPress,
+                    onPressChange: { down in
+                        if down {
+                            pulseClearWork?.cancel()
+                            pulseClearWork = nil
+                            downAt = CACurrentMediaTime()
+                            pressed = true
+                        } else if pulseClearWork == nil {
+                            pressed = false
+                        }
+                    },
+                    onTap: {
+                        let elapsed = downAt > 0 ? CACurrentMediaTime() - downAt : 0
+                        downAt = 0
+                        if !reduceMotion && elapsed < 0.06 {
+                            pulseClearWork?.cancel()
+                            pressed = true
+                            let work = DispatchWorkItem {
+                                pulseClearWork = nil
+                                pressed = false
+                            }
+                            pulseClearWork = work
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
+                        } else {
+                            pressed = false
+                        }
+                        onTap()
+                    }
+                )
+            }
+    }
+}
+
+extension View {
+    /// Scroll-safe, swipe-safe tap control for buttons nested inside a List `NavigationLink`.
+    func tactileNavigationTap(enabled: Bool = true, pressScale: CGFloat = 0.94, pressOpacity: Double = 0.72,
+                              onTap: @escaping () -> Void) -> some View {
+        modifier(TactileNavigationTapModifier(enabled: enabled, pressScale: pressScale, pressOpacity: pressOpacity, onTap: onTap))
+    }
+}
+
+/// App Store "获取 / 打开" capsule. `filled` is the prominent variant.
+struct CapsuleButtonStyle: ButtonStyle {
+    var filled = false
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.revealSuppressesPress) private var suppressesPress
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed && !suppressesPress
+        configuration.label
+            .modifier(CapsuleAppearanceModifier(filled: filled, pressed: pressed, enabled: enabled,
+                                              suppressesPress: suppressesPress, pressScale: 0.94, pressOpacity: 0.72))
+            .compatibleOnChange(of: pressed) { down in if down { UX.prepare() } }
+    }
+}
+
+/// Primary row action pill: native `Button` outside `NavigationLink`, or
+/// scroll-safe UIKit tap overlay inside a `NavigationLink` row so tapping
+/// "Get" doesn't also push the detail page.
 struct RowCapsule: View {
     let title: LocalizedStringKey
     var filled = false
     var enabled = true
+    var insideNavigationLink = false
+    var haptic = true
     let action: () -> Void
+    @Environment(\.revealSuppressesPress) private var suppressesPress
     var body: some View {
-        Text(title)
-            .font(.subheadline.weight(.bold)).lineLimit(1)
-            // Capsule labels ("Download", "Get") must never be clipped.
-            .fixedSize(horizontal: true, vertical: false)
-            .foregroundStyle(filled ? UX.onAccent : UX.tint)
-            .padding(.horizontal, 16).frame(minWidth: 74, minHeight: 30)
-            .background(filled ? AnyShapeStyle(UX.tint) : AnyShapeStyle(Color(.tertiarySystemFill)), in: Capsule())
-            .opacity(enabled ? 1 : 0.4)
-            .contentShape(Capsule())
-            .highPriorityGesture(TapGesture().onEnded { if enabled { action() } })
-            .accessibilityElement(children: .ignore)
-            .accessibilityAddTraits(.isButton)
+        if insideNavigationLink {
+            Text(title)
+                .modifier(CapsuleAppearanceModifier(filled: filled, pressed: false, enabled: enabled,
+                                                  suppressesPress: suppressesPress, pressScale: 1, pressOpacity: 1,
+                                                  managesPressAndEnabled: false))
+                .tactileNavigationTap(enabled: enabled) {
+                    if haptic { UX.tapLight() }
+                    action()
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel(title)
+                .accessibilityAction {
+                    if enabled {
+                        if haptic { UX.tapLight() }
+                        action()
+                    }
+                }
+        } else {
+            Button {
+                if haptic { UX.tapLight() }
+                action()
+            } label: {
+                Text(title)
+            }
+            .buttonStyle(CapsuleButtonStyle(filled: filled))
+            .disabled(!enabled)
             .accessibilityLabel(title)
-            .accessibilityAction { if enabled { action() } }
+        }
     }
 }
 
-/// App Store download progress: a ring with a stop/pause glyph.
+/// App Store button display state for pill-to-ring morph animations.
+enum AppStoreActionPhase: Equatable {
+    case capsule(title: String, filled: Bool = false, enabled: Bool = true)
+    case cloud(enabled: Bool = true)
+    case loading
+    case downloading(Double)
+    case processing
+
+    var isCircular: Bool {
+        switch self {
+        case .loading, .downloading, .processing: return true
+        case .capsule, .cloud: return false
+        }
+    }
+
+    var isCloud: Bool {
+        if case .cloud = self { return true }
+        return false
+    }
+
+    var isEnabled: Bool {
+        switch self {
+        case .capsule(_, _, let enabled), .cloud(let enabled): return enabled
+        case .loading, .downloading, .processing: return true
+        }
+    }
+}
+
+private struct PillButtonPressStyle: ButtonStyle {
+    let scale: CGFloat
+    let opacity: Double
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? opacity : (enabled ? 1 : 0.4))
+            .scaleEffect(configuration.isPressed && !reduceMotion ? scale : 1)
+            .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.14), value: configuration.isPressed)
+            .compatibleOnChange(of: configuration.isPressed) { down in if down { UX.prepare() } }
+    }
+}
+
+/// Monochrome App Store action control that smoothly morphs a capsule button into
+/// a rotating open arc while loading and a clockwise progress ring while downloading.
+struct AppStoreActionButton: View {
+    let phase: AppStoreActionPhase
+    var alignment: Alignment = .center
+    var insideNavigationLink = false
+    var accessibilityLabelText: String? = nil
+    var accessibilityValueText: String? = nil
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.revealSuppressesPress) private var suppressesPress
+
+    @State private var lastTitle = "获取"
+    @State private var lastFilled = false
+    @State private var pillWidth: CGFloat = 74
+    @State private var pillHeight: CGFloat = 30
+
+    private var morphAnimation: Animation? {
+        reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88)
+    }
+
+    private var isCircular: Bool { phase.isCircular }
+    private var ringSize: CGFloat { max(30, dynamicTypeSize.isAccessibilitySize ? min(36, pillHeight) : 30) }
+    private var slotMinWidth: CGFloat { max(74, pillWidth) }
+    private var activeTitle: String {
+        if case .capsule(let title, _, _) = phase, !title.isEmpty { return title }
+        return lastTitle
+    }
+    private var activeFilled: Bool {
+        if case .capsule(_, let filled, _) = phase { return filled }
+        return lastFilled
+    }
+    private var ringProgress: Double? {
+        switch phase {
+        case .downloading(let fraction): return fraction
+        case .loading, .processing: return nil
+        case .capsule, .cloud: return nil
+        }
+    }
+    private var targetWidth: CGFloat {
+        if isCircular { return ringSize }
+        if phase.isCloud { return max(34, ringSize) }
+        return max(74, pillWidth)
+    }
+    private var targetHeight: CGFloat {
+        if isCircular { return ringSize }
+        if phase.isCloud { return max(30, ringSize) }
+        return max(30, pillHeight)
+    }
+
+    @ViewBuilder private var morphBody: some View {
+        let circular = isCircular
+        let cloud = phase.isCloud
+        let showPill = !circular && !cloud
+        ZStack {
+            ZStack {
+                Capsule()
+                    .fill(activeFilled ? AnyShapeStyle(UX.tint) : AnyShapeStyle(Color(.tertiarySystemFill)))
+                    .opacity(showPill ? 1 : 0)
+                    .animation(
+                        reduceMotion
+                            ? nil
+                            : (showPill ? .easeOut(duration: 0.16).delay(0.05) : .easeOut(duration: 0.13)),
+                        value: showPill
+                    )
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: activeFilled)
+
+                Text(LocalizedStringKey(activeTitle))
+                    .font(.subheadline.weight(.bold))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.75 : 1.0)
+                    .foregroundStyle(activeFilled ? UX.onAccent : UX.tint)
+                    .padding(.horizontal, 16)
+                    .opacity(showPill ? 1 : 0)
+                    .scaleEffect(showPill || reduceMotion ? 1 : 0.72)
+                    .animation(
+                        reduceMotion
+                            ? nil
+                            : (showPill ? .easeOut(duration: 0.16).delay(0.08) : .easeOut(duration: 0.10)),
+                        value: showPill
+                    )
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: activeTitle)
+            }
+            .frame(width: targetWidth, height: targetHeight)
+            .clipShape(Capsule())
+            .animation(morphAnimation, value: circular)
+            .animation(morphAnimation, value: cloud)
+
+            Image(systemName: "icloud.and.arrow.down")
+                .font(.title3.weight(.medium))
+                .foregroundStyle(UX.tint)
+                .opacity(cloud ? 1 : 0)
+                .scaleEffect(cloud || reduceMotion ? 1 : 0.6)
+                .animation(
+                    reduceMotion
+                        ? nil
+                        : (cloud ? .easeOut(duration: 0.16).delay(0.06) : .easeOut(duration: 0.10)),
+                    value: cloud
+                )
+
+            if circular {
+                ProgressRing(
+                    progress: ringProgress,
+                    showsStopSquare: true,
+                    size: ringSize,
+                    outerPadding: 0
+                )
+                .transition(
+                    reduceMotion
+                        ? .opacity
+                        : .asymmetric(
+                            insertion: .opacity
+                                .combined(with: .scale(scale: 0.80))
+                                .animation(.easeOut(duration: 0.18).delay(0.06)),
+                            removal: .opacity
+                                .combined(with: .scale(scale: 0.76))
+                                .animation(.easeIn(duration: 0.09))
+                        )
+                )
+            }
+        }
+        .frame(width: targetWidth, height: targetHeight)
+        .background {
+            Text(LocalizedStringKey(activeTitle))
+                .font(.subheadline.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.75 : 1.0)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, 16)
+                .frame(minWidth: 74, minHeight: 30)
+                .hidden()
+                .accessibilityHidden(true)
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                    if size.width > 0 { pillWidth = max(74, size.width) }
+                    if size.height > 0 { pillHeight = max(30, size.height) }
+                }
+        }
+        .frame(minWidth: slotMinWidth, minHeight: 36, alignment: alignment)
+        .animation(morphAnimation, value: slotMinWidth)
+        .contentShape(Rectangle())
+        .onAppear { syncCachedCapsule(phase) }
+        .compatibleOnChange(of: phase) { next in syncCachedCapsule(next) }
+    }
+
+    private func syncCachedCapsule(_ current: AppStoreActionPhase) {
+        if case .capsule(let title, let filled, _) = current {
+            lastTitle = title
+            lastFilled = filled
+        }
+    }
+
+    private var accessibleLabel: Text {
+        accessibilityLabelText.map { Text(verbatim: $0) } ?? Text(LocalizedStringKey(activeTitle))
+    }
+
+    var body: some View {
+        let enabled = phase.isEnabled
+        if insideNavigationLink {
+            morphBody
+                .tactileNavigationTap(
+                    enabled: enabled && !suppressesPress,
+                    pressScale: isCircular ? 0.90 : 0.94,
+                    pressOpacity: isCircular ? 0.65 : 0.72
+                ) {
+                    UX.tapLight()
+                    action()
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel(accessibleLabel)
+                .accessibilityValue(Text(accessibilityValueText ?? ""))
+                .accessibilityAction {
+                    guard enabled else { return }
+                    UX.tapLight()
+                    action()
+                }
+        } else {
+            Button {
+                UX.tapLight()
+                action()
+            } label: {
+                morphBody
+            }
+            .buttonStyle(PillButtonPressStyle(scale: isCircular ? 0.90 : 0.94, opacity: isCircular ? 0.65 : 0.72))
+            .disabled(!enabled)
+            .accessibilityLabel(accessibleLabel)
+            .accessibilityValue(Text(accessibilityValueText ?? ""))
+        }
+    }
+}
+
+/// App Store download progress: an open monochrome spinning arc while waiting,
+/// or a clockwise circular progress ring with a stop/pause glyph inside.
 struct ProgressRing: View {
     var progress: Double?
     var symbol = "pause.fill"
+    var showsStopSquare = false
+    var size: CGFloat = 30
+    var trackLineWidth: CGFloat = 3.0
+    var guideLineWidth: CGFloat = 3.0
+    var outerPadding: CGFloat = 7
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Keeps strokes inside `size × size` so surrounding `Capsule()` morph clips never slice the ring in half.
+    private var strokeInset: CGFloat {
+        max(trackLineWidth, guideLineWidth) / 2
+    }
+
     var body: some View {
         ZStack {
-            Circle().stroke(Color(.tertiarySystemFill), lineWidth: 3)
+            Circle()
+                .inset(by: strokeInset)
+                .stroke(UX.tint.opacity(0.18), lineWidth: guideLineWidth)
+                .opacity(progress == nil ? 0 : 1)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: progress == nil)
             if let progress {
-                Circle().trim(from: 0, to: max(0.02, min(1, progress)))
-                    .stroke(UX.tint, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                Circle()
+                    .inset(by: strokeInset)
+                    .trim(from: 0, to: max(0.02, min(1, progress)))
+                    .stroke(UX.tint, style: StrokeStyle(lineWidth: trackLineWidth, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                    .animation(.linear(duration: 0.25), value: progress)
-            }
-            if progress == nil {
-                ProgressView().controlSize(.small)
+                    .animation(reduceMotion ? nil : .linear(duration: 0.25), value: progress)
+                if showsStopSquare {
+                    RoundedRectangle(cornerRadius: 2.2, style: .continuous)
+                        .fill(UX.tint)
+                        .frame(width: 9, height: 9)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.6)))
+                } else {
+                    Image(systemName: symbol).font(.system(size: 10, weight: .bold)).foregroundStyle(UX.tint)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.6)))
+                }
             } else {
-                Image(systemName: symbol).font(.system(size: 10, weight: .bold)).foregroundStyle(UX.tint)
+                TimelineView(.animation(minimumInterval: nil, paused: reduceMotion)) { timeline in
+                    let period = 0.85
+                    let fraction = reduceMotion
+                        ? 0.0
+                        : timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
+                    Circle()
+                        .inset(by: strokeInset)
+                        .trim(from: 0, to: 0.78)
+                        .stroke(UX.tint, style: StrokeStyle(lineWidth: trackLineWidth, lineCap: .round))
+                        .rotationEffect(.degrees(fraction * 360 - 90))
+                }
+                .transition(.opacity)
             }
         }
-        .frame(width: 30, height: 30)
-        .padding(7)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: progress == nil)
+        .frame(width: size, height: size)
+        .padding(outerPadding)
         .contentShape(Circle())
     }
 }
@@ -349,7 +830,7 @@ struct TaskStatusPill: View {
         // Not a Label: inside List rows a Label gets the list's icon column,
         // which leaves a wide gap between the glyph and the text.
         HStack(spacing: 4) {
-            Image(systemName: status.symbol).imageScale(.small)
+            Image(systemName: status.symbol).imageScale(.small).accessibilityHidden(true)
             Text(status.title)
         }
         .font(.caption.weight(.semibold))
@@ -375,6 +856,202 @@ struct TagBadge: View {
     }
 }
 
+/// Pure-Swift coordinate & phase math for window-synchronized skeleton shimmer.
+enum ShimmerLayoutMath {
+    static let period: CFTimeInterval = 1.45
+    static let sweepFraction: Double = 0.72
+
+    /// Aligns every mounted shimmer layer to a single wall-clock phase so rows
+    /// appearing at different times sweep as one continuous wave.
+    static func beginTime(forWallClock wallClock: CFTimeInterval, layerTime: CFTimeInterval,
+                          period: CFTimeInterval = Self.period) -> CFTimeInterval {
+        guard period > 0 else { return layerTime }
+        var phase = wallClock.truncatingRemainder(dividingBy: period)
+        if phase < 0 { phase += period }
+        return layerTime - phase
+    }
+
+    /// Maps a global horizontal gleam sweep `[ -bandWidth, containerWidth + bandWidth ]`
+    /// back into `CAGradientLayer` unit space `[0, 1]` for a subview at `viewFrameInContainer`.
+    static func unitSweepEndpoints(viewFrameInContainer: CGRect, containerWidth: CGFloat) -> (
+        startFrom: CGPoint, endFrom: CGPoint, startTo: CGPoint, endTo: CGPoint
+    ) {
+        let viewWidth = max(viewFrameInContainer.width, 1)
+        let effectiveContainerWidth = max(containerWidth, viewFrameInContainer.maxX, viewWidth)
+        let bandWidth = max(140, effectiveContainerWidth * 0.55)
+        func unitX(_ containerX: CGFloat) -> CGFloat {
+            (containerX - viewFrameInContainer.minX) / viewWidth
+        }
+        return (
+            startFrom: CGPoint(x: unitX(-bandWidth), y: 0.25),
+            endFrom: CGPoint(x: unitX(0), y: 0.75),
+            startTo: CGPoint(x: unitX(effectiveContainerWidth), y: 0.25),
+            endTo: CGPoint(x: unitX(effectiveContainerWidth + bandWidth), y: 0.75)
+        )
+    }
+}
+
+private final class ShimmerTrackUIView: UIView {
+    private static let animationKey = "ipadn.monochrome.shimmer"
+    private let gradientLayer = CAGradientLayer()
+    private var lastAnimatedWidth: CGFloat = -1
+    private var lastAnimatedHeight: CGFloat = -1
+    private var lastWindowMinX: CGFloat = .nan
+    var isReduceMotionEnabled = false {
+        didSet {
+            if oldValue != isReduceMotionEnabled { syncAnimation(force: true) }
+        }
+    }
+    var isDarkAppearance = false {
+        didSet {
+            if oldValue != isDarkAppearance { updatePalette() }
+        }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+        gradientLayer.type = .axial
+        gradientLayer.locations = [0, 0.5, 1]
+        gradientLayer.opacity = 0
+        layer.addSublayer(gradientLayer)
+        updatePalette()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        syncAnimation(force: true)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientLayer.frame = bounds
+        CATransaction.commit()
+        syncAnimation(force: false)
+    }
+
+    private func updatePalette() {
+        // Masked by skeleton bone shapes (~12% light / ~24% dark alpha), so this
+        // translucent gleam lifts/deepens only by ~6-10% luminance without color shift.
+        let dark = isDarkAppearance || traitCollection.userInterfaceStyle == .dark
+        let sheen: UIColor = dark
+            ? UIColor.white.withAlphaComponent(0.42)
+            : UIColor.black.withAlphaComponent(0.55)
+        let edge = sheen.withAlphaComponent(0)
+        gradientLayer.colors = [edge.cgColor, sheen.cgColor, edge.cgColor]
+    }
+
+    private func syncAnimation(force: Bool) {
+        guard let window, !isReduceMotionEnabled, !UIAccessibility.isReduceMotionEnabled,
+              bounds.width > 1, bounds.height > 1 else {
+            gradientLayer.removeAnimation(forKey: Self.animationKey)
+            gradientLayer.opacity = 0
+            lastAnimatedWidth = -1
+            lastAnimatedHeight = -1
+            lastWindowMinX = .nan
+            return
+        }
+        let frameInWindow = convert(bounds, to: window)
+        let roundedX = frameInWindow.minX.rounded()
+        if !force,
+           abs(bounds.width - lastAnimatedWidth) < 0.5,
+           abs(bounds.height - lastAnimatedHeight) < 0.5,
+           roundedX == lastWindowMinX,
+           gradientLayer.animation(forKey: Self.animationKey) != nil {
+            return
+        }
+        lastAnimatedWidth = bounds.width
+        lastAnimatedHeight = bounds.height
+        lastWindowMinX = roundedX
+
+        let endpoints = ShimmerLayoutMath.unitSweepEndpoints(
+            viewFrameInContainer: frameInWindow,
+            containerWidth: window.bounds.width
+        )
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientLayer.startPoint = endpoints.startTo
+        gradientLayer.endPoint = endpoints.endTo
+        gradientLayer.opacity = 1
+        CATransaction.commit()
+
+        let keyTimes: [NSNumber] = [0, NSNumber(value: ShimmerLayoutMath.sweepFraction), 1]
+        let timingFunctions = [
+            CAMediaTimingFunction(name: .easeInEaseOut),
+            CAMediaTimingFunction(name: .linear),
+        ]
+
+        let startAnim = CAKeyframeAnimation(keyPath: "startPoint")
+        startAnim.values = [endpoints.startFrom, endpoints.startTo, endpoints.startTo]
+        startAnim.keyTimes = keyTimes
+        startAnim.timingFunctions = timingFunctions
+
+        let endAnim = CAKeyframeAnimation(keyPath: "endPoint")
+        endAnim.values = [endpoints.endFrom, endpoints.endTo, endpoints.endTo]
+        endAnim.keyTimes = keyTimes
+        endAnim.timingFunctions = timingFunctions
+
+        let group = CAAnimationGroup()
+        group.animations = [startAnim, endAnim]
+        group.duration = ShimmerLayoutMath.period
+        group.repeatCount = .infinity
+        group.isRemovedOnCompletion = false
+        group.fillMode = .both
+        let wallNow = CACurrentMediaTime()
+        let layerNow = gradientLayer.convertTime(wallNow, from: nil)
+        group.beginTime = ShimmerLayoutMath.beginTime(forWallClock: wallNow, layerTime: layerNow)
+        if #available(iOS 15.0, *) {
+            group.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        }
+        gradientLayer.removeAnimation(forKey: Self.animationKey)
+        gradientLayer.add(group, forKey: Self.animationKey)
+    }
+}
+
+private struct MonochromeShimmerOverlay: UIViewRepresentable {
+    let reduceMotion: Bool
+    let isDark: Bool
+    func makeUIView(context: Context) -> ShimmerTrackUIView {
+        let view = ShimmerTrackUIView()
+        view.isReduceMotionEnabled = reduceMotion
+        view.isDarkAppearance = isDark
+        return view
+    }
+    func updateUIView(_ view: ShimmerTrackUIView, context: Context) {
+        view.isReduceMotionEnabled = reduceMotion
+        view.isDarkAppearance = isDark
+    }
+}
+
+private struct MonochromeShimmerModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    func body(content: Content) -> some View {
+        if reduceMotion {
+            content
+        } else {
+            content.overlay {
+                MonochromeShimmerOverlay(reduceMotion: reduceMotion, isDark: colorScheme == .dark)
+                    .allowsHitTesting(false)
+                    .mask { content }
+            }
+        }
+    }
+}
+
+extension View {
+    /// Sweeps a synchronized, 120Hz GPU-driven monochrome gleam across placeholder shapes.
+    func monochromeShimmer() -> some View {
+        modifier(MonochromeShimmerModifier())
+    }
+}
+
 struct AppSkeleton: View {
     var body: some View {
         HStack(spacing: 14) {
@@ -385,7 +1062,10 @@ struct AppSkeleton: View {
             }
             Spacer()
             Capsule().fill(Color(.tertiarySystemFill)).frame(width: 74, height: 30)
-        }.padding(.vertical, 6).accessibilityHidden(true)
+        }
+        .monochromeShimmer()
+        .padding(.vertical, 6)
+        .accessibilityHidden(true)
     }
 }
 
@@ -525,8 +1205,12 @@ extension AnyTransition {
     static var statusSwap: AnyTransition {
         .asymmetric(
             insertion: .opacity.combined(with: .scale(scale: 0.92))
-                .animation(.easeOut(duration: 0.18).delay(0.1)),
-            removal: .opacity.animation(.easeIn(duration: 0.1)))
+                .animation(.easeOut(duration: 0.16).delay(0.08)),
+            removal: .opacity.animation(.easeIn(duration: 0.08)))
+    }
+
+    static func statusSwap(reduceMotion: Bool) -> AnyTransition {
+        reduceMotion ? .opacity : statusSwap
     }
 }
 
@@ -548,7 +1232,7 @@ extension View {
     }
     @ViewBuilder func compatibleSelectionFeedback<T: Equatable>(trigger: T) -> some View {
         if #available(iOS 17, *) { sensoryFeedback(.selection, trigger: trigger) }
-        else { onChange(of: trigger) { _ in UISelectionFeedbackGenerator().selectionChanged() } }
+        else { onChange(of: trigger) { _ in UX.feedback() } }
     }
     @ViewBuilder func compatiblePresentationCornerRadius(_ radius: CGFloat) -> some View {
         if #available(iOS 16.4, *) { presentationCornerRadius(radius) }
@@ -658,6 +1342,10 @@ extension View {
         else { contentTransition(.numericText()) }
     }
 
+    @ViewBuilder func compatibleNumericTransition() -> some View {
+        contentTransition(.numericText())
+    }
+
     @ViewBuilder func compatibleBounce(trigger: some Equatable) -> some View {
         if #available(iOS 17, *) { symbolEffect(.bounce, value: trigger) }
         else { self }
@@ -733,6 +1421,8 @@ struct MenuChip: UIViewRepresentable {
     struct Label: View {
         let title: String
         let symbol: String
+        var pressed = false
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
         var body: some View {
             HStack(spacing: 6) {
                 Image(systemName: symbol).font(.footnote.weight(.medium)).foregroundStyle(.secondary)
@@ -740,16 +1430,27 @@ struct MenuChip: UIViewRepresentable {
             }
             .padding(.horizontal, 14).frame(minHeight: 38)
             .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+            .opacity(pressed ? 0.72 : 1)
+            .scaleEffect(pressed && !reduceMotion ? 0.94 : 1)
+            .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.14), value: pressed)
         }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    func makeUIView(context: Context) -> UIView {
+    func makeUIView(context: Context) -> TactileContainerView {
         let host = UIHostingController(rootView: Label(title: title, symbol: symbol))
         host.view.backgroundColor = .clear
+        host.view.isUserInteractionEnabled = false
+        host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         context.coordinator.host = host
-        let view = host.view!
+        let view = TactileContainerView()
+        view.backgroundColor = .clear
+        view.onPressChange = { [weak coordinator = context.coordinator] down in
+            coordinator?.setPressed(down)
+        }
+        host.view.frame = view.bounds
+        view.addSubview(host.view)
         view.addInteraction(UIContextMenuInteraction(delegate: context.coordinator))
         view.addGestureRecognizer(UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped)))
         view.isAccessibilityElement = true
@@ -758,9 +1459,9 @@ struct MenuChip: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ view: UIView, context: Context) {
+    func updateUIView(_ view: TactileContainerView, context: Context) {
         context.coordinator.chip = self
-        context.coordinator.host?.rootView = Label(title: title, symbol: symbol)
+        context.coordinator.host?.rootView = Label(title: title, symbol: symbol, pressed: context.coordinator.pressed)
         update(view, context: context)
     }
 
@@ -773,7 +1474,7 @@ struct MenuChip: UIViewRepresentable {
         }]
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: TactileContainerView, context: Context) -> CGSize? {
         context.coordinator.host?.sizeThatFits(in: CGSize(width: proposal.width ?? .greatestFiniteMagnitude,
                                                           height: .greatestFiniteMagnitude))
     }
@@ -781,9 +1482,20 @@ struct MenuChip: UIViewRepresentable {
     final class Coordinator: NSObject, UIContextMenuInteractionDelegate {
         var chip: MenuChip
         var host: UIHostingController<Label>?
+        var pressed = false
         init(_ chip: MenuChip) { self.chip = chip }
 
-        @objc func tapped() { chip.onTap() }
+        func setPressed(_ down: Bool) {
+            guard pressed != down else { return }
+            pressed = down
+            host?.rootView = Label(title: chip.title, symbol: chip.symbol, pressed: down)
+        }
+
+        @objc func tapped() {
+            setPressed(false)
+            UX.tapSoft()
+            chip.onTap()
+        }
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
                                     configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
@@ -799,12 +1511,19 @@ struct MenuChip: UIViewRepresentable {
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
                                     previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
-            preview(interaction)
+            UIView.performWithoutAnimation { setPressed(false) }
+            return preview(interaction)
         }
 
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
                                     previewForDismissingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
             preview(interaction)
+        }
+
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                    willDisplayMenuFor configuration: UIContextMenuConfiguration,
+                                    animator: (any UIContextMenuInteractionAnimating)?) {
+            setPressed(false)
         }
 
         private func preview(_ interaction: UIContextMenuInteraction) -> UITargetedPreview? {

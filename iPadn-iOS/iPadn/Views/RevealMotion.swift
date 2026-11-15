@@ -91,9 +91,9 @@ struct ItemListRevealButtonGeometry {
     var scale: Double
     var opacity: Double
 
-    static func calculate(reveal: Double, expansion: Double, parameters p: ItemListRevealMotionParameters) -> [ItemListRevealButtonGeometry] {
+    static func calculate(reveal: Double, expansion: Double, parameters p: ItemListRevealMotionParameters, allowConsolidation: Bool = false) -> [ItemListRevealButtonGeometry] {
         let distance = max(0, reveal)
-        let consolidation = p.isDestructive ? 0 : min(1, max(0, expansion))
+        let consolidation = (p.isDestructive && !allowConsolidation) ? 0 : min(1, max(0, expansion))
         return (0..<p.count).map { index in
             let outside = p.sideInset + p.edgeInset + Double(index) * (p.buttonWidth + p.spacing)
             let end = outside + p.buttonWidth + p.edgeInset
@@ -159,7 +159,7 @@ struct ItemListRevealMotion {
     var buttonGeometry: [ItemListRevealButtonGeometry] {
         // Readiness changes the target immediately, but the primary's width and
         // content placement follow the same spring in both directions.
-        return ItemListRevealButtonGeometry.calculate(reveal: self.body.value, expansion: self.expansion.value, parameters: self.parameters)
+        return ItemListRevealButtonGeometry.calculate(reveal: self.body.value, expansion: self.expansion.value, parameters: self.parameters, allowConsolidation: self.state == .filling)
     }
 
     mutating func configure(_ parameters: ItemListRevealMotionParameters) {
@@ -257,7 +257,7 @@ struct ItemListRevealMotion {
 
     private mutating func retargetButtons() {
         self.expansion.target = self.isExpanded ? 1 : 0
-        let geometry = ItemListRevealButtonGeometry.calculate(reveal: self.body.target, expansion: self.expansion.target, parameters: self.parameters)
+        let geometry = ItemListRevealButtonGeometry.calculate(reveal: self.body.target, expansion: self.expansion.target, parameters: self.parameters, allowConsolidation: self.state == .filling)
         for i in self.scales.indices {
             self.scales[i].target = geometry[i].scale
             self.opacities[i].target = geometry[i].opacity
@@ -297,5 +297,37 @@ struct ItemListRevealMotion {
         let parameters = self.parameters
         self = Self()
         self.configure(parameters)
+    }
+}
+
+/// Telegram ItemListRevealOptionsNode playback thresholds, same pinned source
+/// as the motion model above. Once triggered, finger speed does not scrub the
+/// artwork's timeline. Hysteresis prevents jitter from restarting it.
+struct RevealIconPlayback {
+    enum Command: Equatable { case none, play, reset, finish }
+    private var triggered = false
+    private var finished = false
+
+    mutating func update(visibility: Double, reduced: Bool) -> Command {
+        let visible = visibility.isFinite ? min(1, max(0, visibility)) : 0
+        if reduced {
+            triggered = false
+            guard !finished else { return .none }
+            finished = true
+            return .finish
+        }
+        if finished {
+            finished = false
+            triggered = visible >= 0.1
+            return triggered ? .play : .reset
+        }
+        if visible <= 0.01 {
+            guard triggered else { return .none }
+            triggered = false
+            return .reset
+        }
+        guard visible >= 0.1, !triggered else { return .none }
+        triggered = true
+        return .play
     }
 }

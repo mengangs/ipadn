@@ -146,11 +146,13 @@ struct PriceHistoryChart: View {
     var body: some View {
         // Prices hold until the next change: draw steps, extended to today.
         let points = record.history + (record.history.last.map { [PricePoint(date: max(Date(), $0.date), price: $0.price)] } ?? [])
+        let peak = points.map(\.price).max() ?? 0
         Chart(Array(points.enumerated()), id: \.offset) { item in
             LineMark(x: .value(AppText.text("日期"), item.element.date), y: .value(AppText.text("价格"), item.element.price))
                 .interpolationMethod(.stepEnd)
                 .foregroundStyle(Color.accentColor)
         }
+        .chartYScale(domain: 0...(peak > 0 ? peak * 1.12 : 10))
         .chartYAxis {
             AxisMarks { value in
                 AxisGridLine()

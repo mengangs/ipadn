@@ -11,6 +11,10 @@ struct ActionConfirmationView: View {
     let action: () -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
+    private var compactDetentHeight: CGFloat {
+        if showsCancel { return message != nil ? 296 : 248 }
+        return message != nil ? 248 : 200
+    }
     var body: some View {
         Group {
             if typeSize.isAccessibilitySize {
@@ -18,11 +22,11 @@ struct ActionConfirmationView: View {
                     .accessibilityIdentifier("confirmation.scroll")
             } else { confirmation }
         }
-        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.height(showsCancel ? 320 : 280), .large])
+        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.height(compactDetentHeight), .large])
         .presentationDragIndicator(.visible).compatiblePresentationCornerRadius(28)
     }
     private var confirmation: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 18) {
             Text(title).font(.title3.weight(.semibold)).accessibilityAddTraits(.isHeader).accessibilityIdentifier("confirmation.title")
             if let message { Text(message).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("confirmation.message") }
             VStack(spacing: 10) {

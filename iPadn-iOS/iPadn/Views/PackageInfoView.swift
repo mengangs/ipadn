@@ -16,8 +16,16 @@ struct PackageInfoView: View {
             if let info {
                 Section("概览") {
                     row("Bundle ID", info.bundleID, monospaced: true)
-                    row("版本", info.version)
+                    if let marketing = job?.resolvedMarketingVersion, !marketing.isEmpty, marketing != info.version {
+                        row("商店版本", marketing)
+                        row("包内版本", info.version)
+                    } else {
+                        row("版本", info.version)
+                    }
                     row("构建号", info.build)
+                    if let extID = job?.resolvedExternalVersionID {
+                        row("商店版本 ID", extID, monospaced: true)
+                    }
                     row("最低系统", info.minimumOS.isEmpty ? "" : "iOS " + info.minimumOS)
                     row("适用设备", info.devices)
                     if !info.languages.isEmpty {

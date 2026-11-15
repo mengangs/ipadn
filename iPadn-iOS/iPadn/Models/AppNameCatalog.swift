@@ -35,6 +35,21 @@ enum AppNameCatalog {
             }
         }.map(\.app))
     }
+
+    static func searchWithAliases(_ text: String, platform: AppPlatform, entries: [AppNameEntry]) -> [(app: StoreApp, aliases: [String])] {
+        let term = AppSearchIndex.normalized(text)
+        guard !term.isEmpty else { return [] }
+        var seen = Set<String>()
+        return entries.compactMap { entry in
+            guard entry.platform == platform,
+                  !entry.id.isEmpty, entry.id.allSatisfy({ $0.isASCII && $0.isNumber }),
+                  ([entry.name] + entry.aliases + [entry.id]).contains(where: {
+                      AppSearchIndex.normalized($0).contains(term)
+                  }),
+                  seen.insert(entry.id).inserted else { return nil }
+            return (entry.app, entry.aliases)
+        }
+    }
     static func updated() async throws -> [AppNameEntry] {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 10

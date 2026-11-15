@@ -19,6 +19,46 @@ final class InteractionTests: XCTestCase {
         link.tap()
     }
 
+    func testTranslationSettingsAreOptInAndDoNotDownloadOnEnable() throws {
+        guard #available(iOS 18.0, *) else { throw XCTSkip("Direct translation requires iOS 18") }
+        let app = Self.launchableApp()
+        app.launchArguments += ["--visual-preview", "--accounts"]
+        func switchControl(for toggle: XCUIElement) -> XCUIElement {
+            let inner = toggle.switches.firstMatch
+            return inner.exists ? inner : toggle
+        }
+        func openTranslationGroup() {
+            let settings = app.buttons["accounts.settings"]
+            XCTAssertTrue(settings.waitForExistence(timeout: 10)); settings.tap()
+            XCTAssertFalse(app.buttons["settings.page.translation"].exists, "Translation must not add another settings page")
+            openSettingsPage("appearance", in: app)
+            let toggle = app.switches["settings.translation.direct"]
+            for _ in 0..<5 { if toggle.exists && switchControl(for: toggle).isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+        }
+        app.launch()
+        openTranslationGroup()
+        let direct = app.switches["settings.translation.direct"]
+        if direct.value as? String == "1" { switchControl(for: direct).tap() }
+        XCTAssertFalse(app.buttons["settings.translation.prepare"].exists)
+        switchControl(for: direct).tap()
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: direct)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 3), .completed, "Tapping the switch control must enable direct translation")
+        let status = app.descendants(matching: .any)["settings.translation.status"].firstMatch
+        for _ in 0..<4 { if status.exists && status.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(status.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["所需下载"].exists, "Enabling only checks availability; download requires an explicit tap")
+        for _ in 0..<4 { if switchControl(for: direct).isHittable { break }; app.swipeDown() }
+        switchControl(for: direct).tap()
+        let disabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: direct)
+        XCTAssertEqual(XCTWaiter.wait(for: [disabled], timeout: 3), .completed, "Tapping the switch control must disable direct translation")
+        app.terminate()
+        app.launch()
+        openTranslationGroup()
+        XCTAssertEqual(direct.value as? String, "0", "The user's mode choice must persist")
+        XCTAssertFalse(app.buttons["settings.translation.prepare"].exists)
+    }
+
     func testAppIDIsAlignedWithVersionInDetailHeader() {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail"]
@@ -387,6 +427,16 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(delete.waitForExistence(timeout: 5))
         attach("10-download-swipe", app: app)
         delete.tap()
+        // Swipe removes immediately and offers Undo, without confirmation.
+        let undo = app.buttons["notice.undo"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 5))
+        undo.tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["confirmation.confirm"].exists)
+        row.press(forDuration: 0.7)
+        let longDelete = app.buttons["删除任务及文件"].firstMatch
+        XCTAssertTrue(longDelete.waitForExistence(timeout: 5))
+        longDelete.tap()
         let cancel = app.buttons["confirmation.cancel"]
         XCTAssertTrue(cancel.waitForExistence(timeout: 5))
         let confirm = app.buttons["confirmation.confirm"]
@@ -397,7 +447,7 @@ final class InteractionTests: XCTestCase {
         attach("12-delete-confirmation", app: app)
         cancel.tap()
         XCTAssertTrue(row.waitForExistence(timeout: 5))
-        revealActions(on: row); delete.tap()
+        row.press(forDuration: 0.7); longDelete.tap()
         XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
         let notice = app.staticTexts["已删除 1 项任务与文件"]
         XCTAssertTrue(notice.waitForExistence(timeout: 5))
@@ -411,11 +461,17 @@ final class InteractionTests: XCTestCase {
         app.launchArguments = Self.languageArguments + ["--visual-preview", "--history-wrap-preview"]
         app.launch()
         let first = app.buttons["history.效率工具"]
-        let lower = app.buttons["history.Apple Music"]
+        let last = app.buttons["history.@"]
         XCTAssertTrue(first.waitForExistence(timeout: 10))
-        XCTAssertTrue(lower.waitForExistence(timeout: 5))
-        let upperFrame = first.frame, lowerFrame = lower.frame
-        XCTAssertGreaterThan(lowerFrame.minY, upperFrame.maxY, "The fixture must wrap to exercise both grouped-cell corners")
+        XCTAssertTrue(last.waitForExistence(timeout: 5))
+        let upperFrame = first.frame
+        let wrappedCandidates = ["history.照片编辑", "history.Apple Music", "history.@"].map { app.buttons[$0] }
+        guard let lower = wrappedCandidates.first(where: {
+            $0.exists && $0.frame.minY > upperFrame.maxY && abs($0.frame.minX - upperFrame.minX) < 2
+        }) else {
+            return XCTFail("The fixture must wrap to exercise both grouped-cell corners")
+        }
+        let lowerFrame = lower.frame
         let screenshot = app.screenshot()
         for (frame, fraction) in [(upperFrame, CGFloat(0.22)), (lowerFrame, CGFloat(0.78))] {
             // Just inside each capsule arc, but outside the old cell mask.
@@ -571,21 +627,40 @@ final class InteractionTests: XCTestCase {
         pickerCancel.tap()
         XCTAssertTrue(add.waitForExistence(timeout: 5))
     }
-    func testHistoryDeletionCanBeUndone() {
+    func testHistoryDeletionHasNoUndoCountdown() {
         let app = Self.launchableApp()
         app.launchArguments = Self.languageArguments + ["--visual-preview"]
         app.launch()
         let history = app.buttons["history.效率工具"]
         XCTAssertTrue(history.waitForExistence(timeout: 10))
         history.press(forDuration: 1.0)
-        XCTAssertTrue(app.buttons["删除"].firstMatch.waitForExistence(timeout: 5))
-        app.buttons["删除"].firstMatch.tap()
-        // Undo expires after five seconds. Snapshotting the whole history
-        // before tapping can consume that window on a busy simulator.
-        // tap() already resolves/waits for the button; restoration is checked
-        // afterwards, without changing the app's real expiry duration.
-        app.buttons["notice.undo"].tap()
-        XCTAssertTrue(history.waitForExistence(timeout: 5))
+        let delete = app.buttons["删除"].firstMatch
+        XCTAssertTrue(delete.waitForExistence(timeout: 5))
+        delete.tap()
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: history)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 5), .completed)
+        XCTAssertFalse(app.buttons["notice.undo"].exists)
+    }
+
+    func testFullDownloadSwipeDeletesWithoutConfirmationAndUndoRestores() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--downloads", "--stress-records=100"]
+        app.launch()
+        let row = app.descendants(matching: .any)["download.task.stress-0.paused"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: row.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)))
+        let undo = app.buttons["notice.undo"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 5))
+        undo.tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["confirmation.confirm"].exists)
+        // Existence alone misses a stale transparent window overlay: prove a
+        // real toolbar tap still reaches the restored list after Undo.
+        app.buttons["downloads.edit"].tap()
+        XCTAssertTrue(app.buttons["downloads.select-all"].waitForExistence(timeout: 5))
+        app.buttons["downloads.edit"].tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
     }
 
     func testCompactNoticeAndAccessibleConfirmation() {
@@ -756,6 +831,25 @@ final class InteractionTests: XCTestCase {
         XCTAssertTrue(details.waitForExistence(timeout: 5))
         details.tap()
         XCTAssertTrue(app.navigationBars["任务详情"].waitForExistence(timeout: 5))
+    }
+
+    func testPrioritizeDelistedSearchToggleDefaultOnAndTogglesCleanly() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--accounts"]
+        app.launch()
+        let settings = app.buttons["accounts.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10)); settings.tap()
+        openSettingsPage("downloads", in: app)
+        let toggle = app.switches["settings.prioritize-delisted-search"]
+        for _ in 0..<5 { if toggle.exists && toggle.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+        XCTAssertEqual(toggle.value as? String, "1", "Prioritize delisted apps toggle must default to ON")
+        let target = toggle.switches.firstMatch.exists ? toggle.switches.firstMatch : toggle
+        target.tap()
+        XCTAssertEqual(toggle.value as? String, "0")
+        target.tap()
+        XCTAssertEqual(toggle.value as? String, "1")
+        app.terminate()
     }
 
     private func revealActions(on element: XCUIElement) {

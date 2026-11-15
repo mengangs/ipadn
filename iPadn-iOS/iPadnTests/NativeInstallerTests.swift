@@ -102,4 +102,69 @@ final class NativeInstallerTests: XCTestCase {
         XCTAssertEqual(restored.usesNativeInstallation, NativeInstaller.isAvailable)
         XCTAssertEqual(restored.installationMethodTitle, NativeInstaller.isAvailable ? "原生安装" : "本机证书")
     }
+
+    @MainActor
+    func testOnDevicePairingPrefersLiveActivityOverSystemNotificationsAndFormatsCode() {
+        XCTAssertFalse(OnDevicePairing.shouldSendFallbackNotification(hasActiveLiveActivity: true))
+        XCTAssertTrue(OnDevicePairing.shouldSendFallbackNotification(hasActiveLiveActivity: false))
+        XCTAssertEqual(OnDevicePairing.formattedCode("482913"), "482 913")
+        XCTAssertEqual(OnDevicePairing.formattedCode("12345"), "12345")
+
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        for step in 1...3 {
+            XCTAssertEqual(
+                OnDevicePairing.activityStaleDate(forStep: step, now: now),
+                now.addingTimeInterval(OnDevicePairing.activityLifetime)
+            )
+        }
+        XCTAssertNil(OnDevicePairing.activityStaleDate(forStep: 4, now: now))
+        XCTAssertNil(OnDevicePairing.activityStaleDate(forStep: 0, now: now))
+
+        if #available(iOS 16.2, *) {
+            XCTAssertNil(OnDevicePairing.alertConfiguration(step: 1))
+            XCTAssertNotNil(OnDevicePairing.alertConfiguration(step: 2))
+            XCTAssertNotNil(OnDevicePairing.alertConfiguration(step: 3, code: "482913"))
+            XCTAssertNotNil(OnDevicePairing.alertConfiguration(step: 4))
+            XCTAssertNotNil(OnDevicePairing.alertConfiguration(step: 0, message: "timeout"))
+        }
+    }
+
+    func testPhaseIsCancellableDistinguishesTransferFromSystemInstall() {
+        XCTAssertTrue(NativeInstaller.Phase.connecting.isCancellable)
+        XCTAssertTrue(NativeInstaller.Phase.uploading(0).isCancellable)
+        XCTAssertTrue(NativeInstaller.Phase.uploading(0.99).isCancellable)
+        XCTAssertFalse(NativeInstaller.Phase.installing(0).isCancellable)
+        XCTAssertFalse(NativeInstaller.Phase.installing(0.5).isCancellable)
+    }
+
+    func testRemotePairingPortCacheRespectsDiscoveryAndFallbackTTLs() {
+        let cache = RemotePairingPort.Cache(discoveryTTL: 60, fallbackTTL: 8)
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+
+        cache.store(port: 54321, fromDiscovery: true, now: t0)
+        XCTAssertEqual(cache.freshEntry(now: t0.addingTimeInterval(59))?.port, 54321)
+        XCTAssertNil(cache.freshEntry(now: t0.addingTimeInterval(60)))
+
+        cache.store(port: 62078, fromDiscovery: false, now: t0)
+        XCTAssertEqual(cache.freshEntry(now: t0.addingTimeInterval(7))?.port, 62078)
+        XCTAssertNil(cache.freshEntry(now: t0.addingTimeInterval(8)))
+
+        cache.store(port: 54321, fromDiscovery: true, now: t0)
+        cache.invalidate()
+        XCTAssertNil(cache.freshEntry(now: t0))
+    }
+
+    func testNativeInstallerIdleCancelAndUnavailableBlockingRunnerDoesNotDeadlock() async {
+        // Calling cancel() when no native install is active must be an idempotent no-op.
+        NativeInstaller.cancel()
+
+        if !NativeInstaller.isAvailable {
+            do {
+                _ = try await NativeInstaller.lookup(bundleID: "com.example.missing")
+                XCTFail("Unavailable NativeInstaller component must throw")
+            } catch {
+                XCTAssertFalse(error.localizedDescription.isEmpty)
+            }
+        }
+    }
 }

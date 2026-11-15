@@ -77,7 +77,7 @@ struct DownloadAppIntent: AppIntent {
         guard store.apple.active != nil else { throw ToolError.message(AppText.text("请先在「账号」中登录 Apple 账号")) }
         let found = try await storeApp(app)
         await store.downloads.loaded()
-        try await store.startDownload(app: found.app, versionID: found.versionID)
+        try await store.startDownload(app: found.app, versionID: found.versionID, switchToDownloadsTab: true)
         return .result()
     }
 }

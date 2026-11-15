@@ -214,6 +214,7 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(notes["1.2026.272"]?.date, Date(timeIntervalSince1970: 1_791_310_021))
         XCTAssertEqual(notes["8.3.1"]?.text, "新增评分来源")
         XCTAssertEqual(ReleaseNotesService.version(in: "Version 2.0"), "2.0")
+        XCTAssertEqual(ReleaseNotesService.version(in: "バージョン4.8"), "4.8")
         XCTAssertNil(ReleaseNotesService.version(in: "What’s New"))
         XCTAssertTrue(ReleaseNotesService.parse("<html></html>").isEmpty)
     }
@@ -1631,6 +1632,21 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try DMAP.walk(payload) { _ in })
     }
 
+    func testDirectTranslationIsOptInAndMigratesExistingSettings() throws {
+        XCTAssertFalse(ToolSettings().directTranslation)
+        for json in ["{}", #"{"appearance":"dark","appearanceSchema":2,"wifiOnlyDownloads":true}"#] {
+            XCTAssertFalse(try JSONDecoder().decode(ToolSettings.self, from: Data(json.utf8)).directTranslation)
+        }
+        for enabled in [false, true] {
+            var settings = ToolSettings()
+            settings.directTranslation = enabled
+            let data = try JSONEncoder().encode(settings)
+            XCTAssertEqual(try JSONDecoder().decode(ToolSettings.self, from: data), settings)
+        }
+        let saved = try JSONDecoder().decode(ToolSettings.self, from: Data(#"{"directTranslation":true}"#.utf8))
+        XCTAssertTrue(saved.directTranslation)
+    }
+
     func testJobAndSettingsPersistenceRoundTrip() throws {
         let app = StoreApp(id: "1", name: "Test", bundleID: "test.bundle", version: "1.0")
         let job = DownloadJob(app: app, status: .paused, downloaded: 20, expected: 100)
@@ -2127,5 +2143,750 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(StoreService.developerApps(rows, excluding: "1", platform: .iOS).map(\.id), ["2", "3"])
         XCTAssertEqual(StoreService.developerApps(rows, excluding: "1", platform: .tvOS).map(\.id), ["3"])
     }
+
+    func testVersionServicePrefersDottedVersionsAndStripsNonVersionText() {
+        XCTAssertEqual(VersionService.sanitizedVersion("  14.2.1 "), "14.2.1")
+        XCTAssertEqual(VersionService.sanitizedVersion("4800"), "4800", "Numeric integer build strings must not have synthetic dots inserted")
+        XCTAssertEqual(VersionService.sanitizedVersion("845839234", rejectingID: "845839234"), AppVersion.unknown)
+        XCTAssertEqual(VersionService.sanitizedVersion("3.5.9", rejectingID: "845839234"), "3.5.9")
+        XCTAssertEqual(VersionService.sanitizedVersion("aktualisiert"), AppVersion.unknown)
+        XCTAssertEqual(VersionService.sanitizedVersion("enthält einige Leistungsverbesserungen"), AppVersion.unknown)
+        XCTAssertEqual(VersionService.sanitizedVersion(""), AppVersion.unknown)
+
+        XCTAssertGreaterThan(VersionService.versionPreference("117.0"), VersionService.versionPreference("2817"))
+        XCTAssertGreaterThan(VersionService.versionPreference("2817"), VersionService.versionPreference(AppVersion.unknown))
+
+        // Higher-tier dotted version overrides dotless build integer regardless of source order.
+        let integerFirst = [
+            AppVersion(id: "884016839", version: "2817", source: "iosdump"),
+            AppVersion(id: "884016840", version: "4800", source: "iosdump"),
+            AppVersion(id: "884016841", version: "aktualisiert", source: "Timbrd")
+        ]
+        let dottedSecond = [
+            AppVersion(id: "884016839", version: "117.0", source: "Timbrd")
+        ]
+        let merged = VersionService.mergeSourceResults([integerFirst, dottedSecond])
+        XCTAssertEqual(merged.map(\.id), ["884016839", "884016840", "884016841"])
+        XCTAssertEqual(merged[0].version, "117.0")
+        XCTAssertEqual(merged[1].version, "4800", "Fallback dotless integer stays intact when no dotted candidate exists")
+        XCTAssertEqual(merged[2].version, AppVersion.unknown)
+    }
+
+    func testToolSettingsDecodesShowHistoryIconsWithDefaultTrue() throws {
+        let legacy = try JSONDecoder().decode(ToolSettings.self, from: Data(#"{"showDiscover":false}"#.utf8))
+        XCTAssertTrue(legacy.showHistoryIcons)
+
+        var settings = ToolSettings()
+        settings.showHistoryIcons = false
+        let roundTrip = try JSONDecoder().decode(ToolSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertFalse(roundTrip.showHistoryIcons)
+    }
+
+    func testVersionMetadataStorePreservesCachedIconWhenLoadingWithoutIcons() async throws {
+        let store = VersionMetadataStore()
+        let key = "icon-preserve-" + UUID().uuidString
+        let fileURL = VersionMetadataStore.iconURL(key)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        try await store.saveIcon(Data([137, 80, 78, 71]), key: key)
+        _ = try await store.load(key, requiringPackageSize: true, requiringIcon: true) {
+            VersionMetadata(version: "2.1.0", released: nil, packageSize: 500, iconAvailable: true)
+        }
+        // Force a metadata refresh without icons (e.g. toggling showHistoryIcons OFF).
+        let updated = try await store.load(key, requiringPackageSize: false, requiringIcon: false) {
+            VersionMetadata(version: "2.1.0", released: nil, packageSize: 500, iconAvailable: nil)
+        }
+        XCTAssertEqual(updated.iconAvailable, true)
+        let cachedBytes = await store.icon(key)
+        XCTAssertEqual(cachedBytes, Data([137, 80, 78, 71]))
+    }
+
+    func testDownloadActivityStateCalculationThrottlingAndSpeedDecay() throws {
+        if #available(iOS 16.1, *) {
+            let now = Date(timeIntervalSince1970: 1_700_000_000)
+            let running = DownloadJob(app: StoreApp(id: "1", name: "App One", version: "1.0", size: 20_000_000),
+                                      status: .running, downloaded: 5_000_000, expected: 20_000_000)
+            let queued = DownloadJob(app: StoreApp(id: "2", name: "App Two", version: "1.0", size: 10_000_000),
+                                     status: .queued, downloaded: 0, expected: 10_000_000)
+            let state = DownloadActivity.computeState(
+                active: [running, queued],
+                progress: { ($0.downloaded, $0.expected) },
+                rate: { $0 == running.id ? 2_500_000 : 9_999_999 },
+                now: now
+            )
+            XCTAssertEqual(state.phase, 0)
+            XCTAssertEqual(state.count, 2)
+            XCTAssertEqual(state.written, 5_000_000, "Only running cohort bytes contribute to phase 0")
+            XCTAssertEqual(state.speed, 2_500_000)
+            XCTAssertNotNil(state.estimatedEnd)
+            XCTAssertEqual(state.estimatedEnd!.timeIntervalSince(now), 6.0, accuracy: 0.05)
+
+            let paused = DownloadActivity.computePausedState(
+                paused: [running],
+                progress: { _ in (5_000_000, 20_000_000) },
+                now: now
+            )
+            XCTAssertEqual(paused.phase, 7)
+            XCTAssertEqual(paused.speed, 0)
+            XCTAssertNil(paused.estimatedEnd)
+
+            // Backwards-compatible ContentState decoding without speed key.
+            let legacyJSON = #"{"phase":0,"name":"Legacy","count":1,"written":10,"expected":100,"updated":1700000000}"#
+            let decoded = try JSONDecoder().decode(DownloadActivityAttributes.ContentState.self, from: Data(legacyJSON.utf8))
+            XCTAssertEqual(decoded.speed, 0)
+
+            // Throttle sub-second progress updates while pushing immediate phase/ETA changes.
+            var moved = state
+            moved.written += 4096
+            XCTAssertFalse(DownloadActivity.shouldSend(moved, after: state, elapsed: 0.4))
+            XCTAssertTrue(DownloadActivity.shouldSend(moved, after: state, elapsed: 1.0))
+            XCTAssertTrue(DownloadActivity.shouldSend(paused, after: state, elapsed: 0.1))
+
+            var faster = state
+            faster.speed = 4_000_000
+            faster.estimatedEnd = now.addingTimeInterval(3.75)
+            XCTAssertFalse(DownloadActivity.shouldSend(faster, after: state, elapsed: 0.5))
+            XCTAssertTrue(DownloadActivity.shouldSend(faster, after: state, elapsed: 1.0))
+        }
+    }
+
+    func testOPlayerVersionPrecedenceAndReconciliationKeepTrustedVersions() async throws {
+        // Real-world OPlayer Lite cases: 857150582 ("4.8" vs "4800") and 853114367 ("4.7.2" vs "4720").
+        XCTAssertGreaterThan(VersionService.versionPreference("4.8", rejectingID: "857150582"),
+                             VersionService.versionPreference("4800", rejectingID: "857150582"))
+        XCTAssertGreaterThan(VersionService.versionPreference("4.7.2", rejectingID: "853114367"),
+                             VersionService.versionPreference("4720", rejectingID: "853114367"))
+        XCTAssertEqual(VersionService.versionPreference("4800."), 1)
+        XCTAssertEqual(VersionService.preferredVersion("4800", over: "4.8", rejectingID: "857150582"), "4.8")
+        XCTAssertEqual(VersionService.preferredVersion("4.8", over: "4800", rejectingID: "857150582"), "4.8")
+        XCTAssertEqual(VersionService.bestVersion(["4720", "未知版本", "4.7.2"], rejectingID: "853114367"), "4.7.2")
+        XCTAssertEqual(VersionService.bestVersion(["4100", AppVersion.unknown], rejectingID: "834116228"), "4100",
+                       "Dotless versions remain fallback when no dotted version exists")
+
+        // Reading an IPA whose Info.plist carries "4800" must not downgrade Apple's ticket version "4.8".
+        let ipa = FileManager.default.temporaryDirectory.appendingPathComponent("reconcile-" + UUID().uuidString + ".ipa")
+        defer { try? FileManager.default.removeItem(at: ipa) }
+        let archive = try Archive(url: ipa, accessMode: .create)
+        let plistData = try HTTPClient.encodePlist(["CFBundleShortVersionString": "4800"])
+        try archive.addEntry(with: "Payload/OPlayerLite.app/Info.plist", type: .file, uncompressedSize: Int64(plistData.count),
+                             compressionMethod: .deflate, provider: { pos, len in plistData.subdata(in: Int(pos)..<Int(pos) + len) })
+        let reader = MemoryRangeReader(data: try Data(contentsOf: ipa))
+
+        let raw = try await RemoteZip.versionResources(reader, includingIcon: false)
+        XCTAssertEqual(raw.metadata.version, "4800")
+
+        let streamedVersions = LockedList<String>()
+        let reconciled = try await RemoteZip.versionResources(reader, includingIcon: false, preferredVersion: "4.8") { partial in
+            streamedVersions.append(partial.version)
+        }
+        XCTAssertEqual(streamedVersions.values, ["4.8"])
+        XCTAssertEqual(reconciled.metadata.version, "4.8")
+
+        // A dotless record without ticketChecked re-checks Apple ticket metadata once, then stays cached.
+        let store = VersionMetadataStore()
+        let key = "oplayer-" + UUID().uuidString
+        let unverifiedCalls = LockedCount()
+        _ = try await store.load(key, requiringPackageSize: true, requiringIcon: false) {
+            unverifiedCalls.increment()
+            return VersionMetadata(version: "4800", released: nil, packageSize: 107_223_040, iconAvailable: false, ticketChecked: nil)
+        }
+        XCTAssertEqual(unverifiedCalls.value, 1)
+
+        // Because ticketChecked was nil and version was dotless, one verification runs and upgrades to "4.8".
+        let upgraded = try await store.load(key, requiringPackageSize: true, requiringIcon: false) {
+            unverifiedCalls.increment()
+            return VersionMetadata(version: "4.8", released: nil, packageSize: 107_223_040, iconAvailable: false, ticketChecked: true)
+        }
+        XCTAssertEqual(upgraded.version, "4.8")
+        XCTAssertEqual(unverifiedCalls.value, 2)
+
+        // Subsequent reads serve the settled "4.8" from cache without another network check.
+        let cachedHit = try await store.load(key, requiringPackageSize: true, requiringIcon: false) {
+            unverifiedCalls.increment()
+            return VersionMetadata(version: "9.9.9", released: nil, packageSize: 1, iconAvailable: false, ticketChecked: true)
+        }
+        XCTAssertEqual(cachedHit.version, "4.8")
+        XCTAssertEqual(unverifiedCalls.value, 2)
+    }
+
+    func testToolSettingsDecodesPrioritizeDelistedSearchResultsWithDefaultTrue() throws {
+        let defaults = ToolSettings()
+        XCTAssertTrue(defaults.prioritizeDelistedSearchResults)
+
+        let legacy = try JSONDecoder().decode(ToolSettings.self, from: Data(#"{"searchLimit":50}"#.utf8))
+        XCTAssertTrue(legacy.prioritizeDelistedSearchResults)
+
+        var disabled = ToolSettings()
+        disabled.prioritizeDelistedSearchResults = false
+        let roundTrip = try JSONDecoder().decode(ToolSettings.self, from: JSONEncoder().encode(disabled))
+        XCTAssertFalse(roundTrip.prioritizeDelistedSearchResults)
+    }
+
+    func testDelistedSearchPrioritizationPreservesRelevanceAndRejectsFalsePositives() async {
+        // 1. Confirmed delisted exact match promotes ahead of live partial matches when enabled.
+        var forwardDelisted = StoreApp(id: "6503940939", name: "Forward", price: "")
+        forwardDelisted.delisted = true
+        let liveRemote = [
+            StoreApp(id: "1", name: "Forward Mail", price: ""),
+            StoreApp(id: "2", name: "Port Forward Utility", price: "")
+        ]
+        let promoted = AppSearchRanking.arrange(
+            remote: liveRemote,
+            local: [forwardDelisted],
+            aliasesByID: ["6503940939": ["Forward - AI Media Hub", "新视界"]],
+            query: "Forward",
+            prioritizeDelisted: true
+        )
+        XCTAssertEqual(promoted.results.map(\.id), ["6503940939", "1", "2"])
+        XCTAssertTrue(promoted.localResults.isEmpty)
+
+        // Turning the switch off restores the original live results order and separate local group.
+        let original = AppSearchRanking.arrange(
+            remote: liveRemote,
+            local: [forwardDelisted],
+            aliasesByID: ["6503940939": ["Forward - AI Media Hub", "新视界"]],
+            query: "Forward",
+            prioritizeDelisted: false
+        )
+        XCTAssertEqual(original.results.map(\.id), ["1", "2"])
+        XCTAssertEqual(original.localResults.map(\.id), ["6503940939"])
+
+        // 2. Weak substring delisted match stays below stronger exact live matches while rising above weak live ones.
+        var helperDelisted = StoreApp(id: "9001", name: "WeChat Backup Helper", price: "")
+        helperDelisted.delisted = true
+        let wechatRemote = [
+            StoreApp(id: "414478124", name: "WeChat", price: ""),
+            StoreApp(id: "414478125", name: "My WeChat Theme Pack", price: "")
+        ]
+        let ranked = AppSearchRanking.arrange(
+            remote: wechatRemote,
+            local: [helperDelisted],
+            query: "WeChat",
+            prioritizeDelisted: true
+        )
+        XCTAssertEqual(ranked.results.map(\.id), ["414478124", "9001", "414478125"])
+
+        // 3. Verification rejects region-limited apps and transient request failures as non-delisted.
+        let context = StoreContext(country: "CN", platform: .iOS)
+        let regionLimitedStatuses = await StoreService.verifyDelistedStatuses(
+            ids: ["932747118", "6503940939"],
+            store: context,
+            accountCountry: "CN"
+        ) { _, country in
+            if country == "US" {
+                return ["932747118": StoreApp(id: "932747118", name: "Shadowrocket", price: "$2.99")]
+            }
+            return [:]
+        }
+        XCTAssertEqual(regionLimitedStatuses["932747118"], .listed, "Available in US storefront must never be marked delisted")
+        XCTAssertEqual(regionLimitedStatuses["6503940939"], .delisted)
+
+        let errorStatuses = await StoreService.verifyDelistedStatuses(
+            ids: ["6503940939"],
+            store: context,
+            accountCountry: "CN"
+        ) { _, country in
+            if country == "JP" { throw HTTPStatusError(code: 503) }
+            return [:]
+        }
+        XCTAssertEqual(errorStatuses["6503940939"], .inconclusive, "Persistent HTTP failures must never mark an app delisted")
+
+        // 4. Single-storefront transient failure recovers cleanly on retry without masking delisted matches.
+        let jpAttempts = LockedCount()
+        let recoveredStatuses = await StoreService.verifyDelistedStatuses(
+            ids: ["6503940939"],
+            store: context,
+            accountCountry: "CN"
+        ) { _, country in
+            if country == "JP", jpAttempts.next() == 1 { throw HTTPStatusError(code: 503) }
+            return [:]
+        }
+        XCTAssertEqual(jpAttempts.value, 2)
+        XCTAssertEqual(recoveredStatuses["6503940939"], .delisted)
+    }
+
+    func testPairingBadgeColorsMeetContrastInLightAndDarkModes() throws {
+        func relativeLuminance(_ color: UIColor, traits: UITraitCollection, over backdrop: UIColor? = nil) -> CGFloat {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            XCTAssertTrue(color.resolvedColor(with: traits).getRed(&r, green: &g, blue: &b, alpha: &a))
+            if let backdrop, a < 1 {
+                var br: CGFloat = 0, bg: CGFloat = 0, bb: CGFloat = 0, ba: CGFloat = 0
+                XCTAssertTrue(backdrop.resolvedColor(with: traits).getRed(&br, green: &bg, blue: &bb, alpha: &ba))
+                r = r * a + br * (1 - a)
+                g = g * a + bg * (1 - a)
+                b = b * a + bb * (1 - a)
+            }
+            func linear(_ c: CGFloat) -> CGFloat { c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+            return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+        }
+        func contrast(_ a: CGFloat, _ b: CGFloat) -> CGFloat {
+            (max(a, b) + 0.05) / (min(a, b) + 0.05)
+        }
+        let accent = try XCTUnwrap(UIColor(named: "AccentColor", in: Bundle(for: ToolStore.self), compatibleWith: nil) ?? UIColor(named: "AccentColor"))
+        let onAccent = UIColor.systemBackground
+        let groupedBg = UIColor.secondarySystemGroupedBackground
+        let inactiveFill = UIColor.tertiarySystemFill
+
+        for style in [UIUserInterfaceStyle.light, UIUserInterfaceStyle.dark] {
+            let traits = UITraitCollection(userInterfaceStyle: style)
+            let inactiveText = UIColor.label.resolvedColor(with: traits).withAlphaComponent(0.75)
+            let activeRatio = contrast(
+                relativeLuminance(onAccent, traits: traits),
+                relativeLuminance(accent, traits: traits)
+            )
+            XCTAssertGreaterThanOrEqual(activeRatio, 7.0, "Active pairing step badge must stay high-contrast in style \(style.rawValue)")
+
+            let inactiveBgLum = relativeLuminance(inactiveFill, traits: traits, over: groupedBg)
+            let inactiveFgLum = relativeLuminance(inactiveText, traits: traits, over: groupedBg)
+            let inactiveRatio = contrast(inactiveFgLum, inactiveBgLum)
+            XCTAssertGreaterThanOrEqual(inactiveRatio, 4.5, "Inactive pairing step badge must meet WCAG AA contrast in style \(style.rawValue)")
+        }
+    }
+
+    func testVersionMetadataStoreUpgradesCachedDotlessEntriesWithKnownVersion() async throws {
+        let store = VersionMetadataStore()
+        let key48 = "iOS|385907472-" + UUID().uuidString + "|857150582"
+        let key472 = "iOS|385907472-" + UUID().uuidString + "|853114367"
+
+        // Seed a dotless settled record (e.g. from an earlier query without knownVersion).
+        _ = try await store.load(key48, requiringPackageSize: true, requiringIcon: false) {
+            VersionMetadata(version: "4800", released: nil, packageSize: 65_000_000, iconAvailable: false, ticketChecked: true)
+        }
+        let upgradedHit = try await store.load(key48, requiringPackageSize: true, requiringIcon: false, knownVersion: "4.8") {
+            XCTFail("Upgrading settled dotless cache with knownVersion must not re-fetch")
+            return VersionMetadata(version: "4800", released: nil, packageSize: 65_000_000)
+        }
+        XCTAssertEqual(upgradedHit.version, "4.8")
+        let cachedAfterHit = await store.cached(key48)
+        XCTAssertEqual(cachedAfterHit?.version, "4.8")
+
+        // Version ID must never replace an already resolved version number.
+        let preserved = try await store.load(key48, requiringPackageSize: false, requiringIcon: false, knownVersion: "857150582") {
+            XCTFail("Version ID fallback must not re-fetch")
+            return VersionMetadata(version: "857150582", released: nil)
+        }
+        XCTAssertEqual(preserved.version, "4.8")
+
+        // When a fetch still returns a dotless build string, knownVersion takes precedence.
+        let resolvedFetch = try await store.load(key472, requiringPackageSize: true, requiringIcon: false, knownVersion: "4.7.2") {
+            VersionMetadata(version: "4720", released: nil, packageSize: 60_900_000, iconAvailable: false, ticketChecked: true)
+        }
+        XCTAssertEqual(resolvedFetch.version, "4.7.2")
+
+        try await store.clearCache()
+        let cleared48 = await store.cached(key48)
+        let cleared472 = await store.cached(key472)
+        XCTAssertNil(cleared48)
+        XCTAssertNil(cleared472)
+    }
+
+    func testReconcileTicketAndRemoteZipCFBundleVersionFallback() async throws {
+        // Dotted marketing version must remain preferred over dotless build number.
+        XCTAssertEqual(VersionService.reconcileTicketVersion(shortVersion: "2.23.1", buildVersion: "4687"), "2.23.1")
+        // Empty CFBundleShortVersionString + dotted CFBundleVersion must recover the dotted build version.
+        XCTAssertEqual(VersionService.reconcileTicketVersion(shortVersion: "", buildVersion: "2.0.18"), "2.0.18")
+        // Dotless stale ticket short version yields to dotted build version.
+        XCTAssertEqual(VersionService.reconcileTicketVersion(shortVersion: "4800", buildVersion: "2.0.18"), "2.0.18")
+        // Equal dotless pair preserves short version.
+        XCTAssertEqual(VersionService.reconcileTicketVersion(shortVersion: "4600", buildVersion: "4600"), "4600")
+
+        let legacyIpa = FileManager.default.temporaryDirectory.appendingPathComponent("legacy-build-" + UUID().uuidString + ".ipa")
+        let dotlessIpa = FileManager.default.temporaryDirectory.appendingPathComponent("dotless-build-" + UUID().uuidString + ".ipa")
+        defer {
+            try? FileManager.default.removeItem(at: legacyIpa)
+            try? FileManager.default.removeItem(at: dotlessIpa)
+        }
+
+        let legacyArchive = try Archive(url: legacyIpa, accessMode: .create)
+        let legacyPlist = try HTTPClient.encodePlist([
+            "CFBundleShortVersionString": "",
+            "CFBundleVersion": "2.0.18"
+        ])
+        try legacyArchive.addEntry(with: "Payload/Legacy.app/Info.plist", type: .file, uncompressedSize: Int64(legacyPlist.count),
+                                   compressionMethod: .deflate, provider: { pos, len in legacyPlist.subdata(in: Int(pos)..<Int(pos) + len) })
+        let legacyReader = MemoryRangeReader(data: try Data(contentsOf: legacyIpa))
+        let legacyResult = try await RemoteZip.versionResources(legacyReader, includingIcon: false, preferredVersion: "4800")
+        XCTAssertEqual(legacyResult.metadata.version, "2.0.18")
+        XCTAssertEqual(legacyResult.metadata.metadataSchema, VersionMetadata.currentSchema)
+
+        let dotlessArchive = try Archive(url: dotlessIpa, accessMode: .create)
+        let dotlessPlist = try HTTPClient.encodePlist(["CFBundleShortVersionString": "4600"])
+        try dotlessArchive.addEntry(with: "Payload/Mid.app/Info.plist", type: .file, uncompressedSize: Int64(dotlessPlist.count),
+                                    compressionMethod: .deflate, provider: { pos, len in dotlessPlist.subdata(in: Int(pos)..<Int(pos) + len) })
+        let dotlessReader = MemoryRangeReader(data: try Data(contentsOf: dotlessIpa))
+        let tiedDotless = try await RemoteZip.versionResources(dotlessReader, includingIcon: false, preferredVersion: "4800")
+        XCTAssertEqual(tiedDotless.metadata.version, "4600", "IPA Info.plist must beat equal-score dotless ticket fallback")
+        let promotedMarketing = try await RemoteZip.versionResources(dotlessReader, includingIcon: false, preferredVersion: "4.6")
+        XCTAssertEqual(promotedMarketing.metadata.version, "4.6")
+    }
+
+    func testStaleLatestFallbackAndReleaseNotesReconciliation() {
+        let day: TimeInterval = 86_400
+        let base = Date(timeIntervalSince1970: 1_660_000_000)
+        let versions = [
+            AppVersion(id: "857150582", version: "4.8", source: "Apple"),
+            AppVersion(id: "853114367", version: "4.7.2", source: "Apple"),
+            AppVersion(id: "851673782", version: "4600", source: "Apple"),
+            AppVersion(id: "839530364", version: "4510", source: "Apple"),
+            AppVersion(id: "815711689", version: "2109", source: "Apple"),
+            AppVersion(id: "815711688", version: "2109", source: "Apple"),
+            AppVersion(id: "812900001", version: "2103", source: "Apple"),
+            AppVersion(id: "518812657", version: "2.0.18", source: "Apple")
+        ]
+        var meta: [String: VersionMetadata] = [
+            "857150582": VersionMetadata(version: "4.8", released: base.addingTimeInterval(400 * day)),
+            "851673782": VersionMetadata(version: "4600", released: base.addingTimeInterval(200 * day)),
+            "839530364": VersionMetadata(version: "4510", released: base.addingTimeInterval(100 * day)),
+            "815711689": VersionMetadata(version: "2109", released: base),
+            "815711688": VersionMetadata(version: "2109", released: base.addingTimeInterval(-10 * day)),
+            "812900001": VersionMetadata(version: "2103", released: base.addingTimeInterval(-150 * day)),
+            "518812657": VersionMetadata(version: "2.0.18", released: base.addingTimeInterval(-800 * day))
+        ]
+
+        XCTAssertFalse(VersionService.isLikelyStaleLatestFallback(
+            "4800", versionID: "857150582", appVersion: "4.8", versions: versions, cachedMetadata: meta, rowIndex: 0
+        ))
+        XCTAssertTrue(VersionService.isLikelyStaleLatestFallback(
+            "4800", versionID: "851673782", appVersion: "4.8", versions: versions, cachedMetadata: meta, rowIndex: 2
+        ))
+        XCTAssertTrue(VersionService.isLikelyStaleLatestFallback(
+            "4800", versionID: "518812657", appVersion: "4.8", versions: versions, cachedMetadata: meta, rowIndex: 7
+        ))
+        XCTAssertFalse(VersionService.isLikelyStaleLatestFallback(
+            "4600", versionID: "851673782", appVersion: "4.8", versions: versions, cachedMetadata: meta, rowIndex: 2
+        ))
+        XCTAssertFalse(VersionService.isLikelyStaleLatestFallback(
+            "2103", versionID: "812900001", appVersion: "4.8", versions: versions, cachedMetadata: meta, rowIndex: 6
+        ))
+
+        let notes = [
+            ReleaseNote(version: "4.8", date: base.addingTimeInterval(402 * day), text: ""),
+            ReleaseNote(version: "4.6", date: base.addingTimeInterval(202 * day), text: ""),
+            ReleaseNote(version: "4.5.1", date: base.addingTimeInterval(101 * day), text: ""),
+            ReleaseNote(version: "2.1.09", date: base.addingTimeInterval(1 * day), text: "")
+        ]
+
+        let updates = Dictionary(
+            VersionService.reconcileWithReleaseNotes(
+                versions: versions, metadata: meta, notes: notes, appVersion: "4.8"
+            ).map { ($0.id, $0.version) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        XCTAssertEqual(updates["851673782"], "4.6")
+        XCTAssertEqual(updates["839530364"], "4.5.1")
+        XCTAssertEqual(updates["815711689"], "2.1.09")
+        XCTAssertEqual(updates["815711688"], "2.1.09")
+        XCTAssertNil(updates["812900001"], "Unverified pre-cutoff dotless build absent from release notes must not be guessed")
+
+        // A stale "4800" on an old 2014 row must never be matched to "4.8" release notes.
+        XCTAssertNil(VersionService.reconcileSingleWithReleaseNotes(
+            versionID: "518812657", rawVersion: "4800", released: meta["518812657"]?.released,
+            versions: versions, metadata: meta, notes: notes, appVersion: "4.8", rowIndex: 7
+        ))
+
+        // Ambiguous candidates ("1.0" vs "10.0" for "100") must be declined instead of guessing.
+        meta["812900001"]?.version = "100"
+        let ambiguousVersions = [
+            AppVersion(id: "857150582", version: "11.0", source: "Apple"),
+            AppVersion(id: "812900001", version: "100", source: "Apple")
+        ]
+        let ambiguousNotes = [
+            ReleaseNote(version: "1.0", date: meta["812900001"]?.released?.addingTimeInterval(day), text: ""),
+            ReleaseNote(version: "10.0", date: meta["812900001"]?.released?.addingTimeInterval(2 * day), text: "")
+        ]
+        XCTAssertNil(VersionService.reconcileSingleWithReleaseNotes(
+            versionID: "812900001", rawVersion: "100", released: meta["812900001"]?.released,
+            versions: ambiguousVersions, metadata: meta, notes: ambiguousNotes, appVersion: "11.0", rowIndex: 1
+        ))
+    }
+
+    func testVersionMetadataStoreRepairsLegacyStaleFallbackWithoutWipingValidDotless() async throws {
+        let store = VersionMetadataStore()
+        try await store.clearCache()
+        defer { Task { try? await store.clearCache() } }
+
+        let staleKey = "iOS|app-" + UUID().uuidString + "|518812657"
+        let validKey = "iOS|app-" + UUID().uuidString + "|851673782"
+
+        _ = try await store.load(staleKey, requiringPackageSize: true, requiringIcon: false) {
+            VersionMetadata(version: "4800", released: nil, packageSize: 12_000_000, iconAvailable: false, ticketChecked: true, metadataSchema: nil)
+        }
+        _ = try await store.load(validKey, requiringPackageSize: true, requiringIcon: false) {
+            VersionMetadata(version: "4600", released: nil, packageSize: 34_000_000, iconAvailable: false, ticketChecked: true, metadataSchema: nil)
+        }
+
+        // Poisoned legacy "4800" entry is bypassed when allowCached returns false and replaced cleanly
+        // (even if the repaired version has equal or lower score than 4800).
+        let staleFetchCount = LockedCount()
+        let repaired = try await store.load(
+            staleKey, requiringPackageSize: true, requiringIcon: false,
+            allowCached: { $0.metadataSchema != nil }
+        ) {
+            staleFetchCount.increment()
+            return VersionMetadata(version: "2103", released: nil, packageSize: 12_000_000, iconAvailable: false,
+                                   ticketChecked: true, metadataSchema: VersionMetadata.currentSchema)
+        }
+        XCTAssertEqual(staleFetchCount.value, 1)
+        XCTAssertEqual(repaired.version, "2103")
+        XCTAssertEqual(repaired.metadataSchema, VersionMetadata.currentSchema)
+
+        // Valid legacy dotless entry "4600" remains a cache hit without redundant network refetch.
+        let validHit = try await store.load(
+            validKey, requiringPackageSize: true, requiringIcon: false,
+            allowCached: { _ in true }
+        ) {
+            XCTFail("Valid dotless cached row must not trigger redundant network refetch")
+            return VersionMetadata(version: "4600", released: nil)
+        }
+        XCTAssertEqual(validHit.version, "4600")
+
+        await store.upgradeCachedVersion(validKey, version: "4.6", replaceDotless: true)
+        let upgraded = await store.cached(validKey)
+        XCTAssertEqual(upgraded?.version, "4.6")
+        XCTAssertEqual(upgraded?.metadataSchema, VersionMetadata.currentSchema)
+
+        // Resetting a poisoned dotless cache to AppVersion.unknown must evict it for re-fetch
+        // rather than marking "未知版本" as settled and suppressing CFBundleVersion recovery.
+        let poisonedKey = "iOS|app-" + UUID().uuidString + "|411752640"
+        _ = try await store.load(poisonedKey, requiringPackageSize: true, requiringIcon: false) {
+            VersionMetadata(version: "4800", released: nil, packageSize: 29_000_000, iconAvailable: false, ticketChecked: true, metadataSchema: nil)
+        }
+        await store.upgradeCachedVersion(poisonedKey, version: AppVersion.unknown, replaceDotless: true)
+        let recoveredCalls = LockedCount()
+        let recovered = try await store.load(poisonedKey, requiringPackageSize: true, requiringIcon: false) {
+            recoveredCalls.increment()
+            return VersionMetadata(version: "2.0.17", released: nil, packageSize: 29_000_000, iconAvailable: false,
+                                   ticketChecked: true, metadataSchema: VersionMetadata.currentSchema)
+        }
+        XCTAssertEqual(recoveredCalls.value, 1, "Invalidating stale fallback to unknown must trigger fresh fetch")
+        XCTAssertEqual(recovered.version, "2.0.17")
+        try await store.clearCache()
+    }
+
+    func testReconcileWithReleaseNotesHandlesOutOfOrderMergedIDs() {
+        let base = Date(timeIntervalSince1970: 1_660_000_000)
+        let day: TimeInterval = 86_400
+
+        // Source merging must place a version missing from earlier sources at its anchor position.
+        let timbrd = [
+            AppVersion(id: "857150582", version: "4.8", source: "Timbrd"),
+            AppVersion(id: "853114367", version: "4.7.2", source: "Timbrd"),
+            AppVersion(id: "839530364", version: "4510", source: "Timbrd")
+        ]
+        let iosdump = [
+            AppVersion(id: "857150582", version: "4.8", source: "iOSDump"),
+            AppVersion(id: "853114367", version: "4.7.2", source: "iOSDump"),
+            AppVersion(id: "851673782", version: "4600", source: "iOSDump"),
+            AppVersion(id: "839530364", version: "4510", source: "iOSDump")
+        ]
+        let merged = VersionService.mergeSourceResults([timbrd, iosdump])
+        XCTAssertEqual(merged.map(\.id), ["857150582", "853114367", "851673782", "839530364"])
+
+        // Even with an out-of-order newer ID ("851673782") lingering near the bottom of an older cache,
+        // "813305138" ("2106") must still reconcile to "2.1.06" from Apple Release Notes.
+        let versions = [
+            AppVersion(id: "857150582", version: "4.8", source: "Timbrd"),
+            AppVersion(id: "815648435", version: "2.1.08", source: "Timbrd"),
+            AppVersion(id: "813305138", version: "2106", source: "Timbrd"),
+            AppVersion(id: "812900001", version: "2103", source: "Timbrd"),
+            AppVersion(id: "851673782", version: "4.6", source: "iOSDump")
+        ]
+        let meta: [String: VersionMetadata] = [
+            "857150582": VersionMetadata(version: "4.8", released: base.addingTimeInterval(400 * day)),
+            "815648435": VersionMetadata(version: "2.1.08", released: base.addingTimeInterval(20 * day)),
+            "851673782": VersionMetadata(version: "4.6", released: base.addingTimeInterval(250 * day))
+        ]
+        let notes = [
+            ReleaseNote(version: "4.8", date: base.addingTimeInterval(402 * day), text: ""),
+            ReleaseNote(version: "4.6", date: base.addingTimeInterval(251 * day), text: ""),
+            ReleaseNote(version: "2.1.08", date: base.addingTimeInterval(21 * day), text: ""),
+            ReleaseNote(version: "2.1.06", date: base.addingTimeInterval(1 * day), text: "")
+        ]
+        let updates = Dictionary(
+            VersionService.reconcileWithReleaseNotes(versions: versions, metadata: meta, notes: notes, appVersion: "4.8")
+                .map { ($0.id, $0.version) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        XCTAssertEqual(updates["813305138"], "2.1.06")
+        XCTAssertNil(updates["812900001"])
+    }
+
+    func testVersionMetadataSeparatesMarketingAndBundleShortVersions() async throws {
+        let store = VersionMetadataStore()
+        try await store.clearCache()
+        defer { Task { try? await store.clearCache() } }
+
+        let key = "iOS|eplayer-" + UUID().uuidString + "|892622938"
+        _ = try await store.load(key, requiringPackageSize: true, requiringIcon: false) {
+            VersionMetadata(version: "10.0.22", released: nil, packageSize: 113_000_000, iconAvailable: false, ticketChecked: true, metadataSchema: 3)
+        }
+        let calls = LockedCount()
+        let migrated = try await store.load(key, requiringPackageSize: true, requiringIcon: false, knownVersion: "1.9.5") {
+            calls.increment()
+            return VersionMetadata(version: "10.0.22", released: nil)
+        }
+        XCTAssertEqual(calls.value, 0, "Legacy schema should separate stored CFBundleShortVersionString in place")
+        XCTAssertEqual(migrated.version, "1.9.5")
+        XCTAssertEqual(migrated.bundleShortVersion, "10.0.22")
+        XCTAssertEqual(migrated.metadataSchema, VersionMetadata.currentSchema)
+
+        let freshKey = "iOS|eplayer-" + UUID().uuidString + "|889722446"
+        let fresh = try await store.load(freshKey, requiringPackageSize: true, requiringIcon: false, knownVersion: "1.9.1") {
+            VersionMetadata(version: "10.0.18", released: nil, packageSize: 134_000_000, iconAvailable: false,
+                            ticketChecked: true, metadataSchema: VersionMetadata.currentSchema,
+                            bundleShortVersion: "10.0.18", buildVersion: "4")
+        }
+        XCTAssertEqual(fresh.version, "1.9.1")
+        XCTAssertEqual(fresh.bundleShortVersion, "10.0.18")
+        XCTAssertEqual(fresh.buildVersion, "4")
+        try await store.clearCache()
+    }
+
+    func testPackageServiceAcceptsHistoricalBundleVersionDispatchAndRejectsMismatch() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("pkg-ver-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        func makeIPA(name: String, bundleID: String, short: String, build: String, extID: String? = nil) throws -> URL {
+            let ipa = root.appendingPathComponent(name + ".ipa")
+            let archive = try Archive(url: ipa, accessMode: .create)
+            var info: [String: Any] = [
+                "CFBundleDisplayName": name,
+                "CFBundleIdentifier": bundleID,
+                "CFBundleShortVersionString": short,
+                "CFBundleVersion": build,
+                "CFBundleExecutable": "App"
+            ]
+            let infoData = try HTTPClient.encodePlist(info)
+            try archive.addEntry(with: "Payload/App.app/Info.plist", type: .file, uncompressedSize: Int64(infoData.count),
+                                 compressionMethod: .deflate, provider: { pos, len in infoData.subdata(in: Int(pos)..<Int(pos) + len) })
+            let supp = Data([1, 2])
+            try archive.addEntry(with: "Payload/App.app/SC_Info/App.supp", type: .file, uncompressedSize: Int64(supp.count),
+                                 compressionMethod: .deflate, provider: { pos, len in supp.subdata(in: Int(pos)..<Int(pos) + len) })
+            if let extID {
+                let metaData = try HTTPClient.encodePlist(["itemId": 385907472, "softwareVersionExternalIdentifier": Int(extID) ?? 0])
+                try archive.addEntry(with: "iTunesMetadata.plist", type: .file, uncompressedSize: Int64(metaData.count),
+                                     compressionMethod: .deflate, provider: { pos, len in metaData.subdata(in: Int(pos)..<Int(pos) + len) })
+            }
+            return ipa
+        }
+
+        // Apple DownloadDispatch returned stale bundleShortVersionString="4800" with historical bundleVersion="2.0.02".
+        let historicalDispatchPlist = try HTTPClient.encodePlist([
+            "itemId": 385907472,
+            "softwareVersionBundleId": "com.olimsoft.oplayer.lite",
+            "bundleShortVersionString": "4800",
+            "bundleVersion": "2.0.02",
+            "softwareVersionExternalIdentifier": 7752498
+        ])
+        let reconciledShort = VersionService.reconcileTicketVersion(shortVersion: "4800", buildVersion: "2.0.02")
+        XCTAssertEqual(reconciledShort, "2.0.02")
+        let dispatchApp = StoreApp(id: "385907472", name: "OPlayer Lite", bundleID: "com.olimsoft.oplayer.lite",
+                                   version: reconciledShort, externalVersionID: "7752498", bundleVersion: "2.0.02")
+        let historicalAsset = DownloadAsset(app: dispatchApp, url: URL(string: "https://example.com/oplayer.ipa")!,
+                                            sinf: Data([1, 2, 3]), metadata: historicalDispatchPlist,
+                                            externalVersionIDs: ["7752498", "857150582"], platform: "ios", account: "a@b.com")
+
+        let validHistoricalIPA = try makeIPA(name: "oplayer-2002", bundleID: "com.olimsoft.oplayer.lite", short: "2.0.02", build: "2.0.02")
+        let finished = try PackageService.finish(staging: validHistoricalIPA, id: UUID(), asset: historicalAsset)
+        let savedURL = LocalResources.packages.appendingPathComponent(finished.0)
+        defer { try? FileManager.default.removeItem(at: savedURL) }
+        XCTAssertEqual(finished.1.version, "2.0.02")
+        XCTAssertEqual(finished.1.externalVersionID, "7752498")
+
+        // A wrong (live 4800/48000 or completely unrelated) IPA must STILL be strictly rejected for 7752498.
+        let wrongLiveIPA = try makeIPA(name: "oplayer-4800", bundleID: "com.olimsoft.oplayer.lite", short: "4800", build: "48000")
+        XCTAssertThrowsError(try PackageService.finish(staging: wrongLiveIPA, id: UUID(), asset: historicalAsset))
+
+        let wrongVersionIPA = try makeIPA(name: "oplayer-100", bundleID: "com.olimsoft.oplayer.lite", short: "1.0.0", build: "100")
+        XCTAssertThrowsError(try PackageService.finish(staging: wrongVersionIPA, id: UUID(), asset: historicalAsset))
+
+        let wrongExtStagingIPA = try makeIPA(name: "oplayer-wrong-ext", bundleID: "com.olimsoft.oplayer.lite", short: "2.0.02", build: "2.0.02", extID: "999999")
+        XCTAssertThrowsError(try PackageService.finish(staging: wrongExtStagingIPA, id: UUID(), asset: historicalAsset))
+
+        // EplayerX: Store marketing "1.9.1" preserved alongside Info.plist "10.0.18" / build "4".
+        let eplayerMeta = try HTTPClient.encodePlist([
+            "itemId": 6747369377,
+            "softwareVersionBundleId": "com.snowlee.eplayerx",
+            "bundleShortVersionString": "10.0.18",
+            "bundleVersion": "4",
+            "softwareVersionExternalIdentifier": 889722446
+        ])
+        let eplayerAssetApp = StoreApp(id: "6747369377", name: "EplayerX", bundleID: "com.snowlee.eplayerx",
+                                       version: "10.0.18", externalVersionID: "889722446",
+                                       bundleVersion: "4", storeMarketingVersion: "1.9.1")
+        let eplayerAsset = DownloadAsset(app: eplayerAssetApp, url: URL(string: "https://example.com/eplayer.ipa")!,
+                                         sinf: Data([4, 5]), metadata: eplayerMeta,
+                                         externalVersionIDs: ["889722446", "892622938"], platform: "ios", account: "a@b.com")
+        let eplayerIPA = try makeIPA(name: "eplayer-1018", bundleID: "com.snowlee.eplayerx", short: "10.0.18", build: "4")
+        let eplayerDone = try PackageService.finish(staging: eplayerIPA, id: UUID(), asset: eplayerAsset)
+        defer { try? FileManager.default.removeItem(at: LocalResources.packages.appendingPathComponent(eplayerDone.0)) }
+        var job = DownloadJob(app: eplayerAsset.app, asset: eplayerAsset, status: .completed)
+        job.app = job.completing(with: eplayerDone.1)
+        XCTAssertEqual(job.app.version, "10.0.18")
+        XCTAssertEqual(job.app.bundleVersion, "4")
+        XCTAssertEqual(job.app.storeMarketingVersion, "1.9.1")
+        XCTAssertEqual(job.storeVersion, "1.9.1", "Update checks must compare App Store marketing version, not 10.0.18")
+        XCTAssertEqual(job.conciseVersionLabel, "v1.9.1")
+        XCTAssertEqual(job.resolvedBundleVersion, "4")
+        XCTAssertEqual(job.resolvedExternalVersionID, "889722446")
+        XCTAssertTrue(VersionOrder.isNewer("1.9.5", than: job.storeVersion))
+    }
+
+    func testDownloadJobConciseLabelAndTechnicalDetailsSeparation() {
+        let withMarketing = DownloadJob(app: StoreApp(id: "385907472", name: "OPlayer Lite", version: "4800",
+                                                      externalVersionID: "857150582", bundleVersion: "4800",
+                                                      storeMarketingVersion: "4.8"),
+                                        status: .completed)
+        XCTAssertEqual(withMarketing.conciseVersionLabel, "v4.8")
+        XCTAssertEqual(withMarketing.userFacingVersion, "4.8")
+        XCTAssertEqual(withMarketing.resolvedBundleVersion, "4800")
+        XCTAssertEqual(withMarketing.resolvedExternalVersionID, "857150582")
+
+        let withoutMarketing = DownloadJob(app: StoreApp(id: "1", name: "Sample", version: "3.8"), status: .completed)
+        XCTAssertEqual(withoutMarketing.conciseVersionLabel, "v3.8")
+
+        let unknownVersion = DownloadJob(app: StoreApp(id: "2", name: "Unknown", version: AppVersion.unknown), status: .queued)
+        XCTAssertEqual(unknownVersion.conciseVersionLabel, "")
+    }
+
+    @MainActor
+    func testMatchingDownloadJobAndTargetKey() {
+        let older = DownloadJob(
+            app: StoreApp(id: "385907472", name: "OPlayer Lite", version: "3800",
+                          externalVersionID: "849000001", storeMarketingVersion: "3.8"),
+            status: .completed
+        )
+        let runningLatest = DownloadJob(
+            app: StoreApp(id: "385907472", name: "OPlayer Lite", version: "4800",
+                          externalVersionID: "857150582", storeMarketingVersion: "4.8"),
+            status: .running
+        )
+        let store = ToolStore(downloadManager: DownloadManager(previewJobs: [runningLatest, older]))
+        let searchListing = StoreApp(id: "385907472", name: "OPlayer Lite", version: "4.8")
+
+        XCTAssertEqual(store.matchingDownloadJob(for: searchListing, platform: .iOS)?.id, runningLatest.id)
+        XCTAssertEqual(store.matchingDownloadJob(for: searchListing, platform: .iOS, versionID: "849000001")?.id, older.id)
+        XCTAssertNil(store.matchingDownloadJob(for: searchListing, platform: .iOS, versionID: "853114367"))
+        XCTAssertNil(store.matchingDownloadJob(for: searchListing, platform: .macOS))
+        XCTAssertEqual(
+            ToolStore.DownloadTargetKey(appID: "385907472", platform: .iOS, versionID: " "),
+            ToolStore.DownloadTargetKey(appID: "385907472", platform: .iOS, versionID: nil)
+        )
+    }
+}
+
+private final class LockedCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage = 0
+    var value: Int { lock.lock(); defer { lock.unlock() }; return storage }
+    func increment() { lock.lock(); storage += 1; lock.unlock() }
+    func next() -> Int { lock.lock(); defer { lock.unlock() }; storage += 1; return storage }
+}
+
+private final class LockedList<Element: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [Element] = []
+    var values: [Element] { lock.lock(); defer { lock.unlock() }; return storage }
+    func append(_ element: Element) { lock.lock(); storage.append(element); lock.unlock() }
 }
 
