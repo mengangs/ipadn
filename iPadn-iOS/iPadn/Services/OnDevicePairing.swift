@@ -82,6 +82,18 @@ final class OnDevicePairing: ObservableObject {
         NativeInstaller.cancelPairing()
     }
 
+    /// Triggered when leaving iPadn for Settings during Step 1 so the Dynamic Island
+    /// shows an immediate banner with the Privacy & Security path once backgrounded.
+    func notifyHandoffIfWaiting() {
+        guard running, phase == .waiting else { return }
+        keepAlive.pauseForHandoff(resumeAfter: 10)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard let self, self.running, self.phase == .waiting else { return }
+            self.update(step: 1)
+        }
+    }
+
     static func formattedCode(_ code: String) -> String {
         let digits = Array(code)
         guard digits.count == 6 else { return code }
@@ -99,10 +111,16 @@ final class OnDevicePairing: ObservableObject {
     @available(iOS 16.2, *)
     static func alertConfiguration(step: Int, code: String? = nil, host: String = hostName, message: String? = nil) -> AlertConfiguration? {
         switch step {
+        case 1:
+            return AlertConfiguration(
+                title: LocalizedStringResource("在「设置」中配对 \(host)"),
+                body: LocalizedStringResource("点左上角「< 设置」返回 › 隐私与安全性 › 开发者模式 › 选 \(host)"),
+                sound: .default
+            )
         case 2:
             return AlertConfiguration(
                 title: LocalizedStringResource("正在与 \(host) 配对"),
-                body: LocalizedStringResource("设备已连接，正在生成配对码"),
+                body: LocalizedStringResource("如有锁屏密码弹窗请先输入，正在等待配对码"),
                 sound: .default
             )
         case 3:
@@ -147,11 +165,14 @@ final class OnDevicePairing: ObservableObject {
         case .connected:
             phase = .connected
             if UIApplication.shared.applicationState != .active {
-                keepAlive.pauseForHandoff()
+                keepAlive.pauseForHandoff(resumeAfter: 27)
             }
             update(step: 2)
         case .code(let code):
             phase = .code(code)
+            if UIApplication.shared.applicationState != .active {
+                keepAlive.pauseForHandoff(resumeAfter: 27)
+            }
             update(step: 3, code: code)
             if Self.shouldSendFallbackNotification(hasActiveLiveActivity: hasActiveLiveActivity) {
                 let display = Self.formattedCode(code)
@@ -236,7 +257,10 @@ final class OnDevicePairing: ObservableObject {
             guard let self,
                   self.activityGeneration == generation,
                   self.stateGeneration == targetStateGeneration else { return }
-            await self.keepAlive.waitUntilActivityUpdatePermitted(activityStartedAt: startedAt)
+            await self.keepAlive.waitUntilActivityUpdatePermitted(activityStartedAt: startedAt) { [weak self] in
+                guard let self else { return false }
+                return self.activityGeneration == generation && self.stateGeneration == targetStateGeneration
+            }
             guard self.activityGeneration == generation,
                   self.stateGeneration == targetStateGeneration else { return }
             await current.update(content, alertConfiguration: alert)
@@ -376,7 +400,10 @@ final class BackgroundKeepAlive {
         endBackgroundTask()
     }
 
-    func waitUntilActivityUpdatePermitted(activityStartedAt: Date) async {
+    func waitUntilActivityUpdatePermitted(
+        activityStartedAt: Date,
+        shouldContinue: () -> Bool = { true }
+    ) async {
         guard UIApplication.shared.applicationState != .active else { return }
         if Date().timeIntervalSince(activityStartedAt) < Self.deliveryWindowSeconds {
             return
@@ -385,9 +412,11 @@ final class BackgroundKeepAlive {
             pauseForHandoff()
         }
         guard let releasedAt else { return }
-        let remaining = Self.mediaAssertionGraceSeconds - Date().timeIntervalSince(releasedAt)
-        if remaining > 0 {
-            try? await Task.sleep(nanoseconds: UInt64((remaining * 1_000_000_000).rounded(.up)))
+        while shouldContinue() {
+            let remaining = Self.mediaAssertionGraceSeconds - Date().timeIntervalSince(releasedAt)
+            if remaining <= 0 { break }
+            let slice = min(0.1, remaining)
+            try? await Task.sleep(nanoseconds: UInt64((slice * 1_000_000_000).rounded(.up)))
         }
     }
 

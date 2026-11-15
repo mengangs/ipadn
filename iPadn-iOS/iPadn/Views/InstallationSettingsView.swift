@@ -388,9 +388,9 @@ private struct PairingGuideView: View {
         NavigationStack {
             Form {
                 Section {
-                    guideRow(1, "打开「设置」", "隐私与安全性 › 开发者模式 › 与 iPadn 配对")
-                    guideRow(2, "等待设备连接", "选中 iPadn 后会自动连接")
-                    guideRow(3, "输入配对码", "配对码会显示在这里、灵动岛和通知中")
+                    guideRow(1, "打开「设置」前往开发者模式", "点右上角「打开设置」会打开本应用设置页，请点左上角「< 设置」返回首页 ›「隐私与安全性」›「开发者模式」› 选「iPadn」")
+                    guideRow(2, "输入锁屏密码并等待连接", "点击 iPadn 后，如有验证弹窗请先输入锁屏密码并稍候建立连接")
+                    guideRow(3, "输入 6 位配对码", "配对码会在灵动岛、锁屏或此处显示，填入系统弹窗即可")
                 } footer: {
                     Text("看不到「开发者模式」时，需要先在该页面开启并按提示重启设备。配对期间 iPadn 会在后台保持运行，完成后自动停止。")
                 }
@@ -441,6 +441,7 @@ private struct PairingGuideView: View {
     }
     /// The Developer Mode page when the system allows it, else Settings.
     private func openSettings() {
+        pairing.notifyHandoffIfWaiting()
         let candidates = ["App-prefs:Privacy&path=DEVELOPER_MODE", "App-prefs:Privacy", UIApplication.openSettingsURLString]
         func attempt(_ index: Int) {
             guard index < candidates.count, let url = URL(string: candidates[index]) else { return }

@@ -390,43 +390,43 @@ enum StoreService {
         var statuses: [String: DelistedVerification] = [:]
         var hadFailure = false
         let runLookup: @Sendable ([String], String) async throws -> [String: StoreApp] = fetcher ?? { batch, country in
-            try await lookup(ids: batch, country: country, timeoutInterval: 4, retryTransient: false).apps
+            if batch.count <= 100 {
+                var apps: [String: StoreApp] = [:]
+                for row in try await lookupChunk(batch, country: country, timeoutInterval: 4, retryTransient: false) {
+                    apps[row.app.id] = row.app
+                }
+                return apps
+            }
+            return try await lookup(ids: batch, country: country, timeoutInterval: 4, retryTransient: false).apps
         }
 
-        func probeWave(batch: [String], targetCountries: [String]) async -> [String] {
-            var failedCountries: [String] = []
-            await withTaskGroup(of: (String, Result<[String: StoreApp], Error>).self) { group in
-                for country in targetCountries {
-                    group.addTask {
-                        do { return (country, .success(try await runLookup(batch, country))) }
-                        catch { return (country, .failure(error)) }
-                    }
+        // Probe storefronts sequentially without nested task-group cancellation so
+        // unresolved local IDs never spawn competing futures on cooperative threads.
+        var failedOnFirstPass: [String] = []
+        for country in countries {
+            guard !remaining.isEmpty, !Task.isCancelled else { break }
+            do {
+                let found = try await runLookup(Array(remaining), country)
+                for id in found.keys where remaining.remove(id) != nil {
+                    statuses[id] = .listed
                 }
-                for await (country, result) in group {
-                    switch result {
-                    case .success(let found):
-                        for id in found.keys where remaining.remove(id) != nil {
-                            statuses[id] = .listed
-                        }
-                        if remaining.isEmpty {
-                            group.cancelAll()
-                            break
-                        }
-                    case .failure:
-                        failedCountries.append(country)
+            } catch {
+                if Task.isCancelled { break }
+                failedOnFirstPass.append(country)
+            }
+        }
+        if !remaining.isEmpty, !failedOnFirstPass.isEmpty, !Task.isCancelled {
+            for country in failedOnFirstPass {
+                guard !remaining.isEmpty, !Task.isCancelled else { break }
+                do {
+                    let found = try await runLookup(Array(remaining), country)
+                    for id in found.keys where remaining.remove(id) != nil {
+                        statuses[id] = .listed
                     }
+                } catch {
+                    if !Task.isCancelled { hadFailure = true }
                 }
             }
-            return failedCountries
-        }
-
-        // Query all candidate storefronts concurrently with a tight fail-fast timeout,
-        // then retry only failed storefronts once for unresolved IDs so a single transient
-        // blip does not leave genuinely delisted matches unpromoted.
-        let failedOnFirstWave = await probeWave(batch: Array(remaining), targetCountries: countries)
-        if !remaining.isEmpty, !failedOnFirstWave.isEmpty, !Task.isCancelled {
-            let failedOnRetry = await probeWave(batch: Array(remaining), targetCountries: failedOnFirstWave)
-            if !failedOnRetry.isEmpty { hadFailure = true }
         }
         for id in remaining {
             statuses[id] = (!hadFailure && !Task.isCancelled) ? .delisted : .inconclusive

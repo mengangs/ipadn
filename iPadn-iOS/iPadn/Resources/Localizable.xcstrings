@@ -85887,6 +85887,636 @@
           }
         }
       }
+    },
+    "在「设置」中配对 %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在「设置」中配对 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pair %@ in Settings"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在「設定」中配對 %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「設定」で %@ とペアリング"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘설정’에서 %@ 페어링"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Создайте пару с %@ в Настройках"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enlaza %@ en Ajustes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jumelez %@ dans Réglages"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ in den Einstellungen koppeln"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Emparelhe %@ em Ajustes"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "اقترن بـ %@ في الإعدادات"
+          }
+        }
+      }
+    },
+    "点左上角「< 设置」返回 › 隐私与安全性 › 开发者模式 › 选 %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点左上角「< 设置」返回 › 隐私与安全性 › 开发者模式 › 选 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap '< Settings' top-left › Privacy & Security › Developer Mode › %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "點左上角「< 設定」返回 › 隱私權與安全性 › 開發者模式 › 選 %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左上の「< 設定」で戻り › プライバシーとセキュリティ › デベロッパモード › %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "왼쪽 위 '< 설정'으로 이동 › 개인정보 보호 및 보안 › 개발자 모드 › %@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нажмите «< Настройки» сверху слева › Конфиденциальность › Режим разработчика › %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toca '< Ajustes' arriba › Privacidad y seguridad › Modo de desarrollador › %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touchez « < Réglages » › Confidentialité et sécurité › Mode développeur › %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tippe oben links '< Einstellungen' › Datenschutz & Sicherheit › Entwicklermodus › %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toque '< Ajustes' › Privacidade e Segurança › Modo de Desenvolvedor › %@"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "اضغط '< الإعدادات' أعلى اليسار › الخصوصية والأمن › نمط المطور › %@"
+          }
+        }
+      }
+    },
+    "如有锁屏密码弹窗请先输入，正在等待配对码": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如有锁屏密码弹窗请先输入，正在等待配对码"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter your passcode if prompted; waiting for pairing code"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如有鎖定畫面密碼彈窗請先輸入，正在等待配對碼"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスコードを求められたら入力し、ペアリングコードをお待ちください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "암호 입력 창이 뜨면 입력한 뒤 페어링 코드를 기다려 주세요"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "При запросе введите код-пароль и дождитесь кода пары"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Introduce tu código si se solicita; esperando código de enlace"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez votre code si demandé ; en attente du code de jumelage"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code bei Aufforderung eingeben; warte auf Kopplungscode"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Digite sua senha se solicitado; aguardando código"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أدخل رمز الدخول إذا طُلب منك، وبانتظار رمز الاقتران"
+          }
+        }
+      }
+    },
+    "打开「设置」前往开发者模式": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开「设置」前往开发者模式"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Settings & Go to Developer Mode"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開啟「設定」前往開發者模式"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「設定」を開きデベロッパモードへ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘설정’을 열어 개발자 모드로 이동"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Откройте Настройки и Режим разработчика"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abre Ajustes y ve a Modo de desarrollador"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrez Réglages et Mode développeur"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einstellungen & Entwicklermodus öffnen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abra Ajustes e Modo de Desenvolvedor"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "افتح الإعدادات وانتقل لنمط المطور"
+          }
+        }
+      }
+    },
+    "点右上角「打开设置」会打开本应用设置页，请点左上角「< 设置」返回首页 ›「隐私与安全性」›「开发者模式」› 选「iPadn」": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点右上角「打开设置」会打开本应用设置页，请点左上角「< 设置」返回首页 ›「隐私与安全性」›「开发者模式」› 选「iPadn」"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tapping Open Settings opens iPadn's page. Tap '< Settings' top-left › Privacy & Security › Developer Mode › Pair with iPadn"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "點右上角「打開設定」會開啟本 App 設定頁，請點左上角「< 設定」返回首頁 ›「隱私權與安全性」›「開發者模式」› 選「iPadn」"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右上の「設定を開く」を押すと本アプリの設定が開きます。左上の「< 設定」で戻り、「プライバシーとセキュリティ」›「デベロッパモード」›「iPadn」を選択してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오른쪽 위 '설정 열기'를 누르면 앱 설정이 열립니다. 왼쪽 위 '< 설정'으로 돌아가 '개인정보 보호 및 보안' › '개발자 모드' › 'iPadn'을 선택하세요"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Кнопка откроет страницу iPadn: нажмите «< Настройки» сверху слева › Конфиденциальность и безопасность › Режим разработчика › выберите iPadn"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El botón abre la página de iPadn: toca '< Ajustes' arriba › Privacidad y seguridad › Modo de desarrollador › elige iPadn"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le bouton ouvre la page d'iPadn : touchez « < Réglages » › Confidentialité et sécurité › Mode développeur › choisissez iPadn"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Öffnet zunächst die iPadn-Seite: tippe oben links '< Einstellungen' › Datenschutz & Sicherheit › Entwicklermodus › wähle iPadn"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abre a página do iPadn: toque '< Ajustes' no topo › Privacidade e Segurança › Modo de Desenvolvedor › escolha iPadn"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "سيفتح زر فتح الإعدادات صفحة iPadn: اضغط '< الإعدادات' في الأعلى ثم الخصوصية والأمن › نمط المطور › اختر iPadn"
+          }
+        }
+      }
+    },
+    "输入锁屏密码并等待连接": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入锁屏密码并等待连接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter Passcode & Wait to Connect"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "輸入鎖定畫面密碼並等待連線"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスコードを入力して接続を待つ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "암호를 입력하고 연결 대기"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Введите код-пароль и дождитесь подключения"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Introduce tu código y espera la conexión"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez votre code et attendez la connexion"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code eingeben und Verbindung abwarten"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Digite a senha e aguarde conectar"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أدخل رمز الدخول وانتظر الاتصال"
+          }
+        }
+      }
+    },
+    "点击 iPadn 后，如有验证弹窗请先输入锁屏密码并稍候建立连接": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击 iPadn 后，如有验证弹窗请先输入锁屏密码并稍候建立连接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "After tapping iPadn, enter your device passcode if prompted and wait briefly for the connection."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "點擊 iPadn 後，如有驗證彈窗請先輸入鎖定畫面密碼並稍候建立連線"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPadn をタップ後、確認が表示されたらパスコードを入力し接続完了まで少しお待ちください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPadn을 탭한 뒤 인증 창이 나타나면 기기 암호를 입력하고 연결될 때까지 잠시 기다려 주세요"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "После выбора iPadn введите код-пароль устройства при запросе и немного подождите"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tras elegir iPadn, introduce el código del dispositivo si se solicita y espera un momento"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Après avoir choisi iPadn, saisissez le code de l'appareil si demandé et patientez un instant"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nach Auswahl von iPadn bei Aufforderung Gerätecode eingeben und kurz auf die Verbindung warten"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Após tocar em iPadn, digite a senha do dispositivo se solicitado e aguarde a conexão"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "بعد اختيار iPadn، أدخل رمز دخول الجهاز إذا طُلب منك وانتظر لحظة حتى يكتمل الاتصال"
+          }
+        }
+      }
+    },
+    "输入 6 位配对码": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入 6 位配对码"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter 6-Digit Pairing Code"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "輸入 6 位數配對碼"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "6桁のペアリングコードを入力"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "6자리 페어링 코드 입력"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Введите 6-значный код пары"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Introduce el código de 6 dígitos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez le code à 6 chiffres"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "6-stelligen Kopplungscode eingeben"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Digite o código de 6 dígitos"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أدخل رمز الاقتران المكوّن من 6 أرقام"
+          }
+        }
+      }
+    },
+    "配对码会在灵动岛、锁屏或此处显示，填入系统弹窗即可": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对码会在灵动岛、锁屏或此处显示，填入系统弹窗即可"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The code appears in the Dynamic Island, on the Lock Screen, or here—enter it into the Settings prompt."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配對碼會在動態島、鎖定畫面或此處顯示，填入系統彈窗即可"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードは Dynamic Island・ロック画面・この画面に表示されます。設定のダイアログに入力してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "코드는 Dynamic Island, 잠금 화면 또는 이 화면에 표시됩니다. 설정 창에 입력하세요"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Код появится в Dynamic Island, на экране блокировки или здесь — введите его в окне Настроек"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El código aparecerá en Dynamic Island, pantalla de bloqueo o aquí; introdúcelo en Ajustes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le code apparaît dans Dynamic Island, l'écran verrouillé ou ici ; saisissez-le dans Réglages"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Code erscheint in Dynamic Island, auf dem Sperrbildschirm oder hier – in den Einstellungen eingeben"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O código aparece na Dynamic Island, tela bloqueada ou aqui; digite-o no aviso dos Ajustes"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "سيظهر الرمز في الجزيرة الديناميكية أو شاشة القفل أو هنا؛ أدخله في نافذة الإعدادات"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

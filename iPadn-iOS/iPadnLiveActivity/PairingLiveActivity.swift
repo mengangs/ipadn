@@ -14,8 +14,8 @@ struct iPadnLiveActivityBundle: WidgetBundle {
 private extension PairingActivityAttributes.ContentState {
     var title: String {
         switch step {
-        case 1: return String(localized: "打开「设置」")
-        case 2: return String(localized: "正在配对")
+        case 1: return String(localized: "前往开发者模式")
+        case 2: return String(localized: "等待连接并解锁")
         case 3: return String(localized: "输入配对码")
         case 4: return String(localized: "配对完成")
         default: return String(localized: "配对未完成")
@@ -23,9 +23,9 @@ private extension PairingActivityAttributes.ContentState {
     }
     func detail(host: String) -> String {
         switch step {
-        case 1: return String(localized: "隐私与安全性 › 开发者模式 › 与 \(host) 配对")
-        case 2: return String(localized: "设备已连接，正在生成配对码")
-        case 3: return String(localized: "在「设置」中输入下面的配对码")
+        case 1: return String(localized: "设置首页 › 隐私与安全性 › 开发者模式 › 选 \(host)")
+        case 2: return String(localized: "如有锁屏密码弹窗请先输入，正在等待配对码")
+        case 3: return String(localized: "在「设置」弹窗中输入下面的 6 位配对码")
         case 4: return String(localized: "回到 \(host) 继续安装")
         default: return message ?? String(localized: "回到 \(host) 重试")
         }

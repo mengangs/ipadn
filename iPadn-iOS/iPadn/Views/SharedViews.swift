@@ -368,26 +368,63 @@ struct RootView: View {
         }
         // Global success notices belong above the page, never on top of
         // AppDetailView's fixed download CTA or the tab bar.
+        // Isolating the overlay view keeps notice spring animations from
+        // re-evaluating RootView's entire TabView / split hierarchy.
         .overlay(alignment: .top) {
+            RootNoticeOverlay(store: store)
+        }
+        .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
+            Button("知道了", role: .cancel) { store.errorMessage = nil }
+        } message: { Text(store.errorMessage ?? "") }
+        .dismissRevealsWhenTabChanges(tabs.selection)
+        .transaction { transaction in
+            if reduceMotion { transaction.animation = nil; transaction.disablesAnimations = true }
+        }
+    }
+    @ViewBuilder private func tabLabel(_ item: (title: LocalizedStringKey, symbol: String, kind: RevealAnimationKind)) -> some View {
+        if !vectorTabBarUnavailable, RevealAnimationLibrary.syncLoad(item.kind) != nil {
+            Label { Text(item.title) } icon: { Image(uiImage: TabVectorIconView.placeholderImage) }
+        } else {
+            Label(item.title, systemImage: item.symbol)
+        }
+    }
+    @ViewBuilder private func page(_ index: Int) -> some View {
+        switch index {
+        case 1: DownloadsView()
+        case 2: PurchasedView()
+        case 3: AccountsView()
+        default: SearchView()
+        }
+    }
+}
+
+private struct RootNoticeOverlay: View {
+    @ObservedObject var store: ToolStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    var body: some View {
+        ZStack(alignment: .top) {
             if let message = store.undoNotice?.message ?? store.infoMessage {
                 Group {
                     if let notice = store.undoNotice {
-                    HStack(spacing: 8) {
-                        UndoCountdown(start: notice.created, duration: UndoNotice.duration)
-                        Text(message).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .compatibleNumericTransition()
+                        HStack(spacing: 8) {
+                            UndoCountdown(start: notice.created, duration: UndoNotice.duration)
+                            Text(message).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .compatibleNumericTransition()
                             Button("撤销") {
                                 UX.tapLight()
                                 withAnimation(UX.motion(reduceMotion)) { store.undoLastAction() }
                             }
-                                .font(.subheadline.weight(.semibold)).frame(minWidth: 44, minHeight: 44)
-                                .compatibleInteractionShape(Rectangle())
-                                .accessibilityIdentifier("notice.undo")
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.88), value: notice.revision)
+                            .font(.subheadline.weight(.semibold)).frame(minWidth: 44, minHeight: 44)
+                            .compatibleInteractionShape(Rectangle())
+                            .accessibilityIdentifier("notice.undo")
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.88), value: notice.revision)
                     } else {
                         // Match 1.8.0: the whole compact notice dismisses on tap.
                         Button { store.infoMessage = nil } label: {
@@ -417,8 +454,8 @@ struct RootView: View {
                 .zIndex(1)
             }
         }
-        .animation(reduceMotion ? nil : .spring(response: 0.36, dampingFraction: 0.86), value: store.infoMessage)
-        .animation(reduceMotion ? nil : .spring(response: 0.36, dampingFraction: 0.86), value: store.undoNotice?.id)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.88), value: store.infoMessage)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.88), value: store.undoNotice?.id)
         .task(id: store.undoNotice.map { "\($0.id.uuidString)-\($0.revision)" }) {
             guard let notice = store.undoNotice else { return }
             UIAccessibility.post(notification: .announcement, argument: AppText.text("\(notice.message)，可以撤销"))
@@ -441,28 +478,6 @@ struct RootView: View {
             let seconds = min(8, max(3.5, Double(message.count) / 14))
             do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
             if store.infoMessage == message { store.infoMessage = nil }
-        }
-        .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
-            Button("知道了", role: .cancel) { store.errorMessage = nil }
-        } message: { Text(store.errorMessage ?? "") }
-        .dismissRevealsWhenTabChanges(tabs.selection)
-        .transaction { transaction in
-            if reduceMotion { transaction.animation = nil; transaction.disablesAnimations = true }
-        }
-    }
-    @ViewBuilder private func tabLabel(_ item: (title: LocalizedStringKey, symbol: String, kind: RevealAnimationKind)) -> some View {
-        if !vectorTabBarUnavailable, RevealAnimationLibrary.syncLoad(item.kind) != nil {
-            Label { Text(item.title) } icon: { Image(uiImage: TabVectorIconView.placeholderImage) }
-        } else {
-            Label(item.title, systemImage: item.symbol)
-        }
-    }
-    @ViewBuilder private func page(_ index: Int) -> some View {
-        switch index {
-        case 1: DownloadsView()
-        case 2: PurchasedView()
-        case 3: AccountsView()
-        default: SearchView()
         }
     }
 }

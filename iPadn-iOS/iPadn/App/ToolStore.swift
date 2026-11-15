@@ -183,6 +183,7 @@ final class ToolStore: ObservableObject {
     #endif
     private var searchTask: Task<Void, Never>?
     private var localSearchTask: Task<Void, Never>?
+    private var delistedVerifyTask: Task<Void, Never>?
     private var localSearchID = UUID()
     private var searchID = UUID()
     private var lastRemoteResults: [StoreApp] = []
@@ -261,6 +262,7 @@ final class ToolStore: ObservableObject {
         let input = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !input.isEmpty else { clearSearch(); return }
         searchTask?.cancel()
+        delistedVerifyTask?.cancel()
         if cacheLoading {
             searching = true
             searchTask = Task {
@@ -291,46 +293,6 @@ final class ToolStore: ObservableObject {
                 // Searching an App ID should work even if saved Apple credentials expired.
                 let accountCountry = StoreService.country(forStorefront: apple.active?.storeFront ?? "")
                 let prioritizeDelisted = settings.prioritizeDelistedSearchResults
-                var snapshotCandidates: [StoreApp] = []
-                var snapshotAliases: [String: [String]] = [:]
-                var probeIDs: [String] = []
-                var probeTask: Task<[String: StoreService.DelistedVerification], Never>?
-                defer { if Task.isCancelled { probeTask?.cancel() } }
-                if case .keyword(let term) = query {
-                    let known = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app) + (appCatalog[context.platform.rawValue] ?? [])
-                    let directory = nameCatalog
-                    let localMatch = await Task.detached(priority: .userInitiated) {
-                        Self.findLocalMatches(term: term, platform: context.platform, known: known, directory: directory)
-                    }.value
-                    try Task.checkCancellation()
-                    guard searchID == id else { return }
-                    snapshotAliases = localMatch.aliases
-                    snapshotCandidates = applyCachedDelistedStatuses(to: localMatch.candidates)
-                    if prioritizeDelisted, term.count >= 2 {
-                        probeIDs = snapshotCandidates.enumerated()
-                            .compactMap { offset, candidate -> (id: String, tier: Int, sparse: Bool, offset: Int)? in
-                                guard !candidate.isDelisted, freshDelistedCache(for: candidate.id) == nil else { return nil }
-                                let tier = AppSearchRanking.relevanceTier(
-                                    for: candidate, query: term, aliases: snapshotAliases[candidate.id] ?? []
-                                )
-                                guard tier >= 2 else { return nil }
-                                return (candidate.id, tier, candidate.version.isEmpty && candidate.category.isEmpty, offset)
-                            }
-                            .sorted { lhs, rhs in
-                                if lhs.tier != rhs.tier { return lhs.tier > rhs.tier }
-                                if lhs.sparse != rhs.sparse { return lhs.sparse && !rhs.sparse }
-                                return lhs.offset < rhs.offset
-                            }
-                            .prefix(30)
-                            .map(\.id)
-                        if !probeIDs.isEmpty {
-                            let targetIDs = probeIDs
-                            probeTask = Task {
-                                await StoreService.verifyDelistedStatuses(ids: targetIDs, store: context, accountCountry: accountCountry)
-                            }
-                        }
-                    }
-                }
                 var apps = try await StoreService.search(query, store: context, limit: limit, accountCountry: accountCountry)
                 if case .appID(let appID, _) = query, apps.isEmpty {
                     // Delisted or region-limited apps have no public listing;
@@ -349,19 +311,6 @@ final class ToolStore: ObservableObject {
                 let remoteListedIDs = apps.filter { $0.delisted != true }.map(\.id)
                 let now = Date()
                 for appID in remoteListedIDs { delistedStatusCache[appID] = (now, false) }
-                if let probeTask {
-                    let remoteListedSet = Set(remoteListedIDs)
-                    let hasPendingLocal = probeIDs.contains { !remoteListedSet.contains($0) }
-                    if hasPendingLocal {
-                        if let verified = await Self.awaitProbeWithGrace(probeTask, nanoseconds: 1_200_000_000) {
-                            snapshotCandidates = applyVerifiedDelistedStatuses(verified, to: snapshotCandidates, excludingIDs: remoteListedSet)
-                        } else {
-                            scheduleLateDelistedWarmup(probeTask, excluding: remoteListedSet, for: id, context: context)
-                        }
-                    } else {
-                        probeTask.cancel()
-                    }
-                }
                 try Task.checkCancellation()
                 guard searchID == id else { return }
                 let catalogPlatformKey = context.platform.rawValue
@@ -374,13 +323,15 @@ final class ToolStore: ObservableObject {
                 if case .keyword(let term) = query {
                     let knownAfterSearch = owned.map(\.storeApp) + favorites + downloads.jobs.map(\.app) + (appCatalog[catalogPlatformKey] ?? [])
                     let refreshed = Self.findLocalMatches(term: term, platform: context.platform, known: knownAfterSearch, directory: nameCatalog)
-                    let enriched = applyCachedDelistedStatuses(to: AppSearchRanking.mergeUnique(snapshotCandidates + refreshed.candidates))
-                    let aliases = snapshotAliases.merging(refreshed.aliases) { first, _ in first }
+                    let enriched = applyCachedDelistedStatuses(to: refreshed.candidates)
                     localSearchTask?.cancel()
                     lastRemoteResults = apps
                     lastLocalCandidates = enriched
-                    lastLocalAliases = aliases
+                    lastLocalAliases = refreshed.aliases
                     applySearchArrangement(for: term)
+                    if prioritizeDelisted {
+                        startDelistedVerificationIfNeeded(for: term, context: context, accountCountry: accountCountry, queryID: id)
+                    }
                 } else {
                     lastRemoteResults = apps
                     lastLocalCandidates = []
@@ -463,22 +414,6 @@ final class ToolStore: ObservableObject {
         return (candidates, aliases)
     }
 
-    private static func awaitProbeWithGrace(
-        _ task: Task<[String: StoreService.DelistedVerification], Never>,
-        nanoseconds: UInt64
-    ) async -> [String: StoreService.DelistedVerification]? {
-        await withTaskGroup(of: [String: StoreService.DelistedVerification]?.self) { group in
-            group.addTask { await task.value }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: nanoseconds)
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
-    }
-
     private func freshDelistedCache(for appID: String) -> Bool? {
         guard let cached = delistedStatusCache[appID],
               Date().timeIntervalSince(cached.date) < 600 else { return nil }
@@ -525,47 +460,73 @@ final class ToolStore: ObservableObject {
         localResults = arranged.localResults
     }
 
-    private func scheduleLateDelistedWarmup(
-        _ probeTask: Task<[String: StoreService.DelistedVerification], Never>,
-        excluding remoteListedSet: Set<String>,
-        for queryID: UUID,
-        context: StoreContext
+    private func startDelistedVerificationIfNeeded(
+        for term: String,
+        context: StoreContext,
+        accountCountry: String?,
+        queryID: UUID
     ) {
-        Task { @MainActor [weak self] in
-            let late = await probeTask.value
-            guard let self else { return }
-            let previouslyDelisted = Set(self.results.filter(\.isDelisted).map(\.id))
-            _ = self.applyVerifiedDelistedStatuses(late, to: [], excludingIDs: remoteListedSet)
-            guard self.searchID == queryID,
+        delistedVerifyTask?.cancel()
+        delistedVerifyTask = nil
+        guard term.count >= 2 else { return }
+        let remoteListedSet = Set(lastRemoteResults.filter { $0.delisted != true }.map(\.id))
+        let probeIDs = lastLocalCandidates.enumerated()
+            .compactMap { offset, candidate -> (id: String, tier: Int, sparse: Bool, offset: Int)? in
+                guard !remoteListedSet.contains(candidate.id),
+                      !candidate.isDelisted,
+                      freshDelistedCache(for: candidate.id) == nil else { return nil }
+                let tier = AppSearchRanking.relevanceTier(
+                    for: candidate, query: term, aliases: lastLocalAliases[candidate.id] ?? []
+                )
+                guard tier >= 2 else { return nil }
+                return (candidate.id, tier, candidate.version.isEmpty && candidate.category.isEmpty, offset)
+            }
+            .sorted { lhs, rhs in
+                if lhs.tier != rhs.tier { return lhs.tier > rhs.tier }
+                if lhs.sparse != rhs.sparse { return lhs.sparse && !rhs.sparse }
+                return lhs.offset < rhs.offset
+            }
+            .prefix(15)
+            .map(\.id)
+        guard !probeIDs.isEmpty else { return }
+        delistedVerifyTask = Task { @MainActor [weak self] in
+            let verified = await StoreService.verifyDelistedStatuses(
+                ids: probeIDs,
+                store: context,
+                accountCountry: accountCountry
+            )
+            guard !Task.isCancelled, let self,
+                  self.searchID == queryID,
                   self.settings.store == context,
                   self.settings.prioritizeDelistedSearchResults,
-                  case .keyword(let term)? = try? SearchQuery.parse(self.lastSearchTerm) else { return }
-            let hasNewPromotion = late.contains { id, status in
-                status == .delisted && !remoteListedSet.contains(id) && !previouslyDelisted.contains(id)
+                  case .keyword(let currentTerm)? = try? SearchQuery.parse(self.lastSearchTerm),
+                  currentTerm == term else { return }
+            let previouslyDelisted = Set(self.results.filter(\.isDelisted).map(\.id))
+            _ = self.applyVerifiedDelistedStatuses(verified, to: [], excludingIDs: remoteListedSet)
+            let hasNewPromotion = verified.contains { appID, status in
+                status == .delisted && !remoteListedSet.contains(appID) && !previouslyDelisted.contains(appID)
             }
             if hasNewPromotion {
-                self.applySearchArrangement(for: term)
+                self.applySearchArrangement(for: currentTerm)
             }
         }
     }
 
     private func reapplySearchOrdering() {
         guard case .keyword(let term)? = try? SearchQuery.parse(lastSearchTerm) else { return }
-        let enriched = applyCachedDelistedStatuses(to: lastLocalCandidates)
-        if settings.prioritizeDelistedSearchResults {
-            let remoteListed = Set(lastRemoteResults.filter { $0.delisted != true }.map(\.id))
-            let needsProbe = term.count >= 2 && enriched.contains { candidate in
-                !remoteListed.contains(candidate.id) &&
-                !candidate.isDelisted &&
-                freshDelistedCache(for: candidate.id) == nil &&
-                AppSearchRanking.relevanceTier(for: candidate, query: term, aliases: lastLocalAliases[candidate.id] ?? []) >= 2
-            }
-            if needsProbe {
-                search(lastSearchTerm)
-                return
-            }
-        }
         applySearchArrangement(for: term)
+        if settings.prioritizeDelistedSearchResults {
+            let accountCountry = StoreService.country(forStorefront: apple.active?.storeFront ?? "")
+            startDelistedVerificationIfNeeded(
+                for: term,
+                context: settings.store,
+                accountCountry: accountCountry,
+                queryID: searchID
+            )
+        } else {
+            delistedVerifyTask?.cancel()
+            delistedVerifyTask = nil
+        }
     }
 
     private func updateLocalResults(for input: String? = nil) {
@@ -636,16 +597,23 @@ final class ToolStore: ObservableObject {
             return
         }
         infoMessage = AppText.text("已切换到 \(account.name.isEmpty ? account.id : account.name)")
-        if let country = StoreService.country(forStorefront: account.storeFront), settings.store.country != country {
-            // Changing the region re-runs the search (see settings).
-            settings.store.country = country
-        } else if hasSearched {
-            search()
+        let switchedID = id
+        let storefrontCountry = StoreService.country(forStorefront: account.storeFront)
+        // Let the notice banner begin rendering before encoding settings / firing search & purchase sync.
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self, self.lastAccountID == switchedID else { return }
+            if let country = storefrontCountry, self.settings.store.country != country {
+                // Changing the region re-runs the search (see settings).
+                self.settings.store.country = country
+            } else if self.hasSearched {
+                self.search()
+            }
+            #if DEBUG
+            if self.visualPreview { return }
+            #endif
+            await self.refreshOwned()
         }
-        #if DEBUG
-        if visualPreview { return }
-        #endif
-        Task { await refreshOwned() }
     }
 
     func ensureOwnedLoaded() async {
@@ -658,7 +626,7 @@ final class ToolStore: ObservableObject {
         await refreshOwned()
     }
 
-    func cancelSearch() { searchTask?.cancel(); localSearchTask?.cancel(); searchID = UUID(); searching = false; hasSearched = !results.isEmpty || !localResults.isEmpty; searchError = nil }
+    func cancelSearch() { searchTask?.cancel(); localSearchTask?.cancel(); delistedVerifyTask?.cancel(); delistedVerifyTask = nil; searchID = UUID(); searching = false; hasSearched = !results.isEmpty || !localResults.isEmpty; searchError = nil }
     func clearSearch() {
         cancelSearch(); searchText = ""; results = []; localResults = []; hasSearched = false; lastSearchTerm = ""
         lastRemoteResults = []; lastLocalCandidates = []; lastLocalAliases = [:]

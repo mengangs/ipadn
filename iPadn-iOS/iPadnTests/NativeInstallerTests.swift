@@ -121,7 +121,7 @@ final class NativeInstallerTests: XCTestCase {
         XCTAssertNil(OnDevicePairing.activityStaleDate(forStep: 0, now: now))
 
         if #available(iOS 16.2, *) {
-            XCTAssertNil(OnDevicePairing.alertConfiguration(step: 1))
+            XCTAssertNotNil(OnDevicePairing.alertConfiguration(step: 1))
             XCTAssertNotNil(OnDevicePairing.alertConfiguration(step: 2))
             XCTAssertNotNil(OnDevicePairing.alertConfiguration(step: 3, code: "482913"))
             XCTAssertNotNil(OnDevicePairing.alertConfiguration(step: 4))
