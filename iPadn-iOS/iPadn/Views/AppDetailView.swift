@@ -531,7 +531,7 @@ struct AppDetailView: View {
                 marketingVersion: app.version,
                 idleTitle: store.settings.store.platform.supportsIPA ? (app.isFree ? "获取" : "下载") : "获取 PKG",
                 filled: true,
-                alignment: .leading,
+                alignment: .center,
                 onEnqueued: reloadIfLicenseWasMissing
             )
             .accessibilityIdentifier(store.settings.store.platform.supportsIPA ? "detail.get" : "mac.official-pkg")
@@ -647,7 +647,7 @@ struct AppDetailView: View {
                         idleTitle: "下载",
                         filled: false,
                         enabled: !manual.isEmpty,
-                        alignment: .trailing,
+                        alignment: .center,
                         onEnqueued: reloadIfLicenseWasMissing
                     )
                 }
@@ -855,7 +855,7 @@ struct AppDetailView: View {
                         marketingVersion: known ? name : nil,
                         idleTitle: "下载",
                         filled: false,
-                        alignment: .trailing,
+                        alignment: .center,
                         idleAccessibilityLabel: known ? AppText.text("下载版本 \(name)") : AppText.text("下载版本 ID \(version.id)"),
                         onEnqueued: reloadIfLicenseWasMissing
                     )

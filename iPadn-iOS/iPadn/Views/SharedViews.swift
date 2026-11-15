@@ -138,7 +138,7 @@ struct StoreDownloadActionButton: View {
     var enabled = true
     var cloudWhenIdle = false
     var insideNavigationLink = false
-    var alignment: Alignment = .trailing
+    var alignment: Alignment = .center
     var idleAccessibilityLabel: String? = nil
     var onEnqueued: (() -> Void)? = nil
     var onRequireVerification: (() -> Void)? = nil
@@ -148,32 +148,19 @@ struct StoreDownloadActionButton: View {
 
     var body: some View {
         let preparing = store.isPreparingDownload(appID: app.id, platform: platform, versionID: versionID)
-        if !preparing, let job = store.matchingDownloadJob(for: app, platform: platform, versionID: versionID) {
-            StoreJobActionButton(
-                job: job,
-                progressState: downloads.progress(for: job.id),
-                autoInstalling: downloads.autoInstalling?.id == job.id ? downloads.autoInstalling : nil,
-                appName: app.name,
-                filled: filled,
-                insideNavigationLink: insideNavigationLink,
-                alignment: alignment,
-                action: triggerAction
-            )
-        } else {
-            let phase: AppStoreActionPhase = preparing
-                ? .loading
-                : (cloudWhenIdle ? .cloud(enabled: enabled) : .capsule(title: idleTitle, filled: filled, enabled: enabled))
-            let label = preparing
-                ? AppText.text("取消准备下载")
-                : idleAccessibilityLabel
-            AppStoreActionButton(
-                phase: phase,
-                alignment: alignment,
-                insideNavigationLink: insideNavigationLink,
-                accessibilityLabelText: label,
-                action: triggerAction
-            )
-        }
+        let job = preparing ? nil : store.matchingDownloadJob(for: app, platform: platform, versionID: versionID)
+        StoreActionPhaseHost(
+            preparing: preparing,
+            job: job,
+            progressState: job.map { downloads.progress(for: $0.id) } ?? StoreActionIdleState.progress,
+            autoInstalling: job.flatMap { downloads.autoInstalling?.id == $0.id ? downloads.autoInstalling : nil },
+            idlePhase: cloudWhenIdle ? .cloud(enabled: enabled) : .capsule(title: idleTitle, filled: filled, enabled: enabled),
+            idleAccessibilityLabel: idleAccessibilityLabel,
+            filled: filled,
+            insideNavigationLink: insideNavigationLink,
+            alignment: alignment,
+            action: triggerAction
+        )
     }
 
     private func triggerAction() {
@@ -189,19 +176,27 @@ struct StoreDownloadActionButton: View {
     }
 }
 
-private struct StoreJobActionButton: View {
-    let job: DownloadJob
+@MainActor
+private enum StoreActionIdleState {
+    static let progress = DownloadProgressState()
+}
+
+private struct StoreActionPhaseHost: View {
+    let preparing: Bool
+    let job: DownloadJob?
     @ObservedObject var progressState: DownloadProgressState
     let autoInstalling: DownloadManager.AutoInstallProgress?
-    let appName: String
+    let idlePhase: AppStoreActionPhase
+    let idleAccessibilityLabel: String?
     let filled: Bool
     let insideNavigationLink: Bool
     let alignment: Alignment
     let action: () -> Void
 
-    private var liveJob: DownloadJob { progressState.applying(to: job) }
-
     private var phase: AppStoreActionPhase {
+        if preparing { return .loading }
+        guard let job else { return idlePhase }
+        let liveJob = progressState.applying(to: job)
         if let autoInstalling {
             return autoInstalling.hasProgress ? .downloading(autoInstalling.fraction) : .processing
         }
@@ -225,10 +220,12 @@ private struct StoreJobActionButton: View {
     }
 
     private var accessibilityLabelText: String? {
+        if preparing { return AppText.text("取消准备下载") }
+        guard let job else { return idleAccessibilityLabel }
         if let autoInstalling {
             return AppText.text("正在安装") + " " + autoInstalling.name
         }
-        switch liveJob.status {
+        switch progressState.applying(to: job).status {
         case .queued: return AppText.text("等待下载，点按暂停")
         case .running: return AppText.text("暂停")
         case .pausing, .processing: return AppText.text("正在处理")

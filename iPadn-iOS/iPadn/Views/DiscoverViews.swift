@@ -73,7 +73,7 @@ struct ChartView: View {
                                 idleTitle: store.settings.store.platform.supportsIPA ? (app.isFree ? "获取" : app.priceLabel) : "获取 PKG",
                                 filled: false,
                                 insideNavigationLink: true,
-                                alignment: .trailing,
+                                alignment: .center,
                                 idleAccessibilityLabel: AppText.text("获取 \(app.name)")
                             )
                         }

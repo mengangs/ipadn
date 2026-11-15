@@ -183,7 +183,7 @@ struct PurchasedView: View {
                                             platformOverride: store.settings.store.platform == .iPadOS ? .iPadOS : .iOS,
                                             cloudWhenIdle: true,
                                             insideNavigationLink: true,
-                                            alignment: .trailing,
+                                            alignment: .center,
                                             idleAccessibilityLabel: AppText.text("下载 \(app.name)")
                                         )
                                     }

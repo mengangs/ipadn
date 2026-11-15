@@ -344,7 +344,7 @@ private struct PillButtonPressStyle: ButtonStyle {
 /// a rotating open arc while loading and a clockwise progress ring while downloading.
 struct AppStoreActionButton: View {
     let phase: AppStoreActionPhase
-    var alignment: Alignment = .trailing
+    var alignment: Alignment = .center
     var insideNavigationLink = false
     var accessibilityLabelText: String? = nil
     var accessibilityValueText: String? = nil
@@ -360,15 +360,12 @@ struct AppStoreActionButton: View {
     @State private var pillHeight: CGFloat = 30
 
     private var morphAnimation: Animation? {
-        reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82)
+        reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88)
     }
 
     private var isCircular: Bool { phase.isCircular }
     private var ringSize: CGFloat { max(30, dynamicTypeSize.isAccessibilitySize ? min(36, pillHeight) : 30) }
-    private var slotMinWidth: CGFloat {
-        if case .cloud = phase { return max(34, ringSize) }
-        return max(74, pillWidth)
-    }
+    private var slotMinWidth: CGFloat { max(74, pillWidth) }
     private var activeTitle: String {
         if case .capsule(let title, _, _) = phase, !title.isEmpty { return title }
         return lastTitle
@@ -400,24 +397,51 @@ struct AppStoreActionButton: View {
         let cloud = phase.isCloud
         let showPill = !circular && !cloud
         ZStack {
-            Capsule()
-                .fill(activeFilled ? AnyShapeStyle(UX.tint) : AnyShapeStyle(Color(.tertiarySystemFill)))
-                .opacity(showPill ? 1 : 0)
+            ZStack {
+                Capsule()
+                    .fill(activeFilled ? AnyShapeStyle(UX.tint) : AnyShapeStyle(Color(.tertiarySystemFill)))
+                    .opacity(showPill ? 1 : 0)
+                    .animation(
+                        reduceMotion
+                            ? nil
+                            : (showPill ? .easeOut(duration: 0.16).delay(0.05) : .easeOut(duration: 0.13)),
+                        value: showPill
+                    )
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: activeFilled)
 
-            Text(LocalizedStringKey(activeTitle))
-                .font(.subheadline.weight(.bold))
-                .lineLimit(1)
-                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.75 : 1.0)
-                .foregroundStyle(activeFilled ? UX.onAccent : UX.tint)
-                .padding(.horizontal, 16)
-                .opacity(showPill ? 1 : 0)
-                .scaleEffect(showPill || reduceMotion ? 1 : 0.45)
+                Text(LocalizedStringKey(activeTitle))
+                    .font(.subheadline.weight(.bold))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.75 : 1.0)
+                    .foregroundStyle(activeFilled ? UX.onAccent : UX.tint)
+                    .padding(.horizontal, 16)
+                    .opacity(showPill ? 1 : 0)
+                    .scaleEffect(showPill || reduceMotion ? 1 : 0.72)
+                    .animation(
+                        reduceMotion
+                            ? nil
+                            : (showPill ? .easeOut(duration: 0.16).delay(0.08) : .easeOut(duration: 0.10)),
+                        value: showPill
+                    )
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: activeTitle)
+            }
+            .frame(width: targetWidth, height: targetHeight)
+            .clipShape(Capsule())
+            .animation(morphAnimation, value: circular)
+            .animation(morphAnimation, value: cloud)
 
             Image(systemName: "icloud.and.arrow.down")
                 .font(.title3.weight(.medium))
                 .foregroundStyle(UX.tint)
                 .opacity(cloud ? 1 : 0)
-                .scaleEffect(cloud || reduceMotion ? 1 : 0.5)
+                .scaleEffect(cloud || reduceMotion ? 1 : 0.6)
+                .animation(
+                    reduceMotion
+                        ? nil
+                        : (cloud ? .easeOut(duration: 0.16).delay(0.06) : .easeOut(duration: 0.10)),
+                    value: cloud
+                )
 
             if circular {
                 ProgressRing(
@@ -426,11 +450,21 @@ struct AppStoreActionButton: View {
                     size: ringSize,
                     outerPadding: 0
                 )
-                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.72)))
+                .transition(
+                    reduceMotion
+                        ? .opacity
+                        : .asymmetric(
+                            insertion: .opacity
+                                .combined(with: .scale(scale: 0.80))
+                                .animation(.easeOut(duration: 0.18).delay(0.06)),
+                            removal: .opacity
+                                .combined(with: .scale(scale: 0.76))
+                                .animation(.easeIn(duration: 0.09))
+                        )
+                )
             }
         }
         .frame(width: targetWidth, height: targetHeight)
-        .clipShape(Capsule())
         .background {
             Text(LocalizedStringKey(activeTitle))
                 .font(.subheadline.weight(.bold))
@@ -447,11 +481,8 @@ struct AppStoreActionButton: View {
                 }
         }
         .frame(minWidth: slotMinWidth, minHeight: 36, alignment: alignment)
+        .animation(morphAnimation, value: slotMinWidth)
         .contentShape(Rectangle())
-        .animation(morphAnimation, value: circular)
-        .animation(morphAnimation, value: cloud)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: activeTitle)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: activeFilled)
         .onAppear { syncCachedCapsule(phase) }
         .compatibleOnChange(of: phase) { next in syncCachedCapsule(next) }
     }
@@ -511,7 +542,7 @@ struct ProgressRing: View {
     var showsStopSquare = false
     var size: CGFloat = 30
     var trackLineWidth: CGFloat = 3.0
-    var guideLineWidth: CGFloat = 2.0
+    var guideLineWidth: CGFloat = 3.0
     var outerPadding: CGFloat = 7
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -558,6 +589,7 @@ struct ProgressRing: View {
                 .transition(.opacity)
             }
         }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: progress == nil)
         .frame(width: size, height: size)
         .padding(outerPadding)
         .contentShape(Circle())

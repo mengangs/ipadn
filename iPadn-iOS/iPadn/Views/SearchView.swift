@@ -81,7 +81,7 @@ struct SearchView: View {
                     idleTitle: store.settings.store.platform.supportsIPA ? "获取" : "获取 PKG",
                     filled: false,
                     insideNavigationLink: true,
-                    alignment: .trailing,
+                    alignment: .center,
                     idleAccessibilityLabel: AppText.text("获取 \(app.name)")
                 )
             }

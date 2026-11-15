@@ -708,7 +708,7 @@ struct DownloadTaskRow: View {
                     trailingControl
                         .id(controlKey + (celebrating ? "-done" : ""))
                         .transition(.statusSwap(reduceMotion: reduceMotion))
-                        .frame(minWidth: 74, minHeight: 44, alignment: .trailing)
+                        .frame(minWidth: 74, minHeight: 44, alignment: .center)
                 }
             }
             if [.running, .pausing, .paused].contains(job.status), job.expected > 0 {
