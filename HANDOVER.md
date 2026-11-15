@@ -1,11 +1,21 @@
 # iPadn 项目全面交接与问题排查文档 (HANDOVER.md)
 
-> **更新时间**：2026-11-15（2.1.2 / build 32 已正式发布；家庭共享暂停）
+> **更新时间**：2026-11-15（2.1.3 / build 33 发布准备；2.1.2 已正式发布；家庭共享暂停）
 > **代码仓库**：`https://github.com/mengangs/ipadn.git` (`main` 分支)  
 > **本地工作区**：`D:\iOS-Dev\projects\ipadn` (映射到 WSL2: `/mnt/d/iOS-Dev/projects/ipadn`)  
 > **目标产品**：iOS 原生应用 `iPadn` (`app.local.iPadn`)
 
 ---
+
+## 2026-11-15 iPadn 2.1.3（build 33）与当前交接
+
+### 当前代码与发布状态
+
+- 本地修复提交 `21c138e`（`fix: resolve delisted search crash, isolate notice animation, and polish pairing UX`）包含三项修复与优化：
+  1. **搜索闪退与并发竞争修复**（`ToolStore.swift`、`StoreService.swift`）：移除关键词搜索前的 `Task.detached` / `awaitProbeWithGrace` 与 `verifyDelistedStatuses` 嵌套 `withTaskGroup` 并发竞争取消，改为在商店搜索返回后通过 `startDelistedVerificationIfNeeded` 顺序核验最多 15 个候选（`batch.count <= 100` 直接调用 `lookupChunk`），并在新搜索、`cancelSearch()` 或关闭「搜索时优先显示已下架应用」时显式取消 `delistedVerifyTask`。
+  2. **提示动画隔离与账号切换响应**（`SharedViews.swift`、`ToolStore.swift`）：将顶部提示/撤销横幅拆入 `RootNoticeOverlay` 隔离弹簧动画，避免触发 `RootView` 整棵 `TabView` 重绘；`switchAccount` 通过 `await Task.yield()` 让提示横幅先渲染再触发地区更新、重新搜索与 `refreshOwned()`。
+  3. **本机配对引导与灵动岛交接优化**（`OnDevicePairing.swift`、`InstallationSettingsView.swift`、`PairingLiveActivity.swift`、`Localizable.xcstrings`、`NativeInstallerTests.swift`）：点按「打开设置」时调用 `notifyHandoffIfWaiting()` 释放后台音频并推送第 1 步灵动岛横幅提示，完善 `.connected`/`.code` 后台交接与 0.1 秒切片可取消等待，更新 11 种语言配对引导文案及第 1 步 `AlertConfiguration` 单测断言。
+- **2.1.3 / build 33 发布准备**：保留已有 `v2.1.2` Release 不覆盖不删除；`generate_project.py`、生成的 `iPadn.xcodeproj` 与本地不入库 `Config/xtool/*.plist` 已更新为 `2.1.3 / 33`，`RELEASE_NOTES.md`、`README.md`、`README_EN.md` 与本文档已同步；待本地校验通过、推送 `main` 并触发完整 GitHub Actions CI（`run_tests=true`、`run_ui_tests=true`、`ui_test_scope=full`、`publish_release=true`）全通过后自动发布 `v2.1.3`（标准版、精简版 IPA 及更新 `altstore-source.json`）。
 
 ## 2026-11-15 iPadn 2.1.2（build 32）与当前交接
 

@@ -34,6 +34,13 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 ---
 
+## What’s new in 2.1.3
+
+- **Fix keyword-search crash & concurrency race**: Replace nested concurrent pre-search task-group probes with sequential post-search verification of candidate delisted apps and explicit task cancellation.
+- **Isolate notice animations & smoother account switching**: Move the top notice/undo overlay into its own view to avoid re-evaluating the tab hierarchy, and start rendering the switch notice before kicking off sync and search.
+- **Polish on-device pairing & Live Activity handoff**: Trigger a Step 1 Dynamic Island alert banner when opening Settings, refine pairing instructions across all 11 languages, and cancel superseded Live Activity waits promptly.
+- Standard and lite packages remain available for iOS / iPadOS 16 and later. See the [release notes](RELEASE_NOTES.md).
+
 ## What’s new in 2.1.2
 
 - **Prioritize delisted apps in search**: Keyword search combines the alias directory with local purchased, favorite and download records for tiered matching, verifies candidate delisted status, and places confirmed matching delisted apps first (toggleable under Account › Settings › Downloads › Prioritize Delisted Apps in Search).
