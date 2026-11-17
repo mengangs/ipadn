@@ -5,6 +5,7 @@ import UIKit
 struct ActionConfirmationView: View {
     let title: LocalizedStringKey
     let message: LocalizedStringKey?
+    var detail: String? = nil
     let confirmTitle: LocalizedStringKey
     var destructive = true
     var showsCancel = true
@@ -12,12 +13,12 @@ struct ActionConfirmationView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
     private var compactDetentHeight: CGFloat {
-        if showsCancel { return message != nil ? 296 : 248 }
-        return message != nil ? 248 : 200
+        let base: CGFloat = showsCancel ? (message != nil ? 296 : 248) : (message != nil ? 248 : 200)
+        return detail == nil ? base : min(440, base + 84)
     }
     var body: some View {
         Group {
-            if typeSize.isAccessibilitySize {
+            if typeSize.isAccessibilitySize || detail != nil {
                 ScrollView { confirmation }.compatibleScrollBounce()
                     .accessibilityIdentifier("confirmation.scroll")
             } else { confirmation }
@@ -29,6 +30,16 @@ struct ActionConfirmationView: View {
         VStack(alignment: .leading, spacing: 18) {
             Text(title).font(.title3.weight(.semibold)).accessibilityAddTraits(.isHeader).accessibilityIdentifier("confirmation.title")
             if let message { Text(message).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("confirmation.message") }
+            if let detail, !detail.isEmpty {
+                Text(verbatim: detail)
+                    .font(.footnote.monospaced())
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .accessibilityIdentifier("confirmation.detail")
+            }
             VStack(spacing: 10) {
                 Button(role: destructive ? .destructive : nil) { action(); dismiss() } label: {
                     Text(confirmTitle).font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 24)
@@ -47,12 +58,13 @@ private struct ActionConfirmationModifier: ViewModifier {
     @Environment(\.dynamicTypeSize) private var typeSize
     let title: LocalizedStringKey
     let message: LocalizedStringKey?
+    let detail: String?
     let confirmTitle: LocalizedStringKey
     let destructive: Bool
     let action: () -> Void
     func body(content: Content) -> some View {
         content.sheet(isPresented: $isPresented) {
-            ActionConfirmationView(title: title, message: message, confirmTitle: confirmTitle, destructive: destructive, action: action)
+            ActionConfirmationView(title: title, message: message, detail: detail, confirmTitle: confirmTitle, destructive: destructive, action: action)
                 // A presented sheet can reset the parent's SwiftUI override.
                 // Keep its text size aligned with the page that opened it.
                 .environment(\.dynamicTypeSize, typeSize)
@@ -60,8 +72,8 @@ private struct ActionConfirmationModifier: ViewModifier {
     }
 }
 extension View {
-    func actionConfirmation(isPresented: Binding<Bool>, title: LocalizedStringKey, message: LocalizedStringKey? = nil, confirmTitle: LocalizedStringKey, destructive: Bool = true, action: @escaping () -> Void) -> some View {
-        modifier(ActionConfirmationModifier(isPresented: isPresented, title: title, message: message, confirmTitle: confirmTitle, destructive: destructive, action: action))
+    func actionConfirmation(isPresented: Binding<Bool>, title: LocalizedStringKey, message: LocalizedStringKey? = nil, detail: String? = nil, confirmTitle: LocalizedStringKey, destructive: Bool = true, action: @escaping () -> Void) -> some View {
+        modifier(ActionConfirmationModifier(isPresented: isPresented, title: title, message: message, detail: detail, confirmTitle: confirmTitle, destructive: destructive, action: action))
     }
 }
 

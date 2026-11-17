@@ -216,13 +216,25 @@ struct AccountMenuButton: View {
             if !apple.accounts.isEmpty {
                 Section("切换账号") {
                     ForEach(apple.accounts) { account in
-                        Button { apple.select(account.id); UX.feedback() } label: {
-                            Label(account.id, systemImage: account.id == apple.activeID ? "checkmark.circle.fill" : "person.crop.circle")
+                        Button {
+                            if account.needsReauthentication {
+                                store.selectTab(.accounts)
+                                UX.feedback()
+                            } else {
+                                apple.select(account.id)
+                                UX.feedback()
+                            }
+                        } label: {
+                            if account.needsReauthentication {
+                                Label("\(account.id)（需重新登录）", systemImage: "person.crop.circle.badge.exclamationmark")
+                            } else {
+                                Label(account.id, systemImage: account.id == apple.activeID ? "checkmark.circle.fill" : "person.crop.circle")
+                            }
                         }
                     }
                 }
             }
-            Button("账号与设置", systemImage: "person.crop.circle") { store.tab = 3 }
+            Button("账号与设置", systemImage: "person.crop.circle") { store.selectTab(.accounts) }
         } label: {
             AccountAvatar(account: apple.active, size: 32).frame(minWidth: 44, minHeight: 44)
         }

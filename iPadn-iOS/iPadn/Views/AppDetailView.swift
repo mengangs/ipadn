@@ -240,7 +240,9 @@ struct AppDetailView: View {
                         .cardRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
                     infoStrip.cardRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
                 }
-                if let shots = extrasLoaded ? extras?.screenshots : [], !extrasLoaded || !shots.isEmpty {
+                if store.settings.showAppScreenshots,
+                   let shots = extrasLoaded ? extras?.screenshots : [],
+                   !extrasLoaded || !shots.isEmpty {
                     CardSection(plain: true) {
                         ScreenshotStrip(screenshots: shots, platform: store.settings.store.platform,
                                         zoom: screenshotZoom) { viewing = $0 }
@@ -286,7 +288,7 @@ struct AppDetailView: View {
                         if value != nil, truncated { withAnimation { showDescription = true } }
                     }
                 }
-                if !app.isDelisted { ReviewsCard(app: app) }
+                if store.settings.showAppReviews, !app.isDelisted { ReviewsCard(app: app) }
                 if !app.isDelisted {
                     CardSection {
                         if store.isFavorite(app) { PriceHistorySection(app: app) }
@@ -464,6 +466,9 @@ struct AppDetailView: View {
                                                              platform: store.settings.store.platform)) ?? []
             guard !Task.isCancelled else { return }
             developerApps = apps
+        }
+        .compatibleOnChange(of: store.settings.showAppScreenshots) { on in
+            if !on { viewing = nil }
         }
         .fullScreenCover(item: $viewing) { shot in
             ScreenshotViewer(screenshots: extras?.screenshots ?? [shot], selection: shot)
@@ -1105,7 +1110,7 @@ struct AppDetailView: View {
     private func enqueueMacInstaller(_ installer: MacInstallerService.Installer) {
         do {
             try store.downloads.enqueueMacInstaller(installer.url, for: app)
-            store.tab = 1
+            store.selectTab(.downloads)
         } catch { store.errorMessage = error.localizedDescription }
     }
 

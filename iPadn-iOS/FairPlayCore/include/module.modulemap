@@ -1,0 +1,4 @@
+module FairPlayCore {
+    header "FairPlayCore.h"
+    export *
+}

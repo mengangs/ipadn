@@ -12,3 +12,11 @@
 
 # Local copy of build_native_install.sh with LF line endings for WSL
 /iPadn-iOS/scripts/.bni.sh
+
+# Private edition isolation: never track artifacts, certs, profiles or signed/test IPAs
+/artifacts/
+*.p12
+!/iPadn-iOS/iPadnTests/Fixtures/localhost-test-only.p12
+*.mobileprovision
+signing.json
+*.log

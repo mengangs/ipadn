@@ -9,11 +9,7 @@ struct DownloadsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var filter: DownloadFilter = .all
     @State private var term = ""
-    @State private var importing = false
     @State private var showingActions = false
-    @State private var nextAction: AdditionAction?
-    @State private var pickedFiles: [URL] = []
-    private enum AdditionAction { case file, link }
     @State private var addLink = false
     @State private var link = ""
     @State private var share: SharedFile?
@@ -33,6 +29,13 @@ struct DownloadsView: View {
     /// A mode change is running; taps wait so two changes never overlap.
     @State private var switchingMode = false
     @State private var actionBusy = false
+    /// FairPlay decryption of a downloaded or imported IPA.
+    @ObservedObject private var fairPlay = FairPlayHub.shared.service
+    @ObservedObject private var decryptRecords = DecryptRecordStore.shared
+    @ObservedObject private var packages = FairPlayPresentation.shared
+    @State private var pendingPackage: PackageRoute?
+    @State private var pendingStart: UUID?
+    @State private var pendingLibrary = false
     private var filteredJobs: [DownloadJob] {
         manager.jobs.filter { !swipingDelete.contains($0.id) && filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
     }
@@ -69,6 +72,8 @@ struct DownloadsView: View {
         .task(id: manager.jobs.filter { $0.status == .completed }.map { $0.id.uuidString }.joined()) {
             await manager.loadPackageIcons()
             if store.settings.updateNotifications { await store.checkForUpdates() }
+            // Automatic starts are coordinated by RootView, including while
+            // this tab is not visible. Existing products are never replaced.
         }
         .refreshable { await store.checkForUpdates(force: true) }
         .animation(UX.motion(reduceMotion), value: manager.jobs.map(\.id))
@@ -133,44 +138,38 @@ struct DownloadsView: View {
         }
         .compatibleOnChange(of: filter) { _ in selection.removeAll() }
         .compatibleOnChange(of: term) { _ in selection.removeAll() }
-        .sheet(isPresented: $showingActions, onDismiss: {
-            let action = nextAction; nextAction = nil
-            switch action {
-            case .file: importing = true
-            case .link: addLink = true
-            case nil: break
-            }
-        }) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("添加下载").font(.title3.weight(.semibold)).padding(.bottom, 6)
-                Button { nextAction = .file; showingActions = false } label: {
-                    Label("导入 IPA", systemImage: "square.and.arrow.down").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }.buttonStyle(.plain).accessibilityIdentifier("downloads.import")
-                Button { nextAction = .link; showingActions = false } label: {
-                    Label("通过链接下载", systemImage: "link").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }.buttonStyle(.plain)
-                if manager.jobs.contains(where: { [.running, .queued, .paused].contains($0.status) }) {
-                    Divider()
-                    Button("暂停全部", systemImage: "pause.circle") { manager.pauseAll(); showingActions = false; store.infoMessage = AppText.text("已暂停下载") }
-                        .disabled(!manager.jobs.contains { [.running, .queued].contains($0.status) }).frame(minHeight: 44)
-                    Button("继续全部", systemImage: "play.circle") { manager.resumeAll(); showingActions = false }
-                        .disabled(!manager.jobs.contains { $0.status == .paused }).frame(minHeight: 44)
-                }
-            }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
-                .presentationDetents([.height(manager.jobs.contains { [.running, .queued, .paused].contains($0.status) } ? 360 : 240), .large])
-                .presentationDragIndicator(.visible).compatiblePresentationCornerRadius(28)
-        }
-        .sheet(isPresented: $importing, onDismiss: importPickedFiles) {
-            PackageDocumentPicker { result in
-                switch result {
-                case .success(let urls): pickedFiles = urls
-                case .failure(let error): store.errorMessage = error.localizedDescription
-                }
-                importing = false
-            }.ignoresSafeArea()
+        .sheet(isPresented: $showingActions, onDismiss: flushPackageNavigation) {
+            AddDownloadSheet(
+                hasActiveJobs: manager.jobs.contains { [.running, .queued, .paused].contains($0.status) },
+                canPause: manager.jobs.contains { [.running, .queued].contains($0.status) },
+                canResume: manager.jobs.contains { $0.status == .paused },
+                onImport: { urls in
+                    showingActions = false
+                    importPicked(urls)
+                },
+                proMode: store.settings.proMode,
+                onPackages: {
+                    pendingLibrary = true
+                    showingActions = false
+                },
+                onLink: {
+                    showingActions = false
+                    addLink = true
+                },
+                onPauseAll: {
+                    showingActions = false
+                    manager.pauseAll()
+                    store.infoMessage = AppText.text("已暂停下载")
+                },
+                onResumeAll: {
+                    showingActions = false
+                    manager.resumeAll()
+                },
+                onError: { store.errorMessage = $0 }
+            )
         }
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
-        .sheet(item: $inspecting) { item in
+        .sheet(item: $inspecting, onDismiss: flushPackageNavigation) { item in
             NavigationStack {
                 if let job = manager.jobs.first(where: { $0.id == item.id }) {
                     Form {
@@ -212,6 +211,9 @@ struct DownloadsView: View {
                                     }
                                 }
                                 Section { ShareLink(item: file) { Label("导出文件", systemImage: "square.and.arrow.up") } }
+                                if store.settings.proMode {
+                                    decryptSection(job: job, file: file)
+                                }
                             }
                         }
                     }.toolPage().navigationTitle("任务详情").navigationBarTitleDisplayMode(.inline)
@@ -231,7 +233,7 @@ struct DownloadsView: View {
         } message: { Text("输入 IPA 安装包的下载链接。") }
         .actionConfirmation(isPresented: $confirmingDelete, title: "删除 \(pendingDelete.count) 项任务？", message: "已下载的安装包也会一并删除。", confirmTitle: "删除任务与文件") {
             // Recheck task states before the durable batch commit.
-            let ids = pendingDelete
+            let ids = pendingDelete.filter { !packages.protects($0) }
             pendingDelete.removeAll()
             perform {
                 let count = try await manager.removeBatch(ids)
@@ -252,7 +254,80 @@ struct DownloadsView: View {
         return text
     }
     private func taskContent(_ job: DownloadJob, update: StoreApp?, editing: Bool = false) -> some View {
-        DownloadTaskRow(snapshot: job, progress: manager.progress(for: job.id), update: update, kept: store.keepsVersion(job), editing: editing, inspecting: { inspecting = job }, primary: { primary(job) }, updating: { downloadUpdate(job) })
+        let hasDecrypted = store.settings.proMode
+            && job.status == .completed
+            && job.rawFormat == nil
+            && packageRecord(job).map { DecryptOutcomeStyle($0) == .success && packages.currentOutput($0) != nil } == true
+        return DownloadTaskRow(
+            snapshot: job,
+            progress: manager.progress(for: job.id),
+            update: update,
+            kept: store.keepsVersion(job),
+            decrypted: hasDecrypted,
+            inspecting: { inspecting = job },
+            primary: { primary(job) },
+            updating: { downloadUpdate(job) }
+        )
+    }
+    private func packageRecord(_ job: DownloadJob) -> DecryptRecord? {
+        guard let url = manager.fileURL(job) else { return decryptRecords.record(for: job.id) }
+        return packages.attempts(url: url, jobID: job.id).first
+    }
+    /// All cross-tab requests wait for the actual sheet onDismiss callback.
+    private func openPackage(_ route: PackageRoute, start: UUID? = nil) {
+        pendingPackage = route
+        pendingStart = start
+        if inspecting != nil { inspecting = nil }
+        else if showingActions { showingActions = false }
+        else { flushPackageNavigation() }
+    }
+    private func flushPackageNavigation() {
+        guard !showingActions, inspecting == nil, store.settings.proMode else { return }
+        if pendingLibrary { pendingLibrary = false; packages.showLibrary() }
+        guard let route = pendingPackage else { return }
+        let start = pendingStart
+        pendingPackage = nil; pendingStart = nil
+        packages.navigate(route)
+        if let id = start, let job = manager.jobs.first(where: { $0.id == id }), let url = manager.fileURL(job) {
+            packages.requestStart(url: url, job: job)
+        }
+    }
+    private func startDecrypt(_ job: DownloadJob) {
+        guard store.settings.proMode, job.status == .completed, manager.fileURL(job) != nil else { return }
+        openPackage(.source(job.id), start: job.id)
+    }
+    @ViewBuilder private func decryptSection(job: DownloadJob, file: URL) -> some View {
+        let record = packageRecord(job)
+        Section("应用包") {
+            LabeledContent(
+                "原始 IPA",
+                value: packages.detecting.contains(file)
+                    ? AppText.text("正在检查…")
+                    : PackageStage.detection(packages.detections[file] ?? record?.detection)
+            )
+            .task(id: file) { await packages.detect(file) }
+            if let record {
+                let style = DecryptOutcomeStyle(record)
+                LabeledContent("最近处理", value: style.title)
+                if style == .running {
+                    Button("查看解密进度", systemImage: "circle.dotted") { openPackage(.record(record.id)) }
+                } else if style == .success && packages.currentOutput(record) != nil {
+                    Button("查看解密结果", systemImage: "lock.open") { openPackage(.record(record.id)) }
+                } else if style == .partial && packages.currentOutput(record) != nil {
+                    Button("查看部分成功产物", systemImage: "exclamationmark.triangle") { openPackage(.record(record.id)) }
+                } else {
+                    Button("查看处理记录", systemImage: "clock") { openPackage(.record(record.id)) }
+                    if packages.detections[file]?.state != .plain {
+                        Button("重新解密", systemImage: "lock.open") { startDecrypt(job) }
+                            .accessibilityIdentifier("download.details.decrypt")
+                    }
+                }
+            } else if packages.detections[file]?.state != .plain {
+                Button("解密 IPA", systemImage: "lock.open") { startDecrypt(job) }
+                    .accessibilityIdentifier("download.details.decrypt")
+            }
+            Button("查看原始 IPA", systemImage: "shippingbox") { openPackage(.source(job.id)) }
+        }
     }
     private func shareAction(_ job: DownloadJob) -> [RevealAction] {
         guard job.status == .completed, manager.fileURL(job) != nil else { return [] }
@@ -335,7 +410,7 @@ struct DownloadsView: View {
                 if visible.isEmpty {
                     Section {
                         EmptyState(title: manager.jobs.isEmpty ? "暂无下载任务" : "没有匹配任务", message: manager.jobs.isEmpty ? "在搜索中获取应用，或点按右上角的 + 导入安装包。" : "试试其他筛选条件。", symbol: manager.jobs.isEmpty ? "tray.and.arrow.down" : "line.3.horizontal.decrease.circle", actionTitle: manager.jobs.isEmpty ? "搜索应用" : "显示全部", action: {
-                            if manager.jobs.isEmpty { store.tab = 0 } else { term = ""; filter = .all }
+                            if manager.jobs.isEmpty { store.selectTab(.search) } else { term = ""; filter = .all }
                         })
                     }
                 } else if edit {
@@ -382,6 +457,22 @@ struct DownloadsView: View {
                                     }
                                 }
                                 Button("任务详情", systemImage: "info.circle") { inspecting = job }
+                                if store.settings.proMode, job.status == .completed, job.rawFormat == nil, manager.fileURL(job) != nil {
+                                    if let record = packageRecord(job) {
+                                        let style = DecryptOutcomeStyle(record)
+                                        if style == .running {
+                                            Button("查看解密进度", systemImage: "circle.dotted") { openPackage(.record(record.id)) }
+                                        } else if style == .success && packages.currentOutput(record) != nil {
+                                            Button("查看解密结果", systemImage: "lock.open") { openPackage(.record(record.id)) }
+                                        } else if style == .partial && packages.currentOutput(record) != nil {
+                                            Button("查看部分成功产物", systemImage: "exclamationmark.triangle") { openPackage(.record(record.id)) }
+                                        } else {
+                                            Button("重新解密", systemImage: "lock.open") { startDecrypt(job) }
+                                        }
+                                    } else {
+                                        Button("解密 IPA", systemImage: "lock.open") { startDecrypt(job) }
+                                    }
+                                }
                                 if let file = manager.fileURL(job) {
                                     Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: manager.exportURL(job) ?? file) }
                                     if job.rawFormat == nil {
@@ -469,8 +560,7 @@ struct DownloadsView: View {
     private func toggleSelection(_ id: UUID) {
         if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
     }
-    private func importPickedFiles() {
-        let files = pickedFiles; pickedFiles.removeAll()
+    private func importPicked(_ files: [URL]) {
         guard !files.isEmpty else { return }
         perform {
             var imported = 0
@@ -512,7 +602,7 @@ struct DownloadsView: View {
         }
     }
     private func swipeDelete(_ id: UUID) {
-        guard !actionBusy, !swipingDelete.contains(id) else { return }
+        guard !actionBusy, !swipingDelete.contains(id), !packages.protects(id) else { return }
         withAnimation(UX.motion(reduceMotion)) { _ = swipingDelete.insert(id) }
         Task { @MainActor in
             defer { _ = withAnimation(UX.motion(reduceMotion)) { swipingDelete.remove(id) } }
@@ -527,7 +617,7 @@ struct DownloadsView: View {
         }
     }
     private func askDelete(_ ids: Set<UUID>) {
-        pendingDelete = Set(manager.jobs.filter { ids.contains($0.id) && $0.status != .processing && $0.status != .pausing }.map(\.id))
+        pendingDelete = Set(manager.jobs.filter { ids.contains($0.id) && !packages.protects($0.id) && $0.status != .processing && $0.status != .pausing }.map(\.id))
         if pendingDelete.isEmpty { store.infoMessage = AppText.text("任务处理完成后才能删除") }
         else { confirmingDelete = true }
     }
@@ -552,7 +642,7 @@ struct DownloadTaskRow: View {
     var update: StoreApp? = nil
     /// Kept at this version: no update reminders.
     var kept = false
-    var editing = false
+    var decrypted = false
     var inspecting: () -> Void
     var primary: () -> Void
     var updating: () -> Void = {}
@@ -650,8 +740,31 @@ struct DownloadTaskRow: View {
         case .processing:
             Text(manager.cancelling.contains(job.id) ? AppText.text("正在取消…") : manager.processingDetail[job.id] ?? job.status.title)
                 .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(2)
+        case .completed:
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 3) {
+                    completedStatusItems
+                }
+            } else {
+                HStack(spacing: 8) {
+                    completedStatusItems
+                }
+            }
         default:
             TaskStatusPill(status: job.status)
+        }
+    }
+    @ViewBuilder private var completedStatusItems: some View {
+        TaskStatusPill(status: job.status)
+        if decrypted {
+            HStack(spacing: 3) {
+                Image(systemName: "lock.open.fill").imageScale(.small).accessibilityHidden(true)
+                Text("已解密")
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityElement(children: .combine)
         }
     }
     private var progressText: String {
@@ -700,15 +813,26 @@ struct DownloadTaskRow: View {
     private var showsTrailingControl: Bool {
         job.status != .completed || job.rawFormat == nil
     }
+    @ViewBuilder private var trailingControls: some View {
+        if showsTrailingControl {
+            trailingControl
+                .id(controlKey + (celebrating ? "-done" : ""))
+                .transition(.statusSwap(reduceMotion: reduceMotion))
+                .frame(minWidth: dynamicTypeSize.isAccessibilitySize ? nil : 74, minHeight: 44, alignment: .center)
+        }
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Button(action: inspecting) { appHeading }.buttonStyle(RevealRowButtonStyle())
-                if showsTrailingControl {
-                    trailingControl
-                        .id(controlKey + (celebrating ? "-done" : ""))
-                        .transition(.statusSwap(reduceMotion: reduceMotion))
-                        .frame(minWidth: 74, minHeight: 44, alignment: .center)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button(action: inspecting) { appHeading }.buttonStyle(RevealRowButtonStyle())
+                    trailingControls
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            } else {
+                HStack(spacing: 10) {
+                    Button(action: inspecting) { appHeading }.buttonStyle(RevealRowButtonStyle())
+                    trailingControls
                 }
             }
             if [.running, .pausing, .paused].contains(job.status), job.expected > 0 {
@@ -819,5 +943,78 @@ private struct DrawerRow: ViewModifier {
             .scaleEffect(x: 1, y: shown ? 1 : 0.9, anchor: .top)
             .animation(shown ? .spring(response: 0.32, dampingFraction: 0.84).delay(0.01 + Double(min(index, 10)) * 0.02)
                              : .easeIn(duration: 0.12), value: shown)
+    }
+}
+
+/// "Add download" menu. It owns the document picker itself: a picker presented
+/// from the dismissing menu sheet is dropped by SwiftUI, which is why importing
+/// and decrypt-import used to do nothing.
+private struct AddDownloadSheet: View {
+    let hasActiveJobs: Bool
+    let canPause: Bool
+    let canResume: Bool
+    let onImport: ([URL]) -> Void
+    let proMode: Bool
+    let onPackages: () -> Void
+    let onLink: () -> Void
+    let onPauseAll: () -> Void
+    let onResumeAll: () -> Void
+    let onError: (String) -> Void
+
+    @State private var picker: PickerKind?
+
+    private enum PickerKind: String, Identifiable {
+        case ipa, decrypt
+        var id: String { rawValue }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("添加下载").font(.title3.weight(.semibold)).padding(.bottom, 6)
+            Button { picker = .ipa } label: {
+                Label("导入 IPA", systemImage: "square.and.arrow.down")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("downloads.import")
+            Button(action: onLink) {
+                Label("通过链接下载", systemImage: "link")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            if proMode {
+            Button(action: onPackages) {
+                Label("管理与解密 IPA", systemImage: "shippingbox")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("downloads.decrypt-import")
+            }
+            if hasActiveJobs {
+                Divider()
+                Button("暂停全部", systemImage: "pause.circle", action: onPauseAll)
+                    .disabled(!canPause)
+                    .frame(minHeight: 44)
+                Button("继续全部", systemImage: "play.circle", action: onResumeAll)
+                    .disabled(!canResume)
+                    .frame(minHeight: 44)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .presentationDetents([.height(hasActiveJobs ? 380 : 260), .large])
+        .presentationDragIndicator(.visible)
+        .sheet(item: $picker) { kind in
+            PackageDocumentPicker { result in
+                picker = nil
+                switch result {
+                case .success(let urls):
+                    onImport(urls)
+                case .failure(let error):
+                    onError(error.localizedDescription)
+                }
+            }
+            .ignoresSafeArea()
+        }
     }
 }

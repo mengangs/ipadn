@@ -1,3 +1,8 @@
+// SAP and Store proof WebKit bridge for iPadn.
+// Store proof loading and provisioning wrappers are adapted from Dadoum/Provision,
+// hpidcock/ap, and trikesh32/ipatool store-proof under LGPL-2.0-only
+// (compatible with iPadn GPL-2.0-or-later). See LGPL-2.0.txt and
+// Go-BSD-3-Clause.txt alongside this file.
 (function (root) {
   "use strict";
 

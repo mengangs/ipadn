@@ -852,6 +852,104 @@ final class InteractionTests: XCTestCase {
         app.terminate()
     }
 
+    func testAppDetailScreenshotsToggleDefaultOnAndPersists() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--accounts"]
+        func openAppearance() {
+            let settings = app.buttons["accounts.settings"]
+            XCTAssertTrue(settings.waitForExistence(timeout: 10)); settings.tap()
+            openSettingsPage("appearance", in: app)
+        }
+        app.launch()
+        openAppearance()
+        let toggle = app.switches["settings.show-screenshots"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+        XCTAssertEqual(toggle.value as? String, "1")
+        let control = toggle.switches.firstMatch.exists ? toggle.switches.firstMatch : toggle
+        control.tap()
+        XCTAssertEqual(toggle.value as? String, "0")
+        app.terminate()
+
+        app.launch()
+        openAppearance()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+        XCTAssertEqual(toggle.value as? String, "0")
+        let restore = toggle.switches.firstMatch.exists ? toggle.switches.firstMatch : toggle
+        restore.tap()
+        XCTAssertEqual(toggle.value as? String, "1")
+        app.terminate()
+    }
+
+    func testAppDetailReviewsToggleDefaultOnPersistsAndHidesCard() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--accounts"]
+        func openAppearance() {
+            let settings = app.buttons["accounts.settings"]
+            XCTAssertTrue(settings.waitForExistence(timeout: 10)); settings.tap()
+            openSettingsPage("appearance", in: app)
+        }
+        app.launch()
+        openAppearance()
+        let toggle = app.switches["settings.show-reviews"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+        XCTAssertEqual(toggle.value as? String, "1")
+        let control = toggle.switches.firstMatch.exists ? toggle.switches.firstMatch : toggle
+        control.tap()
+        XCTAssertEqual(toggle.value as? String, "0")
+        app.terminate()
+
+        // Launch detail view directly with reviews disabled and verify ReviewsCard is not mounted.
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail"]
+        app.launch()
+        XCTAssertTrue(app.buttons["app.copy-id"].waitForExistence(timeout: 10))
+        for _ in 0..<2 { app.swipeUp() }
+        XCTAssertFalse(app.descendants(matching: .any)["detail.reviews"].firstMatch.exists)
+        app.terminate()
+
+        // Restore default ON and verify ReviewsCard is shown again.
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--accounts"]
+        app.launch()
+        openAppearance()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+        XCTAssertEqual(toggle.value as? String, "0")
+        let restore = toggle.switches.firstMatch.exists ? toggle.switches.firstMatch : toggle
+        restore.tap()
+        XCTAssertEqual(toggle.value as? String, "1")
+        app.terminate()
+
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--detail"]
+        app.launch()
+        let reviewsLink = app.descendants(matching: .any)["detail.reviews"].firstMatch
+        for _ in 0..<4 { if reviewsLink.exists { break }; app.swipeUp() }
+        XCTAssertTrue(reviewsLink.waitForExistence(timeout: 10))
+        app.terminate()
+    }
+
+    func testAccountsPageExposesProfileBackupActions() {
+        let app = Self.launchableApp()
+        app.launchArguments = Self.languageArguments + ["--visual-preview", "--accounts"]
+        app.launch()
+        XCTAssertFalse(app.buttons["accounts.export-profiles"].exists)
+        XCTAssertFalse(app.buttons["accounts.import-profiles"].exists)
+
+        let settings = app.buttons["accounts.settings"]
+        for _ in 0..<4 { if settings.exists { break }; app.swipeUp() }
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        settings.tap()
+
+        let maintenance = app.buttons["settings.page.maintenance"]
+        XCTAssertTrue(maintenance.waitForExistence(timeout: 10))
+        maintenance.tap()
+
+        let exportButton = app.buttons["settings.export-backup"]
+        let importButton = app.buttons["settings.import-backup"]
+        XCTAssertTrue(exportButton.waitForExistence(timeout: 10))
+        XCTAssertTrue(importButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(exportButton.isEnabled)
+        XCTAssertTrue(importButton.isEnabled)
+        app.terminate()
+    }
+
     private func revealActions(on element: XCUIElement) {
         // A partial swipe deliberately tests the revealed button separately
         // from the full-swipe commit threshold.

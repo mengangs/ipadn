@@ -21,5 +21,9 @@
   "project_authored": [
     "index.html"
   ],
-  "license_status": "Original embedded notices retained; complete license grant for all components not established."
+  "license_status": "Original embedded notices retained; complete license grant for all components not established.",
+  "license_texts": [
+    "Go-BSD-3-Clause.txt",
+    "LGPL-2.0.txt"
+  ]
 }

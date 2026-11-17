@@ -1,0 +1,203 @@
+应用包|Packages
+已保存副本|Copy saved
+约 %lld%%|About %lld%%
+重新解密可能替换以下文件。请先保存需要保留的产物；原始 IPA 不受影响。|Decrypting again may replace the files below. Save any output you want to keep first. The original IPA is not affected.
+原始 IPA|Original IPAs
+已解密 IPA|Decrypted IPAs
+应用包分类|Package category
+准备安装包|Preparing package
+解密二进制|Decrypting binaries
+重新打包|Repacking
+校验产物|Verifying output
+准备解密|Preparing decryption
+解包安装包|Unpacking package
+正在解密|Decrypting
+解密完成|Decryption complete
+无需解密|No decryption needed
+部分成功|Partially completed
+解密未完成|Decryption incomplete
+已取消|Cancelled
+任务被中断|Task interrupted
+已加密|Encrypted
+未加密|Unencrypted
+无法确定加密状态|Encryption status unknown
+尚未检查加密状态|Encryption not checked
+尚未确认校验结果|Verification not confirmed
+处理记录|Processing history
+处理选项|Processing options
+处理阶段|Processing stages
+处理进度|Processing progress
+处理信息|Processing information
+处理失败|Failed binaries
+本次解密|Decrypted this time
+原本未加密|Already unencrypted
+开始时间|Started
+结束时间|Finished
+发起方式|Started by
+自动解密|Automatic decryption
+下载完成后自动解密|Decrypt automatically after download
+检测时间|Checked
+检测详情|Inspection details
+校验详情|Verification details
+校验通过|Verification passed
+产物校验通过|Output verification passed
+产物校验未通过|Output verification failed
+产物未通过校验|Output has not passed verification
+已有解密产物|Decrypted output available
+解密产物|Decrypted output
+待检查产物|Output needs review
+产物已被后续处理替换|Output replaced by a later attempt
+产物文件已不存在|Output file is missing
+未关联文件|Unlinked files
+本地文件|Local file
+文件|Files
+使用说明|Help
+使用说明与兼容性|Help and compatibility
+开始使用|Getting started
+遇到问题|Troubleshooting
+当前运行条件|Requirements
+尚未验证的场景|Untested scenarios
+如何导入和解密 IPA|Importing and decrypting an IPA
+原始包与解密产物有什么区别|Original packages and decrypted outputs
+如何保存和分享|Saving and sharing
+系统拒绝了解密请求|The system denied the decryption request
+授权文件不完整|Authorization files are incomplete
+部分成功或校验未通过|Partial completion or failed verification
+任务取消或被中断|Cancelled or interrupted tasks
+自动解密没有开始|Automatic decryption did not start
+技术日志与隐私|Diagnostic logs and privacy
+技术日志与详情|Logs and technical details
+日志筛选|Filter logs
+警告与错误|Warnings and errors
+跟随最新日志|Follow new entries
+回到最新|Jump to latest
+复制脱敏日志|Copy redacted log
+保存脱敏日志|Save redacted log
+分享脱敏日志|Share redacted log
+导出脱敏日志|Export redacted log
+已复制脱敏日志|Redacted log copied
+保存到文件|Save to Files
+保存原始 IPA|Save original IPA
+分享原始 IPA|Share original IPA
+分享 IPA|Share IPA
+解密 IPA|Decrypt IPA
+检查并解密…|Inspect and decrypt…
+重新解密|Decrypt again
+重新检查|Check again
+取消解密|Cancel decryption
+查看解密进度|View decryption progress
+查看解密结果|View decryption result
+删除原始 IPA|Delete original IPA
+删除原始 IPA？|Delete original IPA?
+删除产物文件|Delete output file
+删除产物文件？|Delete output file?
+删除文件|Delete file
+删除这个文件？|Delete this file?
+确认删除|Confirm deletion
+移除处理记录|Remove processing record
+移除处理记录？|Remove processing records?
+移除所选记录|Remove selected records
+记录已不存在|Record no longer exists
+保存未通过校验的 IPA…|Save output that failed verification…
+分享未通过校验的 IPA…|Share output that failed verification…
+继续导出未通过校验的 IPA|Export output that failed verification
+保存未验证的 IPA…|Save unverified IPA…
+分享未验证的 IPA…|Share unverified IPA…
+缺少处理记录|Processing record unavailable
+需要检查|Needs review
+解密详情|Decryption details
+已有任务正在运行|Another task is running
+查看当前任务|View current task
+稍后再试|Try again later
+同一时间只能处理一份 IPA。当前操作没有加入队列。|Only one IPA can be processed at a time. This operation has not been queued.
+替换已有解密产物？|Replace existing output?
+替换并重新解密|Replace and decrypt again
+安装包正在解密，请等待处理结束后再删除。|This package is being decrypted. Wait until processing finishes before deleting it.
+管理与解密 IPA|Manage and decrypt IPAs
+添加你的第一个 IPA|Add your first IPA
+前往下载|Go to Downloads
+没有匹配的应用包|No matching packages
+排序|Sort
+加密状态|Encryption status
+正在检查…|Checking…
+正在添加安装包…|Adding packages…
+安装包未能添加|Could not add package
+任务状态正在同步…|Synchronizing task status…
+可能原因|Possible cause
+上次处理没有完成，可以从原始 IPA 重新开始。|The previous attempt did not finish. Start again from the original IPA.
+这次解密已取消，原始 IPA 已保留。|Decryption was cancelled. The original IPA has been kept.
+将在当前操作安全结束后停止。|Processing will stop at the next safe checkpoint.
+可以返回列表继续浏览。打包和校验阶段需要等待完成。|You can return to the library. Repacking and verification must finish before processing can stop.
+检测到这份 IPA 未加密，可以直接保存原始文件。|This IPA is unencrypted. You can save the original file directly.
+这份 IPA 未加密，可以直接保存或分享原始文件。|This IPA is unencrypted. Save or share the original file directly.
+部分内容未能解密，产物仍不完整。|Some content could not be decrypted. The output is incomplete.
+这次请求未被系统允许。账号授权不匹配或家庭共享等只是可能原因，无法仅凭 EPERM 确认。|The system did not allow this request. Account authorization or Family Sharing are possible causes; EPERM alone cannot confirm them.
+原始 IPA 已不存在，请重新导入。|The original IPA is missing. Import it again.
+原始 IPA 已不存在，请返回应用包导入。|The original IPA is missing. Return to Packages to import it.
+文件已不存在，请刷新后重试。|The file is missing. Refresh and try again.
+原始 IPA 是处理来源，可能已加密，也可能本来就未加密。|Original IPAs are source files. They may be encrypted or already unencrypted.
+解密会生成独立产物，原始 IPA 保持不变。|Decryption creates a separate output. The original IPA stays unchanged.
+只删除当前产物，原始 IPA 和处理记录保留。|Only the output will be deleted. The original IPA and processing record are kept.
+只移除记录，所有 IPA 文件保留。|Only records will be removed. All IPA files are kept.
+只移除这次处理记录，所有 IPA 文件保留。|Only this processing record will be removed. All IPA files are kept.
+对应下载任务和原始文件会一并移除。解密产物和处理记录保留。|The associated download and original file will be removed. Decrypted outputs and processing records are kept.
+保留最近 50 次处理。移除记录不会删除 IPA 文件。|The latest 50 attempts are kept. Removing records does not delete IPA files.
+记录移除后文件仍会保留，不能据此确认过去的解密和校验结果。|Files remain after records are removed. Their previous decryption and verification results cannot be confirmed.
+缺少处理记录，尚未确认校验结果。|The processing record is unavailable. Verification has not been confirmed.
+文件可能仍包含加密内容或存在其他问题，不代表可以正常安装运行。|The file may contain encrypted content or other problems. It may not install or run correctly.
+未保留这次处理的完整日志。以下仅显示已有的技术详情。|The full log for this attempt was not retained. Only available technical details are shown.
+显示和导出前会脱敏账号、凭据、令牌和 Cookie。仅保留当前任务最近 400 行。|Accounts, credentials, tokens and cookies are redacted before display and export. Only the current task's latest 400 lines are kept.
+仅在专业模式开启时生效。同一时间处理一份 IPA；已有产物或其他任务正在运行时不会自动开始，也不会排队或覆盖文件。|Available only in Pro Mode. One IPA is processed at a time. Automatic decryption skips existing outputs and busy tasks; it does not queue or replace files.
+导入安装包，或在下载完成后到这里处理和管理。|Import a package, or manage and process completed downloads here.
+还没有原始 IPA，点右上角导入。|No original IPAs yet. Use Import to add one.
+还没有处理记录|No processing history yet
+还没有解密产物。完成解密后，文件会显示在这里。|No decrypted outputs yet. Completed files will appear here.
+在应用包右上角选择「导入」。文件添加完成后，打开原始 IPA 查看加密状态，再发起解密。也可以从已完成下载的更多菜单进入。原始文件保留，产物单独生成。|Choose Import in Packages. Once the file is ready, open the original IPA, check its encryption status and start decryption. You can also enter from a completed download's menu. The original is kept and a separate output is created.
+原始 IPA 是处理来源，可能已加密，也可能本来就未加密。解密完成不会改变原始文件的加密状态。只有通过产物校验的结果才标记为解密完成；未加密不等于曾由 iPadn 解密。|Original IPAs are source files and may already be unencrypted. Decryption does not change the original file. An output is marked complete only after verification passes. An unencrypted file was not necessarily decrypted by iPadn.
+在结果页选择「保存到文件」指定位置，或使用「分享 IPA」交给其他 App。导出的是副本。重新解密可能替换 iPadn 内的同源产物，请先保存需要保留的版本。|Choose Save to Files to select a location, or Share IPA to send a copy to another app. Decrypting again may replace the existing output in iPadn. Save any version you want to keep first.
+EPERM 只表示系统拒绝了请求，不能单凭它确认具体原因。可以核对下载该应用所用的账号，以及系统 App Store 中的授权。账号不匹配或家庭共享等是可能原因，不代表一定如此，也不保证重新登录就能解决。|EPERM means the system denied the request; it does not identify the cause. Check the account used to download the app and its authorization in the system App Store. Account mismatches and Family Sharing are possible causes, not confirmed diagnoses. Signing in again may not resolve the issue.
+解密需要完整的 IPA 和匹配的授权文件。请尝试重新下载完整安装包。不要移除或手动替换包内的授权信息。|Decryption requires a complete IPA and matching authorization files. Try downloading the full package again. Do not remove or manually replace authorization information inside the package.
+部分成功意味着仍有内容未完成解密。即使已经生成 IPA，也不能视为完整可用的产物。校验未通过可能是加密残留或读取等问题，应结合已有技术详情判断。校验通过也不保证可以直接安装运行。|Partial completion means some content was not decrypted. An IPA file may exist without being complete or usable. Failed verification may indicate encrypted content or read errors; consult the technical details. Passing verification does not guarantee the app will install or run.
+取消需要等待当前操作的安全检查点；打包和校验阶段需要等待完成。退出页面不会取消任务。应用被关闭后任务无法续传，重新打开时会标记为被中断，可从原始 IPA 重新开始。|Cancellation waits for a safe checkpoint. Repacking and verification must finish. Leaving the page does not cancel processing. If the app is closed, the task cannot resume; it is marked interrupted on relaunch. Start again from the original IPA.
+自动解密仅在专业模式开启时生效，一次只处理一份 IPA。已有同源产物或另一任务正在运行时不会自动开始，不会排队、自动重试或覆盖文件。可以稍后从原始 IPA 手动发起。|Automatic decryption works only in Pro Mode and processes one IPA at a time. Existing outputs or another running task prevent an automatic start. Tasks are not queued, retried automatically or allowed to overwrite files. You can start manually later.
+技术日志只保留当前任务最近 400 行，历史记录保留摘要及已有错误详情。显示、复制和导出前会脱敏账号、凭据、令牌及 Cookie。导出的日志可能仍包含应用名称和二进制路径，分享前可以自行查看内容。|Only the current task's latest 400 log lines are retained. History keeps summaries and available error details. Accounts, credentials, tokens and cookies are redacted before display, copying and export. Logs may still contain app names and binary paths; review them before sharing.
+需要完整的 IPA、匹配的 SINF 授权文件、具备可用 App Group 权限的 iPadn 签名，以及系统认可的应用授权。请仅处理你合法拥有并有权使用的应用。|Requires a complete IPA, matching SINF files, an iPadn signature with usable App Group permissions and system-recognized app authorization. Only process apps you legally own and are authorized to use.
+其他机型与 iPad、其他系统版本、全部 App Store 应用、家庭共享、多账号与跨账号、退出系统账号后的长期授权、恢复设备、换机及升级系统后的行为，均不能依据已有样本作出保证。|Existing samples do not establish support for other devices or iPads, other system versions, every App Store app, Family Sharing, multiple accounts, long-term authorization after signing out, device restoration, migration or system upgrades.
+原始 IPA（%lld）|Original IPAs (%lld)
+已解密（%lld）|Decrypted (%lld)
+处理记录（%lld）|Processing history (%lld)
+%lld 个|%lld
+还没有原始 IPA|No original IPAs yet
+查看原始 IPA|View original IPA
+查看详情并导出…|View details & export…
+删除？|Delete?
+已删除原始 IPA|Original IPA deleted
+已删除文件|File deleted
+已删除产物文件|Output file deleted
+文件与检测|Files & inspection
+筛选记录|Filter history
+异常与取消|Issues & cancelled
+没有符合条件的记录|No matching records
+清空记录|Clear history
+移除所选|Remove selected
+清空全部处理记录？|Clear all processing history?
+已清空处理记录|Processing history cleared
+兼容性与边界|Compatibility & limits
+技术详情|Technical details
+最近处理|Latest attempt
+查看部分成功产物|View partial output
+查看处理记录|View processing record
+已解密|Decrypted
+还没有解密产物|No decrypted outputs yet
+点右上角导入安装包，或从下载页获取应用。|Use + above to import a package, or download an app from Downloads.
+试试换个关键词，或清除搜索条件。|Try a different keyword or clear the search filter.
+在「原始 IPA」中选择应用发起解密，完成后产物会出现在这里。|Select an app in Original IPAs to decrypt. Completed outputs appear here.
+将从设备删除这个 IPA 文件，处理记录保留。|This IPA file will be deleted from the device. Processing history is kept.
+将从设备删除这个未关联文件。|This unlinked file will be deleted from the device.
+移除处理记录不会删除原始 IPA 或已保存的副本。|Removing a record does not delete the original IPA or any saved copies.
+发起解密后，历史记录会保存在这里。|Your decryption history will appear here.
+当前任务没有警告或错误记录。|No warnings or errors in the current task.
+删除 %lld 个应用包？|Delete %lld packages?
+已删除 %lld 个应用包|Deleted %lld packages
+只删除所选产物和未关联文件，原始 IPA 和处理记录保留。|Only selected outputs and unlinked files are removed. Original IPAs and history stay kept.
+将删除所选原始 IPA 及对应下载任务，解密产物和处理记录保留。|Selected original IPAs and matching download tasks are removed. Outputs and history stay kept.

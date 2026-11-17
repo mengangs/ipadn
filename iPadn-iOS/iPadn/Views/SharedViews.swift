@@ -271,6 +271,9 @@ struct SignerWebView: UIViewRepresentable {
 }
 
 struct RootView: View {
+    @ObservedObject private var packages = FairPlayPresentation.shared
+    @State private var completedPackageIDs: Set<UUID> = []
+    @State private var handledPackageProbe = false
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var tabs: TabState
     @EnvironmentObject private var signer: SAPSigner
@@ -279,20 +282,49 @@ struct RootView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var vectorTabBarUnavailable = false
-    private let destinations: [(title: LocalizedStringKey, symbol: String, kind: RevealAnimationKind)] = [
-        ("搜索", "magnifyingglass", .tabSearch),
-        ("下载", "arrow.down.circle.fill", .tabDownloads),
-        ("已购", "bag.fill", .tabPurchased),
-        ("账号", "person.crop.circle.fill", .tabAccount)
-    ]
+    private struct Destination {
+        let id: TabID
+        let title: LocalizedStringKey
+        let symbol: String
+        let kind: RevealAnimationKind
+    }
+
+    /// 应用包 sits between 下载 and 已购, and only exists while 专业模式 is on.
+    /// Everything else (tags, badges, vector-icon kinds) is derived from this
+    /// array, so no index is hard-coded anywhere in the views.
+    private var destinations: [Destination] {
+        var list: [Destination] = [
+            Destination(id: .search, title: "搜索", symbol: "magnifyingglass", kind: .tabSearch),
+            Destination(id: .downloads, title: "下载", symbol: "arrow.down.circle.fill", kind: .tabDownloads),
+        ]
+        if store.settings.proMode {
+            list.append(Destination(id: .packages, title: "应用包",
+                                    symbol: "shippingbox.fill", kind: .tabPackages))
+        }
+        list.append(Destination(id: .purchased, title: "已购", symbol: "bag.fill", kind: .tabPurchased))
+        list.append(Destination(id: .accounts, title: "账号",
+                                symbol: "person.crop.circle.fill", kind: .tabAccount))
+        return list
+    }
+
+    private var tabOrder: [TabID] { destinations.map(\.id) }
+
+    private var downloadsBadge: Int {
+        downloads.jobs.filter { DownloadFilter.active.includes($0.status) }.count
+    }
+
     var body: some View {
         Group {
             if sizeClass == .regular {
                 NavigationSplitView {
-                    List(selection: Binding<Int?>(get: { tabs.selection }, set: { if let value = $0 { tabs.selection = value } })) {
+                    List(selection: Binding<Int?>(get: { tabs.selection }, set: { value in
+                        guard let value else { return }
+                        tabs.selection = value
+                        tabs.syncFromIndex(tabOrder)
+                    })) {
                         Section {
-                            ForEach(0..<destinations.count, id: \.self) { index in
-                                Label(destinations[index].title, systemImage: destinations[index].symbol).tag(index)
+                            ForEach(Array(destinations.enumerated()), id: \.element.id) { index, item in
+                                Label(item.title, systemImage: item.symbol).tag(index)
                             }
                         }
 
@@ -301,11 +333,10 @@ struct RootView: View {
                     // Keep every section alive, like the iPhone tab bar does, so
                     // switching sections keeps navigation, filters and scroll position.
                     ZStack {
-                        ForEach(0..<destinations.count, id: \.self) { index in
-                            NavigationStack {
-                                page(index).frame(maxWidth: 900).frame(maxWidth: .infinity)
-                                    .background(Color(.systemGroupedBackground))
-                            }
+                        ForEach(Array(destinations.enumerated()), id: \.element.id) { index, item in
+                            pageStack(item.id)
+                                .frame(maxWidth: 900).frame(maxWidth: .infinity)
+                                .background(Color(.systemGroupedBackground))
                             .opacity(tabs.selection == index ? 1 : 0)
                             .allowsHitTesting(tabs.selection == index)
                             .accessibilityHidden(tabs.selection != index)
@@ -313,12 +344,16 @@ struct RootView: View {
                     }
                 }
             } else {
-                TabView(selection: $tabs.selection) {
-                    NavigationStack { SearchView() }.tabItem { tabLabel(destinations[0]) }.tag(0)
-                    NavigationStack { DownloadsView() }.tabItem { tabLabel(destinations[1]) }
-                        .badge(downloads.jobs.filter { DownloadFilter.active.includes($0.status) }.count).tag(1)
-                    NavigationStack { PurchasedView() }.tabItem { tabLabel(destinations[2]) }.tag(2)
-                    NavigationStack { AccountsView() }.tabItem { tabLabel(destinations[3]) }.tag(3)
+                TabView(selection: Binding(get: { tabs.selection }, set: { value in
+                    tabs.selection = value
+                    tabs.syncFromIndex(tabOrder)
+                })) {
+                    ForEach(Array(destinations.enumerated()), id: \.element.id) { index, item in
+                        pageStack(item.id)
+                            .tabItem { tabLabel(item) }
+                            .badge(item.id == .downloads ? downloadsBadge : 0)
+                            .tag(index)
+                    }
                 }
                 .toolbarBackground(.visible, for: .tabBar)
                 .toolbarBackground(.ultraThinMaterial, for: .tabBar)
@@ -335,6 +370,71 @@ struct RootView: View {
         }
         .preferredColorScheme(store.settings.appearance == "system" ? nil : store.settings.appearance == "dark" ? .dark : .light)
         .compatibleSelectionFeedback(trigger: tabs.selection)
+        .onAppear {
+            tabs.reconcile(with: tabOrder)
+            packages.adoptLegacyOutputIdentities()
+            completedPackageIDs = Set(downloads.jobs.filter { $0.status == .completed }.map(\.id))
+        }
+        .task {
+            #if DEBUG
+            guard !handledPackageProbe, CommandLine.arguments.contains("--fp-ux") else { return }
+            handledPackageProbe = true
+            // The stack and its destination registration now exist. No timer
+            // and no synthetic task/record are used by this test-only route.
+            if let value = CommandLine.arguments.first(where: { $0.hasPrefix("--ux-record=") }),
+               let id = UUID(uuidString: String(value.dropFirst("--ux-record=".count))) {
+                packages.navigate(.record(id))
+            } else if let value = CommandLine.arguments.first(where: { $0.hasPrefix("--ux-source=") }) {
+                let name = String(value.dropFirst("--ux-source=".count))
+                if !name.contains("/"), !name.contains("\\") {
+                    packages.navigate(.file(FairPlayEnvironment.documentsDirectory.appendingPathComponent(name)))
+                }
+            }
+            #endif
+        }
+        .compatibleOnChange(of: packages.navigationRevision) { _ in
+            guard store.settings.proMode else { packages.path = []; return }
+            tabs.select(.packages, in: tabOrder)
+        }
+        .onReceive(packages.service.$phase.removeDuplicates()) { phase in
+            guard phase != .running && phase != .idle else { return }
+            // Published emits before the service completes its synchronous
+            // record update. The next actor turn observes the committed state.
+            Task { @MainActor in packages.captureOutputIdentity() }
+        }
+        .compatibleOnChange(of: downloads.jobs.filter { $0.status == .completed }.map(\.id)) { ids in
+            let current = Set(ids)
+            let added = current.subtracting(completedPackageIDs)
+            completedPackageIDs = current
+            guard store.settings.proMode, packages.service.autoDecryptOnComplete else { return }
+            for job in downloads.jobs where added.contains(job.id) && job.rawFormat == nil && (job.asset != nil || job.sourceURL != nil) {
+                if let url = downloads.fileURL(job), packages.attempts(url: url, jobID: job.id).isEmpty {
+                    packages.requestStart(url: url, job: job, automatic: true)
+                }
+            }
+        }
+        .actionConfirmation(
+            isPresented: Binding(get: { packages.replacement != nil }, set: { if !$0 { packages.replacement = nil } }),
+            title: "替换已有解密产物？",
+            message: "重新解密可能替换以下文件。请先保存需要保留的产物；原始 IPA 不受影响。",
+            detail: packages.replacement?.collisions.map(\.lastPathComponent).joined(separator: "\n"),
+            confirmTitle: "替换并重新解密"
+        ) {
+            if let request = packages.replacement { packages.confirmReplacement(request) }
+        }
+        .alert("已有任务正在运行", isPresented: $packages.busy) {
+            Button("查看当前任务") { if let id = packages.service.activeRecordID { packages.navigate(.record(id)) } }
+            Button("稍后再试", role: .cancel) {}
+        } message: { Text("同一时间只能处理一份 IPA。当前操作没有加入队列。") }
+        .compatibleOnChange(of: packages.message) { message in
+            if let message { store.infoMessage = message; packages.message = nil }
+        }
+        .compatibleOnChange(of: store.settings.proMode) { _ in
+            // 专业模式 toggled: keep the current page identity, and fall back to
+            // 下载 when the page that just disappeared was 应用包.
+            withAnimation(UX.motion(reduceMotion)) { tabs.reconcile(with: tabOrder) }
+            if !store.settings.proMode { packages.replacement = nil; packages.path = [] }
+        }
         .sheet(item: $store.verificationRequest) { request in
             ExistingAccountVerificationView(accountID: request.accountID) {
                 // Runs after the sheet has closed, so a retry can present again.
@@ -381,19 +481,38 @@ struct RootView: View {
             if reduceMotion { transaction.animation = nil; transaction.disablesAnimations = true }
         }
     }
-    @ViewBuilder private func tabLabel(_ item: (title: LocalizedStringKey, symbol: String, kind: RevealAnimationKind)) -> some View {
+    @ViewBuilder private func pageStack(_ id: TabID) -> some View {
+        if id == .packages {
+            NavigationStack(path: $packages.path) {
+                PackagesView().navigationDestination(for: PackageRoute.self) { route in
+                    switch route {
+                    case .source(let id): PackageSourceDetailView(jobID: id)
+                    case .record(let id): DecryptDetailView(recordID: id)
+                    case .file(let url): PackageSourceDetailView(file: url)
+                    case .unlinked(let url): UnlinkedPackageView(url: url)
+                    case .history: DecryptHistoryView()
+                    case .options: DecryptOptionsView()
+                    case .help: DecryptHelpView()
+                    case .log(let id): DecryptLogView(recordID: id)
+                    }
+                }
+            }
+        } else { NavigationStack { page(id) } }
+    }
+    @ViewBuilder private func tabLabel(_ item: Destination) -> some View {
         if !vectorTabBarUnavailable, RevealAnimationLibrary.syncLoad(item.kind) != nil {
             Label { Text(item.title) } icon: { Image(uiImage: TabVectorIconView.placeholderImage) }
         } else {
             Label(item.title, systemImage: item.symbol)
         }
     }
-    @ViewBuilder private func page(_ index: Int) -> some View {
-        switch index {
-        case 1: DownloadsView()
-        case 2: PurchasedView()
-        case 3: AccountsView()
-        default: SearchView()
+    @ViewBuilder private func page(_ id: TabID) -> some View {
+        switch id {
+        case .search: SearchView()
+        case .downloads: DownloadsView()
+        case .packages: PackagesView()
+        case .purchased: PurchasedView()
+        case .accounts: AccountsView()
         }
     }
 }

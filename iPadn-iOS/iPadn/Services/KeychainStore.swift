@@ -39,12 +39,6 @@ enum KeychainStore {
     }
 }
 
-struct StoreProofRecord: Codable, Equatable, Sendable {
-    var identifier: String
-    var files: [String: String]
-    var updatedAt: Date = Date()
-}
-
 enum StoreProofStore {
     private static let maxEntries = 8
     private static var service: String {

@@ -34,6 +34,13 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 ---
 
+## What’s new in 2.2.0
+
+- **On-device FairPlay IPA decryption (Pro mode › Packages)**: Integrates the zero-dependency C `FairPlayCore` module to decrypt and verify legally acquired IPAs locally (supporting nested `.appex` extensions, frameworks, and 64-bit FAT slices) with strictly redacted logs.
+- **Full encrypted backup & restore (AES-256-GCM)**: Export plaintext or password-encrypted backups (settings, version sources, followed apps, recent searches, Apple session credentials and StoreProof) under Account › Settings › Backup & Maintenance, with selective unlock preview before restoring.
+- **App Detail & appearance controls**: Independently toggle App Screenshots and Customer Reviews under Account › Settings › Appearance & Icon to hide those sections and stop extra requests, and group Show Version History Icons under Appearance & Icon as well.
+- Standard and lite packages remain available for iOS / iPadOS 16 and later, with all 11 interface languages and bundled third-party notices updated. See the [release notes](RELEASE_NOTES.md).
+
 ## What’s new in 2.1.3
 
 - **Fix keyword-search crash & concurrency race**: Replace nested concurrent pre-search task-group probes with sequential post-search verification of candidate delisted apps and explicit task cancellation.
@@ -68,9 +75,9 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 | | |
 | --- | --- |
-| 🔍 **Search & discover** | Search by app name, App ID or App Store link, and switch storefront region and platform (iPhone / iPad / Apple TV / Mac). Recent searches appear as chips. Discover can be turned off in Settings; when enabled it shows Top Free, Top Paid and Top Grossing for any region, by category. App pages show screenshots, customer reviews and other apps by the same developer. |
+| 🔍 **Search & discover** | Search by app name, App ID or App Store link, and switch storefront region and platform (iPhone / iPad / Apple TV / Mac). Recent searches appear as chips. Discover, App Screenshots and Customer Reviews can each be turned off in Settings; when enabled, Discover shows Top Free, Top Paid and Top Grossing for any region by category alongside other apps by the same developer. |
 | 🌐 **Translation** | Descriptions and release notes use the system translation sheet by default. On iOS 18+, opt into in-place translation under Settings › Appearance & icon › Translation and prepare languages there. The target follows the app language, with Show original. |
-| 🕘 **Older versions** | See each version's number, date, IPA package size, version-specific icon and release notes and download older versions, or enter a version ID directly. Long-press a row to copy its version number or ID; accessibility text sizes use a vertical layout. Unavailable sizes show “—”, never the latest version's size. Primary icon PNGs are read on demand from each version's IPA and cached separately (or disable loading in Download settings to save bandwidth). Unavailable icons use a placeholder, never current store artwork; asset-catalog-only icons are not yet supported. Downloaded apps can “Keep this version” to stop update reminders. |
+| 🕘 **Older versions** | See each version's number, date, IPA package size, version-specific icon and release notes and download older versions, or enter a version ID directly. Long-press a row to copy its version number or ID; accessibility text sizes use a vertical layout. Unavailable sizes show “—”, never the latest version's size. Primary icon PNGs are read on demand from each version's IPA and cached separately (or disable loading in Appearance & icon settings to save bandwidth). Unavailable icons use a placeholder, never current store artwork; asset-catalog-only icons are not yet supported. Downloaded apps can “Keep this version” to stop update reminders. |
 | ⬇️ **Downloads** | Background downloads you can pause, resume and retry, with live speed and time remaining, also on the Lock Screen and in the Dynamic Island. Download over Wi‑Fi only and install automatically when a download finishes if you like. Swipe cards to delete or share; tap elsewhere to close the actions. Exported filenames include the app name and version. Deletion offers a five-second Undo countdown, and completion changes the progress ring to a checkmark and Install. Long-press uses the system menu; tap the selected tab again to scroll to the top. Task details show the permissions, extensions and languages a package declares. |
 | 🔔 **Update alerts** | Downloaded apps with a newer version are marked in the list, and background checks send a notification. |
 | ⬆️ **iPadn updates** | New iPadn releases appear in Settings with a notification; read what's new, download the new package and hand it to your signing tool. |
@@ -87,7 +94,8 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 | 🎮 **Apple Arcade** | Accounts subscribed to Apple Arcade can download Arcade games. |
 | 🔒 **App lock** | Lock iPadn with Face ID, Touch ID or your passcode; its content is hidden in the app switcher too. |
 | 🧭 **Widgets & Shortcuts** | Home Screen and Lock Screen widgets open Search, Downloads, Purchased or the update check; Shortcuts actions download apps, check for updates, report download progress, follow apps and more. |
-| 🧰 **Pro mode** | Browse and extract files inside a package, compare two downloaded versions of an app, and view account tokens and the device identifier (off by default). |
+| 🧰 **Pro mode & decryption** | Enabling Pro mode unlocks the Packages tab, package file browsing/extraction, two-version comparison, account token/device ID inspection, and on-device FairPlay SINF IPA decryption with slice-by-slice verification (off by default). |
+| 🛡️ **Backup & maintenance** | Export or selectively restore plaintext and AES-256-GCM password-encrypted backups (settings, followed apps, version sources, Apple session credentials and StoreProof), plus storage cleanup and redacted diagnostics export. |
 
 The interface follows the App Store's design. Appearance follows the system and the icon is dark by default (both can be changed in Settings), with Dynamic Type, the iPad sidebar and alternate app icons.
 
@@ -183,14 +191,15 @@ The first Mac download fetches about 47 MB of extra components, which are reused
 
 After turning on Pro mode under Account › Settings:
 
+- A Packages tab appears for managing original IPAs and decrypted outputs, running on-device FairPlay SINF decryption and verification on legally acquired packages, and inspecting or sharing strictly redacted decryption logs.
 - Download task details offer “Browse package contents”, where you can view and extract any file and preview text and images.
 - Package info can compare a download with other downloaded versions of the same app: version, permissions, extensions, frameworks and more.
 - Settings shows “Account & device identifier”, with account tokens and the option to change the device identifier. Tokens give direct access to your Apple Account, so never share them; after changing the device identifier, accounts may need to sign in again.
 
 ## Your data
 
-- Account details are stored only on your device; verification codes are never saved.
-- Downloaded packages stay on your device and are never uploaded anywhere. Wi‑Fi transfer runs only while its page is open, uses an address with a random key, answers only devices on your local network and stops when you leave the page.
+- Account details are stored only on your device; verification codes are never saved. Portable backup files are generated only when you explicitly export one under Settings › Backup & Maintenance (with optional PBKDF2-HMAC-SHA256 + AES-256-GCM encryption).
+- Downloaded and decrypted packages stay on your device and are never uploaded anywhere. Wi‑Fi transfer runs only while its page is open, uses an address with a random key, answers only devices on your local network and stops when you leave the page.
 - Price comparison fetches reference exchange rates from open.er-api.com; requests contain no account information.
 - Removing an account doesn't delete downloaded packages. Deleting a download task also deletes its file, after a confirmation.
 
@@ -205,7 +214,7 @@ Apple only lets you download apps your account holds a license for. A version ma
 <details>
 <summary><b>Nothing happens after tapping “Install”?</b></summary>
 
-Make sure the device is online, and tap “Install” in the system prompt. If no prompt appears, tap “Install in Safari”, or switch to “Local certificate” in Installation settings (especially inside LiveContainer). If it still doesn't work, share the package with another installation tool, or export diagnostics under Settings › Maintenance and send them to us.
+Make sure the device is online, and tap “Install” in the system prompt. If no prompt appears, tap “Install in Safari”, or switch to “Local certificate” in Installation settings (especially inside LiveContainer). If it still doesn't work, share the package with another installation tool, or export diagnostics under Settings › Backup & Maintenance and send them to us.
 </details>
 
 <details>

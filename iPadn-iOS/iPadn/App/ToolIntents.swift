@@ -9,7 +9,7 @@ struct SearchAppIntent: AppIntent {
     static var parameterSummary: some ParameterSummary { Summary("搜索 \(\.$query)") }
     @MainActor func perform() async throws -> some IntentResult {
         _ = try SearchQuery.parse(query)
-        AppContainer.shared.tab = 0
+        AppContainer.shared.selectTab(.search)
         AppContainer.shared.search(query)
         return .result()
     }
@@ -23,7 +23,7 @@ struct ImportIPAIntent: AppIntent {
     static var parameterSummary: some ParameterSummary { Summary("导入 \(\.$file)") }
     @MainActor func perform() async throws -> some IntentResult {
         let store = AppContainer.shared
-        store.tab = 1
+        store.selectTab(.downloads)
         if let url = file.fileURL { try await store.downloads.importFile(url) }
         else {
             let name = PackageService.safeName(file.filename)
@@ -47,7 +47,7 @@ struct DownloadIPAURLIntent: AppIntent {
     static var parameterSummary: some ParameterSummary { Summary("下载 \(\.$url)") }
     @MainActor func perform() async throws -> some IntentResult {
         try AppContainer.shared.downloads.enqueueURL(url)
-        AppContainer.shared.tab = 1
+        AppContainer.shared.selectTab(.downloads)
         return .result()
     }
 }
@@ -108,7 +108,7 @@ struct DownloadAllUpdatesIntent: AppIntent {
         await store.checkForUpdates(force: true)
         let jobs = store.updatableJobs
         guard !jobs.isEmpty else { return .result(dialog: "\(AppText.text("已下载的应用都是最新版本。"))") }
-        store.tab = 1
+        store.selectTab(.downloads)
         try await store.downloadAllUpdates(of: jobs)
         return .result(dialog: "\(AppText.text("已添加 \(jobs.count) 个下载任务"))")
     }

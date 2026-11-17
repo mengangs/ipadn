@@ -736,6 +736,17 @@ struct RevealRowButtonStyle: ButtonStyle {
     }
 }
 
+private struct RevealPreviewShape: Shape {
+    let top: CGFloat
+    let bottom: CGFloat
+    let verticalInset: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        CompatibleCardShape(top: top, bottom: bottom)
+            .path(in: rect.insetBy(dx: 0, dy: verticalInset))
+    }
+}
+
 private struct RevealDeleteModifier: ViewModifier {
     let id: String
     let enabled: Bool
@@ -855,7 +866,12 @@ private struct RevealDeleteModifier: ViewModifier {
                         .opacity(1 - driver.rounding)
                 }
             }
-            .contentShape(Rectangle())
+            .compatibleInteractionShape(Rectangle())
+            .contentShape(.contextMenuPreview, RevealPreviewShape(
+                top: grouping == .middle ? 14 * driver.rounding : 24,
+                bottom: grouping == .standalone ? 24 : 14 * driver.rounding,
+                verticalInset: grouping == .standalone ? verticalPadding : 0
+            ))
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .onGeometryChange(for: CGFloat?.self) { geometry in
                 isRevealing ? geometry.frame(in: .global).minY : nil

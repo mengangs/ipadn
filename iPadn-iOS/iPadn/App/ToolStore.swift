@@ -10,10 +10,11 @@ struct SearchHistoryItem: Codable, Identifiable {
     var lastUsed: Date
 }
 
-/// Settings and followed apps in one file, to carry over to another install.
-/// Never holds accounts, tokens, the device identifier or packages.
+/// Settings, followed apps, and full portable Apple account sessions (including cookies,
+/// tokens, passwords, device GUID, and StoreProof records) in one file,
+/// to carry over before changing signing certificates or switching devices.
 struct AppBackup: Codable {
-    static let currentFormat = 1
+    static let currentFormat = 3
     var format = AppBackup.currentFormat
     var app = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
     var created = Date()
@@ -22,16 +23,65 @@ struct AppBackup: Codable {
     var watch: [String: WatchRecord]
     var keptVersions: [String: String]
     var searchHistory: [SearchHistoryItem]
+    /// v2 legacy non-sensitive profiles (decoded for backwards compatibility).
+    var accountProfiles: [AccountProfileEntry]? = nil
+    /// v3 full portable Apple account entries including cookies, tokens, DSIDs, and passwords.
+    var accountSessions: [AccountSessionEntry]? = nil
+    var preferredActiveAccountID: String? = nil
+    var deviceGUID: String? = nil
+    var storeProofRecords: [String: StoreProofRecord]? = nil
+
+    var effectiveAccountEntries: [AccountSessionEntry] {
+        if let sessions = accountSessions, !sessions.isEmpty {
+            return sessions
+        }
+        if let profiles = accountProfiles, !profiles.isEmpty {
+            return profiles.map(AccountSessionEntry.init(from:))
+        }
+        return []
+    }
+
+    var includesSensitiveCredentials: Bool {
+        effectiveAccountEntries.contains(where: \.hasAnyCredential)
+            || deviceGUID != nil
+            || !(storeProofRecords?.isEmpty ?? true)
+    }
 
     static func decode(_ data: Data) throws -> AppBackup {
+        guard data.count <= AccountProfileBackup.maxImportBytes else {
+            throw ToolError.message(AppText.text("备份文件过大，请确认它是有效的 iPadn 备份文件。"))
+        }
+        if EncryptedBackupEnvelope.isEncryptedEnvelope(data) {
+            throw AccountBackupError.encryptedPasswordRequired
+        }
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let kind = object["kind"] as? String, ["encrypted", "vault", "secrets"].contains(kind.lowercased()) {
+                throw AccountBackupError.encryptedUnsupported
+            }
+            if object["sealedBox"] != nil || object["cipher"] != nil {
+                throw AccountBackupError.encryptedUnsupported
+            }
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let backup = try? decoder.decode(AppBackup.self, from: data), backup.format >= 1 else {
+        guard var backup = try? decoder.decode(AppBackup.self, from: data), backup.format >= 1 else {
             throw ToolError.message(AppText.text("这不是有效的 iPadn 备份文件。"))
         }
         guard backup.format <= currentFormat else {
             throw ToolError.message(AppText.text("这个备份来自更新版本的 iPadn，请先更新 iPadn。"))
         }
+        if let rawSessions = backup.accountSessions {
+            let cleanSessions = try AccountBackupService.deduplicatedSessions(from: rawSessions)
+            backup.accountSessions = cleanSessions.isEmpty ? nil : cleanSessions
+        }
+        if let rawProfiles = backup.accountProfiles {
+            let clean = try AccountBackupService.deduplicatedEntries(from: rawProfiles)
+            backup.accountProfiles = clean.isEmpty ? nil : clean
+        }
+        let trimmedActive = backup.preferredActiveAccountID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        backup.preferredActiveAccountID = trimmedActive?.isEmpty == true ? nil : trimmedActive
+        backup.deviceGUID = AccountBackupService.normalizedDeviceGUID(backup.deviceGUID)
+        backup.storeProofRecords = AccountBackupService.sanitizedStoreProofRecords(backup.storeProofRecords)
         return backup
     }
     func encoded() throws -> Data {
@@ -48,6 +98,36 @@ struct AppBackup: Codable {
     }
 }
 
+struct UnifiedBackupPreview: Equatable {
+    enum Source: Equatable {
+        case unified
+        case legacyAccountsOnly
+    }
+
+    let data: Data
+    let source: Source
+    let created: Date
+    let favoritesCount: Int
+    let accountEntries: [AccountSessionEntry]
+    let newAccountEntries: [AccountSessionEntry]
+    let existingAccountEntries: [AccountSessionEntry]
+    let deviceGUID: String?
+    let hasStoreProofs: Bool
+    let wasEncrypted: Bool
+
+    var includesSettingsAndFollowed: Bool { source == .unified }
+    var duplicateAccountCount: Int { existingAccountEntries.count }
+    var includesSensitiveCredentials: Bool {
+        accountEntries.contains(where: \.hasAnyCredential) || deviceGUID != nil || hasStoreProofs
+    }
+    var credentialReadyCount: Int { accountEntries.filter(\.hasValidSession).count }
+}
+
+enum BackupInspectResult: Equatable {
+    case ready(UnifiedBackupPreview)
+    case needsPassword(Data)
+}
+
 struct UndoNotice: Identifiable {
     /// How long the undo stays offered.
     static let duration: TimeInterval = 5
@@ -58,9 +138,42 @@ struct UndoNotice: Identifiable {
     let restore: (UndoNotice) -> Void
 }
 
+/// Stable identity of a bottom-bar page. The integer `selection` is only what
+/// `TabView` binds to; when the array of tabs changes (专业模式 adds or removes
+/// 应用包) the identity is what keeps the user on the page they were reading.
+enum TabID: String, CaseIterable, Hashable, Sendable {
+    case search, downloads, packages, purchased, accounts
+}
+
 @MainActor
 final class TabState: ObservableObject {
     @Published var selection = 0
+    @Published private(set) var id: TabID = .search
+
+    /// User tapped a tab: identity first, index derived from the live array.
+    func select(_ id: TabID, in order: [TabID]) {
+        self.id = id
+        if let index = order.firstIndex(of: id), selection != index {
+            selection = index
+        }
+    }
+
+    /// The tab bar wrote a new index (tap or programmatic): adopt its identity.
+    func syncFromIndex(_ order: [TabID]) {
+        guard order.indices.contains(selection) else { return }
+        let candidate = order[selection]
+        if candidate != id { id = candidate }
+    }
+
+    /// The array changed (专业模式 toggled): keep the same page when possible.
+    func reconcile(with order: [TabID]) {
+        if !order.contains(id) {
+            id = order.contains(.downloads) ? .downloads : (order.first ?? .search)
+        }
+        if let index = order.firstIndex(of: id), selection != index {
+            selection = index
+        }
+    }
 }
 
 @MainActor
@@ -89,9 +202,21 @@ final class ToolStore: ObservableObject {
     /// it, so switching tabs doesn't make every page that watches the store
     /// rebuild (issue #41).
     let tabs = TabState()
+    var tabOrder: [TabID] {
+        var order: [TabID] = [.search, .downloads]
+        if settings.proMode { order.append(.packages) }
+        order.append(contentsOf: [.purchased, .accounts])
+        return order
+    }
+    func selectTab(_ id: TabID) {
+        tabs.select(id, in: tabOrder)
+    }
     var tab: Int {
         get { tabs.selection }
-        set { tabs.selection = newValue }
+        set {
+            tabs.selection = newValue
+            tabs.syncFromIndex(tabOrder)
+        }
     }
     @Published var searchText = ""
     @Published private(set) var searchError: String?
@@ -205,6 +330,10 @@ final class ToolStore: ObservableObject {
         }
         if ["https://api.scripting.fun/ipa-plist", "https://xiaobai.app/install"].contains(settings.plistServer) { settings.plistServer = "" }
         downloads.configure(settings)
+        // Restore the decryption log once per process; runs that did not survive
+        // the last launch are re-labelled "interrupted" there.
+        DecryptRecordStore.shared.load()
+        FairPlayDecryptor.cleanupStaleStaging()
         apple.$activeID.sink { [weak self] id in
             guard let self = self else { return }
             self.ownedRevision = UUID()
@@ -1363,7 +1492,7 @@ final class ToolStore: ObservableObject {
                 if job.rawFormat == nil {
                     installingJob = job
                 } else {
-                    tab = 1
+                    selectTab(.downloads)
                 }
                 return
             case .failed:
@@ -1489,7 +1618,7 @@ final class ToolStore: ObservableObject {
             results = patched(results)
             localResults = patched(localResults)
         }
-        if switchToDownloadsTab { tab = 1 }
+        if switchToDownloadsTab { selectTab(.downloads) }
     }
 
     /// Compares finished downloads with the store's current versions. Runs
@@ -1785,7 +1914,7 @@ final class ToolStore: ObservableObject {
             asset.app.storeMarketingVersion = job.resolvedMarketingVersion
         }
         try downloads.refreshFailed(job.id, asset: asset)
-        if switchToDownloadsTab { tab = 1 }
+        if switchToDownloadsTab { selectTab(.downloads) }
     }
 
     func refreshOwned() async {
@@ -1877,39 +2006,146 @@ final class ToolStore: ObservableObject {
 
     func handleURL(_ url: URL) {
         if url.isFileURL {
-            tab = 1
+            selectTab(.downloads)
             Task { do { try await downloads.importFile(url) } catch { errorMessage = error.localizedDescription } }
         } else if url.scheme == "ipadn" {
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
             let items = components?.queryItems ?? []
-            if url.host == "open", let value = items.first(where: { $0.name == "tab" })?.value, let target = Int(value), (0...3).contains(target) {
-                // Widget shortcuts: a tab, optionally checking downloaded apps for updates.
-                tab = target
+            if url.host == "open", let value = items.first(where: { $0.name == "tab" })?.value {
+                // Widget shortcuts: support semantic TabIDs and legacy 0..3 indices.
+                let legacyOrder: [TabID] = [.search, .downloads, .purchased, .accounts]
+                if let id = TabID(rawValue: value), tabOrder.contains(id) {
+                    selectTab(id)
+                } else if let target = Int(value), legacyOrder.indices.contains(target) {
+                    selectTab(legacyOrder[target])
+                }
                 if items.contains(where: { $0.name == "check" && $0.value == "updates" }) {
                     Task { await checkForUpdates(force: true) }
                 }
-            } else if let id = items.first(where: { $0.name == "id" })?.value { tab = 0; search(id) }
+            } else if let id = items.first(where: { $0.name == "id" })?.value { selectTab(.search); search(id) }
             else if let address = items.first(where: { $0.name == "url" })?.value,
                     let download = URL(string: address) {
-                do { try downloads.enqueueURL(download); tab = 1 } catch { errorMessage = error.localizedDescription }
+                do { try downloads.enqueueURL(download); selectTab(.downloads) } catch { errorMessage = error.localizedDescription }
             }
-        } else if url.host == "apps.apple.com" { tab = 0; search(url.absoluteString) }
+        } else if url.host == "apps.apple.com" { selectTab(.search); search(url.absoluteString) }
     }
 
     /// Writes settings, followed apps with their price records, kept
-    /// versions and recent searches to a file for the share sheet.
-    func exportBackup() throws -> URL {
-        let backup = AppBackup(settings: settings, favorites: favorites, watch: watch,
-                               keptVersions: keptVersions, searchHistory: searchHistory)
+    /// versions, recent searches, full Apple account sessions (including cookies/tokens/passwords),
+    /// device GUID, and StoreProof records to a file (optionally password-encrypted with AES-256-GCM).
+    func exportBackup(password: String? = nil) throws -> URL {
+        let flushedAccounts = apple.flushedAccountsForBackup()
+        let sessions = AccountBackupService.sessions(from: flushedAccounts)
+        let proofs = StoreProofStore.load().filter { !$0.value.identifier.isEmpty }
+        let backup = AppBackup(
+            settings: settings,
+            favorites: favorites,
+            watch: watch,
+            keptVersions: keptVersions,
+            searchHistory: searchHistory,
+            accountSessions: sessions.isEmpty ? nil : sessions,
+            preferredActiveAccountID: sessions.isEmpty ? nil : apple.activeID,
+            deviceGUID: apple.guid,
+            storeProofRecords: proofs.isEmpty ? nil : proofs
+        )
+        let plainData = try backup.encoded()
+        let outputData: Data
+        if let password, !password.isEmpty {
+            outputData = try BackupCrypto.encrypt(plainData, password: password)
+        } else {
+            outputData = plainData
+        }
         let day = Date().formatted(.iso8601.year().month().day())
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("iPadn-Backup-\(day).json")
-        try backup.encoded().write(to: url, options: .atomic)
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("iPadn-Backup-\(day)-\(UUID().uuidString.prefix(8)).json")
+        try outputData.write(to: url, options: .atomic)
         return url
     }
-    /// Replaces the settings and merges followed apps, price records, kept
-    /// versions and recent searches; the backup wins where both have an entry.
-    func importBackup(_ data: Data) async throws {
+
+    func previewBackup(data: Data) throws -> BackupInspectResult {
+        guard data.count <= AccountProfileBackup.maxImportBytes else {
+            throw AccountBackupError.fileTooLarge
+        }
+        if EncryptedBackupEnvelope.isEncryptedEnvelope(data) {
+            return .needsPassword(data)
+        }
+        return .ready(try inspectPlainBackup(data: data, wasEncrypted: false))
+    }
+
+    func decryptAndPreviewBackup(data: Data, password: String) throws -> UnifiedBackupPreview {
+        let decrypted = try BackupCrypto.decrypt(data, password: password)
+        return try inspectPlainBackup(data: decrypted, wasEncrypted: true)
+    }
+
+    private func inspectPlainBackup(data: Data, wasEncrypted: Bool) throws -> UnifiedBackupPreview {
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           (object["schema"] as? String) == AccountProfileBackup.schemaIdentifier {
+            let legacyAccounts = try AccountBackupService.preview(data: data, existing: apple.accounts)
+            let entries = legacyAccounts.backup.accounts.map(AccountSessionEntry.init(from:))
+            let split = AccountBackupService.partition(entries, existing: apple.accounts)
+            return UnifiedBackupPreview(
+                data: data,
+                source: .legacyAccountsOnly,
+                created: legacyAccounts.backup.created,
+                favoritesCount: 0,
+                accountEntries: entries,
+                newAccountEntries: split.new,
+                existingAccountEntries: split.existing,
+                deviceGUID: nil,
+                hasStoreProofs: false,
+                wasEncrypted: wasEncrypted
+            )
+        }
         let backup = try AppBackup.decode(data)
+        let entries = backup.effectiveAccountEntries
+        let split = AccountBackupService.partition(entries, existing: apple.accounts)
+        return UnifiedBackupPreview(
+            data: data,
+            source: .unified,
+            created: backup.created,
+            favoritesCount: backup.favorites.count,
+            accountEntries: entries,
+            newAccountEntries: split.new,
+            existingAccountEntries: split.existing,
+            deviceGUID: backup.deviceGUID,
+            hasStoreProofs: !(backup.storeProofRecords?.isEmpty ?? true),
+            wasEncrypted: wasEncrypted
+        )
+    }
+
+    /// Replaces settings, merges followed apps/watches/kept versions/searches, and
+    /// restores Apple accounts (with cookies/tokens/passwords when present), device GUID, and StoreProofs.
+    func importBackup(
+        _ data: Data,
+        accountPolicy: AccountBackupConflictPolicy = .skipExisting,
+        restoreDeviceIdentity: Bool = true
+    ) async throws {
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           (object["schema"] as? String) == AccountProfileBackup.schemaIdentifier {
+            let legacy = try AccountProfileBackup.decode(data)
+            let outcome = try apple.importAccountBackup(
+                entries: legacy.accounts.map(AccountSessionEntry.init(from:)),
+                preferredActiveID: legacy.preferredActiveID,
+                policy: accountPolicy,
+                restoreDeviceIdentity: false
+            )
+            infoMessage = Self.accountImportMessage(outcome, includedSettings: false)
+            return
+        }
+        let backup = try AppBackup.decode(data)
+        let entries = backup.effectiveAccountEntries
+        let hasDeviceIdentity = restoreDeviceIdentity && (backup.deviceGUID != nil || !(backup.storeProofRecords?.isEmpty ?? true))
+        var accountOutcome: AppleService.AccountBackupImportOutcome?
+        if !entries.isEmpty || hasDeviceIdentity {
+            accountOutcome = try apple.importAccountBackup(
+                entries: entries,
+                preferredActiveID: backup.preferredActiveAccountID,
+                deviceGUID: backup.deviceGUID,
+                storeProofRecords: backup.storeProofRecords,
+                policy: accountPolicy,
+                restoreDeviceIdentity: restoreDeviceIdentity
+            )
+        }
         let next = AppBackup.merged(backup.favorites, with: favorites)
         let previous = favoriteTask
         await previous?.value
@@ -1925,8 +2161,48 @@ final class ToolStore: ObservableObject {
         persistHistory()
         settings = backup.settings
         updateLocalResults()
-        infoMessage = AppText.text("已导入备份")
+        if let accountOutcome {
+            infoMessage = Self.accountImportMessage(accountOutcome, includedSettings: true)
+        } else {
+            infoMessage = AppText.text("已导入备份")
+        }
         Task { await checkWatched(force: true) }
+    }
+
+    private static func accountImportMessage(
+        _ outcome: AppleService.AccountBackupImportOutcome,
+        includedSettings: Bool
+    ) -> String {
+        let added = outcome.merge.addedIDs.count
+        let updated = outcome.merge.updatedIDs.count
+        if includedSettings {
+            if outcome.addedNeedsReauthCount > 0 {
+                return AppText.text("已导入备份并新增 \(outcome.addedNeedsReauthCount) 个账号配置，请在「账号」页重新登录")
+            }
+            if added > 0 && updated > 0 {
+                return AppText.text("已导入完整备份（新增 \(added) 个、更新 \(updated) 个账号会话）")
+            }
+            if added > 0 && outcome.restoredSessionCount > 0 {
+                return AppText.text("已导入完整备份（恢复 \(added) 个账号会话与 Cookie）")
+            }
+            if updated > 0 {
+                return AppText.text("已导入完整备份并更新 \(updated) 个账号")
+            }
+            if outcome.restoredDeviceIdentity {
+                return AppText.text("已导入完整备份并恢复设备凭证")
+            }
+            return AppText.text("已导入备份")
+        }
+        if added > 0 && updated > 0 {
+            return AppText.text("已新增 \(added) 个账号、更新 \(updated) 个账号资料，请在「账号」页重新登录")
+        }
+        if added > 0 {
+            return AppText.text("已导入 \(added) 个账号配置，请在「账号」页重新登录")
+        }
+        if updated > 0 {
+            return AppText.text("已更新 \(updated) 个已有账号的资料")
+        }
+        return AppText.text("所选文件中的账号均已存在，未作更改")
     }
 
     func exportDiagnostics() throws -> URL {

@@ -144,6 +144,21 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
         StoreProofStore.save(all)
     }
 
+    func restoreStoreProofRecords(_ imported: [String: StoreProofRecord], preferImported: Bool) {
+        var merged = currentStoreRecords()
+        for (rawKey, record) in imported {
+            let key = AccountBackupService.normalizedDeviceGUID(rawKey) ?? rawKey.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            guard !key.isEmpty, !record.identifier.isEmpty else { continue }
+            if let existing = merged[key], !preferImported, existing.updatedAt > record.updatedAt {
+                continue
+            }
+            merged[key] = record
+        }
+        storeProofRecords = merged
+        StoreProofStore.save(merged)
+        clearCache()
+    }
+
     func storeProofHeaders(guid: String, useCache: Bool) async throws -> [String: String]? {
         let normalized = try Self.normalizedStoreGUID(guid)
         try Task.checkCancellation()

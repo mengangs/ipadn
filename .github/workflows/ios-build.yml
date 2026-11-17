@@ -90,6 +90,9 @@ jobs:
           python3 scripts/verify_project.py
           python3 -I scripts/compile_reveal_animations.py --check
           node scripts/runtime_smoke_test.cjs
+          python3 ../tools/run_record_store_checks.py
+          swiftc iPadn/Views/DiagnosticRedactor.swift iPadn/Views/PackageOutputPolicy.swift ../tools/tests/fairplay_redaction_checks.swift -o build/fp_redact_check
+          ./build/fp_redact_check
 
       - name: Build unsigned device IPA
         env:
@@ -102,6 +105,7 @@ jobs:
           shasum -a 256 build/iPadn-unsigned.ipa > build/iPadn-unsigned.ipa.sha256
           # The lite variant (no app extension), checked on every build.
           python3 scripts/make_lite_ipa.py build/iPadn-unsigned.ipa build/iPadn-lite-unsigned.ipa
+          IPADN_REQUIRE_MACPKG=1 IPADN_REQUIRE_NATIVE=1 python3 scripts/verify_ipa.py --lite build/iPadn-lite-unsigned.ipa
           python3 - <<'PY'
           import json, os, subprocess, plistlib, zipfile
           from pathlib import Path

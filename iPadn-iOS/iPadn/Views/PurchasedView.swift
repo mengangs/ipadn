@@ -215,6 +215,14 @@ struct PurchasedView: View {
                         }
                     }
                 }
+            } else if apple.accounts.contains(where: \.needsReauthentication) {
+                Section {
+                    EmptyState(title: "需要重新登录",
+                               message: "已导入的账号仅包含配置信息，点按下方按钮或前往「账号」页完成登录后即可同步已购项目。",
+                               symbol: "person.crop.circle.badge.exclamationmark",
+                               actionTitle: "前往账号",
+                               action: { store.selectTab(.accounts) })
+                }
             } else {
                 Section { EmptyState(title: "尚未登录", message: "登录后即可查看你获取过的应用。", symbol: "person.crop.circle.badge.checkmark", actionTitle: "登录账号", action: { showLogin = true }) }
             }

@@ -3,6 +3,7 @@
 
 This is not a substitute for swiftc, Xcode, XCTest or real-device tests.
 """
+import argparse
 import hashlib
 import json
 import plistlib
@@ -10,6 +11,11 @@ import re
 import struct
 from pathlib import Path
 from xml.etree import ElementTree as ET
+
+parser = argparse.ArgumentParser(description="Verify iPadn Xcode project and bundled runtime.")
+parser.add_argument("--strict-oss", action="store_true",
+                    help="Also reject proprietary binaries or unsourced prebuilt artifacts in SAPRuntime.")
+ARGS = parser.parse_args()
 
 ROOT = Path(__file__).resolve().parents[1]
 failures = []
@@ -53,7 +59,7 @@ def inspect_refs(value):
 for value in objects.values(): inspect_refs(value)
 groups = {key: value for key, value in objects.items() if value["isa"] == "PBXGroup"}
 for group in groups.values():
-    if group.get("path") in ["iPadn", "iPadnTests", "iPadnUITests", "iPadnLiveActivity"]:
+    if group.get("path") in ["iPadn", "FairPlayCore", "iPadnTests", "iPadnUITests", "iPadnLiveActivity"]:
         for child in group["children"]:
             item = objects[child]
             if item["isa"] == "PBXFileReference":
@@ -61,6 +67,13 @@ for group in groups.values():
 actual_swift = {p.relative_to(ROOT / "iPadn").as_posix() for p in (ROOT / "iPadn").rglob("*.swift")}
 referenced_swift = {x["path"] for x in objects.values() if x["isa"] == "PBXFileReference" and x.get("path", "").endswith(".swift") and x["path"] not in {p.name for folder in ["iPadnTests", "iPadnUITests", "iPadnLiveActivity"] for p in (ROOT / folder).glob("*.swift")}}
 check(actual_swift == referenced_swift, "Swift sources differ from project references")
+fairplay_c_compiled = any(
+    objects.get(objects.get(build_id, {}).get("fileRef"), {}).get("path") == "FairPlayCore.c"
+    for phase in objects.values() if phase.get("isa") == "PBXSourcesBuildPhase"
+    for build_id in phase.get("files", [])
+)
+check(fairplay_c_compiled, "FairPlayCore.c is not compiled in any PBXSourcesBuildPhase")
+check((ROOT / "FairPlayCore/include/module.modulemap").is_file(), "Missing FairPlayCore module.modulemap for Xcode")
 for file in [ROOT / "iPadn/Info.plist", ROOT / "iPadn/Resources/PrivacyInfo.xcprivacy"]:
     plistlib.loads(file.read_bytes())
 info = plistlib.loads((ROOT / "iPadn/Info.plist").read_bytes())
@@ -167,7 +180,7 @@ for phase in objects.values():
         if reference.get("path"): resource_paths.add(reference["path"])
         if reference.get("isa") == "PBXVariantGroup" and reference.get("name") == "AppShortcuts.strings":
             resource_paths.add("Resources/AppShortcuts.strings")
-for name in ["Localizable.xcstrings", "InfoPlist.xcstrings", "AppShortcuts.strings"]:
+for name in ["Localizable.xcstrings", "InfoPlist.xcstrings", "AppShortcuts.strings", "ZIPFoundation-MIT.txt"]:
     check("Resources/" + name in resource_paths, name + " is not in the app's resources")
 for language in LANGUAGES:
     shortcut_strings = ROOT / f"iPadn/Resources/{language}.lproj/AppShortcuts.strings"
@@ -181,12 +194,30 @@ check("Localizable.xcstrings" in resource_paths, "The Live Activity catalog is n
 check(catalogs.get("InfoPlist", {}).get("strings", {}).get("NSLocalNetworkUsageDescription", {}).get("localizations", {}).get("en") is not None,
       "InfoPlist.xcstrings must translate NSLocalNetworkUsageDescription")
 
+version_pairs = set()
+for cfg in objects.values():
+    if cfg.get("isa") == "XCBuildConfiguration":
+        settings = cfg.get("buildSettings", {})
+        if "MARKETING_VERSION" in settings or "CURRENT_PROJECT_VERSION" in settings:
+            mv = str(settings.get("MARKETING_VERSION", ""))
+            cv = str(settings.get("CURRENT_PROJECT_VERSION", ""))
+            check(bool(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", mv)), f"MARKETING_VERSION must be three-part semver, got {mv!r}")
+            check(cv.isdigit() and int(cv) > 0, f"CURRENT_PROJECT_VERSION must be positive integer, got {cv!r}")
+            version_pairs.add((mv, cv))
+check(len(version_pairs) == 1, f"Mismatched target versions in project.pbxproj: {sorted(version_pairs)}")
+
 runtime = ROOT / "iPadn/Resources/SAPRuntime"
 hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(runtime.iterdir()) if path.is_file()}
-expected = json.loads((ROOT / "vendor/SAPRuntime/manifest.json").read_text())["files"]
+expected = json.loads((ROOT / "vendor/SAPRuntime/manifest.json").read_text(encoding="utf-8"))["files"]
 check(hashes == expected, "Bundled runtime files or hashes differ from local manifest")
+for required_license in ["Go-BSD-3-Clause.txt", "LGPL-2.0.txt"]:
+    check(required_license in expected and (runtime / required_license).is_file(), "Missing SAPRuntime license text: " + required_license)
+if ARGS.strict_oss:
+    for prohibited in ["libCoreADI.so", "libstoreservicescore.so", "sap.wasm", "unicorn_x86.js"]:
+        check(prohibited not in expected and not (runtime / prohibited).exists() and not (ROOT / "vendor/SAPRuntime/files" / prohibited).exists(),
+              "Unauthorized proprietary/unsourced artifact present (--strict-oss): " + prohibited)
 report = {"passed": not failures, "app_swift_files": len(actual_swift), "project_objects": len(objects), "runtime_sha256": hashes,
-          "checks": ["OpenStep project graph", "referenced files", "plist parsing", "icon filenames and opaque square dimensions", "shared scheme targets", "Swift lexical delimiters", "bundled runtime hashes", "string catalogs (zh-Hans, en, zh-Hant, ja, ko, ru, es, fr, de, pt-BR, ar; placeholders)"],
+          "checks": ["OpenStep project graph", "referenced files", "FairPlayCore target & modulemap", "plist parsing", "icon filenames and opaque square dimensions", "shared scheme targets", "three-part semver & build number alignment", "Swift lexical delimiters", "bundled runtime hashes & licenses", "string catalogs (zh-Hans, en, zh-Hant, ja, ko, ru, es, fr, de, pt-BR, ar; placeholders)"],
           "not_run": ["Swift compilation/type checking", "XCTest", "iOS Simulator", "real device", "Apple account/server requests", "IPA installation"], "failures": failures}
 (ROOT / "build").mkdir(exist_ok=True)
 (ROOT / "build/verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

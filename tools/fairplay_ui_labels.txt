@@ -1,0 +1,145 @@
+Packages|パッケージ|앱 패키지|Пакеты|Paquetes|Paquets|Pakete|Pacotes|الحزم
+Copy saved|コピーを保存しました|사본 저장됨|Копия сохранена|Copia guardada|Copie enregistrée|Kopie gespeichert|Cópia salva|حُفظت النسخة
+About %lld%%|約 %lld%%|약 %lld%%|Около %lld%%|Aprox. %lld%%|Environ %lld%%|Etwa %lld%%|Cerca de %lld%%|نحو %lld%%
+Original IPAs|元の IPA|원본 IPA|Исходные IPA|IPA originales|IPA d’origine|Original-IPAs|IPAs originais|ملفات IPA الأصلية
+Decrypted IPAs|復号済み IPA|복호화된 IPA|Расшифрованные IPA|IPA descifrados|IPA déchiffrés|Entschlüsselte IPAs|IPAs descriptografados|ملفات IPA المفككة
+Package category|パッケージの種類|패키지 분류|Категория пакетов|Categoría de paquetes|Catégorie de paquets|Paketkategorie|Categoria de pacotes|فئة الحزم
+Preparing package|パッケージを準備中|패키지 준비 중|Подготовка пакета|Preparando paquete|Préparation du paquet|Paket wird vorbereitet|Preparando pacote|جارٍ تجهيز الحزمة
+Decrypting binaries|バイナリを復号中|바이너리 복호화 중|Расшифровка файлов|Descifrando binarios|Déchiffrement des binaires|Binärdateien entschlüsseln|Descriptografando binários|جارٍ فك الملفات الثنائية
+Repacking|再パッケージ中|다시 압축하는 중|Повторная упаковка|Reempaquetando|Recréation du paquet|Erneut verpacken|Reempacotando|جارٍ إعادة التحزيم
+Verifying output|出力を検証中|결과 검증 중|Проверка результата|Verificando resultado|Vérification du résultat|Ergebnis prüfen|Verificando resultado|جارٍ التحقق من الناتج
+Preparing decryption|復号を準備中|복호화 준비 중|Подготовка расшифровки|Preparando descifrado|Préparation du déchiffrement|Entschlüsselung vorbereiten|Preparando descriptografia|جارٍ تجهيز فك التشفير
+Unpacking package|パッケージを展開中|패키지 압축 해제 중|Распаковка пакета|Extrayendo paquete|Extraction du paquet|Paket entpacken|Extraindo pacote|جارٍ استخراج الحزمة
+Decrypting|復号中|복호화 중|Расшифровка|Descifrando|Déchiffrement en cours|Wird entschlüsselt|Descriptografando|جارٍ فك التشفير
+Decryption complete|復号完了|복호화 완료|Расшифровка завершена|Descifrado completo|Déchiffrement terminé|Entschlüsselung abgeschlossen|Descriptografia concluída|اكتمل فك التشفير
+No decryption needed|復号は不要です|복호화 불필요|Расшифровка не нужна|No requiere descifrado|Déchiffrement inutile|Keine Entschlüsselung nötig|Não requer descriptografia|لا حاجة لفك التشفير
+Partially completed|一部のみ完了|부분 완료|Частично завершено|Completado parcialmente|Partiellement terminé|Teilweise abgeschlossen|Parcialmente concluído|اكتمل جزئيًا
+Decryption incomplete|復号未完了|복호화 미완료|Расшифровка не завершена|Descifrado incompleto|Déchiffrement incomplet|Entschlüsselung unvollständig|Descriptografia incompleta|فك التشفير غير مكتمل
+Cancelled|キャンセル済み|취소됨|Отменено|Cancelado|Annulé|Abgebrochen|Cancelado|تم الإلغاء
+Task interrupted|処理が中断されました|작업 중단됨|Задача прервана|Tarea interrumpida|Tâche interrompue|Vorgang unterbrochen|Tarefa interrompida|انقطعت المهمة
+Encrypted|暗号化あり|암호화됨|Зашифрован|Cifrado|Chiffré|Verschlüsselt|Criptografado|مشفّر
+Unencrypted|暗号化なし|암호화되지 않음|Не зашифрован|Sin cifrar|Non chiffré|Unverschlüsselt|Não criptografado|غير مشفّر
+Encryption status unknown|暗号化状態は不明です|암호화 상태 알 수 없음|Статус шифрования неизвестен|Cifrado desconocido|Chiffrement indéterminé|Verschlüsselung unbekannt|Criptografia desconhecida|حالة التشفير غير معروفة
+Encryption not checked|暗号化は未確認です|암호화 확인 전|Шифрование не проверено|Cifrado sin comprobar|Chiffrement non vérifié|Verschlüsselung ungeprüft|Criptografia não verificada|لم يُفحص التشفير
+Verification not confirmed|検証結果は未確認です|검증 결과 확인 전|Проверка не подтверждена|Verificación sin confirmar|Vérification non confirmée|Prüfung nicht bestätigt|Verificação não confirmada|لم يتم تأكيد التحقق
+Processing history|処理履歴|처리 기록|История обработки|Historial de procesamiento|Historique des traitements|Verarbeitungsverlauf|Histórico de processamento|سجل المعالجة
+Processing options|処理オプション|처리 옵션|Параметры обработки|Opciones de procesamiento|Options de traitement|Verarbeitungsoptionen|Opções de processamento|خيارات المعالجة
+Processing stages|処理段階|처리 단계|Этапы обработки|Etapas del proceso|Étapes du traitement|Verarbeitungsschritte|Etapas do processo|مراحل المعالجة
+Processing progress|処理の進捗|처리 진행률|Ход обработки|Progreso del proceso|Progression du traitement|Verarbeitungsfortschritt|Progresso do processamento|تقدم المعالجة
+Processing information|処理情報|처리 정보|Сведения об обработке|Información del proceso|Informations de traitement|Verarbeitungsinformationen|Informações do processo|معلومات المعالجة
+Failed binaries|失敗したバイナリ|실패한 바이너리|Ошибки файлов|Binarios fallidos|Binaires en échec|Fehlgeschlagene Binärdateien|Binários com falha|الملفات الثنائية الفاشلة
+Decrypted this time|今回復号した数|이번에 복호화함|Расшифровано сейчас|Descifrados esta vez|Déchiffrés cette fois|Diesmal entschlüsselt|Descriptografados agora|فُكّت هذه المرة
+Already unencrypted|元から暗号化なし|원래 암호화되지 않음|Изначально без шифрования|Ya sin cifrar|Déjà non chiffrés|Bereits unverschlüsselt|Já não criptografados|غير مشفّرة أصلًا
+Started|開始|시작|Начало|Inicio|Début|Beginn|Início|البدء
+Finished|終了|종료|Завершение|Fin|Fin|Ende|Fim|الانتهاء
+Started by|開始方法|시작 방식|Способ запуска|Iniciado mediante|Mode de lancement|Startart|Forma de início|طريقة البدء
+Automatic decryption|自動復号|자동 복호화|Авторасшифровка|Descifrado automático|Déchiffrement automatique|Automatische Entschlüsselung|Descriptografia automática|فك التشفير التلقائي
+Decrypt automatically after download|ダウンロード後に自動復号|다운로드 후 자동 복호화|Расшифровывать после загрузки|Descifrar al terminar la descarga|Déchiffrer après le téléchargement|Nach dem Download automatisch entschlüsseln|Descriptografar após o download|فك التشفير تلقائيًا بعد التنزيل
+Checked|確認日時|확인 시간|Время проверки|Comprobado|Vérifié le|Geprüft|Verificado em|وقت الفحص
+Inspection details|検出の詳細|검사 세부 정보|Сведения о проверке|Detalles de inspección|Détails de l’analyse|Untersuchungsdetails|Detalhes da inspeção|تفاصيل الفحص
+Verification details|検証の詳細|검증 세부 정보|Результаты проверки|Detalles de verificación|Détails de vérification|Prüfdetails|Detalhes da verificação|تفاصيل التحقق
+Verification passed|検証済み|검증 통과|Проверка пройдена|Verificación correcta|Vérification réussie|Prüfung bestanden|Verificação aprovada|اجتاز التحقق
+Output verification passed|出力の検証に合格しました|결과 검증 통과|Результат прошёл проверку|Resultado verificado|Résultat vérifié|Ergebnisprüfung bestanden|Resultado aprovado na verificação|اجتاز الناتج التحقق
+Output verification failed|出力の検証に失敗しました|결과 검증 실패|Результат не прошёл проверку|El resultado no superó la verificación|Échec de vérification du résultat|Ergebnisprüfung fehlgeschlagen|Falha na verificação do resultado|فشل التحقق من الناتج
+Output has not passed verification|出力は未検証です|결과가 검증을 통과하지 못함|Результат не прошёл проверку|El resultado no está verificado|Le résultat n’a pas passé la vérification|Ergebnis hat Prüfung nicht bestanden|Resultado não aprovado na verificação|لم يجتز الناتج التحقق
+Decrypted output available|復号済み出力あり|복호화 결과 있음|Есть расшифрованный результат|Resultado descifrado disponible|Résultat déchiffré disponible|Entschlüsseltes Ergebnis vorhanden|Resultado descriptografado disponível|يتوفر ناتج مفكوك التشفير
+Decrypted output|復号済み出力|복호화 결과|Расшифрованный результат|Resultado descifrado|Résultat déchiffré|Entschlüsseltes Ergebnis|Resultado descriptografado|ناتج مفكوك التشفير
+Output needs review|確認が必要な出力|확인이 필요한 결과|Результат требует проверки|Resultado por revisar|Résultat à examiner|Ergebnis prüfen|Resultado a revisar|ناتج يحتاج إلى مراجعة
+Output replaced by a later attempt|後の処理で出力が置き換えられました|후속 처리로 결과가 대체됨|Результат заменён позднее|Resultado reemplazado por otro intento|Résultat remplacé par un traitement ultérieur|Ergebnis später ersetzt|Resultado substituído por outra tentativa|استُبدل الناتج بمحاولة لاحقة
+Output file is missing|出力ファイルがありません|결과 파일 없음|Файл результата отсутствует|Falta el archivo de resultado|Fichier résultat introuvable|Ergebnisdatei fehlt|Arquivo de resultado ausente|ملف الناتج مفقود
+Unlinked files|未関連のファイル|연결되지 않은 파일|Несвязанные файлы|Archivos sin vincular|Fichiers sans lien|Nicht zugeordnete Dateien|Arquivos sem vínculo|ملفات غير مرتبطة
+Local file|ローカルファイル|로컬 파일|Локальный файл|Archivo local|Fichier local|Lokale Datei|Arquivo local|ملف محلي
+Files|ファイル|파일|Файлы|Archivos|Fichiers|Dateien|Arquivos|الملفات
+Help|使い方|도움말|Справка|Ayuda|Aide|Hilfe|Ajuda|المساعدة
+Help and compatibility|使い方と互換性|도움말 및 호환성|Справка и совместимость|Ayuda y compatibilidad|Aide et compatibilité|Hilfe und Kompatibilität|Ajuda e compatibilidade|المساعدة والتوافق
+Getting started|はじめに|시작하기|Начало работы|Primeros pasos|Premiers pas|Erste Schritte|Primeiros passos|البدء
+Troubleshooting|問題が起きた場合|문제 해결|Устранение неполадок|Solución de problemas|Résolution des problèmes|Fehlerbehebung|Solução de problemas|استكشاف المشكلات
+Requirements|動作条件|실행 조건|Требования|Requisitos|Conditions requises|Voraussetzungen|Requisitos|المتطلبات
+Untested scenarios|未検証の環境|미검증 환경|Непроверенные сценарии|Escenarios sin probar|Scénarios non testés|Ungetestete Szenarien|Cenários não testados|حالات غير مختبرة
+Importing and decrypting an IPA|IPA の読み込みと復号|IPA 가져오기 및 복호화|Импорт и расшифровка IPA|Importar y descifrar un IPA|Importer et déchiffrer un IPA|IPA importieren und entschlüsseln|Importar e descriptografar um IPA|استيراد IPA وفك تشفيره
+Original packages and decrypted outputs|元のパッケージと復号済み出力|원본 패키지와 복호화 결과|Исходники и результаты|Originales y resultados descifrados|Originaux et résultats déchiffrés|Originale und entschlüsselte Ergebnisse|Originais e resultados descriptografados|الحزم الأصلية والنواتج المفككة
+Saving and sharing|保存と共有|저장 및 공유|Сохранение и отправка|Guardar y compartir|Enregistrer et partager|Speichern und Teilen|Salvar e compartilhar|الحفظ والمشاركة
+The system denied the decryption request|システムが復号要求を拒否しました|시스템에서 복호화 요청을 거부함|Система отклонила запрос|El sistema rechazó el descifrado|Le système a refusé le déchiffrement|System hat Entschlüsselung abgelehnt|O sistema recusou a descriptografia|رفض النظام طلب فك التشفير
+Authorization files are incomplete|認証ファイルが不完全です|인증 파일 불완전|Файлы авторизации неполны|Autorización incompleta|Fichiers d’autorisation incomplets|Autorisierungsdateien unvollständig|Arquivos de autorização incompletos|ملفات التفويض غير مكتملة
+Partial completion or failed verification|一部完了または検証失敗|부분 완료 또는 검증 실패|Частичное завершение или ошибка проверки|Resultado parcial o verificación fallida|Résultat partiel ou vérification échouée|Teilergebnis oder fehlgeschlagene Prüfung|Resultado parcial ou falha de verificação|اكتمال جزئي أو فشل التحقق
+Cancelled or interrupted tasks|キャンセルと中断|취소되거나 중단된 작업|Отмена и прерывание|Tareas canceladas o interrumpidas|Tâches annulées ou interrompues|Abgebrochene oder unterbrochene Vorgänge|Tarefas canceladas ou interrompidas|المهام الملغاة أو المنقطعة
+Automatic decryption did not start|自動復号が始まらない場合|자동 복호화가 시작되지 않음|Авторасшифровка не запустилась|No se inició el descifrado automático|Le déchiffrement automatique n’a pas démarré|Automatische Entschlüsselung startet nicht|A descriptografia automática não iniciou|لم يبدأ فك التشفير التلقائي
+Diagnostic logs and privacy|診断ログとプライバシー|진단 로그 및 개인정보|Журналы и конфиденциальность|Registros y privacidad|Journaux et confidentialité|Diagnoseprotokolle und Datenschutz|Logs e privacidade|السجلات والخصوصية
+Logs and technical details|ログと技術情報|로그 및 기술 세부 정보|Журнал и технические сведения|Registros y detalles técnicos|Journaux et détails techniques|Protokolle und technische Details|Logs e detalhes técnicos|السجلات والتفاصيل التقنية
+Filter logs|ログの絞り込み|로그 필터|Фильтр журнала|Filtrar registros|Filtrer les journaux|Protokolle filtern|Filtrar logs|تصفية السجلات
+Warnings and errors|警告とエラー|경고 및 오류|Предупреждения и ошибки|Advertencias y errores|Avertissements et erreurs|Warnungen und Fehler|Avisos e erros|التحذيرات والأخطاء
+Follow new entries|最新ログを追従|최신 로그 따라가기|Следить за новыми записями|Seguir nuevas entradas|Suivre les nouvelles entrées|Neue Einträge verfolgen|Seguir novas entradas|متابعة أحدث الإدخالات
+Jump to latest|最新に移動|최신 항목으로|К последней записи|Ir al final|Aller au dernier|Zum neuesten Eintrag|Ir para o final|الانتقال إلى الأحدث
+Copy redacted log|伏字処理済みログをコピー|민감정보 제거 로그 복사|Копировать обезличенный журнал|Copiar registro anonimizado|Copier le journal expurgé|Bereinigtes Protokoll kopieren|Copiar log anonimizado|نسخ السجل المنقّح
+Save redacted log|伏字処理済みログを保存|민감정보 제거 로그 저장|Сохранить обезличенный журнал|Guardar registro anonimizado|Enregistrer le journal expurgé|Bereinigtes Protokoll speichern|Salvar log anonimizado|حفظ السجل المنقّح
+Share redacted log|伏字処理済みログを共有|민감정보 제거 로그 공유|Отправить обезличенный журнал|Compartir registro anonimizado|Partager le journal expurgé|Bereinigtes Protokoll teilen|Compartilhar log anonimizado|مشاركة السجل المنقّح
+Export redacted log|伏字処理済みログを書き出す|민감정보 제거 로그 내보내기|Экспорт обезличенного журнала|Exportar registro anonimizado|Exporter le journal expurgé|Bereinigtes Protokoll exportieren|Exportar log anonimizado|تصدير السجل المنقّح
+Redacted log copied|伏字処理済みログをコピーしました|민감정보 제거 로그 복사됨|Обезличенный журнал скопирован|Registro anonimizado copiado|Journal expurgé copié|Bereinigtes Protokoll kopiert|Log anonimizado copiado|نُسخ السجل المنقّح
+Save to Files|ファイルに保存|파일에 저장|Сохранить в Файлы|Guardar en Archivos|Enregistrer dans Fichiers|In Dateien sichern|Salvar em Arquivos|حفظ في الملفات
+Save original IPA|元の IPA を保存|원본 IPA 저장|Сохранить исходный IPA|Guardar IPA original|Enregistrer l’IPA d’origine|Original-IPA speichern|Salvar IPA original|حفظ IPA الأصلي
+Share original IPA|元の IPA を共有|원본 IPA 공유|Отправить исходный IPA|Compartir IPA original|Partager l’IPA d’origine|Original-IPA teilen|Compartilhar IPA original|مشاركة IPA الأصلي
+Share IPA|IPA を共有|IPA 공유|Отправить IPA|Compartir IPA|Partager l’IPA|IPA teilen|Compartilhar IPA|مشاركة IPA
+Decrypt IPA|IPA を復号|IPA 복호화|Расшифровать IPA|Descifrar IPA|Déchiffrer l’IPA|IPA entschlüsseln|Descriptografar IPA|فك تشفير IPA
+Inspect and decrypt…|確認して復号…|검사 후 복호화…|Проверить и расшифровать…|Inspeccionar y descifrar…|Analyser et déchiffrer…|Prüfen und entschlüsseln…|Inspecionar e descriptografar…|الفحص وفك التشفير…
+Decrypt again|再度復号|다시 복호화|Расшифровать снова|Volver a descifrar|Déchiffrer à nouveau|Erneut entschlüsseln|Descriptografar novamente|فك التشفير مجددًا
+Check again|再確認|다시 검사|Проверить снова|Volver a comprobar|Vérifier à nouveau|Erneut prüfen|Verificar novamente|الفحص مجددًا
+Cancel decryption|復号をキャンセル|복호화 취소|Отменить расшифровку|Cancelar descifrado|Annuler le déchiffrement|Entschlüsselung abbrechen|Cancelar descriptografia|إلغاء فك التشفير
+View decryption progress|復号の進捗を表示|복호화 진행률 보기|Ход расшифровки|Ver progreso de descifrado|Voir la progression|Fortschritt anzeigen|Ver progresso da descriptografia|عرض تقدم فك التشفير
+View decryption result|復号結果を表示|복호화 결과 보기|Результат расшифровки|Ver resultado del descifrado|Voir le résultat|Ergebnis anzeigen|Ver resultado da descriptografia|عرض نتيجة فك التشفير
+Delete original IPA|元の IPA を削除|원본 IPA 삭제|Удалить исходный IPA|Eliminar IPA original|Supprimer l’IPA d’origine|Original-IPA löschen|Excluir IPA original|حذف IPA الأصلي
+Delete output file|出力ファイルを削除|결과 파일 삭제|Удалить файл результата|Eliminar archivo de resultado|Supprimer le fichier résultat|Ergebnisdatei löschen|Excluir arquivo de resultado|حذف ملف الناتج
+Delete file|ファイルを削除|파일 삭제|Удалить файл|Eliminar archivo|Supprimer le fichier|Datei löschen|Excluir arquivo|حذف الملف
+Delete this file?|このファイルを削除しますか？|이 파일을 삭제할까요?|Удалить этот файл?|¿Eliminar este archivo?|Supprimer ce fichier ?|Diese Datei löschen?|Excluir este arquivo?|هل تريد حذف هذا الملف؟
+Confirm deletion|削除を確認|삭제 확인|Подтвердить удаление|Confirmar eliminación|Confirmer la suppression|Löschen bestätigen|Confirmar exclusão|تأكيد الحذف
+Remove processing record|処理記録を削除|처리 기록 제거|Удалить запись|Eliminar registro del proceso|Supprimer l’enregistrement|Verarbeitungseintrag entfernen|Remover registro do processo|إزالة سجل المعالجة
+Remove selected records|選択した記録を削除|선택한 기록 제거|Удалить выбранные записи|Eliminar registros seleccionados|Supprimer les enregistrements sélectionnés|Ausgewählte Einträge entfernen|Remover registros selecionados|إزالة السجلات المحددة
+Record no longer exists|記録がありません|기록이 없음|Запись отсутствует|El registro ya no existe|L’enregistrement n’existe plus|Eintrag nicht mehr vorhanden|O registro não existe mais|السجل لم يعد موجودًا
+Save output that failed verification…|検証に失敗した出力を保存…|검증 실패 결과 저장…|Сохранить непроверенный результат…|Guardar resultado no verificado…|Enregistrer le résultat non validé…|Nicht bestandenes Ergebnis speichern…|Salvar resultado não aprovado…|حفظ الناتج الذي فشل التحقق منه…
+Share output that failed verification…|検証に失敗した出力を共有…|검증 실패 결과 공유…|Отправить непроверенный результат…|Compartir resultado no verificado…|Partager le résultat non validé…|Nicht bestandenes Ergebnis teilen…|Compartilhar resultado não aprovado…|مشاركة الناتج الذي فشل التحقق منه…
+Save unverified IPA…|未検証の IPA を保存…|미검증 IPA 저장…|Сохранить непроверенный IPA…|Guardar IPA sin verificar…|Enregistrer l’IPA non vérifié…|Ungeprüfte IPA speichern…|Salvar IPA não verificado…|حفظ IPA غير المتحقق منه…
+Share unverified IPA…|未検証の IPA を共有…|미검증 IPA 공유…|Отправить непроверенный IPA…|Compartir IPA sin verificar…|Partager l’IPA non vérifié…|Ungeprüfte IPA teilen…|Compartilhar IPA não verificado…|مشاركة IPA غير المتحقق منه…
+Processing record unavailable|処理記録がありません|처리 기록 없음|Запись обработки отсутствует|Registro del proceso no disponible|Enregistrement indisponible|Verarbeitungseintrag fehlt|Registro de processamento indisponível|سجل المعالجة غير متوفر
+Needs review|確認が必要|확인 필요|Требует проверки|Requiere revisión|À examiner|Prüfung erforderlich|Requer revisão|يحتاج إلى مراجعة
+Add your first IPA|最初の IPA を追加|첫 IPA 추가하기|Добавьте первый IPA|Añade tu primer IPA|Ajoutez votre premier IPA|Erste IPA hinzufügen|Adicione seu primeiro IPA|أضف أول ملف IPA
+Go to Downloads|ダウンロードに移動|다운로드로 이동|К загрузкам|Ir a Descargas|Aller aux téléchargements|Zu Downloads|Ir para Downloads|الانتقال إلى التنزيلات
+No matching packages|一致するパッケージはありません|일치하는 패키지 없음|Подходящие пакеты не найдены|No hay paquetes coincidentes|Aucun paquet correspondant|Keine passenden Pakete|Nenhum pacote correspondente|لا توجد حزم مطابقة
+Sort|並べ替え|정렬|Сортировка|Ordenar|Trier|Sortieren|Ordenar|ترتيب
+Encryption status|暗号化状態|암호화 상태|Статус шифрования|Estado del cifrado|État du chiffrement|Verschlüsselungsstatus|Estado da criptografia|حالة التشفير
+Checking…|確認中…|검사 중…|Проверка…|Comprobando…|Vérification…|Wird geprüft…|Verificando…|جارٍ الفحص…
+Adding packages…|パッケージを追加中…|패키지 추가 중…|Добавление пакетов…|Añadiendo paquetes…|Ajout des paquets…|Pakete werden hinzugefügt…|Adicionando pacotes…|جارٍ إضافة الحزم…
+Could not add package|パッケージを追加できませんでした|패키지를 추가하지 못함|Не удалось добавить пакет|No se pudo añadir el paquete|Impossible d’ajouter le paquet|Paket konnte nicht hinzugefügt werden|Não foi possível adicionar o pacote|تعذرت إضافة الحزمة
+Synchronizing task status…|処理状態を同期中…|작업 상태 동기화 중…|Синхронизация статуса…|Sincronizando estado…|Synchronisation de l’état…|Status wird synchronisiert…|Sincronizando estado…|جارٍ مزامنة حالة المهمة…
+Possible cause|考えられる原因|가능한 원인|Возможная причина|Posible causa|Cause possible|Mögliche Ursache|Possível causa|سبب محتمل
+Decryption details|復号の詳細|복호화 세부 정보|Сведения о расшифровке|Detalles del descifrado|Détails du déchiffrement|Entschlüsselungsdetails|Detalhes da descriptografia|تفاصيل فك التشفير
+Another task is running|別の処理が実行中です|다른 작업 실행 중|Выполняется другая задача|Hay otra tarea en curso|Une autre tâche est en cours|Ein anderer Vorgang läuft|Outra tarefa está em andamento|هناك مهمة أخرى قيد التنفيذ
+View current task|現在の処理を表示|현재 작업 보기|Текущая задача|Ver tarea actual|Voir la tâche en cours|Aktuellen Vorgang anzeigen|Ver tarefa atual|عرض المهمة الحالية
+Try again later|後で再試行|나중에 다시 시도|Повторить позже|Intentar más tarde|Réessayer plus tard|Später versuchen|Tentar mais tarde|المحاولة لاحقًا
+Replace existing output?|既存の出力を置き換えますか？|기존 결과를 대체할까요?|Заменить существующий результат?|¿Reemplazar el resultado existente?|Remplacer le résultat existant ?|Vorhandenes Ergebnis ersetzen?|Substituir o resultado existente?|هل تريد استبدال الناتج الحالي؟
+Replace and decrypt again|置き換えて再度復号|대체하고 다시 복호화|Заменить и расшифровать|Reemplazar y volver a descifrar|Remplacer et déchiffrer à nouveau|Ersetzen und erneut entschlüsseln|Substituir e descriptografar novamente|الاستبدال وفك التشفير مجددًا
+Manage and decrypt IPAs|IPA の管理と復号|IPA 관리 및 복호화|Управление и расшифровка IPA|Gestionar y descifrar IPA|Gérer et déchiffrer les IPA|IPAs verwalten und entschlüsseln|Gerenciar e descriptografar IPAs|إدارة ملفات IPA وفك تشفيرها
+Original IPAs (%lld)|元の IPA（%lld）|원본 IPA(%lld)|Исходные IPA (%lld)|IPA originales (%lld)|IPA d’origine (%lld)|Original-IPAs (%lld)|IPAs originais (%lld)|ملفات IPA الأصلية (%lld)
+Decrypted (%lld)|復号済み（%lld）|복호화됨(%lld)|Расшифрованные (%lld)|Descifrados (%lld)|Déchiffrés (%lld)|Entschlüsselt (%lld)|Descriptografados (%lld)|المفككة (%lld)
+Processing history (%lld)|処理履歴（%lld）|처리 기록(%lld)|История обработки (%lld)|Historial (%lld)|Historique (%lld)|Verlauf (%lld)|Histórico (%lld)|سجل المعالجة (%lld)
+%lld|%lld 個|%lld개|%lld|%lld|%lld|%lld|%lld|%lld
+No original IPAs yet|元の IPA はありません|원본 IPA가 없습니다|Исходных IPA пока нет|Aún no hay IPA originales|Aucun IPA d’origine|Noch keine Original-IPAs|Ainda não há IPAs originais|لا توجد ملفات IPA أصلية بعد
+View original IPA|元の IPA を表示|원본 IPA 보기|Открыть исходный IPA|Ver IPA original|Voir l’IPA d’origine|Original-IPA anzeigen|Ver IPA original|عرض IPA الأصلي
+View details & export…|詳細を表示して書き出す…|세부 정보 보기 및 내보내기…|Сведения и экспорт…|Ver detalles y exportar…|Détails et exportation…|Details & Export…|Ver detalhes e exportar…|عرض التفاصيل والتصدير…
+Delete?|削除しますか？|삭제할까요?|Удалить?|¿Eliminar?|Supprimer ?|Löschen?|Excluir?|هل تريد الحذف؟
+Original IPA deleted|元の IPA を削除しました|원본 IPA 삭제됨|Исходный IPA удалён|IPA original eliminado|IPA d’origine supprimé|Original-IPA gelöscht|IPA original excluído|تم حذف IPA الأصلي
+File deleted|ファイルを削除しました|파일 삭제됨|Файл удалён|Archivo eliminado|Fichier supprimé|Datei gelöscht|Arquivo excluído|تم حذف الملف
+Output file deleted|出力ファイルを削除しました|결과 파일 삭제됨|Файл результата удалён|Archivo de resultado eliminado|Fichier résultat supprimé|Ergebnisdatei gelöscht|Arquivo de resultado excluído|تم حذف ملف الناتج
+Files & inspection|ファイルと検査|파일 및 검사|Файлы и проверка|Archivos e inspección|Fichiers et inspection|Dateien & Prüfung|Arquivos e inspeção|الملفات والفحص
+Filter history|履歴を絞り込む|기록 필터|Фильтр истории|Filtrar historial|Filtrer l’historique|Verlauf filtern|Filtrar histórico|تصفية السجل
+Issues & cancelled|問題・キャンセル|오류 및 취소|Ошибки и отмена|Fallos y cancelados|Échecs et annulés|Fehler & abgebrochen|Falhas e cancelados|المشكلات والملغاة
+No matching records|一致する記録はありません|일치하는 기록이 없습니다|Подходящих записей нет|No hay registros coincidentes|Aucun enregistrement correspondant|Keine passenden Einträge|Nenhum registro correspondente|لا توجد سجلات مطابقة
+Clear history|履歴を消去|기록 지우기|Очистить историю|Borrar historial|Effacer l’historique|Verlauf löschen|Limpar histórico|مسح السجل
+Remove selected|選択項目を削除|선택 항목 제거|Удалить выбранные|Eliminar selección|Supprimer la sélection|Auswahl entfernen|Remover selecionados|إزالة المحدد
+Clear all processing history?|すべての処理履歴を消去しますか？|모든 처리 기록을 지울까요?|Очистить всю историю обработки?|¿Borrar todo el historial?|Effacer tout l’historique ?|Gesamten Verlauf löschen?|Limpar todo o histórico?|هل تريد مسح سجل المعالجة بالكامل؟
+Processing history cleared|処理履歴を消去しました|처리 기록을 지웠습니다|История обработки очищена|Historial borrado|Historique effacé|Verlauf gelöscht|Histórico limpo|تم مسح سجل المعالجة
+Compatibility & limits|互換性と制限事項|호환성 및 제한 사항|Совместимость и ограничения|Compatibilidad y límites|Compatibilité et limites|Kompatibilität & Grenzen|Compatibilidade e limites|التوافق والحدود
+Technical details|技術詳細|기술 세부 정보|Технические сведения|Detalles técnicos|Détails techniques|Technische Details|Detalhes técnicos|التفاصيل التقنية
+Latest attempt|最新の処理|최근 처리|Последняя попытка|Último intento|Dernière tentative|Letzter Versuch|Última tentativa|أحدث محاولة
+View partial output|一部完了した出力を表示|부분 완료 결과 보기|Открыть неполный результат|Ver resultado parcial|Voir le résultat partiel|Teilergebnis anzeigen|Ver saída parcial|عرض الناتج الجزئي
+View processing record|処理記録を表示|처리 기록 보기|Открыть запись обработки|Ver registro|Voir l’enregistrement|Verarbeitungseintrag anzeigen|Ver registro|عرض سجل المعالجة
+Decrypted|復号済み|복호화됨|Расшифрован|Descifrado|Déchiffré|Entschlüsselt|Descriptografado|تم فك التشفير
+No decrypted outputs yet|復号済みの出力はありません|복호화된 결과가 없습니다|Расшифрованных файлов пока нет|Aún no hay resultados descifrados|Aucun résultat déchiffré|Noch keine entschlüsselten Ergebnisse|Ainda não há saídas descriptografadas|لا توجد نواتج مفككة بعد

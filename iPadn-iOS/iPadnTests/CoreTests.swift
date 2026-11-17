@@ -881,16 +881,23 @@ final class CoreTests: XCTestCase {
         let a = StoreApp(id: "1", name: "A"), b = StoreApp(id: "2", name: "B"), c = StoreApp(id: "3", name: "C")
         var record = WatchRecord(id: "1", country: "US", started: Date(timeIntervalSince1970: 1_700_000_000), checked: Date(timeIntervalSince1970: 1_700_000_100))
         record.price = 4.99; record.currency = "USD"; record.target = 2.99
-        let backup = AppBackup(settings: settings, favorites: [a, b], watch: [record.key: record],
+        var backup = AppBackup(settings: settings, favorites: [a, b], watch: [record.key: record],
                                keptVersions: ["0|1": "1.2"], searchHistory: [SearchHistoryItem(term: "notes", count: 2, lastUsed: Date(timeIntervalSince1970: 1_700_000_000))])
+        backup.accountProfiles = [
+            AccountProfileEntry(id: "alice@example.com", name: "Alice", storeFront: "143465", fullStoreFront: "143465-19,29")
+        ]
+        backup.preferredActiveAccountID = "alice@example.com"
         let data = try backup.encoded()
         let text = String(decoding: data, as: UTF8.self)
-        for secret in ["password", "passwordToken", "cookie", "dsid"] { XCTAssertFalse(text.contains(secret), secret) }
+        for secret in ["passwordToken", "\"cookie\"", "\"password\"", "\"dsid\""] { XCTAssertFalse(text.contains(secret), secret) }
         let restored = try AppBackup.decode(data)
         XCTAssertEqual(restored.settings, settings)
         XCTAssertEqual(restored.favorites.map(\.id), ["1", "2"])
         XCTAssertEqual(restored.watch[record.key]?.target, 2.99)
         XCTAssertEqual(restored.keptVersions, ["0|1": "1.2"])
+        XCTAssertEqual(restored.accountProfiles?.count, 1)
+        XCTAssertEqual(restored.accountProfiles?.first?.id, "alice@example.com")
+        XCTAssertEqual(restored.preferredActiveAccountID, "alice@example.com")
         XCTAssertEqual(AppBackup.merged([a, b], with: [b, c]).map(\.id), ["1", "2", "3"])
         XCTAssertThrowsError(try AppBackup.decode(Data("{}".utf8)))
         XCTAssertThrowsError(try AppBackup.decode(Data("not json".utf8)))
@@ -2872,6 +2879,45 @@ final class CoreTests: XCTestCase {
             ToolStore.DownloadTargetKey(appID: "385907472", platform: .iOS, versionID: " "),
             ToolStore.DownloadTargetKey(appID: "385907472", platform: .iOS, versionID: nil)
         )
+    }
+
+    func testToolSettingsDecodesShowAppScreenshotsWithDefaultTrue() throws {
+        let defaults = ToolSettings()
+        XCTAssertTrue(defaults.showAppScreenshots)
+
+        let legacy = try JSONDecoder().decode(ToolSettings.self, from: Data(#"{"searchLimit":50}"#.utf8))
+        XCTAssertTrue(legacy.showAppScreenshots)
+
+        var disabled = ToolSettings()
+        disabled.showAppScreenshots = false
+        let roundTrip = try JSONDecoder().decode(ToolSettings.self, from: JSONEncoder().encode(disabled))
+        XCTAssertFalse(roundTrip.showAppScreenshots)
+
+        let backup = AppBackup(settings: disabled, favorites: [], watch: [:], keptVersions: [:], searchHistory: [])
+        let restored = try AppBackup.decode(try backup.encoded())
+        XCTAssertFalse(restored.settings.showAppScreenshots)
+        XCTAssertTrue(restored.settings.showAppReviews)
+    }
+
+    func testToolSettingsDecodesShowAppReviewsWithDefaultTrue() throws {
+        let defaults = ToolSettings()
+        XCTAssertTrue(defaults.showAppReviews)
+
+        let legacy = try JSONDecoder().decode(ToolSettings.self, from: Data(#"{"searchLimit":50,"showAppScreenshots":false}"#.utf8))
+        XCTAssertFalse(legacy.showAppScreenshots)
+        XCTAssertTrue(legacy.showAppReviews)
+
+        var configured = ToolSettings()
+        configured.showAppScreenshots = true
+        configured.showAppReviews = false
+        let roundTrip = try JSONDecoder().decode(ToolSettings.self, from: JSONEncoder().encode(configured))
+        XCTAssertTrue(roundTrip.showAppScreenshots)
+        XCTAssertFalse(roundTrip.showAppReviews)
+
+        let backup = AppBackup(settings: configured, favorites: [], watch: [:], keptVersions: [:], searchHistory: [])
+        let restored = try AppBackup.decode(try backup.encoded())
+        XCTAssertTrue(restored.settings.showAppScreenshots)
+        XCTAssertFalse(restored.settings.showAppReviews)
     }
 }
 

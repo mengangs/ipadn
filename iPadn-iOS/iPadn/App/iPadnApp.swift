@@ -38,9 +38,9 @@ enum AppContainer {
                 store.errorMessage = fixtureError
             }
             store.settings.appearance = ProcessInfo.processInfo.arguments.contains("--dark") ? "dark" : "light"
-            if ProcessInfo.processInfo.arguments.contains("--downloads") { store.tab = 1 }
-            if ProcessInfo.processInfo.arguments.contains("--accounts") { store.prepareAccountPreview(); store.tab = 3 }
-            if ProcessInfo.processInfo.arguments.contains("--purchased") { store.prepareAccountPreview(); store.tab = 2 }
+            if ProcessInfo.processInfo.arguments.contains("--downloads") { store.selectTab(.downloads) }
+            if ProcessInfo.processInfo.arguments.contains("--accounts") { store.prepareAccountPreview(); store.selectTab(.accounts) }
+            if ProcessInfo.processInfo.arguments.contains("--purchased") { store.prepareAccountPreview(); store.selectTab(.purchased) }
             if ProcessInfo.processInfo.arguments.contains("--archive") { store.prepareArchivePreview() }
             if ProcessInfo.processInfo.arguments.contains("--notice-preview") { store.infoMessage = "已复制到剪贴板" }
             return store
@@ -54,6 +54,23 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         if !LocalResources.isPreview { UpdateCheckScheduler.register() }
+        #if DEBUG
+        // FairPlay research build: headless lab, see FairPlayLab.swift.
+        // Debug only: a Release build must contain no research launch switches.
+        if FairPlayLab.handleLaunchIfRequested() {
+            return true
+        }
+        FairPlayLab.handleUITestLaunch(store: AppContainer.shared)
+        // Read-only navigation/accessibility probe over real on-device data.
+        // No fixture tasks or synthetic results enter the product UI.
+        if CommandLine.arguments.contains("--fp-ux") {
+            let store = AppContainer.shared
+            store.settings.proMode = true
+            store.selectTab(.packages)
+            if CommandLine.arguments.contains("--ux-dark") { store.settings.appearance = "dark" }
+            if CommandLine.arguments.contains("--ux-light") { store.settings.appearance = "light" }
+        }
+        #endif
         #if DEBUG
         // Device tests: open an iPadn link at launch, e.g. --open-url=ipadn://download?url=…
         if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--open-url=") }),
@@ -98,6 +115,7 @@ struct iPadnApp: App {
     var body: some Scene {
         WindowGroup {
             appContent
+                .modifier(FairPlayAccessibilityProbe())
                 .environmentObject(store)
                 .environmentObject(store.tabs)
                 .environmentObject(store.apple)
@@ -138,6 +156,17 @@ struct iPadnApp: App {
                 UpdateCheckScheduler.cancel()
             }
         }
+    }
+}
+
+private struct FairPlayAccessibilityProbe: ViewModifier {
+    func body(content: Content) -> some View {
+        #if DEBUG
+        if CommandLine.arguments.contains("--ux-large") { content.dynamicTypeSize(.accessibility5) }
+        else { content }
+        #else
+        content
+        #endif
     }
 }
 

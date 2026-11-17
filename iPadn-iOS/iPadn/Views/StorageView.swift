@@ -103,6 +103,10 @@ struct StorageView: View {
     }
 
     private func remove(_ jobs: [DownloadJob]) {
+        guard !jobs.contains(where: { FairPlayPresentation.shared.protects($0.id) }) else {
+            store.errorMessage = AppText.text("安装包正在解密，请等待处理结束后再删除。")
+            return
+        }
         let freed = total(jobs)
         guard !deleting else { return }
         deleting = true

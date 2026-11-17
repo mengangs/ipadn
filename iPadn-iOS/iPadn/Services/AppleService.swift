@@ -9,7 +9,9 @@ final class AppleService: ObservableObject {
     let signer: SAPSigner
     private var loginInProgress = false
     private(set) var loginDiagnostic = "No login attempted in this session."
-    var active: AppleAccount? { accounts.first { $0.id == activeID } }
+    /// Active signed-in account with valid session credentials.
+    /// Imported placeholder profiles without tokens never resolve as `active`.
+    var active: AppleAccount? { accounts.first { $0.id == activeID && $0.hasValidSession } }
     var guid: String {
         if let value = LocalResources.defaults.string(forKey: LocalResources.guid) { return value }
         let value = Self.randomGUID()
@@ -33,7 +35,7 @@ final class AppleService: ObservableObject {
         self.signer = signer
         do { accounts = try KeychainStore.load() } catch { accountStorageError = error.localizedDescription }
         activeID = LocalResources.defaults.string(forKey: LocalResources.activeAccount)
-        if !accounts.contains(where: { $0.id == activeID }) { activeID = nil }
+        if active?.hasValidSession != true { activeID = nil }
     }
 
     /// Session cookies updated by store responses, by account, not yet saved.
@@ -162,7 +164,9 @@ final class AppleService: ObservableObject {
         let account = AppleAccount(id: id, name: name.isEmpty ? id : name, password: password, cookie: cookie,
                                    dsid: resolvedDSID, passwordToken: passwordToken,
                                    storeFront: StoreService.storefrontIdentifier(fullStore), fullStoreFront: fullStore)
-        let updated = [account] + accounts.filter { $0.id != id }
+        let updated = [account] + accounts.filter {
+            AppleAccount.normalizedIdentifier($0.id) != AppleAccount.normalizedIdentifier(id)
+        }
         try Task.checkCancellation()
         guard activeID == initialAccount else { throw ToolError.message(AppText.text("账号已切换，已停止保存本次登录")) }
         do { try KeychainStore.save(updated) }
@@ -176,9 +180,13 @@ final class AppleService: ObservableObject {
     }
 
     func select(_ id: String?) {
-        guard id == nil || accounts.contains(where: { $0.id == id }) else { return }
-        activeID = id
-        LocalResources.defaults.set(id, forKey: LocalResources.activeAccount)
+        if let id {
+            guard let account = accounts.first(where: { $0.id == id }), account.hasValidSession else { return }
+            activeID = account.id
+        } else {
+            activeID = nil
+        }
+        LocalResources.defaults.set(activeID, forKey: LocalResources.activeAccount)
         signer.clearCache()
     }
     func remove(_ id: String) throws {
@@ -186,6 +194,119 @@ final class AppleService: ObservableObject {
         try KeychainStore.save(updated)
         accounts = updated
         if activeID == id { select(nil) }
+    }
+
+    /// Snapshot of freshest in-memory cookies for full backup export.
+    func flushedAccountsForBackup() -> [AppleAccount] {
+        saveLiveCookies()
+        guard !liveCookies.isEmpty else { return accounts }
+        return accounts.map { account in
+            var copy = account
+            if let fresh = liveCookies[account.id] { copy.cookie = fresh }
+            return copy
+        }
+    }
+
+    struct AccountBackupImportOutcome {
+        let merge: AccountBackupService.MergeResult
+        let restoredDeviceIdentity: Bool
+        let addedNeedsReauthCount: Int
+        let restoredSessionCount: Int
+    }
+
+    @discardableResult
+    func importAccountBackup(
+        entries: [AccountSessionEntry],
+        preferredActiveID: String? = nil,
+        deviceGUID: String? = nil,
+        storeProofRecords: [String: StoreProofRecord]? = nil,
+        policy: AccountBackupConflictPolicy = .skipExisting,
+        restoreDeviceIdentity: Bool = false
+    ) throws -> AccountBackupImportOutcome {
+        let hadValidLocalSession = accounts.contains(where: \.hasValidSession)
+        let merged = AccountBackupService.merge(entries: entries, into: accounts, policy: policy)
+        if !merged.addedIDs.isEmpty || !merged.updatedIDs.isEmpty || merged.mergedAccounts.count != accounts.count {
+            try KeychainStore.save(merged.mergedAccounts)
+            for id in merged.updatedIDs + merged.addedIDs {
+                liveCookies.removeValue(forKey: id)
+            }
+            accounts = merged.mergedAccounts
+        }
+
+        let currentStillValid = activeID.flatMap { id in accounts.first(where: { $0.id == id && $0.hasValidSession }) } != nil
+        if !currentStillValid || policy == .overwriteExisting {
+            if let preferred = preferredActiveID,
+               let match = accounts.first(where: {
+                   AppleAccount.normalizedIdentifier($0.id) == AppleAccount.normalizedIdentifier(preferred) && $0.hasValidSession
+               }) {
+                select(match.id)
+            } else if !currentStillValid,
+                      let firstValid = accounts.first(where: \.hasValidSession) {
+                select(firstValid.id)
+            } else if !currentStillValid {
+                activeID = nil
+                LocalResources.defaults.set(nil, forKey: LocalResources.activeAccount)
+            }
+        }
+
+        var didRestoreDeviceIdentity = false
+        if restoreDeviceIdentity {
+            if let importedProofs = storeProofRecords, !importedProofs.isEmpty {
+                signer.restoreStoreProofRecords(
+                    importedProofs,
+                    preferImported: policy == .overwriteExisting || !hadValidLocalSession
+                )
+                didRestoreDeviceIdentity = true
+            }
+            if let targetGUID = AccountBackupService.normalizedDeviceGUID(deviceGUID) {
+                if targetGUID != guid {
+                    try setGUID(targetGUID)
+                    signer.clearCache()
+                }
+                didRestoreDeviceIdentity = true
+            }
+        }
+
+        accountStorageError = nil
+        let touchedKeys = Set((merged.addedIDs + merged.updatedIDs).map(AppleAccount.normalizedIdentifier))
+        let touchedAccounts = accounts.filter { touchedKeys.contains(AppleAccount.normalizedIdentifier($0.id)) }
+        let needsReauthCount = touchedAccounts.filter(\.needsReauthentication).count
+        let sessionCount = touchedAccounts.filter(\.hasValidSession).count
+        return AccountBackupImportOutcome(
+            merge: merged,
+            restoredDeviceIdentity: didRestoreDeviceIdentity,
+            addedNeedsReauthCount: needsReauthCount,
+            restoredSessionCount: sessionCount
+        )
+    }
+
+    func importAccountProfiles(
+        _ entries: [AccountProfileEntry],
+        policy: AccountBackupConflictPolicy = .skipExisting
+    ) throws -> AccountBackupService.MergeResult {
+        try importAccountBackup(
+            entries: entries.map(AccountSessionEntry.init(from:)),
+            policy: policy,
+            restoreDeviceIdentity: false
+        ).merge
+    }
+
+    func importAccountProfiles(
+        _ backup: AccountProfileBackup,
+        policy: AccountBackupConflictPolicy = .skipExisting
+    ) throws -> AccountBackupService.MergeResult {
+        try importAccountBackup(
+            entries: backup.accounts.map(AccountSessionEntry.init(from:)),
+            preferredActiveID: backup.preferredActiveID,
+            policy: policy,
+            restoreDeviceIdentity: false
+        ).merge
+    }
+
+    private func requireSignedInAccount(missingMessage: String = AppText.text("请先登录 Apple 账号")) throws -> AppleAccount {
+        guard let account = active else { throw ToolError.message(missingMessage) }
+        guard account.hasValidSession else { throw AppleAuthError.reauthenticationRequired }
+        return account
     }
     /// Apple sends a code to trusted devices only when it is asked to sign in
     /// with the password and no code. Store requests that need verification
@@ -216,8 +337,11 @@ final class AppleService: ObservableObject {
 
     func refresh(_ account: AppleAccount, useCache: Bool) async throws -> AppleAccount {
         guard activeID == account.id else { throw ToolError.message(AppText.text("账号已切换，请重新执行操作")) }
+        guard !account.password.isEmpty else { throw AppleAuthError.reauthenticationRequired }
         try await login(email: account.id, password: account.password, code: "", useCache: useCache)
-        guard let refreshed = active, refreshed.id == account.id else { throw ToolError.message(AppText.text("登录已过期，请重新登录")) }
+        guard let refreshed = active, refreshed.id == account.id, refreshed.hasValidSession else {
+            throw AppleAuthError.reauthenticationRequired
+        }
         return refreshed
     }
 
@@ -232,7 +356,7 @@ final class AppleService: ObservableObject {
         guard store.platform.supportsIPA else {
             throw ToolError.message(AppText.text("Mac 应用请使用「获取 PKG」下载"))
         }
-        guard let account = active else { throw ToolError.message(AppText.text("请先登录 Apple 账号")) }
+        let account = try requireSignedInAccount()
         var targetVersion = versionID
         var tvListing: StoreApp?
         if store.platform == .tvOS {
@@ -400,7 +524,7 @@ final class AppleService: ObservableObject {
     }
 
     func versionTicketDetails(appID: String, versionID: String, useCache: Bool) async throws -> VersionTicket {
-        guard let account = active, !account.dsid.isEmpty else { throw AppleAuthError.reauthenticationRequired }
+        guard let account = active, account.hasValidSession else { throw AppleAuthError.reauthenticationRequired }
         guard let app = UInt64(appID), app > 0, UInt64(versionID).map({ $0 > 0 }) == true else {
             throw ToolError.message(AppText.text("版本 ID 只能包含数字"))
         }
@@ -544,7 +668,7 @@ final class AppleService: ObservableObject {
     /// unless `allowLicenseAcquisition` is false (version lists).
     func macPackageOffer(_ app: StoreApp, versionID requested: String? = nil, useCache: Bool,
                          allowLicenseAcquisition: Bool = true, licenseAcquired: Bool = false) async throws -> MacPackageOffer {
-        guard let account = active else { throw ToolError.message(AppText.text("请先登录 Apple 账号")) }
+        let account = try requireSignedInAccount()
         guard let appNumber = UInt64(app.id), appNumber > 0 else {
             throw ToolError.message(AppText.text("请输入有效的 Mac 应用 ID"))
         }
@@ -608,7 +732,7 @@ final class AppleService: ObservableObject {
     }
 
     func ownedApps(useCache: Bool) async throws -> [OwnedApp] {
-        guard let account = active else { throw ToolError.message(AppText.text("请先登录 Apple 账号")) }
+        let account = try requireSignedInAccount()
         let base = "https://pd.itunes.apple.com/WebObjects/MZPurchaseDaap.woa/purchase"
         let query = "('com.apple.itunes.extended\\-media\\-kind:131072')"
         let headers = purchaseHeaders(account)
@@ -910,7 +1034,7 @@ enum AppleLoginResponse {
 extension AppleService {
     func prepareAccountPreview() {
         accountStorageError = nil
-        accounts = [AppleAccount(id: "demo@example.com", name: PreviewData.chinese ? "示例账号" : "Alex Morgan", password: "", cookie: "", dsid: "", passwordToken: "", storeFront: "", fullStoreFront: ""), AppleAccount(id: "second@example.com", name: PreviewData.chinese ? "另一个账号" : "Sam Lee", password: "", cookie: "", dsid: "", passwordToken: "", storeFront: "", fullStoreFront: "")]
+        accounts = [AppleAccount(id: "demo@example.com", name: PreviewData.chinese ? "示例账号" : "Alex Morgan", password: "", cookie: "", dsid: "100000001", passwordToken: "preview-session", storeFront: "", fullStoreFront: ""), AppleAccount(id: "second@example.com", name: PreviewData.chinese ? "另一个账号" : "Sam Lee", password: "", cookie: "", dsid: "100000002", passwordToken: "preview-session", storeFront: "", fullStoreFront: "")]
         activeID = accounts.first?.id
     }
 }

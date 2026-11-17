@@ -152,6 +152,19 @@ struct AppleAccount: Codable, Identifiable {
     var passwordToken: String
     var storeFront: String
     var fullStoreFront: String
+
+    /// Authenticated store session: Apple sign-in issues both DSID and token.
+    /// Imported profile placeholders leave credentials empty until signed in here.
+    var hasValidSession: Bool {
+        !dsid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !passwordToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var needsReauthentication: Bool { !hasValidSession }
+
+    static func normalizedIdentifier(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
 }
 
 struct DownloadAsset: Codable {
@@ -377,6 +390,10 @@ struct ToolSettings: Codable, Equatable {
     var proMode = false
     /// The Discover section (top charts) on the search page.
     var showDiscover = true
+    /// Screenshot preview strip on the app detail page.
+    var showAppScreenshots = true
+    /// Reviews card and review loading on the app detail page.
+    var showAppReviews = true
     /// Face ID, Touch ID or the passcode before iPadn's content shows.
     var appLock = false
     /// Seconds away from iPadn before the lock asks again.
@@ -418,7 +435,7 @@ struct ToolSettings: Codable, Equatable {
         case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
         case useSignerCache, appearance, plistServer, versionSources, localInstallation, localInstallHost
         case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency, appUpdateCheck, targetPrices
-        case appearanceSchema, compatibleDownloadMode, nativeInstallation, versionSourcesSchema, appLock, appLockDelay, showDiscover
+        case appearanceSchema, compatibleDownloadMode, nativeInstallation, versionSourcesSchema, appLock, appLockDelay, showDiscover, showAppScreenshots, showAppReviews
         case wifiOnlyDownloads, autoInstall
         case downloadLiveActivity, showHistoryIcons, prioritizeDelistedSearchResults, directTranslation
     }
@@ -433,6 +450,8 @@ struct ToolSettings: Codable, Equatable {
         updateNotifications = try values.decodeIfPresent(Bool.self, forKey: .updateNotifications) ?? updateNotifications
         proMode = try values.decodeIfPresent(Bool.self, forKey: .proMode) ?? proMode
         showDiscover = try values.decodeIfPresent(Bool.self, forKey: .showDiscover) ?? showDiscover
+        showAppScreenshots = try values.decodeIfPresent(Bool.self, forKey: .showAppScreenshots) ?? showAppScreenshots
+        showAppReviews = try values.decodeIfPresent(Bool.self, forKey: .showAppReviews) ?? showAppReviews
         appLock = try values.decodeIfPresent(Bool.self, forKey: .appLock) ?? appLock
         appLockDelay = min(3600, max(0, try values.decodeIfPresent(Int.self, forKey: .appLockDelay) ?? appLockDelay))
         wifiOnlyDownloads = try values.decodeIfPresent(Bool.self, forKey: .wifiOnlyDownloads) ?? wifiOnlyDownloads

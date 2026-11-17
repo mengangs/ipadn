@@ -19,6 +19,26 @@
 			path = iPadnTests.xctest;
 			sourceTree = BUILT_PRODUCTS_DIR;
 		};
+		DD50F997FCAFECF80500856B = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/FairPlayLab.swift";
+			sourceTree = "<group>";
+		};
+		319E7EBECAE99838A804BAB1 = {
+			isa = PBXBuildFile;
+			fileRef = DD50F997FCAFECF80500856B;
+		};
+		5D8D68F1FED8399BDA1BAE05 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "App/iPadnApp.swift";
+			sourceTree = "<group>";
+		};
+		28794B21362D7DD58544D5B3 = {
+			isa = PBXBuildFile;
+			fileRef = 5D8D68F1FED8399BDA1BAE05;
+		};
 		2E42BE3C9237CFD2F7298A38 = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -48,16 +68,6 @@
 		8EE231649195F263F52CE685 = {
 			isa = PBXBuildFile;
 			fileRef = E62D865FB463397117968832;
-		};
-		5D8D68F1FED8399BDA1BAE05 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "App/iPadnApp.swift";
-			sourceTree = "<group>";
-		};
-		28794B21362D7DD58544D5B3 = {
-			isa = PBXBuildFile;
-			fileRef = 5D8D68F1FED8399BDA1BAE05;
 		};
 		D5827E778FA6FF7F69E8755C = {
 			isa = PBXFileReference;
@@ -99,6 +109,16 @@
 			isa = PBXBuildFile;
 			fileRef = 97B77CBFB5B60DE50E8659BA;
 		};
+		22DA4C22F669ACB74C08D737 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/AccountBackupService.swift";
+			sourceTree = "<group>";
+		};
+		6B67E3E3DF658A73D9917D23 = {
+			isa = PBXBuildFile;
+			fileRef = 22DA4C22F669ACB74C08D737;
+		};
 		25B34768D06848A231914199 = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -108,36 +128,6 @@
 		FEB0446825228C21245EA3F7 = {
 			isa = PBXBuildFile;
 			fileRef = 25B34768D06848A231914199;
-		};
-		0D7793336967BAC68EF84AA3 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "Services/AppLock.swift";
-			sourceTree = "<group>";
-		};
-		D8129C13FC18530BE758CA16 = {
-			isa = PBXBuildFile;
-			fileRef = 0D7793336967BAC68EF84AA3;
-		};
-		77BE20F05C95CF0C3CDD1102 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "Services/AppReleaseFeed.swift";
-			sourceTree = "<group>";
-		};
-		DF17CC0ED5E25791D522742C = {
-			isa = PBXBuildFile;
-			fileRef = 77BE20F05C95CF0C3CDD1102;
-		};
-		135F5A5E3C8029531EAFCC61 = {
-			isa = PBXFileReference;
-			lastKnownFileType = sourcecode.swift;
-			path = "Services/AppUpdateService.swift";
-			sourceTree = "<group>";
-		};
-		D049070A4AAA6DF92E0DC832 = {
-			isa = PBXBuildFile;
-			fileRef = 135F5A5E3C8029531EAFCC61;
 		};
 		85BBD237A09E32D159E7886F = {
 			isa = PBXFileReference;
@@ -168,6 +158,36 @@
 		E0631520F368539F2C0854C8 = {
 			isa = PBXBuildFile;
 			fileRef = 0BD07ACE3BF45E1B7AA5D034;
+		};
+		0D7793336967BAC68EF84AA3 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/AppLock.swift";
+			sourceTree = "<group>";
+		};
+		D8129C13FC18530BE758CA16 = {
+			isa = PBXBuildFile;
+			fileRef = 0D7793336967BAC68EF84AA3;
+		};
+		77BE20F05C95CF0C3CDD1102 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/AppReleaseFeed.swift";
+			sourceTree = "<group>";
+		};
+		DF17CC0ED5E25791D522742C = {
+			isa = PBXBuildFile;
+			fileRef = 77BE20F05C95CF0C3CDD1102;
+		};
+		135F5A5E3C8029531EAFCC61 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/AppUpdateService.swift";
+			sourceTree = "<group>";
+		};
+		D049070A4AAA6DF92E0DC832 = {
+			isa = PBXBuildFile;
+			fileRef = 135F5A5E3C8029531EAFCC61;
 		};
 		88FD0C0038F36D6C93A24DF2 = {
 			isa = PBXFileReference;
@@ -228,6 +248,96 @@
 		F019B1F1570985B24777E04F = {
 			isa = PBXBuildFile;
 			fileRef = C08CAAC256BD19E7D6BDF089;
+		};
+		83CD97E3139C5FD410EDE68B = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/FairPlay/DecryptFailureMapper.swift";
+			sourceTree = "<group>";
+		};
+		B79C64A97CF8AA0F9A77F6FA = {
+			isa = PBXBuildFile;
+			fileRef = 83CD97E3139C5FD410EDE68B;
+		};
+		91D84871598AF5CF879CD476 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/FairPlay/DecryptRecord.swift";
+			sourceTree = "<group>";
+		};
+		FBFDBC883C3FFE117AB9D5BE = {
+			isa = PBXBuildFile;
+			fileRef = 91D84871598AF5CF879CD476;
+		};
+		BDF9B11AFDE741E4A4B1FFFB = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/FairPlay/DecryptRecordStore.swift";
+			sourceTree = "<group>";
+		};
+		89204537BCC13C9E4AE7D931 = {
+			isa = PBXBuildFile;
+			fileRef = BDF9B11AFDE741E4A4B1FFFB;
+		};
+		BA930433A8C173F461AAF9E5 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/FairPlay/FairPlayDecryptor.swift";
+			sourceTree = "<group>";
+		};
+		3EA805D706DD1FB22B4F2DEF = {
+			isa = PBXBuildFile;
+			fileRef = BA930433A8C173F461AAF9E5;
+		};
+		57DC26A8899698E61A74197F = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/FairPlay/FairPlayEnvironment.swift";
+			sourceTree = "<group>";
+		};
+		19CA36F23D98648DFA440939 = {
+			isa = PBXBuildFile;
+			fileRef = 57DC26A8899698E61A74197F;
+		};
+		A2F40405BE4B9757F90373D2 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/FairPlay/FairPlayHub.swift";
+			sourceTree = "<group>";
+		};
+		57EA31185BB21827034B46E9 = {
+			isa = PBXBuildFile;
+			fileRef = A2F40405BE4B9757F90373D2;
+		};
+		40D8EA9A99EA4B4B379F3F96 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/FairPlay/FairPlayService.swift";
+			sourceTree = "<group>";
+		};
+		A1A2A52DFFBDA6FB20CD6F5C = {
+			isa = PBXBuildFile;
+			fileRef = 40D8EA9A99EA4B4B379F3F96;
+		};
+		9936AEA5B2D220E15FBC41A8 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/FairPlay/FairPlayVerifier.swift";
+			sourceTree = "<group>";
+		};
+		AFEB45C843A203A3DE2A4DE0 = {
+			isa = PBXBuildFile;
+			fileRef = 9936AEA5B2D220E15FBC41A8;
+		};
+		FDD45F44ABC1FB18A872F8A1 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Services/FairPlay/IPAInspector.swift";
+			sourceTree = "<group>";
+		};
+		F8858D54548D4391BF473043 = {
+			isa = PBXBuildFile;
+			fileRef = FDD45F44ABC1FB18A872F8A1;
 		};
 		BCDB149703DDF289FBA19140 = {
 			isa = PBXFileReference;
@@ -499,6 +609,16 @@
 			isa = PBXBuildFile;
 			fileRef = 179AE521F9E371EE4200EDB4;
 		};
+		517C9B106B82C603FEF475A6 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/AccountTransferViews.swift";
+			sourceTree = "<group>";
+		};
+		78AD8E8121015CDF5BC77E36 = {
+			isa = PBXBuildFile;
+			fileRef = 517C9B106B82C603FEF475A6;
+		};
 		64ED8F7AAAC933FAC771090F = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -529,6 +649,46 @@
 			isa = PBXBuildFile;
 			fileRef = 466D597620E6DD9E4CE9BA7C;
 		};
+		D3C6267A5BA12AFB2BDCD4A2 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/DecryptDetailView.swift";
+			sourceTree = "<group>";
+		};
+		4A1456E521603078F6BC51C6 = {
+			isa = PBXBuildFile;
+			fileRef = D3C6267A5BA12AFB2BDCD4A2;
+		};
+		2CD4131D13B3D6CE52269AD4 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/DecryptHelpView.swift";
+			sourceTree = "<group>";
+		};
+		B35E3E7EA9BC008421F01002 = {
+			isa = PBXBuildFile;
+			fileRef = 2CD4131D13B3D6CE52269AD4;
+		};
+		0C4E29E57605F2E00C8DA1CE = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/DecryptHistoryView.swift";
+			sourceTree = "<group>";
+		};
+		46FFDB0E8967F5381DB40F1B = {
+			isa = PBXBuildFile;
+			fileRef = 0C4E29E57605F2E00C8DA1CE;
+		};
+		924736CC4A30D1E74A38CBF5 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/DecryptLogView.swift";
+			sourceTree = "<group>";
+		};
+		E9319F213E524C36C5385B18 = {
+			isa = PBXBuildFile;
+			fileRef = 924736CC4A30D1E74A38CBF5;
+		};
 		C378265D29DC31EA6BC9A4BB = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -538,6 +698,16 @@
 		BBA95D751DB25B4ECFB64D15 = {
 			isa = PBXBuildFile;
 			fileRef = C378265D29DC31EA6BC9A4BB;
+		};
+		5B8636967C88DF5B88CC91C6 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/DiagnosticRedactor.swift";
+			sourceTree = "<group>";
+		};
+		72DA6FA86C6C71BDACDE5FA9 = {
+			isa = PBXBuildFile;
+			fileRef = 5B8636967C88DF5B88CC91C6;
 		};
 		8EE0A4159670A0595650DA2C = {
 			isa = PBXFileReference;
@@ -558,6 +728,16 @@
 		E03C6E916BCB77F54CB0D996 = {
 			isa = PBXBuildFile;
 			fileRef = A1E708F62865C66C68AA85E9;
+		};
+		BB561A3A4D4BD4DE262CD9F6 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/FairPlayPresentation.swift";
+			sourceTree = "<group>";
+		};
+		B7238CCA425BB86B3BA09DD5 = {
+			isa = PBXBuildFile;
+			fileRef = BB561A3A4D4BD4DE262CD9F6;
 		};
 		8F1179CCA505E90A3DE9BA29 = {
 			isa = PBXFileReference;
@@ -609,6 +789,16 @@
 			isa = PBXBuildFile;
 			fileRef = 8A1091B4A8D5F1BD3F34C166;
 		};
+		82123558ECAB2AEEEED6E1AC = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/PackageFileActions.swift";
+			sourceTree = "<group>";
+		};
+		DA8813B19B20229AE68B8D3B = {
+			isa = PBXBuildFile;
+			fileRef = 82123558ECAB2AEEEED6E1AC;
+		};
 		B4AE6E883932F5C994D0FEAE = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -628,6 +818,46 @@
 		4AD7E64B5ED2E685307DA502 = {
 			isa = PBXBuildFile;
 			fileRef = D38DA86C81DE0C58DC2A02C2;
+		};
+		2298AFC489C37C017B3E24FC = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/PackageLibraryRows.swift";
+			sourceTree = "<group>";
+		};
+		AAFBE276E3F62D2E5E27E861 = {
+			isa = PBXBuildFile;
+			fileRef = 2298AFC489C37C017B3E24FC;
+		};
+		E94F89B309F74FA24CBCC5C0 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/PackageOutputPolicy.swift";
+			sourceTree = "<group>";
+		};
+		054A63263D871A859D740F51 = {
+			isa = PBXBuildFile;
+			fileRef = E94F89B309F74FA24CBCC5C0;
+		};
+		654703D50CE7840F8467A2FC = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/PackageSourceDetailView.swift";
+			sourceTree = "<group>";
+		};
+		D94830B1B5D4435C2237B1CD = {
+			isa = PBXBuildFile;
+			fileRef = 654703D50CE7840F8467A2FC;
+		};
+		16F7E6106B6887BAC12DAD65 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "Views/PackagesView.swift";
+			sourceTree = "<group>";
+		};
+		D26B959F167E810EF3A89603 = {
+			isa = PBXBuildFile;
+			fileRef = 16F7E6106B6887BAC12DAD65;
 		};
 		912A19F2CDAA1C7162E0CF16 = {
 			isa = PBXFileReference;
@@ -848,6 +1078,16 @@
 		205361543E379B7DFD2D6733 = {
 			isa = PBXBuildFile;
 			fileRef = 0DCDD6B6150838BA6D7A2C9C;
+		};
+		B48068D2D8523DD400DE9F9C = {
+			isa = PBXFileReference;
+			lastKnownFileType = text;
+			path = "Resources/ZIPFoundation-MIT.txt";
+			sourceTree = "<group>";
+		};
+		4850C12D6B2731E5117A603F = {
+			isa = PBXBuildFile;
+			fileRef = B48068D2D8523DD400DE9F9C;
 		};
 		1008C8734C72CA3F7ABDB50E = {
 			isa = PBXFileReference;
@@ -1194,6 +1434,16 @@
 			path = Info.plist;
 			sourceTree = "<group>";
 		};
+		3E67DF7B4D1CCCEB8A15489A = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = AccountBackupTests.swift;
+			sourceTree = "<group>";
+		};
+		BF9D6D0D18A435A35E427414 = {
+			isa = PBXBuildFile;
+			fileRef = 3E67DF7B4D1CCCEB8A15489A;
+		};
 		265919398CD78910A79343EB = {
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
@@ -1233,6 +1483,16 @@
 		C3CBC32770C9C84E34C8E263 = {
 			isa = PBXBuildFile;
 			fileRef = D61FDC87C6AEED68C75D19DB;
+		};
+		69C52787104B1BC61CE57363 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = FairPlayTests.swift;
+			sourceTree = "<group>";
+		};
+		A2D62CB15B08CD65230AAB7D = {
+			isa = PBXBuildFile;
+			fileRef = 69C52787104B1BC61CE57363;
 		};
 		C893DFB88667291E462080FF = {
 			isa = PBXFileReference;
@@ -1314,6 +1574,28 @@
 			isa = PBXBuildFile;
 			fileRef = 43B20E5B39E4494D4F6661D0;
 		};
+		C4C7024636D986EEE9BC4648 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
+			path = FairPlayCore.c;
+			sourceTree = "<group>";
+		};
+		6083B79122E987ACC264D310 = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.h;
+			path = "include/FairPlayCore.h";
+			sourceTree = "<group>";
+		};
+		5161DD2C413E51EEC8531E8B = {
+			isa = PBXFileReference;
+			lastKnownFileType = "sourcecode.module-map";
+			path = "include/module.modulemap";
+			sourceTree = "<group>";
+		};
+		A1F4EF592471EABF4786BF74 = {
+			isa = PBXBuildFile;
+			fileRef = C4C7024636D986EEE9BC4648;
+		};
 		9BC77B6C9BFAFB5749CF4757 = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/weichsel/ZIPFoundation.git";
@@ -1343,27 +1625,38 @@
 		A5660BF89DD2D657048780AB = {
 			isa = PBXGroup;
 			children = (
+				DD50F997FCAFECF80500856B,
+				5D8D68F1FED8399BDA1BAE05,
 				2E42BE3C9237CFD2F7298A38,
 				E5897D35708E9120B8647A2F,
 				E62D865FB463397117968832,
-				5D8D68F1FED8399BDA1BAE05,
 				D5827E778FA6FF7F69E8755C,
 				B36989F5E7EBF5AEEA7A2637,
 				9C74C66866F0A2483D0A8371,
 				97B77CBFB5B60DE50E8659BA,
+				22DA4C22F669ACB74C08D737,
 				25B34768D06848A231914199,
-				0D7793336967BAC68EF84AA3,
-				77BE20F05C95CF0C3CDD1102,
-				135F5A5E3C8029531EAFCC61,
 				85BBD237A09E32D159E7886F,
 				7E60346E3184636F15C36607,
 				0BD07ACE3BF45E1B7AA5D034,
+				0D7793336967BAC68EF84AA3,
+				77BE20F05C95CF0C3CDD1102,
+				135F5A5E3C8029531EAFCC61,
 				88FD0C0038F36D6C93A24DF2,
 				03223D703FED7749D0182600,
 				13CED9008CBE668A4EA6BA76,
 				915A2E41DF6387F7AB848588,
 				F8027934C71C79D0C4556300,
 				C08CAAC256BD19E7D6BDF089,
+				83CD97E3139C5FD410EDE68B,
+				91D84871598AF5CF879CD476,
+				BDF9B11AFDE741E4A4B1FFFB,
+				BA930433A8C173F461AAF9E5,
+				57DC26A8899698E61A74197F,
+				A2F40405BE4B9757F90373D2,
+				40D8EA9A99EA4B4B379F3F96,
+				9936AEA5B2D220E15FBC41A8,
+				FDD45F44ABC1FB18A872F8A1,
 				BCDB149703DDF289FBA19140,
 				3228CD82BBADE4C6F497128C,
 				294558996050B2FE227179BC,
@@ -1391,19 +1684,31 @@
 				F235345E5E87890A2B5A37EA,
 				FF26C298C5091FB472995F69,
 				179AE521F9E371EE4200EDB4,
+				517C9B106B82C603FEF475A6,
 				64ED8F7AAAC933FAC771090F,
 				51D958971B0F3CA6069C330F,
 				466D597620E6DD9E4CE9BA7C,
+				D3C6267A5BA12AFB2BDCD4A2,
+				2CD4131D13B3D6CE52269AD4,
+				0C4E29E57605F2E00C8DA1CE,
+				924736CC4A30D1E74A38CBF5,
 				C378265D29DC31EA6BC9A4BB,
+				5B8636967C88DF5B88CC91C6,
 				8EE0A4159670A0595650DA2C,
 				A1E708F62865C66C68AA85E9,
+				BB561A3A4D4BD4DE262CD9F6,
 				8F1179CCA505E90A3DE9BA29,
 				7B2269B1AFDD5F847E9EAD19,
 				86F43769758ED77572E1A466,
 				E4054321E64D9CCCCCE3B182,
 				8A1091B4A8D5F1BD3F34C166,
+				82123558ECAB2AEEEED6E1AC,
 				B4AE6E883932F5C994D0FEAE,
 				D38DA86C81DE0C58DC2A02C2,
+				2298AFC489C37C017B3E24FC,
+				E94F89B309F74FA24CBCC5C0,
+				654703D50CE7840F8467A2FC,
+				16F7E6106B6887BAC12DAD65,
 				912A19F2CDAA1C7162E0CF16,
 				017DA2AF8D5CEEE8F76D714D,
 				1E9502E0C8542CA2BF94D23E,
@@ -1426,6 +1731,7 @@
 				1CDCE2D7B842ECAE64295E63,
 				03D6FDAD4474AB42F9FEA974,
 				0DCDD6B6150838BA6D7A2C9C,
+				B48068D2D8523DD400DE9F9C,
 				393950C9B69B23E630913278,
 				B16C09C8BC30D4CC7B42836D,
 				07498F436E837AD5A8268353,
@@ -1456,13 +1762,25 @@
 			path = iPadn;
 			sourceTree = "<group>";
 		};
+		F2EB1709906F40C6F3CBB998 = {
+			isa = PBXGroup;
+			children = (
+				C4C7024636D986EEE9BC4648,
+				6083B79122E987ACC264D310,
+				5161DD2C413E51EEC8531E8B,
+			);
+			path = FairPlayCore;
+			sourceTree = "<group>";
+		};
 		3A1926085471FC5F24CD7859 = {
 			isa = PBXGroup;
 			children = (
+				3E67DF7B4D1CCCEB8A15489A,
 				265919398CD78910A79343EB,
 				DF17B7F31CB119020ABB3383,
 				FE8B3E8758EB5D71A776EF48,
 				D61FDC87C6AEED68C75D19DB,
+				69C52787104B1BC61CE57363,
 				C893DFB88667291E462080FF,
 				0839A19DD44ED152FEDC3CB6,
 				29BAAF86330B38648CF0CC40,
@@ -1491,6 +1809,7 @@
 			isa = PBXGroup;
 			children = (
 				A5660BF89DD2D657048780AB,
+				F2EB1709906F40C6F3CBB998,
 				3A1926085471FC5F24CD7859,
 				4EDC8BFAFC6BD936B849F38C,
 				E6EFEE88595978CBA23F4B6F,
@@ -1502,27 +1821,38 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				319E7EBECAE99838A804BAB1,
+				28794B21362D7DD58544D5B3,
 				4957CC925B3106081AD1F510,
 				41112957FFC8DF4DD3F48FE2,
 				8EE231649195F263F52CE685,
-				28794B21362D7DD58544D5B3,
 				7097832CBF79ADFF210E5E91,
 				B67510DB40F0F44420FD5F44,
 				43E25ABCD2BA73E3BFD8EDE0,
 				1C018FC21201DC15AA0DD851,
+				6B67E3E3DF658A73D9917D23,
 				FEB0446825228C21245EA3F7,
-				D8129C13FC18530BE758CA16,
-				DF17CC0ED5E25791D522742C,
-				D049070A4AAA6DF92E0DC832,
 				C65BFB920B096427B3107DAB,
 				149794F5729071AD82D12787,
 				E0631520F368539F2C0854C8,
+				D8129C13FC18530BE758CA16,
+				DF17CC0ED5E25791D522742C,
+				D049070A4AAA6DF92E0DC832,
 				36F3F0285F00499BB5753DC1,
 				D9FE40E25730AE6E6B295708,
 				0B798648110D3E2411FCDAA4,
 				56644B3E8FC3F4757AB71784,
 				7C04EA5E4EC7AB7D31EE0AE7,
 				F019B1F1570985B24777E04F,
+				B79C64A97CF8AA0F9A77F6FA,
+				FBFDBC883C3FFE117AB9D5BE,
+				89204537BCC13C9E4AE7D931,
+				3EA805D706DD1FB22B4F2DEF,
+				19CA36F23D98648DFA440939,
+				57EA31185BB21827034B46E9,
+				A1A2A52DFFBDA6FB20CD6F5C,
+				AFEB45C843A203A3DE2A4DE0,
+				F8858D54548D4391BF473043,
 				BF33CC061A259701E2392CC4,
 				BA280790D649F882F8B296E5,
 				C0E20030ACC5F23732E47CAE,
@@ -1550,19 +1880,31 @@
 				0BE53DA983ADAE5B8F63632C,
 				396D5C405A96433A82431342,
 				7532C26779F64E89AE34C747,
+				78AD8E8121015CDF5BC77E36,
 				81760043801C5EA796AC3B07,
 				5B43C4134FAB32D4721B5D05,
 				4A9662AA68301F38F18D0A3B,
+				4A1456E521603078F6BC51C6,
+				B35E3E7EA9BC008421F01002,
+				46FFDB0E8967F5381DB40F1B,
+				E9319F213E524C36C5385B18,
 				BBA95D751DB25B4ECFB64D15,
+				72DA6FA86C6C71BDACDE5FA9,
 				8449F95D426C5A78993B57FB,
 				E03C6E916BCB77F54CB0D996,
+				B7238CCA425BB86B3BA09DD5,
 				94FC099DDAA41D79877704E8,
 				5C5FBC0A39B7120CD76707FB,
 				7D6640A75908FC0DCE131875,
 				A5A5FD444C5F79CDC768A1DB,
 				B6DA1A20FD367B8A0D5BDB60,
+				DA8813B19B20229AE68B8D3B,
 				89A2B94AB9A930101EA11B8B,
 				4AD7E64B5ED2E685307DA502,
+				AAFBE276E3F62D2E5E27E861,
+				054A63263D871A859D740F51,
+				D94830B1B5D4435C2237B1CD,
+				D26B959F167E810EF3A89603,
 				B6B13027E2F2F9F9EC6A34E5,
 				751DC79A4A1F6A9B06991073,
 				4081F8E081F38E620E4F6F53,
@@ -1578,6 +1920,7 @@
 				6A154E22B7CCF6928D3D30BF,
 				5B8632E80D35F5043533FD9E,
 				048737C92F69EE7792D86FB8,
+				A1F4EF592471EABF4786BF74,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1592,6 +1935,7 @@
 				B03D1A024E90C64DA4480E67,
 				C264D09531E6FF7826C42F20,
 				205361543E379B7DFD2D6733,
+				4850C12D6B2731E5117A603F,
 				85310CBF180B460ABE6CA437,
 				5D0F67C75A14F5F9E05AFB4A,
 				C803CD311DF260E5BC8296F3,
@@ -1638,13 +1982,15 @@
 				"$(SRCROOT)/vendor/SAPRuntime",
 			);
 			outputPaths = (
-				"$(SRCROOT)/iPadn/Resources/SAPRuntime/sap.wasm",
+				"$(SRCROOT)/iPadn/Resources/SAPRuntime/Go-BSD-3-Clause.txt",
+				"$(SRCROOT)/iPadn/Resources/SAPRuntime/LGPL-2.0.txt",
 				"$(SRCROOT)/iPadn/Resources/SAPRuntime/index.html",
-				"$(SRCROOT)/iPadn/Resources/SAPRuntime/sap-signer.js",
-				"$(SRCROOT)/iPadn/Resources/SAPRuntime/wasm_exec.js",
-				"$(SRCROOT)/iPadn/Resources/SAPRuntime/unicorn_x86.js",
 				"$(SRCROOT)/iPadn/Resources/SAPRuntime/libCoreADI.so",
 				"$(SRCROOT)/iPadn/Resources/SAPRuntime/libstoreservicescore.so",
+				"$(SRCROOT)/iPadn/Resources/SAPRuntime/sap-signer.js",
+				"$(SRCROOT)/iPadn/Resources/SAPRuntime/sap.wasm",
+				"$(SRCROOT)/iPadn/Resources/SAPRuntime/unicorn_x86.js",
+				"$(SRCROOT)/iPadn/Resources/SAPRuntime/wasm_exec.js",
 			);
 			name = "Verify local signing runtime";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1656,10 +2002,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BF9D6D0D18A435A35E427414,
 				96345D4CE313B1979D8456ED,
 				9CD55C88894B030A66E10BFC,
 				350D3A300250E672882AB320,
 				C3CBC32770C9C84E34C8E263,
+				A2D62CB15B08CD65230AAB7D,
 				F7855E1B1CA17D39AF64B21B,
 				8CC8D5809371F6681292BD8F,
 				9E6BEA258BA752EF52BBAC1D,
@@ -1755,8 +2103,8 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 				INFOPLIST_FILE = "iPadn/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
-				MARKETING_VERSION = 2.1.3;
-				CURRENT_PROJECT_VERSION = 33;
+				MARKETING_VERSION = 2.2.0;
+				CURRENT_PROJECT_VERSION = 34;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -1770,6 +2118,14 @@
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				SWIFT_INCLUDE_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/FairPlayCore/include",
+				);
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/FairPlayCore/include",
+				);
 				IPADN_MACPKG_LDFLAGS = "";
 				IPADN_NATIVE_LDFLAGS = "";
 				OTHER_LDFLAGS = (
@@ -1796,8 +2152,8 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 				INFOPLIST_FILE = "iPadn/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
-				MARKETING_VERSION = 2.1.3;
-				CURRENT_PROJECT_VERSION = 33;
+				MARKETING_VERSION = 2.2.0;
+				CURRENT_PROJECT_VERSION = 34;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -1811,6 +2167,14 @@
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				SWIFT_INCLUDE_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/FairPlayCore/include",
+				);
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/FairPlayCore/include",
+				);
 				IPADN_MACPKG_LDFLAGS = "";
 				IPADN_NATIVE_LDFLAGS = "";
 				OTHER_LDFLAGS = (
@@ -1844,6 +2208,14 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/iPadn.app/iPadn";
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				SWIFT_INCLUDE_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/FairPlayCore/include",
+				);
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/FairPlayCore/include",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1867,6 +2239,14 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/iPadn.app/iPadn";
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				SWIFT_INCLUDE_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/FairPlayCore/include",
+				);
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/FairPlayCore/include",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1983,6 +2363,14 @@
 				DEVELOPMENT_TEAM = "";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				GENERATE_INFOPLIST_FILE = YES;
+				SWIFT_INCLUDE_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/FairPlayCore/include",
+				);
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/FairPlayCore/include",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -2005,6 +2393,14 @@
 				DEVELOPMENT_TEAM = "";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				GENERATE_INFOPLIST_FILE = YES;
+				SWIFT_INCLUDE_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/FairPlayCore/include",
+				);
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/FairPlayCore/include",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -2170,8 +2566,8 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 				INFOPLIST_FILE = "iPadnLiveActivity/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
-				MARKETING_VERSION = 2.1.3;
-				CURRENT_PROJECT_VERSION = 33;
+				MARKETING_VERSION = 2.2.0;
+				CURRENT_PROJECT_VERSION = 34;
 				SKIP_INSTALL = YES;
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -2199,8 +2595,8 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 				INFOPLIST_FILE = "iPadnLiveActivity/Info.plist";
 				GENERATE_INFOPLIST_FILE = NO;
-				MARKETING_VERSION = 2.1.3;
-				CURRENT_PROJECT_VERSION = 33;
+				MARKETING_VERSION = 2.2.0;
+				CURRENT_PROJECT_VERSION = 34;
 				SKIP_INSTALL = YES;
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
