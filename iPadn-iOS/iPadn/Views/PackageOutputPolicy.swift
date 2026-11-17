@@ -22,8 +22,16 @@ enum PackageOutputPolicy {
         candidates(source: source, directory: directory).filter { FileManager.default.fileExists(atPath: $0.path) }
     }
     static func identity(_ url: URL) -> String {
-        let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .fileResourceIdentifierKey])
-        return "\(url.lastPathComponent)#\(values?.fileSize ?? -1)#\(values?.contentModificationDate?.timeIntervalSince1970 ?? -1)#\(String(describing: values?.fileResourceIdentifier))"
+        // Construct a fresh file URL so Darwin Foundation never returns stale
+        // cached size/mtime values after a file at the same URL is replaced.
+        #if canImport(Darwin)
+        var fresh = URL(fileURLWithPath: url.path)
+        fresh.removeAllCachedResourceValues()
+        #else
+        let fresh = URL(fileURLWithPath: url.path)
+        #endif
+        let values = try? fresh.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .fileResourceIdentifierKey])
+        return "\(fresh.lastPathComponent)#\(values?.fileSize ?? -1)#\(values?.contentModificationDate?.timeIntervalSince1970 ?? -1)#\(String(describing: values?.fileResourceIdentifier))"
     }
     static func matches(_ saved: String, url: URL) -> Bool {
         let current = identity(url)
