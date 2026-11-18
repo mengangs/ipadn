@@ -359,7 +359,7 @@ struct DecryptDetailView: View {
             if let source = ui.source(for: record, manager: manager) {
                 let targetRoute = sourceJob(record).map { PackageRoute.source($0.id) } ?? .file(source)
                 Button {
-                    if ui.path.dropLast().last == targetRoute {
+                    if ui.previousRoute == targetRoute {
                         dismiss()
                     } else {
                         ui.push(targetRoute)

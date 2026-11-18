@@ -14,8 +14,9 @@ enum AutoInstall {
     }
 
     static func presentNext(_ store: ToolStore) {
-        guard !LocalResources.isPreview, showing == nil,
+        guard !LocalResources.isPreview, showing == nil, store.installingJob == nil,
               UIApplication.shared.applicationState == .active, !AppLock.shared.locked,
+              store.externalDownloadPrompt == nil, store.errorMessage == nil,
               let id = store.downloads.pendingAutoInstalls.first else { return }
         guard let job = store.downloads.jobs.first(where: { $0.id == id && $0.status == .completed }) else {
             store.downloads.pendingAutoInstalls.removeAll { $0 == id }
@@ -29,8 +30,16 @@ enum AutoInstall {
               var top = window.rootViewController else { return }
         while let next = top.presentedViewController, !next.isBeingDismissed { top = next }
         guard !top.isBeingDismissed else { return }
+        if top is UIAlertController || String(describing: type(of: top)).contains("PackageInstallation") {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(600))
+                presentNext(store)
+            }
+            return
+        }
         let sheet = AutoInstallHost(rootView: AnyView(
             PackageInstallationView(job: job, startsAutomatically: true)
+                .sheetNotice()
                 .environmentObject(store)
                 .environmentObject(store.apple)
                 .environmentObject(store.downloads)

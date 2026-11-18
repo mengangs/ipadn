@@ -190,10 +190,12 @@ enum MachOScan {
             $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
         })
         guard count > 0, count <= 64 else { return [] }
+        let stride = is64 ? 32 : 20
         var result: [SliceInfo] = []
-        for _ in 0..<Int(count) {
-            let size = is64 ? 32 : 20
-            guard let data = try? handle.read(upToCount: size), data.count == size else { break }
+        for index in 0..<Int(count) {
+            let entryOffset = UInt64(8 + index * stride)
+            guard (try? handle.seek(toOffset: entryOffset)) != nil,
+                  let data = try? handle.read(upToCount: stride), data.count == stride else { break }
             let cputype = UInt32(bigEndian: data.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) })
             let offset: UInt64
             if is64 {

@@ -32,7 +32,7 @@ struct WiFiTransferView: View {
     }
 
     /// Stored packages start with the task's ID; the computer gets the readable rest.
-    static func publicName(_ stored: String, id: UUID) -> String {
+    nonisolated static func publicName(_ stored: String, id: UUID) -> String {
         let prefix = id.uuidString + "-"
         return stored.hasPrefix(prefix) ? String(stored.dropFirst(prefix.count)) : stored
     }

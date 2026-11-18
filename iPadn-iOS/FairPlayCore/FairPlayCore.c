@@ -90,10 +90,8 @@ static double fp_now_ms(void) {
     return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
 }
 
-static double fp_entropy(const uint8_t *p, size_t n) {
+static double fp_entropy_from_histogram(const uint64_t histogram[256], uint64_t n) {
     if (!n) return 0;
-    uint64_t histogram[256] = {0};
-    for (size_t i = 0; i < n; i++) histogram[p[i]]++;
     double e = 0;
     for (int i = 0; i < 256; i++) {
         if (!histogram[i]) continue;
@@ -101,6 +99,10 @@ static double fp_entropy(const uint8_t *p, size_t n) {
         e -= q * log2(q);
     }
     return e;
+}
+
+static void fp_accumulate_histogram(uint64_t histogram[256], const uint8_t *p, size_t n) {
+    for (size_t i = 0; i < n; i++) histogram[p[i]]++;
 }
 
 // ARM64 code landmarks. Encrypted text contains them at random rate ~2^-32;
@@ -157,8 +159,13 @@ const char *fp_mode_name(int mode) {
 
 bool fp_is_macho(const char *path) {
     if (!path) return false;
-    int fd = open(path, O_RDONLY);
+    int fd = open(path, O_RDONLY | O_NOFOLLOW);
     if (fd < 0) return false;
+    struct stat st;
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
+        close(fd);
+        return false;
+    }
     uint32_t magic = 0;
     bool ok = fp_pread_full(fd, &magic, sizeof magic, 0);
     close(fd);
@@ -169,6 +176,10 @@ bool fp_is_macho(const char *path) {
 
 static int fp_parse_thin(int fd, uint64_t off, uint64_t size, fp_slice_t *s,
                          char *err, size_t errlen) {
+    if (size < sizeof(struct mach_header_64) || off > (uint64_t)INT64_MAX - size) {
+        snprintf(err, errlen, "short slice (header)");
+        return -1;
+    }
     struct mach_header_64 mh;
     if (!fp_pread_full(fd, &mh, sizeof mh, (off_t)off)) {
         snprintf(err, errlen, "short read (header)");
@@ -184,8 +195,9 @@ static int fp_parse_thin(int fd, uint64_t off, uint64_t size, fp_slice_t *s,
     s->cputype = mh.cputype;
     s->cpusubtype = mh.cpusubtype;
     s->filetype = mh.filetype;
-    if (mh.sizeofcmds > 16u * 1024u * 1024u) {
-        snprintf(err, errlen, "sizeofcmds too large");
+    if (mh.sizeofcmds > 16u * 1024u * 1024u ||
+        (uint64_t)mh.sizeofcmds > size - sizeof(struct mach_header_64)) {
+        snprintf(err, errlen, "sizeofcmds out of slice bounds");
         return -1;
     }
     uint8_t *cmds = malloc(mh.sizeofcmds ? mh.sizeofcmds : 1);
@@ -194,28 +206,38 @@ static int fp_parse_thin(int fd, uint64_t off, uint64_t size, fp_slice_t *s,
         snprintf(err, errlen, "short read (load commands)");
         return -1;
     }
-    uint32_t pos = 0;
-    for (uint32_t i = 0; i < mh.ncmds && pos + 8 <= mh.sizeofcmds; i++) {
-        struct load_command *lc = (struct load_command *)(cmds + pos);
-        if (lc->cmdsize < 8 || pos + lc->cmdsize > mh.sizeofcmds) break;
-        if (lc->cmd == LC_ENCRYPTION_INFO_64 || lc->cmd == LC_ENCRYPTION_INFO) {
-            size_t min_size = (lc->cmd == LC_ENCRYPTION_INFO_64)
+    uint64_t pos = 0;
+    uint64_t limit = mh.sizeofcmds;
+    for (uint32_t i = 0; i < mh.ncmds && pos + sizeof(struct load_command) <= limit; i++) {
+        struct load_command lc;
+        memcpy(&lc, cmds + pos, sizeof lc);
+        if (lc.cmdsize < sizeof(struct load_command) ||
+            (lc.cmdsize & 3u) != 0 ||
+            (uint64_t)lc.cmdsize > limit - pos) {
+            break;
+        }
+        if (lc.cmd == LC_ENCRYPTION_INFO_64 || lc.cmd == LC_ENCRYPTION_INFO) {
+            size_t min_size = (lc.cmd == LC_ENCRYPTION_INFO_64)
                 ? sizeof(struct encryption_info_command_64)
                 : sizeof(struct encryption_info_command);
-            if (lc->cmdsize < min_size) break;
-            struct encryption_info_command *e = (void *)lc;
-            s->has_enc = true;
-            s->enc_lc_off = off + sizeof mh + pos;
-            s->cryptoff = e->cryptoff;
-            s->cryptsize = e->cryptsize;
-            s->cryptid = e->cryptid;
-        } else if (lc->cmd == LC_CODE_SIGNATURE) {
-            if (lc->cmdsize < sizeof(struct linkedit_data_command)) break;
-            struct linkedit_data_command *l = (void *)lc;
-            s->cs_off = l->dataoff;
-            s->cs_size = l->datasize;
+            if (lc.cmdsize < min_size) break;
+            struct encryption_info_command e;
+            memcpy(&e, cmds + pos, sizeof e);
+            if (!s->has_enc || s->cryptid == 0 || e.cryptid != 0) {
+                s->has_enc = true;
+                s->enc_lc_off = off + sizeof mh + pos;
+                s->cryptoff = e.cryptoff;
+                s->cryptsize = e.cryptsize;
+                s->cryptid = e.cryptid;
+            }
+        } else if (lc.cmd == LC_CODE_SIGNATURE) {
+            if (lc.cmdsize < sizeof(struct linkedit_data_command)) break;
+            struct linkedit_data_command l;
+            memcpy(&l, cmds + pos, sizeof l);
+            s->cs_off = l.dataoff;
+            s->cs_size = l.datasize;
         }
-        pos += lc->cmdsize;
+        pos += lc.cmdsize;
     }
     free(cmds);
     return 0;
@@ -225,14 +247,14 @@ int fp_parse(const char *path, fp_slice_t *slices, int max, int *count,
              char *err, size_t errlen) {
     if (!path || !slices || !count || max <= 0) return -1;
     *count = 0;
-    int fd = open(path, O_RDONLY);
+    int fd = open(path, O_RDONLY | O_NOFOLLOW);
     if (fd < 0) {
         snprintf(err, errlen, "open: %s", strerror(errno));
         return -1;
     }
     struct stat st;
-    if (fstat(fd, &st) != 0) {
-        snprintf(err, errlen, "stat: %s", strerror(errno));
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size < 0) {
+        snprintf(err, errlen, "stat: %s", errno ? strerror(errno) : "not a regular file");
         close(fd);
         return -1;
     }
@@ -313,8 +335,8 @@ void fp_attempt_describe(const fp_attempt_t *a, char *buf, size_t len) {
              a->ent_before, a->ent_after, a->ms);
 }
 
-int fp_attempt(const char *path, const fp_slice_t *s, int mode, bool addsigs,
-               uint8_t *out, fp_attempt_t *res) {
+static int fp_attempt_internal(const char *path, const fp_slice_t *s, int mode, bool addsigs,
+                               uint8_t *out, int out_fd, fp_attempt_t *res) {
     if (!path || !s || !res) return -1;
     memset(res, 0, sizeof *res);
     res->mode = mode;
@@ -331,11 +353,11 @@ int fp_attempt(const char *path, const fp_slice_t *s, int mode, bool addsigs,
     if (s->slice_off % page) { res->mmap_errno = EINVAL; return -1; }
     if (s->cryptoff % page) { res->mremap_errno = EINVAL; return -1; }
 
-    int fd = open(path, O_RDONLY);
+    int fd = open(path, O_RDONLY | O_NOFOLLOW);
     if (fd < 0) { res->mmap_errno = errno; return -1; }
 
     struct stat st;
-    if (fstat(fd, &st) != 0 || st.st_size < 0) {
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size < 0) {
         res->mmap_errno = errno ? errno : EINVAL;
         close(fd);
         return -1;
@@ -381,18 +403,47 @@ int fp_attempt(const char *path, const fp_slice_t *s, int mode, bool addsigs,
         return -1;
     }
 
-    uint8_t *original = malloc(s->cryptsize);
-    uint8_t *plain = out ? out : malloc(s->cryptsize);
-    if (!original || !plain ||
-        !fp_pread_full(fd, original, s->cryptsize, (off_t)(s->slice_off + s->cryptoff))) {
-        free(original);
-        if (!out) free(plain);
+    // Stream in 4 MB page-aligned windows (8 MB total heap instead of 2 x cryptsize)
+    // so multi-hundred-MB game executables never trigger Jetsam OOM.
+    uint64_t window = 4u * 1024u * 1024u;
+    if (window < page) window = page;
+    window = (window / page) * page;
+    size_t buf_cap = (size_t)((uint64_t)s->cryptsize < window ? (uint64_t)s->cryptsize : window);
+    uint8_t *orig_chunk = malloc(buf_cap);
+    uint8_t *plain_chunk = out ? NULL : malloc(buf_cap);
+    if (!orig_chunk || (!out && !plain_chunk)) {
+        free(orig_chunk);
+        free(plain_chunk);
+        munmap(base, (size_t)map_len);
+        close(fd);
+        res->mmap_errno = ENOMEM;
+        res->ms = fp_now_ms() - t0;
+        return -1;
+    }
+
+    uint64_t hist_before[256] = {0};
+    uint64_t hist_after[256] = {0};
+    bool io_ok = true;
+    for (uint64_t off = 0; off < (uint64_t)s->cryptsize; off += window) {
+        size_t chunk_len = (size_t)(((uint64_t)s->cryptsize - off < window)
+                                    ? ((uint64_t)s->cryptsize - off) : window);
+        if (!fp_pread_full(fd, orig_chunk, chunk_len, (off_t)(s->slice_off + s->cryptoff + off))) {
+            io_ok = false;
+            break;
+        }
+        fp_accumulate_histogram(hist_before, orig_chunk, chunk_len);
+        res->ret_before += fp_code_words(orig_chunk, chunk_len);
+    }
+    if (!io_ok) {
+        free(orig_chunk);
+        free(plain_chunk);
         munmap(base, (size_t)map_len);
         close(fd);
         res->mmap_errno = EIO;
         res->ms = fp_now_ms() - t0;
         return -1;
     }
+    res->ent_before = fp_entropy_from_histogram(hist_before, s->cryptsize);
 
     uint32_t cryptid = (mode == FP_MODE_R_CID2) ? 2 : 1;
     errno = 0;
@@ -400,61 +451,91 @@ int fp_attempt(const char *path, const fp_slice_t *s, int mode, bool addsigs,
                                           s->cputype, s->cpusubtype);
     res->mremap_errno = res->mremap_ret == 0 ? 0 : errno;
 
+    bool write_ok = true;
     if (res->mremap_ret == 0) {
         // vm_read_overwrite turns a failed page-in (FairPlay refused this page)
         // into a kern_return_t instead of a SIGBUS.
         uint64_t total = ((uint64_t)s->cryptsize + page - 1) / page;
         res->pages_total = total;
-        for (uint64_t i = 0; i < total; i++) {
-            uint64_t off = i * page;
-            uint64_t n = (off + page <= s->cryptsize) ? page : (s->cryptsize - off);
-            vm_size_t got = 0;
-            kern_return_t kr = vm_read_overwrite(
-                mach_task_self(), (vm_address_t)(base + s->cryptoff + off), (vm_size_t)n,
-                (vm_address_t)(plain + off), &got);
-            if (kr == KERN_SUCCESS && got == n) {
-                res->pages_ok++;
-            } else {
-                if (!res->first_fail_kr) {
-                    res->first_fail_kr = kr ? (int)kr : -1;
-                    res->first_fail_off = s->cryptoff + off;
+        for (uint64_t off = 0; off < (uint64_t)s->cryptsize; off += window) {
+            size_t chunk_len = (size_t)(((uint64_t)s->cryptsize - off < window)
+                                        ? ((uint64_t)s->cryptsize - off) : window);
+            if (!fp_pread_full(fd, orig_chunk, chunk_len, (off_t)(s->slice_off + s->cryptoff + off))) {
+                write_ok = false;
+                break;
+            }
+            uint8_t *dst = out ? (out + off) : plain_chunk;
+            for (size_t p_off = 0; p_off < chunk_len; p_off += (size_t)page) {
+                size_t n = (p_off + (size_t)page <= chunk_len) ? (size_t)page : (chunk_len - p_off);
+                vm_size_t got = 0;
+                kern_return_t kr = vm_read_overwrite(
+                    mach_task_self(),
+                    (vm_address_t)(base + s->cryptoff + off + p_off),
+                    (vm_size_t)n,
+                    (vm_address_t)(dst + p_off),
+                    &got);
+                if (kr == KERN_SUCCESS && got == n) {
+                    res->pages_ok++;
+                } else {
+                    if (!res->first_fail_kr) {
+                        res->first_fail_kr = kr ? (int)kr : -1;
+                        res->first_fail_off = s->cryptoff + off + p_off;
+                    }
+                    memset(dst + p_off, 0, n);
                 }
-                memset(plain + off, 0, (size_t)n);
+            }
+            if (!res->changed && memcmp(orig_chunk, dst, chunk_len) != 0) {
+                res->changed = true;
+            }
+            res->ret_after += fp_code_words(dst, chunk_len);
+            fp_accumulate_histogram(hist_after, dst, chunk_len);
+            if (out_fd >= 0 &&
+                !fp_pwrite_full(out_fd, dst, chunk_len, (off_t)(s->slice_off + s->cryptoff + off))) {
+                write_ok = false;
+                break;
             }
         }
-        res->changed = memcmp(original, plain, s->cryptsize) != 0;
-        res->ret_after = fp_code_words(plain, s->cryptsize);
-        res->ent_after = fp_entropy(plain, s->cryptsize);
+        res->ent_after = fp_entropy_from_histogram(hist_after, s->cryptsize);
     }
 
-    res->ret_before = fp_code_words(original, s->cryptsize);
-    res->ent_before = fp_entropy(original, s->cryptsize);
-
-    free(original);
-    if (!out) free(plain);
+    free(orig_chunk);
+    free(plain_chunk);
     munmap(base, (size_t)map_len);
     close(fd);
     res->ms = fp_now_ms() - t0;
-    return (res->mremap_ret == 0 && res->pages_ok == res->pages_total && res->changed) ? 0 : -1;
+    return (write_ok && res->mremap_ret == 0 && res->pages_ok == res->pages_total && res->changed) ? 0 : -1;
+}
+
+int fp_attempt(const char *path, const fp_slice_t *s, int mode, bool addsigs,
+               uint8_t *out, fp_attempt_t *res) {
+    return fp_attempt_internal(path, s, mode, addsigs, out, -1, res);
 }
 
 #pragma mark - decrypt to file
 
 static int fp_copy_file(const char *src, const char *dst) {
-    int in = open(src, O_RDONLY);
+    int in = open(src, O_RDONLY | O_NOFOLLOW);
     if (in < 0) return -1;
     struct stat st;
-    if (fstat(in, &st) != 0) { close(in); return -1; }
-    int out = open(dst, O_WRONLY | O_CREAT | O_TRUNC, (st.st_mode & 0777) | 0600);
+    if (fstat(in, &st) != 0 || !S_ISREG(st.st_mode)) { close(in); return -1; }
+    int out = open(dst, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, (st.st_mode & 0777) | 0600);
     if (out < 0) { close(in); return -1; }
     uint8_t *buf = malloc(1 << 20);
-    if (!buf) { close(in); close(out); return -1; }
+    if (!buf) { close(in); close(out); unlink(dst); return -1; }
     ssize_t r;
+    off_t written = 0;
     int rc = 0;
-    while ((r = read(in, buf, 1 << 20)) > 0) {
-        if (write(out, buf, (size_t)r) != r) { rc = -1; break; }
+    for (;;) {
+        r = read(in, buf, 1 << 20);
+        if (r == 0) break;
+        if (r < 0) {
+            if (errno == EINTR) continue;
+            rc = -1;
+            break;
+        }
+        if (!fp_pwrite_full(out, buf, (size_t)r, written)) { rc = -1; break; }
+        written += r;
     }
-    if (r < 0) rc = -1;
     free(buf);
     close(in);
     close(out);
@@ -476,18 +557,33 @@ int fp_decrypt_file(const char *in_path, const char *out_path, fp_log_t log, voi
     for (int i = 0; i < count; i++) {
         if (slices[i].has_enc && slices[i].cryptid != 0) encrypted = true;
     }
+    bool same_path = strcmp(in_path, out_path) == 0;
     if (!encrypted) {
-        if (strcmp(in_path, out_path) != 0 && fp_copy_file(in_path, out_path) != 0) return -1;
+        if (!same_path && fp_copy_file(in_path, out_path) != 0) return -1;
         return 1;
     }
-    if (strcmp(in_path, out_path) != 0 && fp_copy_file(in_path, out_path) != 0) {
+
+    char *work_path = NULL;
+    const char *target_path = out_path;
+    if (same_path) {
+        size_t len = strlen(out_path) + 16;
+        work_path = malloc(len);
+        if (!work_path) return -1;
+        snprintf(work_path, len, "%s.fptmp", out_path);
+        unlink(work_path);
+        target_path = work_path;
+    }
+    if (fp_copy_file(in_path, target_path) != 0) {
         fp_log(log, ctx, "  copy failed: %s", strerror(errno));
+        free(work_path);
         return -1;
     }
 
-    int out = open(out_path, O_RDWR);
+    int out = open(target_path, O_RDWR | O_NOFOLLOW);
     if (out < 0) {
         fp_log(log, ctx, "  open output: %s", strerror(errno));
+        unlink(target_path);
+        free(work_path);
         return -1;
     }
 
@@ -505,28 +601,38 @@ int fp_decrypt_file(const char *in_path, const char *out_path, fp_log_t log, voi
     for (int i = 0; i < count && rc == 0; i++) {
         const fp_slice_t *s = &slices[i];
         if (!s->has_enc || s->cryptid == 0) continue;
-        uint8_t *plain = malloc(s->cryptsize);
-        if (!plain) { rc = -1; break; }
+        uint64_t cid_off = s->enc_lc_off + offsetof(struct encryption_info_command, cryptid);
+        if (cid_off < s->slice_off || cid_off + 4 > s->slice_off + s->slice_size) {
+            fp_log(log, ctx, "  slice[%d] invalid encryption command offset", i);
+            rc = -1;
+            break;
+        }
         bool done = false;
         for (size_t k = 0; k < sizeof order / sizeof order[0] && !done; k++) {
             fp_attempt_t attempt;
             char line[512];
-            fp_attempt(in_path, s, order[k].mode, order[k].addsigs, plain, &attempt);
+            int attempt_rc = fp_attempt_internal(in_path, s, order[k].mode, order[k].addsigs,
+                                                 NULL, out, &attempt);
             fp_attempt_describe(&attempt, line, sizeof line);
-            done = fp_attempt_looks_decrypted(&attempt);
+            done = (attempt_rc == 0) && fp_attempt_looks_decrypted(&attempt);
             fp_log(log, ctx, "  slice[%d] %s %s", i, done ? "[OK]" : "[--]", line);
         }
-        if (!done) { free(plain); rc = -1; break; }
+        if (!done) { rc = -1; break; }
         uint32_t zero = 0;
-        if (!fp_pwrite_full(out, plain, s->cryptsize, (off_t)(s->slice_off + s->cryptoff)) ||
-            !fp_pwrite_full(out, &zero, 4,
-                            (off_t)(s->enc_lc_off + offsetof(struct encryption_info_command, cryptid)))) {
+        if (!fp_pwrite_full(out, &zero, 4, (off_t)cid_off)) {
             fp_log(log, ctx, "  write failed: %s", strerror(errno));
             rc = -1;
         }
-        free(plain);
     }
     close(out);
-    if (rc != 0 && strcmp(in_path, out_path) != 0) unlink(out_path);
+    if (rc == 0 && same_path) {
+        if (rename(target_path, out_path) != 0) {
+            unlink(target_path);
+            rc = -1;
+        }
+    } else if (rc != 0) {
+        unlink(target_path);
+    }
+    free(work_path);
     return rc;
 }

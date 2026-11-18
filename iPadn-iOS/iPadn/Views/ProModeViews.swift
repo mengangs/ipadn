@@ -89,6 +89,7 @@ enum PackageContents {
     static func items(_ file: URL) throws -> [PackageItem] {
         let archive = try Archive(url: file, accessMode: .read)
         var items: [PackageItem] = []
+        var fileIndices: [String: Int] = [:]
         var folders = Set<String>()
         for entry in archive {
             let path = entry.path.hasSuffix("/") ? String(entry.path.dropLast()) : entry.path
@@ -97,10 +98,17 @@ enum PackageContents {
             var parent = (path as NSString).deletingLastPathComponent
             while !parent.isEmpty, folders.insert(parent).inserted { parent = (parent as NSString).deletingLastPathComponent }
             if entry.type == .directory { folders.insert(path); continue }
-            items.append(PackageItem(path: path, name: (path as NSString).lastPathComponent, isFolder: false,
-                                     size: entry.uncompressedSize, compressedSize: entry.compressedSize,
-                                     modified: entry.fileAttributes[.modificationDate] as? Date))
+            let item = PackageItem(path: path, name: (path as NSString).lastPathComponent, isFolder: false,
+                                   size: entry.uncompressedSize, compressedSize: entry.compressedSize,
+                                   modified: entry.fileAttributes[.modificationDate] as? Date)
+            if let existing = fileIndices[path] {
+                items[existing] = item
+            } else {
+                fileIndices[path] = items.count
+                items.append(item)
+            }
         }
+        folders.subtract(fileIndices.keys)
         items += folders.map { PackageItem(path: $0, name: ($0 as NSString).lastPathComponent, isFolder: true, size: 0, compressedSize: 0) }
         return items
     }

@@ -462,9 +462,17 @@ struct ToolSettings: Codable, Equatable {
         directTranslation = try values.decodeIfPresent(Bool.self, forKey: .directTranslation) ?? directTranslation
         watchNotifications = try values.decodeIfPresent(Bool.self, forKey: .watchNotifications) ?? watchNotifications
         targetPrices = try values.decodeIfPresent(Bool.self, forKey: .targetPrices) ?? targetPrices
-        let regions = (try values.decodeIfPresent([String].self, forKey: .priceRegions) ?? priceRegions).filter { StoreRegions.codes.contains($0) }
+        var seenRegions = Set<String>()
+        let regions = (try values.decodeIfPresent([String].self, forKey: .priceRegions) ?? priceRegions)
+            .map { $0.uppercased() }
+            .filter { StoreRegions.codes.contains($0) && seenRegions.insert($0).inserted }
         priceRegions = regions.isEmpty ? priceRegions : regions
-        baseCurrency = try values.decodeIfPresent(String.self, forKey: .baseCurrency) ?? baseCurrency
+        let decodedCurrency = (try values.decodeIfPresent(String.self, forKey: .baseCurrency) ?? baseCurrency)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+        if decodedCurrency.count == 3, decodedCurrency.allSatisfy({ $0.isASCII && $0.isLetter }) {
+            baseCurrency = decodedCurrency
+        }
         compatibleDownloadMode = try values.decodeIfPresent(Bool.self, forKey: .compatibleDownloadMode) ?? compatibleDownloadMode
         appUpdateCheck = try values.decodeIfPresent(Bool.self, forKey: .appUpdateCheck) ?? appUpdateCheck
         useSignerCache = try values.decodeIfPresent(Bool.self, forKey: .useSignerCache) ?? useSignerCache
@@ -479,7 +487,9 @@ struct ToolSettings: Codable, Equatable {
         localInstallHost = ManifestBuilder.migratedLocalHost(try values.decodeIfPresent(String.self, forKey: .localInstallHost) ?? localInstallHost)
         automaticInstallation = try values.decodeIfPresent(Bool.self, forKey: .automaticInstallation) ?? automaticInstallation
         nativeInstallation = try values.decodeIfPresent(Bool.self, forKey: .nativeInstallation) ?? nativeInstallation
-        versionSources = try values.decodeIfPresent([VersionSource].self, forKey: .versionSources) ?? versionSources
+        let decodedSources = try values.decodeIfPresent([VersionSource].self, forKey: .versionSources) ?? versionSources
+        var seenSourceIDs = Set<UUID>()
+        versionSources = decodedSources.filter { seenSourceIDs.insert($0.id).inserted }
         // Lists saved before iosdump was a default get it once; removing it later sticks.
         if (try values.decodeIfPresent(Int.self, forKey: .versionSourcesSchema) ?? 1) < 2,
            !versionSources.contains(where: { $0.url(for: "1")?.host == VersionSource.iosDump.url(for: "1")?.host }) {

@@ -79,7 +79,7 @@ enum FairPlayVerifier {
     }
 
     private static func thinSlice(_ data: Data, at sliceOffset: Int) -> SliceCryptInfo? {
-        guard sliceOffset >= 0, sliceOffset + 32 <= data.count else { return nil }
+        guard sliceOffset >= 0, data.count >= 32, sliceOffset <= data.count - 32 else { return nil }
         let header = data.withUnsafeBytes { raw -> (UInt32, UInt32, UInt32) in
             (raw.loadUnaligned(fromByteOffset: sliceOffset, as: UInt32.self),
              raw.loadUnaligned(fromByteOffset: sliceOffset + 16, as: UInt32.self),
@@ -88,31 +88,37 @@ enum FairPlayVerifier {
         guard header.0 == 0xfeedfacf else { return nil }
         let ncmds = header.1
         let sizeofcmds = header.2
-        guard sizeofcmds > 0, sliceOffset + 32 + Int(sizeofcmds) <= data.count else { return nil }
+        let remainingAfterHeader = data.count - 32 - sliceOffset
+        guard sizeofcmds > 0, sizeofcmds <= 16 * 1024 * 1024, Int(sizeofcmds) <= remainingAfterHeader else { return nil }
         var position = sliceOffset + 32
         let end = position + Int(sizeofcmds)
+        var best: SliceCryptInfo?
         for _ in 0..<ncmds {
-            guard position + 8 <= end else { break }
+            guard position <= end - 8 else { break }
             let pair = data.withUnsafeBytes { raw -> (UInt32, UInt32) in
                 (raw.loadUnaligned(fromByteOffset: position, as: UInt32.self),
                  raw.loadUnaligned(fromByteOffset: position + 4, as: UInt32.self))
             }
-            guard pair.1 >= 8, position + Int(pair.1) <= end else { break }
+            guard pair.1 >= 8, (pair.1 & 3) == 0, Int(pair.1) <= end - position else { break }
             if pair.0 == 0x21 || pair.0 == 0x2c {
-                guard position + 20 <= data.count else { break }
+                let minSize = pair.0 == 0x2c ? 24 : 20
+                guard Int(pair.1) >= minSize, position <= end - minSize else { break }
                 let values = data.withUnsafeBytes { raw -> (UInt32, UInt32, UInt32) in
                     (raw.loadUnaligned(fromByteOffset: position + 8, as: UInt32.self),
                      raw.loadUnaligned(fromByteOffset: position + 12, as: UInt32.self),
                      raw.loadUnaligned(fromByteOffset: position + 16, as: UInt32.self))
                 }
-                return SliceCryptInfo(sliceOffset: sliceOffset,
-                                      cryptoff: Int(values.0),
-                                      cryptsize: Int(values.1),
-                                      cryptid: values.2)
+                let candidate = SliceCryptInfo(sliceOffset: sliceOffset,
+                                               cryptoff: Int(values.0),
+                                               cryptsize: Int(values.1),
+                                               cryptid: values.2)
+                if best == nil || best?.cryptid == 0 || candidate.cryptid != 0 {
+                    best = candidate
+                }
             }
             position += Int(pair.1)
         }
-        return nil
+        return best
     }
 
     static func fat64ArchOffsets(_ data: Data) -> [Int]? {
@@ -168,7 +174,9 @@ enum FairPlayVerifier {
     /// does not have to be materialised completely.
     private static func read(_ archive: Archive, _ entry: Entry, limit: Int) -> Data {
         var data = Data()
-        data.reserveCapacity(min(Int(entry.uncompressedSize), max(limit, 64 << 10)))
+        let cappedLimit = max(limit, 64 << 10)
+        let reserve = Int(min(entry.uncompressedSize, UInt64(cappedLimit)))
+        data.reserveCapacity(reserve)
         do {
             _ = try archive.extract(entry, bufferSize: 1 << 16, skipCRC32: true) { chunk in
                 data.append(chunk)
@@ -184,13 +192,14 @@ enum FairPlayVerifier {
     /// have `cryptid == 0`, and every slice that was encrypted before must now
     /// look like real code.
     static func verify(ipa url: URL, wasEncrypted: [String: Int]) throws -> FairPlayVerification {
-        guard let archive = try? Archive(url: url, accessMode: .read) else {
+        guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: nil) else {
             throw ToolError.message("无法打开导出的安装包")
         }
         var files: [FairPlayFileReport] = []
         var remaining = 0
         var failures: [String] = []
         var total: Int64 = 0
+        let maxVerifySliceCap = 256 << 20
 
         for entry in archive where entry.type == .file {
             guard entry.uncompressedSize >= 32 else { continue }
@@ -198,14 +207,18 @@ enum FairPlayVerifier {
             var head = read(archive, entry, limit: 64 << 10)
             if let offsets = fat64ArchOffsets(head),
                let maxOffset = offsets.max(),
-               maxOffset + (64 << 10) > head.count,
-               maxOffset < (256 << 20) {
-                head = read(archive, entry, limit: min(maxOffset + (64 << 10), 256 << 20))
+               maxOffset >= 0,
+               maxOffset < maxVerifySliceCap,
+               maxOffset + (64 << 10) > head.count {
+                head = read(archive, entry, limit: min(maxOffset + (64 << 10), maxVerifySliceCap))
             }
             let inspectedSlices = slices(head)
             guard !inspectedSlices.isEmpty else { continue }
-            let maxNeeded = inspectedSlices.map { $0.sliceOffset + $0.cryptoff + $0.cryptsize }.max() ?? 0
-            let needed = min(max(64 << 10, maxNeeded), 256 << 20)
+            let maxNeededU64 = inspectedSlices.map { info -> UInt64 in
+                UInt64(max(0, info.sliceOffset)) &+ UInt64(max(0, info.cryptoff)) &+ UInt64(max(0, info.cryptsize))
+            }.max() ?? 0
+            let cappedNeeded = Int(min(maxNeededU64, UInt64(maxVerifySliceCap)))
+            let needed = min(max(64 << 10, cappedNeeded), maxVerifySliceCap)
             let data = needed <= head.count ? head : read(archive, entry, limit: needed)
             let relative = entry.path.hasPrefix("Payload/")
                 ? String(entry.path.dropFirst("Payload/".count))
@@ -219,8 +232,10 @@ enum FairPlayVerifier {
             var minCodeWords = Int.max
             var inspectedSize = 0
             for info in inspectedSlices {
-                let start = info.sliceOffset + info.cryptoff
-                let size = min(info.cryptsize, max(0, data.count - start))
+                let (rawStart, startOverflow) = info.sliceOffset.addingReportingOverflow(info.cryptoff)
+                let start = startOverflow ? data.count : rawStart
+                let available = (start >= 0 && start <= data.count) ? (data.count - start) : 0
+                let size = min(max(0, info.cryptsize), available)
                 let crypt = (start >= 0 && start <= data.count && size > 0)
                     ? data.subdata(in: start..<(start + size))
                     : Data()
@@ -240,7 +255,8 @@ enum FairPlayVerifier {
                                             cryptid: worstCryptID,
                                             wasEncrypted: expected != nil)
             files.append(report)
-            total += Int64(entry.uncompressedSize)
+            let (nextTotal, totalOverflow) = total.addingReportingOverflow(Int64(clamping: entry.uncompressedSize))
+            total = totalOverflow ? .max : nextTotal
             if worstCryptID != 0 { remaining += 1 }
             if !report.ok { failures.append(report.path) }
         }

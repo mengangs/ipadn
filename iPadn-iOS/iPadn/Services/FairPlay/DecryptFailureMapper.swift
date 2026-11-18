@@ -60,6 +60,9 @@ enum DecryptFailureMapper {
                                   details: details,
                                   errno: errno)
 
+        case .alreadyPlain:
+            return alreadyPlain(details: details)
+
         case .packFailed(let detail):
             return DecryptFailure(kind: .packFailed,
                                   title: "重新打包失败",
@@ -77,15 +80,16 @@ enum DecryptFailureMapper {
                                   errno: errno)
 
         case .notDecryptable(let detail):
-            if let errno, errno == EPERM {
+            if let errno, errno == EPERM || errno == EACCES {
+                let codeLabel = errno == EACCES ? "EACCES（Permission denied）" : "EPERM（Operation not permitted）"
                 return DecryptFailure(
                     kind: .fairplayDenied,
                     title: "系统拒绝了解密请求",
-                    reason: "fairplayd 对这次请求返回了 EPERM（Operation not permitted）。"
-                        + "常见原因有三种：当前设备没有下载该应用所用 Apple ID 的解密授权；"
+                    reason: "fairplayd 对这次请求返回了 \(codeLabel)。"
+                        + "常见原因有三种：当前设备没有下载该应用所用 Apple 账号的解密授权；"
                         + "IPA 的下载账号与系统 App Store 当前授权账号不一致；"
                         + "这个应用来自家庭共享或其他账号的购买记录。",
-                    advice: "用下载该应用时所用的 Apple ID 在系统 App Store 登录一次（App Store → 头像 → 登录），"
+                    advice: "用下载该应用时所用的 Apple 账号在系统 App Store 登录一次（App Store → 头像 → 登录），"
                         + "回到这里重新解密。如果已登录仍被拒绝，请核对下载账号是否直接拥有该应用。",
                     isCertain: false,
                     details: details,
@@ -155,6 +159,7 @@ enum DecryptFailureMapper {
         for line in lines.reversed() where line.contains("mremap=-1") {
             let lower = line.lowercased()
             if lower.contains("not permitted") { return EPERM }
+            if lower.contains("permission denied") { return EACCES }
             if lower.contains("invalid argument") { return EINVAL }
             if lower.contains("no space") { return ENOSPC }
         }

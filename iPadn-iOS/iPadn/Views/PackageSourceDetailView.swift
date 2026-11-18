@@ -181,7 +181,7 @@ struct PackageSourceDetailView: View {
     @ViewBuilder private func heroPrimaryControl(url: URL) -> some View {
         if let active = activeAttempt {
             Button {
-                ui.path.append(.record(active.id))
+                ui.push(.record(active.id))
             } label: {
                 Text("查看解密进度").frame(maxWidth: .infinity)
             }
@@ -189,7 +189,7 @@ struct PackageSourceDetailView: View {
         } else if let output = latestCleanOutput {
             VStack(spacing: 10) {
                 Button {
-                    ui.path.append(.record(output.id))
+                    ui.push(.record(output.id))
                 } label: {
                     Text("查看解密结果").frame(maxWidth: .infinity)
                 }

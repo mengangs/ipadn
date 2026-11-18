@@ -6,7 +6,7 @@ import UserNotifications
 struct SettingsView: View {
     /// Settings are grouped into pages, like the system's Settings app, so
     /// the first screen stays short.
-    enum Page {
+    enum Page: String, Hashable, Codable {
         case root, downloads, follow, appearance, lock, sources, maintenance
         var title: LocalizedStringKey {
             switch self {
@@ -27,7 +27,6 @@ struct SettingsView: View {
     @StateObject private var icons = AppIconService()
     @State private var iconIssue: String?
     @State private var addingSource = false
-    @State private var editingSourceID: UUID?
     /// Results of the last "check all sources", by source.
     @State private var sourceChecks: [UUID: SourceCheckState] = [:]
     @State private var share: SharedFile?
@@ -36,6 +35,7 @@ struct SettingsView: View {
     @State private var exportingBackupSheet = false
     @State private var pendingExportURL: URL?
     @State private var importingBackup = false
+    @State private var deferredBackupImport: Result<BackupInspectResult, Error>?
     @State private var pendingBackup: Data?
     @State private var encryptedBackupItem: EncryptedBackupItem?
     @State private var pendingDecryptedPreview: UnifiedBackupPreview?
@@ -53,7 +53,7 @@ struct SettingsView: View {
         }
     }
     private func pageLink(_ page: Page, _ symbol: String, _ identifier: String) -> some View {
-        NavigationLink { SettingsView(page: page) } label: { Label(page.title, systemImage: symbol) }
+        NavigationLink(value: AccountRoute.settings(page)) { Label(page.title, systemImage: symbol) }
             .accessibilityIdentifier(identifier)
     }
     var body: some View {
@@ -66,7 +66,7 @@ struct SettingsView: View {
                 pageLink(.appearance, "paintbrush", "settings.page.appearance")
                 pageLink(.lock, "lock", "settings.page.lock")
                 pageLink(.sources, "clock.arrow.circlepath", "settings.page.sources")
-                NavigationLink { InstallationSettingsView() } label: { Label("安装设置", systemImage: "arrow.down.app") }
+                NavigationLink(value: AccountRoute.installation) { Label("安装设置", systemImage: "arrow.down.app") }
                     .accessibilityIdentifier("settings.installation")
                 pageLink(.maintenance, "wrench.and.screwdriver", "settings.page.maintenance")
             }
@@ -233,16 +233,15 @@ struct SettingsView: View {
             if page == .sources {
             ForEach($store.settings.versionSources) { $source in
                 Section {
-                    Button { editingSourceID = source.id } label: {
+                    NavigationLink(value: AccountRoute.versionSource(source.id)) {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(source.name)
+                                Text(source.name).foregroundStyle(.primary)
                                 Text(source.urlTemplate).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                                 if let check = sourceChecks[source.id] { SourceCheckLabel(state: check) }
                             }
                             Spacer()
                             Text(source.enabled ? "已启用" : "已停用").font(.caption).foregroundStyle(.secondary)
-                            Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                         }
                     }
                     .accessibilityIdentifier("settings.source." + source.name)
@@ -277,10 +276,10 @@ struct SettingsView: View {
             }
             if page == .root {
             Section {
-                Toggle("专业模式", isOn: $store.settings.proMode.animation())
+                Toggle("专业模式", isOn: $store.settings.proMode)
                     .accessibilityIdentifier("settings.pro-mode")
                 if store.settings.proMode {
-                    NavigationLink { CredentialsView() } label: { Label("账号与设备标识", systemImage: "key") }
+                    NavigationLink(value: AccountRoute.credentials) { Label("账号与设备标识", systemImage: "key") }
                         .accessibilityIdentifier("settings.credentials")
                 }
             } footer: {
@@ -308,7 +307,7 @@ struct SettingsView: View {
                 Text("导出或恢复应用设置、版本来源、关注与应用记录、最近搜索，以及全部 Apple 账号资料、Cookie、登录令牌、密码与设备凭证。导出时可设置密码加密或直接明文导出，不包含已下载的安装包。")
             }
             Section("维护") {
-                NavigationLink { StorageView() } label: { Label("存储空间", systemImage: "internaldrive") }
+                NavigationLink(value: AccountRoute.storage) { Label("存储空间", systemImage: "internaldrive") }
                     .accessibilityIdentifier("settings.storage")
                 Button("清除历史版本缓存") { clearCache = true }
                     .confirmationDialog("清除历史版本缓存？", isPresented: $clearCache, titleVisibility: .visible) {
@@ -347,7 +346,7 @@ struct SettingsView: View {
                 .padding(.vertical, 2)
                 .accessibilityElement(children: .combine)
                 if let update = store.appUpdate {
-                    NavigationLink { AppUpdateView(release: update) } label: {
+                    NavigationLink(value: AccountRoute.appUpdate) {
                         Label("iPadn \(update.version) 可以更新", systemImage: "arrow.down.app.fill")
                             .foregroundStyle(.tint).fontWeight(.semibold)
                     }
@@ -374,7 +373,7 @@ struct SettingsView: View {
                 Link("项目与更新", destination: URL(string: "https://github.com/mengangs/ipadn")!)
             }
             Section {
-                NavigationLink { SupportView() } label: { SupportRow() }
+                NavigationLink(value: AccountRoute.support) { SupportRow() }
                     .accessibilityIdentifier("settings.support")
             }
             }
@@ -422,7 +421,10 @@ struct SettingsView: View {
         }
         .fileImporter(isPresented: $importingBackup, allowedContentTypes: [.json, .data]) { result in
             guard case .success(let url) = result else {
-                if case .failure(let error) = result { store.errorMessage = error.localizedDescription }
+                if case .failure(let error) = result {
+                    deferredBackupImport = .failure(error)
+                    scheduleBackupImportPresentation()
+                }
                 return
             }
             let scoped = url.startAccessingSecurityScopedResource()
@@ -433,14 +435,14 @@ struct SettingsView: View {
                     throw AccountBackupError.fileTooLarge
                 }
                 let data = try Data(contentsOf: url)
-                switch try store.previewBackup(data: data) {
-                case .needsPassword(let encryptedData):
-                    pendingDecryptedPreview = nil
-                    encryptedBackupItem = EncryptedBackupItem(data: encryptedData)
-                case .ready(let preview):
-                    presentImportPreview(preview)
-                }
-            } catch { store.errorMessage = error.localizedDescription }
+                deferredBackupImport = .success(try store.previewBackup(data: data))
+            } catch {
+                deferredBackupImport = .failure(error)
+            }
+            scheduleBackupImportPresentation()
+        }
+        .compatibleOnChange(of: importingBackup) { isImporting in
+            if !isImporting { scheduleBackupImportPresentation() }
         }
         .sheet(item: $encryptedBackupItem, onDismiss: {
             if let preview = pendingDecryptedPreview {
@@ -496,33 +498,52 @@ struct SettingsView: View {
                 onCancel: { backupPreview = nil }
             )
         }
-        .compatibleNavigationDestination(item: $editingSourceID) { id in
-            if let index = store.settings.versionSources.firstIndex(where: { $0.id == id }) {
-                VersionSourceEditor(source: $store.settings.versionSources[index])
-            }
-        }
         .sheet(item: $share, onDismiss: {
             if let url = presentedShareURL {
                 presentedShareURL = nil
-                try? FileManager.default.removeItem(at: url)
+                TemporaryExportSweeper.scheduleDelayedRemoval(of: url)
             }
         }) { file in
             ShareSheet(items: [file.url])
                 .onAppear { presentedShareURL = file.url }
         }
-        .actionConfirmation(isPresented: $resetSettings, title: "恢复默认设置？", message: "账号、已下载的安装包和已购记录不受影响。", confirmTitle: "恢复默认设置") { store.settings = ToolSettings() }
+        .actionConfirmation(isPresented: $resetSettings, title: "恢复默认设置？", message: "账号、已下载的安装包和已购记录不受影响。", confirmTitle: "恢复默认设置") {
+            Task {
+                if store.settings.appLock && AppLock.method != .unavailable {
+                    guard await AppLock.shared.authenticate(reason: AppText.text("恢复默认设置")) else { return }
+                }
+                store.settings = ToolSettings()
+            }
+        }
     }
 }
 
 extension SettingsView {
     private struct BackupPreviewSheetItem: Identifiable {
-        let id = UUID()
+        var id: String { "unified-backup-preview" }
         let preview: UnifiedBackupPreview
     }
 
     private struct EncryptedBackupItem: Identifiable {
         let id = UUID()
         let data: Data
+    }
+
+    private func scheduleBackupImportPresentation() {
+        guard !importingBackup, deferredBackupImport != nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            guard !importingBackup, let outcome = deferredBackupImport else { return }
+            deferredBackupImport = nil
+            switch outcome {
+            case .success(.needsPassword(let encryptedData)):
+                pendingDecryptedPreview = nil
+                encryptedBackupItem = EncryptedBackupItem(data: encryptedData)
+            case .success(.ready(let preview)):
+                presentImportPreview(preview)
+            case .failure(let error):
+                store.errorMessage = error.localizedDescription
+            }
+        }
     }
 
     private func presentImportPreview(_ preview: UnifiedBackupPreview) {

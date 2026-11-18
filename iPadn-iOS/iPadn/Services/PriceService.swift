@@ -107,7 +107,9 @@ enum PriceComparison {
                 if let country = pending.next() { group.addTask { await regionPrice(appID: appID, country: country) } }
             }
         }
-        return countries.compactMap { results[$0] }
+        var seenCountries = Set<String>()
+        let uniqueCountries = countries.filter { seenCountries.insert($0).inserted }
+        return uniqueCountries.compactMap { results[$0] }
     }
 
     /// Nil when the request failed, rather than showing "not listed".

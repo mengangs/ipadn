@@ -273,6 +273,7 @@ struct SignerWebView: UIViewRepresentable {
 struct RootView: View {
     @ObservedObject private var packages = FairPlayPresentation.shared
     @State private var completedPackageIDs: Set<UUID> = []
+    @State private var seededCompletedPackages = false
     @State private var handledPackageProbe = false
     @EnvironmentObject private var store: ToolStore
     @EnvironmentObject private var tabs: TabState
@@ -289,21 +290,19 @@ struct RootView: View {
         let kind: RevealAnimationKind
     }
 
+    private let searchDestination = Destination(id: .search, title: "搜索", symbol: "magnifyingglass", kind: .tabSearch)
+    private let downloadsDestination = Destination(id: .downloads, title: "下载", symbol: "arrow.down.circle.fill", kind: .tabDownloads)
+    private let packagesDestination = Destination(id: .packages, title: "应用包", symbol: "shippingbox.fill", kind: .tabPackages)
+    private let purchasedDestination = Destination(id: .purchased, title: "已购", symbol: "bag.fill", kind: .tabPurchased)
+    private let accountsDestination = Destination(id: .accounts, title: "账号", symbol: "person.crop.circle.fill", kind: .tabAccount)
+
     /// 应用包 sits between 下载 and 已购, and only exists while 专业模式 is on.
-    /// Everything else (tags, badges, vector-icon kinds) is derived from this
-    /// array, so no index is hard-coded anywhere in the views.
     private var destinations: [Destination] {
-        var list: [Destination] = [
-            Destination(id: .search, title: "搜索", symbol: "magnifyingglass", kind: .tabSearch),
-            Destination(id: .downloads, title: "下载", symbol: "arrow.down.circle.fill", kind: .tabDownloads),
-        ]
+        var list: [Destination] = [searchDestination, downloadsDestination]
         if store.settings.proMode {
-            list.append(Destination(id: .packages, title: "应用包",
-                                    symbol: "shippingbox.fill", kind: .tabPackages))
+            list.append(packagesDestination)
         }
-        list.append(Destination(id: .purchased, title: "已购", symbol: "bag.fill", kind: .tabPurchased))
-        list.append(Destination(id: .accounts, title: "账号",
-                                symbol: "person.crop.circle.fill", kind: .tabAccount))
+        list.append(contentsOf: [purchasedDestination, accountsDestination])
         return list
     }
 
@@ -313,18 +312,31 @@ struct RootView: View {
         downloads.jobs.filter { DownloadFilter.active.includes($0.status) }.count
     }
 
+    private var tabSelectionBinding: Binding<TabID> {
+        Binding(
+            get: { tabs.id },
+            set: { store.selectTab($0) }
+        )
+    }
+
+    private var sidebarSelectionBinding: Binding<TabID?> {
+        Binding<TabID?>(
+            get: { tabs.id },
+            set: { value in
+                guard let value else { return }
+                store.selectTab(value)
+            }
+        )
+    }
+
     var body: some View {
         Group {
             if sizeClass == .regular {
                 NavigationSplitView {
-                    List(selection: Binding<Int?>(get: { tabs.selection }, set: { value in
-                        guard let value else { return }
-                        tabs.selection = value
-                        tabs.syncFromIndex(tabOrder)
-                    })) {
+                    List(selection: sidebarSelectionBinding) {
                         Section {
-                            ForEach(Array(destinations.enumerated()), id: \.element.id) { index, item in
-                                Label(item.title, systemImage: item.symbol).tag(index)
+                            ForEach(destinations, id: \.id) { item in
+                                Label(item.title, systemImage: item.symbol).tag(item.id)
                             }
                         }
 
@@ -333,33 +345,43 @@ struct RootView: View {
                     // Keep every section alive, like the iPhone tab bar does, so
                     // switching sections keeps navigation, filters and scroll position.
                     ZStack {
-                        ForEach(Array(destinations.enumerated()), id: \.element.id) { index, item in
+                        ForEach(destinations, id: \.id) { item in
                             pageStack(item.id)
                                 .frame(maxWidth: 900).frame(maxWidth: .infinity)
                                 .background(Color(.systemGroupedBackground))
-                            .opacity(tabs.selection == index ? 1 : 0)
-                            .allowsHitTesting(tabs.selection == index)
-                            .accessibilityHidden(tabs.selection != index)
+                                .opacity(tabs.id == item.id ? 1 : 0)
+                                .allowsHitTesting(tabs.id == item.id)
+                                .accessibilityHidden(tabs.id != item.id)
                         }
                     }
                 }
             } else {
-                TabView(selection: Binding(get: { tabs.selection }, set: { value in
-                    tabs.selection = value
-                    tabs.syncFromIndex(tabOrder)
-                })) {
-                    ForEach(Array(destinations.enumerated()), id: \.element.id) { index, item in
-                        pageStack(item.id)
-                            .tabItem { tabLabel(item) }
-                            .badge(item.id == .downloads ? downloadsBadge : 0)
-                            .tag(index)
+                TabView(selection: tabSelectionBinding) {
+                    pageStack(.search)
+                        .tabItem { tabLabel(searchDestination) }
+                        .tag(TabID.search)
+                    pageStack(.downloads)
+                        .tabItem { tabLabel(downloadsDestination) }
+                        .badge(downloadsBadge)
+                        .tag(TabID.downloads)
+                    if store.settings.proMode {
+                        pageStack(.packages)
+                            .tabItem { tabLabel(packagesDestination) }
+                            .tag(TabID.packages)
                     }
+                    pageStack(.purchased)
+                        .tabItem { tabLabel(purchasedDestination) }
+                        .tag(TabID.purchased)
+                    pageStack(.accounts)
+                        .tabItem { tabLabel(accountsDestination) }
+                        .tag(TabID.accounts)
                 }
                 .toolbarBackground(.visible, for: .tabBar)
                 .toolbarBackground(.ultraThinMaterial, for: .tabBar)
                 .background {
                     TabReselectScroll(
                         selected: tabs.selection,
+                        selectedID: tabs.id,
                         reduceMotion: reduceMotion,
                         kinds: destinations.map(\.kind),
                         enableVectorIcons: !vectorTabBarUnavailable,
@@ -369,11 +391,19 @@ struct RootView: View {
             }
         }
         .preferredColorScheme(store.settings.appearance == "system" ? nil : store.settings.appearance == "dark" ? .dark : .light)
-        .compatibleSelectionFeedback(trigger: tabs.selection)
+        .compatibleSelectionFeedback(trigger: tabs.id)
         .onAppear {
             tabs.reconcile(with: tabOrder)
             packages.adoptLegacyOutputIdentities()
+            if downloads.isLoaded {
+                completedPackageIDs = Set(downloads.jobs.filter { $0.status == .completed }.map(\.id))
+                seededCompletedPackages = true
+            }
+        }
+        .compatibleOnChange(of: downloads.isLoaded) { loaded in
+            guard loaded, !seededCompletedPackages else { return }
             completedPackageIDs = Set(downloads.jobs.filter { $0.status == .completed }.map(\.id))
+            seededCompletedPackages = true
         }
         .task {
             #if DEBUG
@@ -393,7 +423,7 @@ struct RootView: View {
             #endif
         }
         .compatibleOnChange(of: packages.navigationRevision) { _ in
-            guard store.settings.proMode else { packages.path = []; return }
+            guard store.settings.proMode else { packages.clearPath(); return }
             tabs.select(.packages, in: tabOrder)
         }
         .onReceive(packages.service.$phase.removeDuplicates()) { phase in
@@ -404,6 +434,12 @@ struct RootView: View {
         }
         .compatibleOnChange(of: downloads.jobs.filter { $0.status == .completed }.map(\.id)) { ids in
             let current = Set(ids)
+            guard downloads.isLoaded else { return }
+            if !seededCompletedPackages {
+                completedPackageIDs = current
+                seededCompletedPackages = true
+                return
+            }
             let added = current.subtracting(completedPackageIDs)
             completedPackageIDs = current
             guard store.settings.proMode, packages.service.autoDecryptOnComplete else { return }
@@ -430,10 +466,31 @@ struct RootView: View {
             if let message { store.infoMessage = message; packages.message = nil }
         }
         .compatibleOnChange(of: store.settings.proMode) { _ in
-            // 专业模式 toggled: keep the current page identity, and fall back to
-            // 下载 when the page that just disappeared was 应用包.
-            withAnimation(UX.motion(reduceMotion)) { tabs.reconcile(with: tabOrder) }
-            if !store.settings.proMode { packages.replacement = nil; packages.path = [] }
+            // 专业模式 toggled: keep the current page identity without animating
+            // UITabBarController child insertion, and fall back to 下载 when 应用包 disappears.
+            tabs.reconcile(with: tabOrder)
+            if !store.settings.proMode {
+                packages.replacement = nil
+                packages.clearPath()
+                store.accountNav.removeRoutes { $0 == .credentials }
+            }
+        }
+        .alert("确认通过外部链接下载？", isPresented: Binding(
+            get: { store.externalDownloadPrompt != nil },
+            set: { if !$0 { store.externalDownloadPrompt = nil } }
+        )) {
+            Button("加入下载") {
+                if let prompt = store.externalDownloadPrompt {
+                    store.confirmExternalDownload(prompt)
+                }
+            }
+            Button("取消", role: .cancel) {
+                store.externalDownloadPrompt = nil
+            }
+        } message: {
+            if let prompt = store.externalDownloadPrompt {
+                Text("来源：\(prompt.url.host ?? "")\n\(prompt.displayURL)\n\n外部直链下载完成后不会自动安装，可在「下载」页手动检查或安装。")
+            }
         }
         .sheet(item: $store.verificationRequest) { request in
             ExistingAccountVerificationView(accountID: request.accountID) {
@@ -476,28 +533,36 @@ struct RootView: View {
         .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("知道了", role: .cancel) { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
-        .dismissRevealsWhenTabChanges(tabs.selection)
+        .dismissRevealsWhenTabChanges(tabs.id)
         .transaction { transaction in
             if reduceMotion { transaction.animation = nil; transaction.disablesAnimations = true }
         }
     }
     @ViewBuilder private func pageStack(_ id: TabID) -> some View {
-        if id == .packages {
+        switch id {
+        case .packages:
             NavigationStack(path: $packages.path) {
                 PackagesView().navigationDestination(for: PackageRoute.self) { route in
-                    switch route {
-                    case .source(let id): PackageSourceDetailView(jobID: id)
-                    case .record(let id): DecryptDetailView(recordID: id)
-                    case .file(let url): PackageSourceDetailView(file: url)
-                    case .unlinked(let url): UnlinkedPackageView(url: url)
-                    case .history: DecryptHistoryView()
-                    case .options: DecryptOptionsView()
-                    case .help: DecryptHelpView()
-                    case .log(let id): DecryptLogView(recordID: id)
+                    Group {
+                        switch route {
+                        case .source(let id): PackageSourceDetailView(jobID: id)
+                        case .record(let id): DecryptDetailView(recordID: id)
+                        case .file(let url): PackageSourceDetailView(file: url)
+                        case .unlinked(let url): UnlinkedPackageView(url: url)
+                        case .history: DecryptHistoryView()
+                        case .options: DecryptOptionsView()
+                        case .help: DecryptHelpView()
+                        case .log(let id): DecryptLogView(recordID: id)
+                        }
                     }
+                    .onAppear { packages.notePresented(route) }
                 }
             }
-        } else { NavigationStack { page(id) } }
+        case .accounts:
+            AccountsTabStack(nav: store.accountNav)
+        default:
+            NavigationStack { page(id) }
+        }
     }
     @ViewBuilder private func tabLabel(_ item: Destination) -> some View {
         if !vectorTabBarUnavailable, RevealAnimationLibrary.syncLoad(item.kind) != nil {
@@ -514,6 +579,133 @@ struct RootView: View {
         case .purchased: PurchasedView()
         case .accounts: AccountsView()
         }
+    }
+}
+
+private struct AccountsTabStack: View {
+    @ObservedObject var nav: AccountNavigation
+    var body: some View {
+        NavigationStack(path: $nav.path) {
+            AccountsView()
+                .accountNavigationDestinations()
+        }
+    }
+}
+
+private struct AccountNavigationDestinationsModifier: ViewModifier {
+    @EnvironmentObject private var store: ToolStore
+    func body(content: Content) -> some View {
+        content.navigationDestination(for: AccountRoute.self) { route in
+            Group {
+                switch route {
+                case .login:
+                    LoginView()
+                case .reauthenticate(let id):
+                    LoginView(initialAccountID: id)
+                case .installedApps:
+                    InstalledAppsView()
+                case .wifiTransfer:
+                    WiFiTransferView()
+                case .settings(let page):
+                    SettingsView(page: page)
+                case .installation:
+                    InstallationSettingsView()
+                case .credentials:
+                    ProModeCredentialsDestination()
+                case .storage:
+                    StorageView()
+                case .versionSource(let id):
+                    VersionSourceRouteDestination(sourceID: id)
+                case .appUpdate:
+                    AppUpdateRouteDestination()
+                case .support:
+                    SupportView()
+                }
+            }
+            .onAppear { store.accountNav.notePresented(route) }
+        }
+    }
+}
+
+private struct ProModeCredentialsDestination: View {
+    @EnvironmentObject private var store: ToolStore
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        CredentialsView()
+            .onAppear { if !store.settings.proMode { dismiss() } }
+            .compatibleOnChange(of: store.settings.proMode) { enabled in
+                if !enabled { dismiss() }
+            }
+    }
+}
+
+private struct VersionSourceRouteDestination: View {
+    let sourceID: UUID
+    @EnvironmentObject private var store: ToolStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var fallback = VersionSource(name: "", urlTemplate: "", containerKey: "", reverse: false)
+
+    private var sourceBinding: Binding<VersionSource> {
+        Binding(
+            get: {
+                store.settings.versionSources.first(where: { $0.id == sourceID }) ?? fallback
+            },
+            set: { updated in
+                fallback = updated
+                guard let index = store.settings.versionSources.firstIndex(where: { $0.id == sourceID }) else { return }
+                store.settings.versionSources[index] = updated
+            }
+        )
+    }
+
+    var body: some View {
+        VersionSourceEditor(source: sourceBinding)
+            .onAppear {
+                if let current = store.settings.versionSources.first(where: { $0.id == sourceID }) {
+                    fallback = current
+                } else {
+                    dismiss()
+                }
+            }
+            .compatibleOnChange(of: store.settings.versionSources.map(\.id)) { ids in
+                if !ids.contains(sourceID) { dismiss() }
+            }
+    }
+}
+
+private struct AppUpdateRouteDestination: View {
+    @EnvironmentObject private var store: ToolStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var cachedRelease: AppRelease?
+
+    var body: some View {
+        Group {
+            if let release = store.appUpdate ?? cachedRelease {
+                AppUpdateView(release: release)
+            } else {
+                Color.clear
+            }
+        }
+        .onAppear {
+            if let current = store.appUpdate {
+                cachedRelease = current
+            } else if cachedRelease == nil {
+                dismiss()
+            }
+        }
+        .compatibleOnChange(of: store.appUpdate == nil) { isNil in
+            if !isNil, let current = store.appUpdate {
+                cachedRelease = current
+            } else if isNil {
+                dismiss()
+            }
+        }
+    }
+}
+
+extension View {
+    func accountNavigationDestinations() -> some View {
+        modifier(AccountNavigationDestinationsModifier())
     }
 }
 
@@ -712,6 +904,7 @@ struct TabReselectScroll: UIViewRepresentable {
     }
 
     let selected: Int
+    let selectedID: TabID
     let reduceMotion: Bool
     let kinds: [RevealAnimationKind]
     let enableVectorIcons: Bool
@@ -725,7 +918,7 @@ struct TabReselectScroll: UIViewRepresentable {
         private weak var watched: UITabBar?
         private var tap: UITapGestureRecognizer?
         private var selectedAtTouch: Int?
-        private var lastSelected: Int?
+        private var lastSelectedID: TabID?
         private var installTask: Task<Void, Never>?
         private var followUpTask: Task<Void, Never>?
         private var fallbackNotified = false
@@ -788,19 +981,19 @@ struct TabReselectScroll: UIViewRepresentable {
             return TabReselectScroll.attachVectorIcons(in: bar, kinds: kinds)
         }
 
-        func updateSelection(_ selected: Int, reduceMotion: Bool, kinds: [RevealAnimationKind],
+        func updateSelection(_ selected: Int, selectedID: TabID, reduceMotion: Bool, kinds: [RevealAnimationKind],
                              enableVectorIcons: Bool, onVectorFallback: @escaping () -> Void) {
             self.reduceMotion = reduceMotion
             self.kinds = kinds
             self.enableVectorIcons = enableVectorIcons
             self.onVectorFallback = onVectorFallback
             install()
-            guard let previous = lastSelected else {
-                lastSelected = selected
+            guard let previousID = lastSelectedID else {
+                lastSelectedID = selectedID
                 return
             }
-            guard previous != selected else { return }
-            lastSelected = selected
+            guard previousID != selectedID else { return }
+            lastSelectedID = selectedID
             guard !reduceMotion, enableVectorIcons, let bar = watched else { return }
             DispatchQueue.main.async { [weak self, weak bar, kinds] in
                 guard let self, let bar, self.enableVectorIcons else { return }
@@ -1123,7 +1316,7 @@ struct TabReselectScroll: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: Anchor, context: Context) {
-        context.coordinator.updateSelection(selected, reduceMotion: reduceMotion, kinds: kinds,
+        context.coordinator.updateSelection(selected, selectedID: selectedID, reduceMotion: reduceMotion, kinds: kinds,
                                             enableVectorIcons: enableVectorIcons, onVectorFallback: onVectorFallback)
     }
     static func dismantleUIView(_ view: Anchor, coordinator: Coordinator) {

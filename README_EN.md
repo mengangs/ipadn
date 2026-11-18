@@ -34,6 +34,13 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 ---
 
+## What’s new in 2.2.1
+
+- **Fix Pro mode white screen & deep navigation**: Binds root tabs to semantic `TabID` values and upgrades Account and Packages stacks to heterogeneous `NavigationPath`, resolving white screens and Settings lockouts when toggling Pro mode and keeping Installed Apps, Version Source Editor, Package Info, and Package Contents sub-routes reliable.
+- **Fix duplicate search results & 30s Wi‑Fi transfer cutoff**: Deduplicates search results by `trackId` and `bundleID` without letting stale cached flags override live listings, and scopes the 30-second Wi‑Fi transfer timeout strictly to HTTP header parsing so large IPA downloads never drop mid-stream.
+- **Streaming FairPlay decryption, storage cleanup & security hardening**: Uses 4 MB page-aligned streaming windows in `FairPlayCore` (`8 MB` peak heap), hardens 64-bit Mach-O / `///..` archive containment, requires user confirmation for external `ipadn://` download URLs, sweeps `tmp/Share` hard links, and updates all 11 interface languages.
+- Standard and lite packages remain available for iOS / iPadOS 16 and later. See the [release notes](RELEASE_NOTES.md).
+
 ## What’s new in 2.2.0
 
 - **On-device FairPlay IPA decryption (Pro mode › Packages)**: Integrates the zero-dependency C `FairPlayCore` module to decrypt and verify legally acquired IPAs locally (supporting nested `.appex` extensions, frameworks, and 64-bit FAT slices) with strictly redacted logs.

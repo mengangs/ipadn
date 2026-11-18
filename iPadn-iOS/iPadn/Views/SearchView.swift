@@ -50,7 +50,9 @@ struct SearchView: View {
             }
             if !store.localResults.isEmpty {
                 Section {
-                    ForEach(store.localResults) { app in resultRow(app, note: nil) }
+                    ForEach(store.localResults.map(LocalSearchResultRow.init)) { item in
+                        resultRow(item.app, note: nil)
+                    }
                 } header: { Text("更多结果") }
             }
             if store.results.isEmpty && store.localResults.isEmpty && store.hasSearched && !store.searching && store.searchError == nil {
@@ -71,6 +73,13 @@ struct SearchView: View {
         .task { await store.loadNameCatalog() }
         .task { await store.checkWatched() }
         .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
+    }
+
+    /// Distinct section-scoped row identity prevents UICollectionView diffing
+    /// from ghosting duplicate cells when an app moves from local to remote results.
+    private struct LocalSearchResultRow: Identifiable {
+        let app: StoreApp
+        var id: String { "local:" + app.id }
     }
 
     private func resultRow(_ app: StoreApp, note: String?) -> some View {

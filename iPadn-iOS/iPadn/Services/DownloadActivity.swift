@@ -234,7 +234,10 @@ final class DownloadActivity {
             expected += p.expected
             if phase == 0 { speed += rate(job.id) }
         }
-        let lead = cohort[0]
+        guard let lead = cohort.first else {
+            return .init(phase: phase, name: "", count: active.count,
+                         written: written, expected: expected, updated: now, estimatedEnd: nil, speed: 0)
+        }
         let left = Double(max(0, expected - written))
         let end = phase == 0 && speed > 1024 && left > 0 ? now.addingTimeInterval(left / speed) : nil
         let speedBytes = phase == 0 && speed > 0 ? Int64(min(speed.rounded(), Double(Int64.max / 2))) : 0
@@ -242,7 +245,6 @@ final class DownloadActivity {
                      written: written, expected: expected, updated: now, estimatedEnd: end, speed: speedBytes)
     }
 
-    @available(iOS 16.1, *)
     @available(iOS 16.1, *)
     nonisolated static func computePausedState(
         paused: [DownloadJob],
@@ -255,7 +257,7 @@ final class DownloadActivity {
             written += p.written
             expected += p.expected
         }
-        return .init(phase: 7, name: paused[0].app.name, count: paused.count,
+        return .init(phase: 7, name: paused.first?.app.name ?? "", count: paused.count,
                      written: written, expected: expected, updated: now, estimatedEnd: nil, speed: 0)
     }
 

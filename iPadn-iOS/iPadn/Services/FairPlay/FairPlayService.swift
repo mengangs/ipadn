@@ -35,7 +35,7 @@ final class FairPlayService: ObservableObject {
     }
 
     private static let autoKey = "fairplay.autoDecrypt"
-    private let cancelFlag = CancelFlag()
+    private var cancelFlag = CancelFlag()
     private var task: Task<Void, Never>?
     /// Paths already handled automatically, so a re-render does not restart.
     private(set) var autoHandled: Set<String> = []
@@ -73,8 +73,8 @@ final class FairPlayService: ObservableObject {
         DecryptRecordStore.shared.upsert(record)
         activeRecordID = record.id
 
-        let flag = cancelFlag
-        flag.reset()
+        let flag = CancelFlag()
+        cancelFlag = flag
         let started = Date()
 
         final class LineBuffer: @unchecked Sendable {
@@ -146,6 +146,23 @@ final class FairPlayService: ObservableObject {
                     text: "done: decrypted=\(value.decrypted) plain=\(value.plain) failed=\(value.failed) "
                         + "machO=\(value.machO) in \(String(format: "%.1f", value.elapsed))s"))
             case .failure(let error):
+                if let fpError = error as? FairPlayDecryptor.Failure, case .alreadyPlain = fpError {
+                    let mapped = DecryptFailureMapper.alreadyPlain(details: nil)
+                    self.phase = .finished
+                    self.fraction = 1
+                    self.step = "完成"
+                    self.failure = mapped
+                    if let id = self.activeRecordID {
+                        DecryptRecordStore.shared.update(id: id) { record in
+                            record.verification = .none
+                            record.failure = mapped
+                            record.state = .plain
+                            record.finishedAt = Date()
+                        }
+                    }
+                    self.append(FairPlayLine(kind: .ok, text: "done: package is already unencrypted (plain)"))
+                    return
+                }
                 let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                 let cancelled = flag.isCancelled
                     || (error as? FairPlayDecryptor.Failure).map { if case .cancelled = $0 { return true } else { return false } } == true
@@ -171,9 +188,10 @@ final class FairPlayService: ObservableObject {
     }
 
     func reset() {
+        cancelFlag.cancel()
         task?.cancel()
         task = nil
-        cancelFlag.reset()
+        cancelFlag = CancelFlag()
         phase = .idle
         step = ""
         fraction = 0
@@ -243,16 +261,18 @@ final class FairPlayService: ObservableObject {
         lines.append(line)
         if lines.count > 400 { lines.removeFirst(lines.count - 400) }
         // Mirror to a file so a run started by hand can be inspected afterwards
-        // without a debugger.
-        let text = line.rendered + "\n"
+        // without a debugger. Always sanitize and use throwing Swift FileHandle APIs
+        // so ENOSPC or file-protection locks never raise an uncatchable NSException.
+        let text = DiagnosticRedactor.sanitize(line.rendered) + "\n"
         guard let data = text.data(using: .utf8) else { return }
         let url = FairPlayEnvironment.documentsDirectory.appendingPathComponent("fairplay-last.log")
         if let handle = try? FileHandle(forWritingTo: url) {
-            handle.seekToEndOfFile()
-            handle.write(data)
-            try? handle.close()
+            defer { try? handle.close() }
+            if (try? handle.seekToEnd()) != nil {
+                try? handle.write(contentsOf: data)
+            }
         } else {
-            try? data.write(to: url)
+            try? data.write(to: url, options: .completeFileProtectionUntilFirstUserAuthentication)
         }
     }
 }

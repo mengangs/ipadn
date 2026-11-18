@@ -2919,6 +2919,193 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(restored.settings.showAppScreenshots)
         XCTAssertFalse(restored.settings.showAppReviews)
     }
+
+    @MainActor
+    func testProModeTabReconciliationPreservesAccountsIdentityAndStripsCredentialsRoute() {
+        let store = ToolStore(downloadManager: DownloadManager(previewJobs: []))
+        store.settings.proMode = false
+        store.selectTab(.accounts)
+        XCTAssertEqual(store.tabs.id, .accounts)
+        XCTAssertEqual(store.tabs.selection, 3)
+
+        store.accountNav.setRoutes([.settings(.root)])
+        store.settings.proMode = true
+        XCTAssertEqual(store.tabs.id, .accounts)
+        XCTAssertEqual(store.tabs.selection, 4)
+        XCTAssertEqual(store.accountNav.routes, [.settings(.root)])
+        XCTAssertEqual(store.accountNav.path.count, 1)
+
+        store.accountNav.push(.credentials)
+        XCTAssertEqual(store.accountNav.path.count, 2)
+        store.settings.proMode = false
+        XCTAssertEqual(store.tabs.id, .accounts)
+        XCTAssertEqual(store.tabs.selection, 3)
+        XCTAssertEqual(store.accountNav.routes, [.settings(.root)])
+        XCTAssertEqual(store.accountNav.path.count, 1)
+
+        let tempSource = VersionSource(name: "TempSource", urlTemplate: "https://example.com/{id}", containerKey: "data", reverse: false)
+        store.settings.versionSources.append(tempSource)
+        store.accountNav.push(.versionSource(tempSource.id))
+        XCTAssertEqual(store.accountNav.routes, [.settings(.root), .versionSource(tempSource.id)])
+        store.settings.versionSources.removeAll { $0.id == tempSource.id }
+        XCTAssertEqual(store.accountNav.routes, [.settings(.root)])
+
+        store.settings.proMode = true
+        store.selectTab(.packages)
+        XCTAssertEqual(store.tabs.id, .packages)
+        XCTAssertEqual(store.tabs.selection, 2)
+        FairPlayPresentation.shared.navigate(.history)
+        let revBefore = FairPlayPresentation.shared.navigationRevision
+        FairPlayPresentation.shared.clearPath()
+        XCTAssertTrue(FairPlayPresentation.shared.path.isEmpty)
+        XCTAssertEqual(FairPlayPresentation.shared.navigationRevision, revBefore,
+                       "Clearing path on Pro Mode exit must not bump navigationRevision and trigger an onChange loop")
+        store.settings.proMode = false
+        XCTAssertEqual(store.tabs.id, .downloads)
+        XCTAssertEqual(store.tabs.selection, 1)
+    }
+
+    @MainActor
+    func testExternalDownloadURLSchemeRequiresConfirmationAndBlocksLoopback() {
+        let manager = DownloadManager(previewJobs: [])
+        let store = ToolStore(downloadManager: manager)
+
+        store.handleURL(URL(string: "ipadn://download?url=https%3A%2F%2F127.0.0.1%3A9999%2Ftest.ipa")!)
+        XCTAssertNil(store.externalDownloadPrompt)
+        XCTAssertTrue(manager.jobs.isEmpty)
+        XCTAssertNotNil(store.errorMessage)
+        store.errorMessage = nil
+
+        store.handleURL(URL(string: "ipadn://download?url=https%3A%2F%2Flocalhost%2Ftest.ipa")!)
+        XCTAssertNil(store.externalDownloadPrompt)
+        XCTAssertTrue(manager.jobs.isEmpty)
+        store.errorMessage = nil
+
+        store.handleURL(URL(string: "ipadn://download?url=https%3A%2F%2Freleases.example.com%2FDemoApp.ipa")!)
+        XCTAssertNotNil(store.externalDownloadPrompt)
+        XCTAssertTrue(manager.jobs.isEmpty, "External scheme must wait for user confirmation before enqueuing")
+
+        if let prompt = store.externalDownloadPrompt {
+            store.confirmExternalDownload(prompt)
+        }
+        XCTAssertNil(store.externalDownloadPrompt)
+        XCTAssertEqual(manager.jobs.count, 1)
+        XCTAssertNil(manager.jobs.first?.asset)
+        XCTAssertEqual(manager.jobs.first?.sourceURL?.absoluteString, "https://releases.example.com/DemoApp.ipa")
+    }
+
+    func testZipContainmentBlocksMultiSlashTraversalAndSinfReplicationBlocksEscape() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("zip-contain-" + UUID().uuidString, isDirectory: true)
+        let appDir = root.appendingPathComponent("Payload/Demo.app", isDirectory: true)
+        let outsideSecret = root.appendingPathComponent("outside-secret.txt")
+        try fm.createDirectory(at: appDir.appendingPathComponent("SC_Info", isDirectory: true), withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        try Data("TOP-SECRET".utf8).write(to: outsideSecret)
+
+        XCTAssertFalse(FairPlayDecryptor.isSafeZipEntryPath("//../outside-secret.txt"))
+        XCTAssertFalse(FairPlayDecryptor.isSafeZipEntryPath("/../outside-secret.txt"))
+        XCTAssertFalse(FairPlayDecryptor.isSafeZipEntryPath("Payload/../../outside-secret.txt"))
+        XCTAssertTrue(FairPlayDecryptor.isSafeZipEntryPath("Payload/Demo.app/SC_Info/Demo.sinf"))
+        XCTAssertTrue(FairPlayDecryptor.isSafeZipEntryPath("Payload/Demo.app/"))
+        XCTAssertFalse(FairPlayDecryptor.isSafeRelativeSymlinkTarget("../../outside", fromEntryPath: "Payload/link"))
+        XCTAssertTrue(FairPlayDecryptor.isSafeRelativeSymlinkTarget("Versions/A/Foo", fromEntryPath: "Payload/Demo.app/Frameworks/Foo.framework/Foo"))
+
+        // Crafted Manifest.plist attempting to exfiltrate outside-secret.txt or write outside appDir.
+        let evilManifest: [String: Any] = [
+            "SinfPaths": ["../../outside-secret.txt"],
+            "SinfReplicationPaths": ["SC_Info/stolen.sinf"]
+        ]
+        let plistData = try PropertyListSerialization.data(fromPropertyList: evilManifest, format: .xml, options: 0)
+        try plistData.write(to: appDir.appendingPathComponent("SC_Info/Manifest.plist"))
+        let copied = FairPlayDecryptor.replicateSinf(appDir: appDir, machos: [])
+        XCTAssertEqual(copied, 0)
+        XCTAssertFalse(fm.fileExists(atPath: appDir.appendingPathComponent("SC_Info/stolen.sinf").path))
+    }
+
+    func testDecryptFailureMapperRecognizesEACCESAndPreservesRedactedAdvice() {
+        let error = FairPlayDecryptor.Failure.notDecryptable("1 个文件失败")
+        let logLines = ["  slice[0] [--] READ/cryptid2 mremap=-1(Permission denied) mmap=ok pages=0/4"]
+        let mapped = DecryptFailureMapper.map(error: error, logLines: logLines)
+        XCTAssertEqual(mapped.kind, .fairplayDenied)
+        XCTAssertEqual(mapped.errno, EACCES)
+        let sanitizedReason = DiagnosticRedactor.sanitize(mapped.reason)
+        let sanitizedAdvice = DiagnosticRedactor.sanitize(mapped.advice)
+        XCTAssertFalse(sanitizedReason.contains(DiagnosticRedactor.replacement))
+        XCTAssertFalse(sanitizedAdvice.contains(DiagnosticRedactor.replacement))
+        XCTAssertTrue(sanitizedAdvice.contains("App Store"))
+    }
+
+    func testDeduplicationForRegionsSourcesScreenshotsExtensionsAndLiveDelistedFlag() throws {
+        let rawJSON = #"""
+        {
+          "priceRegions": ["us", "JP", "US", "hk", "JP"],
+          "baseCurrency": " usd "
+        }
+        """#
+        let decoded = try JSONDecoder().decode(ToolSettings.self, from: Data(rawJSON.utf8))
+        XCTAssertEqual(decoded.priceRegions, ["US", "JP", "HK"])
+        XCTAssertEqual(decoded.baseCurrency, "USD")
+
+        let row: [String: Any] = [
+            "kind": "software",
+            "artistId": 12345,
+            "artistName": "Demo Corp",
+            "screenshotUrls": [
+                "https://is1-ssl.mzstatic.com/image/thumb/Screen1/392x696bb.png",
+                "https://is1-ssl.mzstatic.com/image/thumb/Screen1/392x696bb.png",
+                "https://is1-ssl.mzstatic.com/image/thumb/Screen2/392x696bb.png"
+            ]
+        ]
+        let extras = StoreService.listingExtras(row, platform: .iOS)
+        XCTAssertEqual(extras.screenshots.count, 2)
+
+        let extA = PackageInfo.Extension(name: "Blocker", point: "com.apple.Safari.content-blocker", path: "PlugIns/Block1.appex")
+        let extB = PackageInfo.Extension(name: "Blocker", point: "com.apple.Safari.content-blocker", path: "PlugIns/Block2.appex")
+        XCTAssertNotEqual(extA.id, extB.id)
+
+        var live = StoreApp(id: "414478124", name: "WeChat", bundleID: "com.tencent.xin")
+        live.delisted = false
+        var staleCached = StoreApp(id: "414478124", name: "WeChat", bundleID: "com.tencent.xin")
+        staleCached.delisted = true
+        let merged = AppSearchRanking.deduplicatePreservingOrder([live, staleCached])
+        XCTAssertEqual(merged.first?.delisted, false, "Explicitly live storefront listing must not be marked delisted by stale cache")
+    }
+
+    func testSearchDeduplicatesDuplicateTrackIDsAndBundleIDsAcrossRemoteAndLocal() {
+        let iconURL = URL(string: "https://example.com/icon.png")!
+        let rawSingleRegion = [
+            StoreApp(id: "", name: "Invalid Empty ID"),
+            StoreApp(id: "414478124", name: "WeChat", bundleID: "com.tencent.xin", version: ""),
+            StoreApp(id: "414478124", name: "WeChat Duplicate", bundleID: "com.tencent.xin", version: "8.0.50", iconURL: iconURL, size: 250_000_000),
+            StoreApp(id: "389801252", name: "Instagram", bundleID: "com.burbn.instagram", version: "350.0")
+        ]
+        let dedupedSingle = StoreService.deduplicatingResults(rawSingleRegion, limit: 30)
+        XCTAssertEqual(dedupedSingle.map(\.id), ["414478124", "389801252"])
+        XCTAssertEqual(dedupedSingle.first?.iconURL, iconURL)
+        XCTAssertEqual(dedupedSingle.first?.version, "8.0.50")
+        XCTAssertEqual(dedupedSingle.first?.size, 250_000_000)
+
+        var delistedDupA = StoreApp(id: "6503940939", name: "Forward", bundleID: "com.example.forward", price: "")
+        delistedDupA.delisted = true
+        let delistedDupB = StoreApp(id: "6503940939", name: "Forward", bundleID: "com.example.forward", iconURL: iconURL, price: "")
+        let localSameBundleImported = StoreApp(id: "999999999", name: "WeChat Local Copy", bundleID: "COM.TENCENT.XIN", price: "")
+        let localUnique = StoreApp(id: "777777777", name: "WeChat Work", bundleID: "com.tencent.ww", price: "")
+
+        for prioritize in [true, false] {
+            let arranged = AppSearchRanking.arrange(
+                remote: rawSingleRegion,
+                local: [delistedDupA, delistedDupB, localSameBundleImported, localUnique, localUnique],
+                query: "WeChat",
+                prioritizeDelisted: prioritize
+            )
+            XCTAssertEqual(arranged.results.count, Set(arranged.results.map(\.id)).count)
+            XCTAssertEqual(arranged.localResults.count, Set(arranged.localResults.map(\.id)).count)
+            let overlap = Set(arranged.results.map(\.id)).intersection(Set(arranged.localResults.map(\.id)))
+            XCTAssertTrue(overlap.isEmpty)
+            XCTAssertFalse((arranged.results + arranged.localResults).contains { $0.id == "999999999" })
+        }
+    }
 }
 
 private final class LockedCount: @unchecked Sendable {

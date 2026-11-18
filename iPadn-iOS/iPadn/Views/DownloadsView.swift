@@ -13,6 +13,7 @@ struct DownloadsView: View {
     @State private var addLink = false
     @State private var link = ""
     @State private var share: SharedFile?
+    @State private var presentedShareURL: URL?
     @State private var pendingDelete: Set<UUID> = []
     @State private var swipingDelete: Set<UUID> = []
     @State private var confirmingDelete = false
@@ -36,6 +37,8 @@ struct DownloadsView: View {
     @State private var pendingPackage: PackageRoute?
     @State private var pendingStart: UUID?
     @State private var pendingLibrary = false
+    @State private var pendingAddLink = false
+    @State private var pendingActionError: String?
     private var filteredJobs: [DownloadJob] {
         manager.jobs.filter { !swipingDelete.contains($0.id) && filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
     }
@@ -153,8 +156,8 @@ struct DownloadsView: View {
                     showingActions = false
                 },
                 onLink: {
+                    pendingAddLink = true
                     showingActions = false
-                    addLink = true
                 },
                 onPauseAll: {
                     showingActions = false
@@ -165,10 +168,21 @@ struct DownloadsView: View {
                     showingActions = false
                     manager.resumeAll()
                 },
-                onError: { store.errorMessage = $0 }
+                onError: {
+                    pendingActionError = $0
+                    showingActions = false
+                }
             )
         }
-        .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
+        .sheet(item: $share, onDismiss: {
+            if let url = presentedShareURL {
+                presentedShareURL = nil
+                TemporaryExportSweeper.scheduleDelayedRemoval(of: url)
+            }
+        }) { file in
+            ShareSheet(items: [file.url])
+                .onAppear { presentedShareURL = file.url }
+        }
         .sheet(item: $inspecting, onDismiss: flushPackageNavigation) { item in
             NavigationStack {
                 if let job = manager.jobs.first(where: { $0.id == item.id }) {
@@ -282,7 +296,22 @@ struct DownloadsView: View {
         else { flushPackageNavigation() }
     }
     private func flushPackageNavigation() {
-        guard !showingActions, inspecting == nil, store.settings.proMode else { return }
+        guard !showingActions, inspecting == nil else { return }
+        if let error = pendingActionError {
+            pendingActionError = nil
+            store.errorMessage = error
+        }
+        if pendingAddLink {
+            pendingAddLink = false
+            addLink = true
+            return
+        }
+        guard store.settings.proMode else {
+            pendingLibrary = false
+            pendingPackage = nil
+            pendingStart = nil
+            return
+        }
         if pendingLibrary { pendingLibrary = false; packages.showLibrary() }
         guard let route = pendingPackage else { return }
         let start = pendingStart
@@ -593,7 +622,12 @@ struct DownloadsView: View {
         case .running, .queued: manager.pause(job.id)
         case .paused: manager.resume(job.id)
         case .failed:
-            if job.asset != nil { perform { try await store.refreshDownload(job) } } else { manager.resume(job.id) }
+            let isRetryableOfficialMacPkg = job.rawFormat == "pkg" && UInt64(job.app.id) != nil && store.apple.active != nil
+            if job.asset != nil || isRetryableOfficialMacPkg {
+                perform { try await store.refreshDownload(job) }
+            } else {
+                manager.resume(job.id)
+            }
         case .completed:
             if job.rawFormat != nil, let file = manager.exportURL(job) {
                 share = SharedFile(url: file)

@@ -45,6 +45,7 @@ enum FairPlayDecryptor {
         case noStagingRoot
         case badArchive(String)
         case noPayload
+        case alreadyPlain
         case notDecryptable(String)
         case packFailed(String)
         case notEnoughSpace(Int64, Int64)
@@ -59,6 +60,8 @@ enum FairPlayDecryptor {
                 return "安装包解压失败：\(detail)"
             case .noPayload:
                 return "安装包里没有 Payload/*.app"
+            case .alreadyPlain:
+                return "检查到包内所有 Mach-O 都没有加密（cryptid = 0）"
             case .notDecryptable(let detail):
                 return "FairPlay 拒绝了主程序：\(detail)"
             case .packFailed(let detail):
@@ -140,9 +143,42 @@ enum FairPlayDecryptor {
         try manager.createDirectory(at: work, withIntermediateDirectories: true)
 
         let sourceSize = (try? manager.attributesOfItem(atPath: ipaURL.path)[.size] as? Int64) ?? 0
+        let maxArchiveExpandedBytes: Int64 = 16 * 1024 * 1024 * 1024
+        var declaredUncompressed: Int64 = 0
+        let preflightArchive: Archive
+        do {
+            preflightArchive = try Archive(url: ipaURL, accessMode: .read, pathEncoding: nil)
+        } catch {
+            throw Failure.badArchive(error.localizedDescription)
+        }
+        for entry in preflightArchive {
+            guard isSafeZipEntryPath(entry.path) else {
+                throw Failure.badArchive("安装包内包含不安全的路径条目")
+            }
+            if entry.type == .symlink {
+                var targetData = Data()
+                _ = try? preflightArchive.extract(entry, bufferSize: 4096, skipCRC32: true) { chunk in
+                    if targetData.count + chunk.count <= 4096 { targetData.append(chunk) }
+                }
+                guard let targetPath = String(data: targetData, encoding: .utf8),
+                      isSafeRelativeSymlinkTarget(targetPath, fromEntryPath: entry.path) else {
+                    throw Failure.badArchive("安装包内包含越界符号链接")
+                }
+            }
+            let entryBytes = Int64(clamping: entry.uncompressedSize)
+            let (sum, overflow) = declaredUncompressed.addingReportingOverflow(entryBytes)
+            if overflow || sum > maxArchiveExpandedBytes {
+                throw Failure.badArchive("解压后体积异常（超过 16 GB 安全上限）")
+            }
+            declaredUncompressed = sum
+        }
         if let capacity = try? root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
             .volumeAvailableCapacityForImportantUsage {
-            let needed = sourceSize * 3
+            let headroom: Int64 = 256 * 1024 * 1024
+            let estimateFromArchive = declaredUncompressed > 0
+                ? declaredUncompressed.saturatingAdd(sourceSize).saturatingAdd(headroom)
+                : sourceSize.saturatingMultiply(3)
+            let needed = max(sourceSize.saturatingMultiply(3), estimateFromArchive)
             if capacity < needed {
                 log(FairPlayLine(kind: .fail, text: "空间不足：\(capacity) < \(needed)"))
                 throw Failure.notEnoughSpace(capacity, needed)
@@ -182,6 +218,10 @@ enum FairPlayDecryptor {
 
         // 3. decrypt every encrypted Mach-O
         let encryptedFiles = inventory.filter { $0.slices.contains { $0.cryptid != 0 } }
+        if encryptedFiles.isEmpty {
+            log(FairPlayLine(kind: .info, text: "all \(inventory.count) Mach-O files are already plain (cryptid=0)"))
+            throw Failure.alreadyPlain
+        }
         log(FairPlayLine(kind: .phase,
                          text: "DECRYPT \(encryptedFiles.count) encrypted of \(inventory.count) Mach-O"))
         var decrypted = 0, plain = 0, failed = 0
@@ -190,7 +230,11 @@ enum FairPlayDecryptor {
         let total = max(encryptedFiles.count, 1)
         for (index, row) in encryptedFiles.enumerated() {
             if isCancelled() { throw Failure.cancelled }
-            let url = appDir.appendingPathComponent(row.path)
+            guard let url = safeChildURL(in: appDir, relative: row.path) else {
+                failed += 1
+                log(FairPlayLine(kind: .fail, text: "unsafe Mach-O path skipped: \(row.path)"))
+                continue
+            }
             report(FairPlayProgress(phase: "正在解密",
                                     fraction: 0.05 + 0.75 * Double(index) / Double(total),
                                     detail: "\(index + 1)/\(encryptedFiles.count) · \(row.path)"))
@@ -208,6 +252,10 @@ enum FairPlayDecryptor {
                         fp_decrypt_file(input, output, coreLogTrampoline, ctx)
                     }
                 }
+            }
+            if isCancelled() {
+                try? manager.removeItem(at: scratch)
+                throw Failure.cancelled
             }
             lastAttempt = attemptLines.last
             switch status {
@@ -242,6 +290,7 @@ enum FairPlayDecryptor {
             }
         }
         plain += inventory.count - encryptedFiles.count
+        if isCancelled() { throw Failure.cancelled }
 
         // 4. quick on-disk check before packing
         let after = MachOScan.scanTree(appDir)
@@ -249,10 +298,11 @@ enum FairPlayDecryptor {
         log(FairPlayLine(kind: stillEncrypted == 0 ? .ok : .fail,
                          text: "prepack: \(after.count) Mach-O, \(stillEncrypted) still encrypted"))
 
-        guard decrypted > 0 || (failed == 0 && stillEncrypted == 0) else {
+        guard decrypted > 0 else {
             throw Failure.notDecryptable(diagnose(firstFailure: firstFailure,
                                                  failed: failed, stillEncrypted: stillEncrypted))
         }
+        if isCancelled() { throw Failure.cancelled }
 
         // 5. repack
         report(FairPlayProgress(phase: "重新打包", fraction: 0.82, detail: "\(stem).ipa"))
@@ -269,6 +319,10 @@ enum FairPlayDecryptor {
         } catch {
             try? manager.removeItem(at: temp)
             throw Failure.packFailed(error.localizedDescription)
+        }
+        if isCancelled() {
+            try? manager.removeItem(at: temp)
+            throw Failure.cancelled
         }
         try? manager.removeItem(at: output)
         do {
@@ -318,11 +372,11 @@ enum FairPlayDecryptor {
             // The most common cause by far, and the only one the user can fix:
             // the account that downloaded the app was never signed into the
             // system App Store on this device, so fairplayd holds no key.
-            text = "这台设备没有该 Apple ID 的解密密钥，系统拒绝了 FairPlay 解密。\n\n"
-                + "请用下载这个应用时所用的 Apple ID 登录一次系统「App Store」"
+            text = "这台设备没有该 Apple 账号的解密授权，系统拒绝了 FairPlay 解密。\n\n"
+                + "请用下载这个应用时所用的 Apple 账号登录一次系统「App Store」"
                 + "（打开 App Store → 右上角头像 → 登录；或 设置 → 你的名字 → 媒体与购买项目），"
                 + "然后回到这里重新解密。\n"
-                + "同一个 Apple ID 在这台设备上登录过一次即可，密钥会保存在本机，之后可重复使用。"
+                + "同一个 Apple 账号在这台设备上登录过一次即可，授权会保存在本机，之后可重复使用。"
             return text
         }
         text += "\n内核返回：\(line)"
@@ -330,6 +384,73 @@ enum FairPlayDecryptor {
             text += "\n映射参数被拒绝：请确认包内有与二进制同名的 SC_Info/<名称>.sinf。"
         }
         return text
+    }
+
+    /// Rejects Zip-Slip entry names (including multi-slash `//../` bypasses) before extraction
+    /// so archive safety holds regardless of the linked ZIPFoundation minor version.
+    static func isSafeZipEntryPath(_ rawPath: String) -> Bool {
+        guard !rawPath.isEmpty,
+              !rawPath.hasPrefix("/"),
+              !rawPath.contains("\\"),
+              !rawPath.contains("\0") else { return false }
+        var normalized = rawPath
+        while normalized.contains("//") {
+            normalized = normalized.replacingOccurrences(of: "//", with: "/")
+        }
+        if normalized.hasSuffix("/") {
+            normalized.removeLast()
+        }
+        guard !normalized.isEmpty else { return false }
+        let parts = normalized.split(separator: "/", omittingEmptySubsequences: false)
+        return !parts.isEmpty && parts.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
+    }
+
+    static func isSafeRelativeSymlinkTarget(_ linkTarget: String, fromEntryPath entryPath: String) -> Bool {
+        guard !linkTarget.isEmpty,
+              !linkTarget.hasPrefix("/"),
+              !linkTarget.contains("\\"),
+              !linkTarget.contains("\0"),
+              isSafeZipEntryPath(entryPath) else { return false }
+        var depth = entryPath.split(separator: "/").dropLast().count
+        var collapsed = linkTarget
+        while collapsed.contains("//") {
+            collapsed = collapsed.replacingOccurrences(of: "//", with: "/")
+        }
+        for part in collapsed.split(separator: "/") {
+            if part == "." || part.isEmpty { continue }
+            if part == ".." {
+                if depth == 0 { return false }
+                depth -= 1
+            } else {
+                depth += 1
+            }
+        }
+        return true
+    }
+
+    /// Resolves `relative` strictly inside `root` while rejecting `..`, empty segments,
+    /// and any symbolic link along the path chain.
+    static func safeChildURL(in root: URL, relative: String) -> URL? {
+        guard PackageService.isSafeArchivePath(relative) else { return nil }
+        let manager = FileManager.default
+        let canonicalRoot = root.resolvingSymlinksInPath().standardizedFileURL
+        let rootPrefix = canonicalRoot.path.hasSuffix("/") ? canonicalRoot.path : canonicalRoot.path + "/"
+        var current = canonicalRoot
+        let parts = relative.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        for part in parts {
+            current = current.appendingPathComponent(part)
+            if let attrs = try? manager.attributesOfItem(atPath: current.path),
+               (attrs[.type] as? FileAttributeType) == .typeSymbolicLink {
+                return nil
+            }
+        }
+        let resolvedParent = current.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
+        guard resolvedParent.path == canonicalRoot.path || resolvedParent.path.hasPrefix(rootPrefix) else {
+            return nil
+        }
+        let candidatePath = resolvedParent.appendingPathComponent(current.lastPathComponent).standardizedFileURL.path
+        guard candidatePath.hasPrefix(rootPrefix) else { return nil }
+        return current
     }
 
     /// fairplayd resolves the license as `<dir>/SC_Info/<name>.sinf` next to the
@@ -341,33 +462,39 @@ enum FairPlayDecryptor {
     @discardableResult
     static func replicateSinf(appDir: URL, machos: [(path: String, slices: [MachOScan.SliceInfo])]) -> Int {
         let manager = FileManager.default
-        let manifestURL = appDir.appendingPathComponent("SC_Info/Manifest.plist")
-        guard let data = try? Data(contentsOf: manifestURL),
+        guard let manifestURL = safeChildURL(in: appDir, relative: "SC_Info/Manifest.plist"),
+              let data = try? Data(contentsOf: manifestURL),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
               let manifest = plist as? [String: Any],
               let sources = manifest["SinfPaths"] as? [String],
-              let first = sources.first else { return 0 }
-        let sourceURL = appDir.appendingPathComponent(first)
-        guard manager.fileExists(atPath: sourceURL.path) else { return 0 }
+              let first = sources.first,
+              let sourceURL = safeChildURL(in: appDir, relative: first) else { return 0 }
+        let sourceValues = try? sourceURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        guard sourceValues?.isRegularFile == true, sourceValues?.isSymbolicLink != true else { return 0 }
 
         var copied = 0
         for relative in (manifest["SinfReplicationPaths"] as? [String] ?? []) {
-            let destination = appDir.appendingPathComponent(relative)
-            guard !manager.fileExists(atPath: destination.path) else { continue }
+            guard relative.lowercased().hasSuffix(".sinf"),
+                  let destination = safeChildURL(in: appDir, relative: relative),
+                  !manager.fileExists(atPath: destination.path) else { continue }
             try? manager.createDirectory(at: destination.deletingLastPathComponent(),
                                          withIntermediateDirectories: true)
+            guard safeChildURL(in: appDir, relative: relative) != nil else { continue }
             if (try? manager.copyItem(at: sourceURL, to: destination)) != nil { copied += 1 }
         }
 
         for macho in machos where macho.slices.contains(where: { $0.cryptid != 0 }) {
-            let binary = appDir.appendingPathComponent(macho.path)
+            guard let binary = safeChildURL(in: appDir, relative: macho.path) else { continue }
             let name = binary.lastPathComponent
-            let sinf = binary.deletingLastPathComponent()
-                .appendingPathComponent("SC_Info", isDirectory: true)
-                .appendingPathComponent("\(name).sinf")
-            guard !manager.fileExists(atPath: sinf.path) else { continue }
+            let parentRelative = (macho.path as NSString).deletingLastPathComponent
+            let sinfRelative = parentRelative.isEmpty
+                ? "SC_Info/\(name).sinf"
+                : "\(parentRelative)/SC_Info/\(name).sinf"
+            guard let sinf = safeChildURL(in: appDir, relative: sinfRelative),
+                  !manager.fileExists(atPath: sinf.path) else { continue }
             try? manager.createDirectory(at: sinf.deletingLastPathComponent(),
                                          withIntermediateDirectories: true)
+            guard safeChildURL(in: appDir, relative: sinfRelative) != nil else { continue }
             if (try? manager.copyItem(at: sourceURL, to: sinf)) != nil { copied += 1 }
         }
         return copied
@@ -377,19 +504,24 @@ enum FairPlayDecryptor {
         let manager = FileManager.default
         try? manager.removeItem(at: output)
         let archive = try Archive(url: output, accessMode: .create)
-        guard let walker = manager.enumerator(at: directory, includingPropertiesForKeys: [.isDirectoryKey],
+        guard let walker = manager.enumerator(at: directory,
+                                             includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
                                              options: []) else {
             throw Failure.packFailed("cannot enumerate \(directory.lastPathComponent)")
         }
-        let basePath = directory.standardizedFileURL.path
+        let basePath = directory.resolvingSymlinksInPath().standardizedFileURL.path
         let basePrefix = basePath.hasSuffix("/") ? basePath : basePath + "/"
         for case let url as URL in walker {
-            let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            if values?.isSymbolicLink == true {
+                walker.skipDescendants()
+                continue
+            }
             guard values?.isDirectory != true else { continue }
-            let itemPath = url.standardizedFileURL.path
-            let relative = itemPath.hasPrefix(basePrefix)
-                ? String(itemPath.dropFirst(basePrefix.count))
-                : url.lastPathComponent
+            let itemPath = url.resolvingSymlinksInPath().standardizedFileURL.path
+            guard itemPath.hasPrefix(basePrefix) else { continue }
+            let relative = String(itemPath.dropFirst(basePrefix.count))
+            guard PackageService.isSafeArchivePath(relative) else { continue }
             try archive.addEntry(with: relative, fileURL: url, compressionMethod: .deflate)
         }
     }
@@ -408,5 +540,17 @@ enum FairPlayDecryptor {
                 let r = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
                 return l > r
             }
+    }
+}
+
+private extension Int64 {
+    func saturatingAdd(_ other: Int64) -> Int64 {
+        let (result, overflow) = addingReportingOverflow(other)
+        return overflow ? (other >= 0 ? .max : .min) : result
+    }
+
+    func saturatingMultiply(_ other: Int64) -> Int64 {
+        let (result, overflow) = multipliedReportingOverflow(by: other)
+        return overflow ? ((self >= 0) == (other >= 0) ? .max : .min) : result
     }
 }

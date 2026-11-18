@@ -8,7 +8,6 @@ struct AccountsView: View {
     @State private var deleting: AppleAccount?
     @State private var signingOut = false
     @State private var headerAway = false
-    @State private var reauthenticatingAccountID: String?
     var body: some View {
         List {
             Section {
@@ -31,7 +30,7 @@ struct AccountsView: View {
                         }
                     }.padding(.vertical, 6)
                 } else {
-                    NavigationLink { LoginView() } label: {
+                    NavigationLink(value: AccountRoute.login) {
                         HStack(spacing: 14) {
                             AccountAvatar(account: nil, size: 60)
                             VStack(alignment: .leading, spacing: 3) {
@@ -47,7 +46,7 @@ struct AccountsView: View {
                     ForEach(apple.accounts) { account in
                         Button {
                             if account.needsReauthentication {
-                                reauthenticatingAccountID = account.id
+                                store.accountNav.push(.reauthenticate(account.id))
                                 UX.feedback()
                             } else {
                                 guard apple.activeID != account.id else { return }
@@ -84,7 +83,7 @@ struct AccountsView: View {
                                       // Text starts after the 20pt margin, 36pt avatar and 12pt gap.
                                       separatorInset: 68, title: "移除") { deleting = account }
                     }
-                    NavigationLink { LoginView() } label: { Label("添加账号", systemImage: "plus") }
+                    NavigationLink(value: AccountRoute.login) { Label("添加账号", systemImage: "plus") }
                 } header: { Text("账号") } footer: {
                     Text(apple.accounts.contains(where: \.needsReauthentication)
                          ? "点按切换下载账号，点按带「重新登录」标记的账号可补全登录凭据，侧滑可移除。"
@@ -95,12 +94,12 @@ struct AccountsView: View {
                 Button { store.selectTab(.purchased) } label: { Label("已购项目", systemImage: "bag") }
                 Button { store.selectTab(.downloads) } label: { Label("下载与安装", systemImage: "arrow.down.circle") }
                 if InstalledAppsView.isSupported {
-                    NavigationLink { InstalledAppsView() } label: { Label("本机应用", systemImage: "iphone") }
+                    NavigationLink(value: AccountRoute.installedApps) { Label("本机应用", systemImage: "iphone") }
                         .accessibilityIdentifier("accounts.installed-apps")
-                    NavigationLink { WiFiTransferView() } label: { Label("Wi‑Fi 传输", systemImage: "laptopcomputer.and.arrow.down") }
+                    NavigationLink(value: AccountRoute.wifiTransfer) { Label("Wi‑Fi 传输", systemImage: "laptopcomputer.and.arrow.down") }
                         .accessibilityIdentifier("account.wifi-transfer")
                 }
-                NavigationLink { SettingsView() } label: { Label("设置", systemImage: "gearshape") }
+                NavigationLink(value: AccountRoute.settings(.root)) { Label("设置", systemImage: "gearshape") }
                     .accessibilityIdentifier("accounts.settings")
             }
             if apple.active != nil {
@@ -125,11 +124,6 @@ struct AccountsView: View {
                 do { try await store.deleteAccount(id); store.infoMessage = AppText.text("已移除账号") } catch { store.errorMessage = error.localizedDescription }
             }
             deleting = nil
-        }
-        .compatibleNavigationDestination(item: $reauthenticatingAccountID) { id in
-            LoginView(initialAccountID: id) {
-                reauthenticatingAccountID = nil
-            }
         }
     }
 

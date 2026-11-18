@@ -420,6 +420,17 @@ private struct InstalledAppInfoView: View {
 }
 
 extension NativeInstaller.InstalledApp {
-    /// Stable row identity: the bundle ID, unique on a device.
-    var identity: String { bundleID ?? storeItemID ?? UUID().uuidString }
+    /// Stable row identity: the bundle ID, unique on a device, with deterministic non-empty fallbacks.
+    var identity: String {
+        if let bundle = bundleID?.trimmingCharacters(in: .whitespacesAndNewlines), !bundle.isEmpty {
+            return bundle
+        }
+        if let itemID = storeItemID?.trimmingCharacters(in: .whitespacesAndNewlines), !itemID.isEmpty {
+            return "item:" + itemID
+        }
+        let fallbackName = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackVersion = (version ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackBuild = (build ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return "unnamed:\(fallbackName)|\(fallbackVersion)|\(fallbackBuild)"
+    }
 }

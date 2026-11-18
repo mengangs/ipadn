@@ -60,23 +60,55 @@ enum AppSearchRanking {
                             locale: Locale(identifier: "en_US_POSIX")).lowercased().hasPrefix(foldedNeedle)
     }
 
-    /// Deduplicates while preserving the strongest known metadata across saved sources.
-    static func mergeUnique(_ apps: [StoreApp]) -> [StoreApp] {
+    private static func normalizedBundleKey(_ bundleID: String) -> String? {
+        let key = bundleID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return key.isEmpty ? nil : key
+    }
+
+    private static func backfill(_ target: inout StoreApp, from source: StoreApp) {
+        if target.iconURL == nil { target.iconURL = source.iconURL }
+        if target.delisted == nil, source.delisted == true { target.delisted = true }
+        if target.bundleID.isEmpty && !source.bundleID.isEmpty { target.bundleID = source.bundleID }
+        if target.version.isEmpty && !source.version.isEmpty { target.version = source.version }
+        if target.category.isEmpty && !source.category.isEmpty { target.category = source.category }
+        if target.size <= 0 && source.size > 0 { target.size = source.size }
+    }
+
+    /// Deduplicates any list of apps (including preview/fixture IDs) by trimmed App ID
+    /// and non-empty normalized bundle identifier while backfilling missing metadata.
+    static func deduplicatePreservingOrder(_ apps: [StoreApp]) -> [StoreApp] {
         var result: [StoreApp] = []
-        var indices: [String: Int] = [:]
-        for app in apps where !app.id.isEmpty && app.id.allSatisfy({ $0.isASCII && $0.isNumber }) {
-            if let index = indices[app.id] {
-                if result[index].iconURL == nil { result[index].iconURL = app.iconURL }
-                if app.delisted == true { result[index].delisted = true }
-                if result[index].bundleID.isEmpty && !app.bundleID.isEmpty { result[index].bundleID = app.bundleID }
-                if result[index].version.isEmpty && !app.version.isEmpty { result[index].version = app.version }
-                if result[index].category.isEmpty && !app.category.isEmpty { result[index].category = app.category }
+        var idIndices: [String: Int] = [:]
+        var bundleIndices: [String: Int] = [:]
+        for var app in apps {
+            let trimmedID = app.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedID.isEmpty else { continue }
+            app.id = trimmedID
+            let bundleKey = normalizedBundleKey(app.bundleID)
+            if let index = idIndices[trimmedID] ?? bundleKey.flatMap({ bundleIndices[$0] }) {
+                backfill(&result[index], from: app)
+                idIndices[trimmedID] = index
+                if let bundleKey { bundleIndices[bundleKey] = index }
+                if let existingBundle = normalizedBundleKey(result[index].bundleID) {
+                    bundleIndices[existingBundle] = index
+                }
             } else {
-                indices[app.id] = result.count
+                let index = result.count
+                idIndices[trimmedID] = index
+                if let bundleKey { bundleIndices[bundleKey] = index }
                 result.append(app)
             }
         }
         return result
+    }
+
+    /// Deduplicates while preserving the strongest known metadata across saved sources.
+    static func mergeUnique(_ apps: [StoreApp]) -> [StoreApp] {
+        let numericApps = apps.filter { app in
+            let trimmed = app.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !trimmed.isEmpty && trimmed.allSatisfy({ $0.isASCII && $0.isNumber })
+        }
+        return deduplicatePreservingOrder(numericApps)
     }
 
     /// Merges remote storefront results with local candidates. When `prioritizeDelisted`
@@ -89,10 +121,19 @@ enum AppSearchRanking {
         query: String,
         prioritizeDelisted: Bool
     ) -> (results: [StoreApp], localResults: [StoreApp]) {
-        let remoteIDs = Set(remote.map(\.id))
-        let remainingLocal = local.filter { !remoteIDs.contains($0.id) }
+        let cleanRemote = deduplicatePreservingOrder(remote)
+        let cleanLocal = deduplicatePreservingOrder(local)
+        let remoteIDs = Set(cleanRemote.map(\.id))
+        let remoteBundles = Set(cleanRemote.compactMap { normalizedBundleKey($0.bundleID) })
+        let remainingLocal = cleanLocal.filter { app in
+            guard !remoteIDs.contains(app.id) else { return false }
+            if let bundleKey = normalizedBundleKey(app.bundleID), remoteBundles.contains(bundleKey) {
+                return false
+            }
+            return true
+        }
         guard prioritizeDelisted else {
-            return (remote, remainingLocal)
+            return (cleanRemote, remainingLocal)
         }
         var promoted: [(app: StoreApp, tier: Int, order: Int)] = []
         var keptLocal: [(app: StoreApp, tier: Int, order: Int)] = []
@@ -108,11 +149,11 @@ enum AppSearchRanking {
             if lhs.tier != rhs.tier { return lhs.tier > rhs.tier }
             return lhs.order < rhs.order
         }
-        let sortedLocal = keptLocal.map(\.app)
+        let sortedLocal = deduplicatePreservingOrder(keptLocal.map(\.app))
 
         var liveRemote: [(app: StoreApp, tier: Int)] = []
         var delistedRemote: [(app: StoreApp, tier: Int, order: Int)] = []
-        for (offset, app) in remote.enumerated() {
+        for (offset, app) in cleanRemote.enumerated() {
             let tier = relevanceTier(for: app, query: query, aliases: aliasesByID[app.id] ?? [])
             if app.isDelisted {
                 delistedRemote.append((app, tier, offset))
@@ -121,9 +162,9 @@ enum AppSearchRanking {
             }
         }
         guard !promoted.isEmpty || !delistedRemote.isEmpty else {
-            return (remote, sortedLocal)
+            return (cleanRemote, sortedLocal)
         }
-        let orderedDelisted = (delistedRemote + promoted.map { ($0.app, $0.tier, remote.count + $0.order) })
+        let orderedDelisted = (delistedRemote + promoted.map { ($0.app, $0.tier, cleanRemote.count + $0.order) })
             .sorted { lhs, rhs in
                 if lhs.tier != rhs.tier { return lhs.tier > rhs.tier }
                 return lhs.order < rhs.order
@@ -135,6 +176,16 @@ enum AppSearchRanking {
             } ?? liveRemote.endIndex
             liveRemote.insert((item.app, item.tier), at: insertAt)
         }
-        return (liveRemote.map(\.app), sortedLocal)
+        let finalPrimary = deduplicatePreservingOrder(liveRemote.map(\.app))
+        let finalPrimaryIDs = Set(finalPrimary.map(\.id))
+        let finalPrimaryBundles = Set(finalPrimary.compactMap { normalizedBundleKey($0.bundleID) })
+        let finalSecondary = sortedLocal.filter { app in
+            guard !finalPrimaryIDs.contains(app.id) else { return false }
+            if let bundleKey = normalizedBundleKey(app.bundleID), finalPrimaryBundles.contains(bundleKey) {
+                return false
+            }
+            return true
+        }
+        return (finalPrimary, finalSecondary)
     }
 }

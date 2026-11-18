@@ -773,6 +773,17 @@ struct RootTabBar: ViewModifier {
             }
     }
 }
+private struct ScrolledUnderBarModifier: ViewModifier {
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    let action: (Bool) -> Void
+    func body(content: Content) -> some View {
+        let threshold: CGFloat = verticalSizeClass == .compact ? 52 : 104
+        content.onGeometryChange(for: Bool.self) { proxy in
+            proxy.frame(in: .global).maxY < threshold
+        } action: { action($0) }
+    }
+}
+
 extension View {
     /// Sets `shown` once `active` has lasted a moment and clears it as soon
     /// as it ends, so quick work (a cache hit) never flashes a spinner.
@@ -792,9 +803,7 @@ extension View {
     }
     /// Reports whether this view has scrolled up under the navigation bar.
     func onScrolledUnderBar(_ action: @escaping (Bool) -> Void) -> some View {
-        onGeometryChange(for: Bool.self) { proxy in
-            proxy.frame(in: .global).maxY < 104
-        } action: { action($0) }
+        modifier(ScrolledUnderBarModifier(action: action))
     }
 }
 

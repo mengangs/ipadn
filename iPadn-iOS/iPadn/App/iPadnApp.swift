@@ -123,14 +123,25 @@ struct iPadnApp: App {
                 .environmentObject(store.signer)
                 .tint(UX.tint)
                 .toggleStyle(TintedSwitchToggleStyle())
-                .onOpenURL { store.handleURL($0) }
-                .onAppear { configureLock(launching: true) }
-                .task { if !LocalResources.isPreview { await AppLock.shared.unlock() } }
+                .onOpenURL { store.receiveExternalURL($0) }
+                .onAppear {
+                    configureLock(launching: true)
+                    TemporaryExportSweeper.sweepStaleFiles()
+                }
+                .task {
+                    if !LocalResources.isPreview { await AppLock.shared.unlock() }
+                    if !AppLock.shared.locked { store.flushPendingExternalURL() }
+                }
                 .compatibleOnChange(of: lockSettings) { _ in configureLock(launching: false) }
                 // @Published sends before the value changes: look once it has.
                 .onReceive(store.downloads.$pendingAutoInstalls) { _ in AutoInstall.presentSoon(store) }
                 .onReceive(store.downloads.$autoInstallNotice) { notice in if let notice { store.infoMessage = notice } }
-                .onReceive(AppLock.shared.$locked) { locked in if !locked { AutoInstall.presentSoon(store) } }
+                .onReceive(AppLock.shared.$locked) { locked in
+                    if !locked {
+                        store.flushPendingExternalURL()
+                        AutoInstall.presentSoon(store)
+                    }
+                }
                 .task {
                     guard !LocalResources.isPreview, store.settings.appUpdateCheck else { return }
                     await store.checkAppUpdate()
@@ -146,6 +157,7 @@ struct iPadnApp: App {
                 DownloadActivity.shared.sync()
             }
             guard phase == .background, !LocalResources.isPreview else { return }
+            TemporaryExportSweeper.sweepStaleFiles(maxAge: 900)
             // Session cookies kept in memory must survive the app being closed.
             store.apple.saveLiveCookies()
             // Only worth waking up for when there is something to check.
@@ -243,7 +255,7 @@ private struct PreviewScreen: View {
     var body: some View {
         Group {
             if args.contains("--login") { NavigationStack { LoginView() } }
-            else if args.contains("--translation-settings") { NavigationStack { SettingsView(page: .appearance) } }
+            else if args.contains("--translation-settings") { NavigationStack { SettingsView(page: .appearance).accountNavigationDestinations() } }
             else if args.contains("--detail"), let app = store.favorites.first { NavigationStack { AppDetailView(app: app) } }
             else if args.contains("--installation") { NavigationStack { InstallationSettingsView() } }
             else if args.contains("--support") { NavigationStack { SupportView() } }

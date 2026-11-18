@@ -53,9 +53,10 @@ enum FairPlayLab {
         stateLock.lock()
         defer { stateLock.unlock() }
         if let handle = try? FileHandle(forWritingTo: logURL) {
-            handle.seekToEndOfFile()
-            handle.write(data)
-            try? handle.close()
+            defer { try? handle.close() }
+            if (try? handle.seekToEnd()) != nil {
+                try? handle.write(contentsOf: data)
+            }
         } else {
             try? data.write(to: logURL)
         }
@@ -71,16 +72,24 @@ enum FairPlayLab {
 
     // MARK: - run
 
-    @MainActor
-    static func run(explicitPath: String?, environmentOnly: Bool) async {
+    private static func tryBeginRun() -> Bool {
         stateLock.lock()
-        if running {
-            stateLock.unlock()
-            return
-        }
+        defer { stateLock.unlock() }
+        guard !running else { return false }
         running = true
         try? FileManager.default.removeItem(at: logURL)
+        return true
+    }
+
+    private static func finishRun() {
+        stateLock.lock()
+        running = false
         stateLock.unlock()
+    }
+
+    @MainActor
+    static func run(explicitPath: String?, environmentOnly: Bool) async {
+        guard tryBeginRun() else { return }
 
         beginUtilities()
         defer { endUtilities() }
@@ -143,9 +152,7 @@ enum FairPlayLab {
         default:
             append(FairPlayLine(kind: .fail, text: "timed out"))
         }
-        stateLock.lock()
-        running = false
-        stateLock.unlock()
+        finishRun()
         try? FileManager.default.removeItem(at: markerURL)
     }
 

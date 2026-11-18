@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import SwiftUI
 import UIKit
 import UserNotifications
 
@@ -138,41 +139,106 @@ struct UndoNotice: Identifiable {
     let restore: (UndoNotice) -> Void
 }
 
-/// Stable identity of a bottom-bar page. The integer `selection` is only what
-/// `TabView` binds to; when the array of tabs changes (专业模式 adds or removes
-/// 应用包) the identity is what keeps the user on the page they were reading.
+/// Stable identity of a bottom-bar page. `TabView` and `NavigationSplitView`
+/// bind directly to `TabID`, while `selection` stays derived from the active
+/// `tabOrder` for vector-icon indexing and legacy integer callers.
 enum TabID: String, CaseIterable, Hashable, Sendable {
     case search, downloads, packages, purchased, accounts
 }
 
-@MainActor
-final class TabState: ObservableObject {
-    @Published var selection = 0
-    @Published private(set) var id: TabID = .search
+enum AccountRoute: Hashable, Codable {
+    case login
+    case reauthenticate(String)
+    case installedApps
+    case wifiTransfer
+    case settings(SettingsView.Page)
+    case installation
+    case credentials
+    case storage
+    case versionSource(UUID)
+    case appUpdate
+    case support
+}
 
-    /// User tapped a tab: identity first, index derived from the live array.
-    func select(_ id: TabID, in order: [TabID]) {
-        self.id = id
-        if let index = order.firstIndex(of: id), selection != index {
-            selection = index
+struct ExternalDownloadPrompt: Identifiable, Equatable {
+    let id = UUID()
+    let url: URL
+    var displayURL: String {
+        let raw = url.absoluteString
+        return raw.count > 160 ? String(raw.prefix(157)) + "…" : raw
+    }
+}
+
+@MainActor
+final class AccountNavigation: ObservableObject {
+    @Published var path = NavigationPath() {
+        didSet {
+            if path.isEmpty {
+                routes.removeAll()
+            } else if path.count < routes.count {
+                routes = Array(routes.prefix(path.count))
+            }
+        }
+    }
+    private(set) var routes: [AccountRoute] = []
+
+    func push(_ route: AccountRoute) {
+        routes.append(route)
+        path.append(route)
+    }
+
+    func setRoutes(_ newRoutes: [AccountRoute]) {
+        var next = NavigationPath()
+        for route in newRoutes { next.append(route) }
+        routes = newRoutes
+        path = next
+    }
+
+    func reset() {
+        routes.removeAll()
+        if !path.isEmpty { path = NavigationPath() }
+    }
+
+    func notePresented(_ route: AccountRoute) {
+        guard path.count > 0 else { return }
+        if routes.count == path.count {
+            routes[routes.count - 1] = route
+        } else if routes.count < path.count {
+            routes.append(route)
         }
     }
 
-    /// The tab bar wrote a new index (tap or programmatic): adopt its identity.
-    func syncFromIndex(_ order: [TabID]) {
-        guard order.indices.contains(selection) else { return }
-        let candidate = order[selection]
-        if candidate != id { id = candidate }
+    func removeRoutes(where predicate: (AccountRoute) -> Bool) {
+        guard routes.contains(where: predicate) else { return }
+        let kept = routes.filter { !predicate($0) }
+        setRoutes(kept)
+    }
+}
+
+@MainActor
+final class TabState: ObservableObject {
+    @Published private(set) var selection = 0
+    @Published private(set) var id: TabID = .search
+
+    /// User or code selected a tab: resolve against the live tab order so `id`
+    /// and `selection` update atomically without index-shift races.
+    func select(_ target: TabID, in order: [TabID]) {
+        let fallback: TabID = order.contains(.downloads) ? .downloads : (order.first ?? .search)
+        let resolved = order.contains(target) ? target : fallback
+        if id != resolved { id = resolved }
+        let nextIndex = order.firstIndex(of: resolved) ?? 0
+        if selection != nextIndex { selection = nextIndex }
+    }
+
+    /// Legacy integer setter: maps a valid index in `order` to its `TabID`.
+    func selectIndex(_ index: Int, in order: [TabID]) {
+        guard order.indices.contains(index) else { return }
+        select(order[index], in: order)
     }
 
     /// The array changed (专业模式 toggled): keep the same page when possible.
     func reconcile(with order: [TabID]) {
-        if !order.contains(id) {
-            id = order.contains(.downloads) ? .downloads : (order.first ?? .search)
-        }
-        if let index = order.firstIndex(of: id), selection != index {
-            selection = index
-        }
+        select(id, in: order)
     }
 }
 
@@ -189,6 +255,17 @@ final class ToolStore: ObservableObject {
             do { LocalResources.defaults.set(try JSONEncoder().encode(settings), forKey: LocalResources.settings) }
             catch { errorMessage = AppText.text("设置保存失败：\(error.localizedDescription)") }
             downloads.configure(settings)
+            if oldValue.proMode != settings.proMode {
+                tabs.reconcile(with: tabOrder)
+                if !settings.proMode {
+                    accountNav.removeRoutes { $0 == .credentials }
+                }
+            }
+            let validSourceIDs = Set(settings.versionSources.map(\.id))
+            accountNav.removeRoutes { route in
+                if case .versionSource(let id) = route { return !validSourceIDs.contains(id) }
+                return false
+            }
             // Region or platform changed: refresh the results here, so it also
             // happens when the search page is not on screen (iPad sidebar).
             if oldValue.store != settings.store, hasSearched { search() }
@@ -202,6 +279,7 @@ final class ToolStore: ObservableObject {
     /// it, so switching tabs doesn't make every page that watches the store
     /// rebuild (issue #41).
     let tabs = TabState()
+    let accountNav = AccountNavigation()
     var tabOrder: [TabID] {
         var order: [TabID] = [.search, .downloads]
         if settings.proMode { order.append(.packages) }
@@ -214,8 +292,7 @@ final class ToolStore: ObservableObject {
     var tab: Int {
         get { tabs.selection }
         set {
-            tabs.selection = newValue
-            tabs.syncFromIndex(tabOrder)
+            tabs.selectIndex(newValue, in: tabOrder)
         }
     }
     @Published var searchText = ""
@@ -237,6 +314,9 @@ final class ToolStore: ObservableObject {
     private var resultsContext: StoreContext?
     private var favoriteTask: Task<Void, Never>?
     @Published private(set) var accountRemoving: String?
+    @Published var externalDownloadPrompt: ExternalDownloadPrompt?
+    private var pendingExternalURL: URL?
+    private var isImportingBackup = false
 
     private func saveCache<T: Encodable>(_ value: T, filename: String) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -368,7 +448,7 @@ final class ToolStore: ObservableObject {
             catch { snapshot.ownedError = AppText.text("已购缓存读取失败；已保留原文件，不能覆盖其他账号记录。") }
             snapshot.watch = LocalResources.load([String: WatchRecord].self, filename: "watch.json") ?? [:]
             snapshot.catalog = LocalResources.load([String: [StoreApp]].self, filename: "app-catalog.json") ?? [:]
-            snapshot.names = (LocalResources.load([AppNameEntry].self, filename: AppNameCatalog.cacheFile) ?? []) + AppNameCatalog.bundled()
+            snapshot.names = Self.mergeNameEntries((LocalResources.load([AppNameEntry].self, filename: AppNameCatalog.cacheFile) ?? []) + AppNameCatalog.bundled())
             return snapshot
         }.value
         #if DEBUG
@@ -412,8 +492,8 @@ final class ToolStore: ObservableObject {
         }
         resultsContext = context
         localResults = []
-        updateLocalResults(for: input)
         searching = true; hasSearched = true; searchError = nil; lastSearchTerm = input
+        updateLocalResults(for: input)
         searchTask = Task {
             defer { if self.searchID == id { self.searching = false } }
             do {
@@ -440,11 +520,23 @@ final class ToolStore: ObservableObject {
                 let remoteListedIDs = apps.filter { $0.delisted != true }.map(\.id)
                 let now = Date()
                 for appID in remoteListedIDs { delistedStatusCache[appID] = (now, false) }
+                apps = apps.map { item in
+                    var copy = item
+                    if copy.delisted != true { copy.delisted = false }
+                    return copy
+                }
                 try Task.checkCancellation()
                 guard searchID == id else { return }
                 let catalogPlatformKey = context.platform.rawValue
-                // Cache real listings only, without the long descriptions (kept small for quick saves).
-                let listed = apps.filter { $0.delisted != true }.map { app -> StoreApp in var app = app; app.description = ""; return app }
+                // Cache real listings only, without long descriptions or pinned historical externalVersionIDs.
+                let listed = apps.filter { $0.delisted != true }.map { app -> StoreApp in
+                    var app = app
+                    app.description = ""
+                    if case .appID(_, let versionID) = query, versionID != nil {
+                        app.externalVersionID = nil
+                    }
+                    return app
+                }
                 appCatalog[catalogPlatformKey] = Array(AppSearchIndex.unique(listed + (appCatalog[catalogPlatformKey] ?? [])).prefix(1000))
                 let snapshot = appCatalog
                 cacheWrites.async { try? LocalResources.save(snapshot, filename: "app-catalog.json") }
@@ -462,12 +554,11 @@ final class ToolStore: ObservableObject {
                         startDelistedVerificationIfNeeded(for: term, context: context, accountCountry: accountCountry, queryID: id)
                     }
                 } else {
-                    lastRemoteResults = apps
+                    let uniqueApps = AppSearchRanking.deduplicatePreservingOrder(apps)
+                    lastRemoteResults = uniqueApps
                     lastLocalCandidates = []
                     lastLocalAliases = [:]
-                    results = apps
-                    let remoteIDs = Set(apps.map(\.id))
-                    localResults.removeAll { remoteIDs.contains($0.id) }
+                    publishSearchResults(primary: uniqueApps, secondary: localResults)
                 }
                 // The results are in: missing artwork fills in quietly.
                 searching = false
@@ -509,8 +600,7 @@ final class ToolStore: ObservableObject {
                 return app
             }
         }
-        results = local(results)
-        localResults = local(localResults)
+        publishSearchResults(primary: local(results), secondary: local(localResults))
         let missing = Array(Set((results + localResults)
             .filter { $0.iconURL == nil && !$0.id.isEmpty && $0.id.allSatisfy({ $0.isASCII && $0.isNumber }) }
             .map(\.id))).prefix(50)
@@ -524,10 +614,53 @@ final class ToolStore: ObservableObject {
                 return app
             }
         }
-        results = filled(results)
-        localResults = filled(localResults)
+        publishSearchResults(primary: filled(results), secondary: filled(localResults))
         lastRemoteResults = filled(lastRemoteResults)
         lastLocalCandidates = filled(lastLocalCandidates)
+    }
+
+    nonisolated private static func mergeNameEntries(_ entries: [AppNameEntry]) -> [AppNameEntry] {
+        var merged: [AppNameEntry] = []
+        var indices: [String: Int] = [:]
+        for entry in entries {
+            let trimmedID = entry.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedID.isEmpty else { continue }
+            let key = "\(entry.platform.rawValue)|\(trimmedID)"
+            if let index = indices[key] {
+                let existing = merged[index]
+                var combinedAliases = existing.aliases
+                for candidate in [entry.name] + entry.aliases {
+                    let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty && trimmed != existing.name && !combinedAliases.contains(trimmed) {
+                        combinedAliases.append(trimmed)
+                    }
+                }
+                merged[index] = AppNameEntry(id: existing.id, name: existing.name, aliases: combinedAliases,
+                                             platform: existing.platform, source: existing.source)
+            } else {
+                indices[key] = merged.count
+                merged.append(entry)
+            }
+        }
+        return merged
+    }
+
+    private func publishSearchResults(primary: [StoreApp], secondary: [StoreApp], updatePrimary: Bool = true) {
+        let cleanPrimary = AppSearchRanking.deduplicatePreservingOrder(primary)
+        let primaryIDs = Set(cleanPrimary.map(\.id))
+        let primaryBundles = Set(cleanPrimary.compactMap { app -> String? in
+            let key = app.bundleID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return key.isEmpty ? nil : key
+        })
+        let cleanSecondary = AppSearchRanking.deduplicatePreservingOrder(secondary).filter { app in
+            guard !primaryIDs.contains(app.id) else { return false }
+            let bundleKey = app.bundleID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return bundleKey.isEmpty || !primaryBundles.contains(bundleKey)
+        }
+        if updatePrimary {
+            results = cleanPrimary
+        }
+        localResults = cleanSecondary
     }
 
     nonisolated private static func findLocalMatches(
@@ -585,8 +718,7 @@ final class ToolStore: ObservableObject {
             query: term,
             prioritizeDelisted: settings.prioritizeDelistedSearchResults
         )
-        results = arranged.results
-        localResults = arranged.localResults
+        publishSearchResults(primary: arranged.results, secondary: arranged.localResults)
     }
 
     private func startDelistedVerificationIfNeeded(
@@ -670,7 +802,15 @@ final class ToolStore: ObservableObject {
                 Self.findLocalMatches(term: term, platform: context.platform, known: known, directory: directory)
             }.value
             guard !Task.isCancelled, localSearchID == request, searchID == queryID, settings.store == context else { return }
-            let enriched = applyCachedDelistedStatuses(to: match.candidates)
+            let existingIcons = Dictionary(
+                (results + localResults + lastLocalCandidates).compactMap { app in app.iconURL.map { (app.id, $0) } },
+                uniquingKeysWith: { first, _ in first }
+            )
+            let enriched = applyCachedDelistedStatuses(to: match.candidates).map { item -> StoreApp in
+                var copy = item
+                if copy.iconURL == nil { copy.iconURL = existingIcons[copy.id] ?? localArtwork(copy.id) }
+                return copy
+            }
             lastLocalCandidates = enriched
             lastLocalAliases = match.aliases
             let currentRemote = lastRemoteResults.isEmpty ? results : lastRemoteResults
@@ -680,15 +820,21 @@ final class ToolStore: ObservableObject {
             if !searching && !lastRemoteResults.isEmpty {
                 // Background catalogs or late delisted probes can promote local matches;
                 // update `results` together when promotions change so items never vanish.
-                if results.map(\.id) != arranged.results.map(\.id) || results.map(\.isDelisted) != arranged.results.map(\.isDelisted) {
-                    results = arranged.results
-                }
-                localResults = arranged.localResults
+                let shouldUpdatePrimary = results.map(\.id) != arranged.results.map(\.id)
+                    || results.map(\.isDelisted) != arranged.results.map(\.isDelisted)
+                publishSearchResults(
+                    primary: shouldUpdatePrimary ? arranged.results : results,
+                    secondary: arranged.localResults,
+                    updatePrimary: shouldUpdatePrimary
+                )
             } else {
                 // Keep skeletons clear while remote search is in flight (or offline/preview)
                 // without losing promoted local candidates into an unassigned `results` array.
-                let displayedIDs = Set(results.map(\.id))
-                localResults = (arranged.results + arranged.localResults).filter { !displayedIDs.contains($0.id) }
+                publishSearchResults(
+                    primary: results,
+                    secondary: arranged.results + arranged.localResults,
+                    updatePrimary: false
+                )
             }
         }
     }
@@ -703,7 +849,7 @@ final class ToolStore: ObservableObject {
         do {
             let entries = try await AppNameCatalog.updated()
             try Task.checkCancellation()
-            nameCatalog = entries + AppNameCatalog.bundled()
+            nameCatalog = Self.mergeNameEntries(entries + AppNameCatalog.bundled())
             cacheWrites.async { try? LocalResources.save(entries, filename: AppNameCatalog.cacheFile) }
             updateLocalResults()
         } catch { } // Bundled and cached names remain searchable without a connection.
@@ -720,6 +866,10 @@ final class ToolStore: ObservableObject {
         preparingDownloads.removeAll()
         let previous = lastAccountID
         lastAccountID = id
+        if isImportingBackup {
+            // Backup import restores its own storefront settings and displays its own summary banner.
+            return
+        }
         guard let id, let account = apple.accounts.first(where: { $0.id == id }) else {
             // Removing the signed-in account reports its own confirmation.
             if let previous, apple.accounts.contains(where: { $0.id == previous }) { infoMessage = AppText.text("已退出登录") }
@@ -758,7 +908,7 @@ final class ToolStore: ObservableObject {
     func cancelSearch() { searchTask?.cancel(); localSearchTask?.cancel(); delistedVerifyTask?.cancel(); delistedVerifyTask = nil; searchID = UUID(); searching = false; hasSearched = !results.isEmpty || !localResults.isEmpty; searchError = nil }
     func clearSearch() {
         cancelSearch(); searchText = ""; results = []; localResults = []; hasSearched = false; lastSearchTerm = ""
-        lastRemoteResults = []; lastLocalCandidates = []; lastLocalAliases = [:]
+        lastRemoteResults = []; lastLocalCandidates = []; lastLocalAliases = [:]; resultsContext = nil
     }
     func isFavorite(_ app: StoreApp) -> Bool { favorites.contains { $0.id == app.id } }
     func toggleFavorite(_ app: StoreApp) {
@@ -1615,8 +1765,7 @@ final class ToolStore: ObservableObject {
             func patched(_ apps: [StoreApp]) -> [StoreApp] {
                 apps.map { var item = $0; if item.id == app.id && item.iconURL == nil { item.iconURL = icon }; return item }
             }
-            results = patched(results)
-            localResults = patched(localResults)
+            publishSearchResults(primary: patched(results), secondary: patched(localResults))
         }
         if switchToDownloadsTab { selectTab(.downloads) }
     }
@@ -1900,7 +2049,17 @@ final class ToolStore: ObservableObject {
     }
 
     func refreshDownload(_ job: DownloadJob, switchToDownloadsTab: Bool = true) async throws {
-        guard job.status == .failed, job.asset != nil else { throw ToolError.message(AppText.text("此任务无法重试")) }
+        guard job.status == .failed else { throw ToolError.message(AppText.text("此任务无法重试")) }
+        if job.asset == nil, job.rawFormat == "pkg", UInt64(job.app.id) != nil {
+            guard apple.active != nil else {
+                throw ToolError.message(AppText.text("请先在「账号」中登录 Apple 账号"))
+            }
+            let offer = try await apple.macPackageOffer(job.app, useCache: settings.useSignerCache)
+            try downloads.refreshFailedMacPackage(job.id, offer: offer)
+            if switchToDownloadsTab { selectTab(.downloads) }
+            return
+        }
+        guard job.asset != nil else { throw ToolError.message(AppText.text("此任务无法重试")) }
         guard apple.activeID == job.account else { throw ToolError.message(AppText.text("请先切换至原下载账号：\(job.account ?? "")")) }
         let platform: AppPlatform
         switch job.asset?.platform.lowercased() {
@@ -2004,6 +2163,32 @@ final class ToolStore: ObservableObject {
         ownedByAccount = next
     }
 
+    func receiveExternalURL(_ url: URL) {
+        if AppLock.shared.locked && AppLock.method != .unavailable {
+            pendingExternalURL = url
+            return
+        }
+        handleURL(url)
+    }
+
+    func flushPendingExternalURL() {
+        guard !AppLock.shared.locked || AppLock.method == .unavailable,
+              let url = pendingExternalURL else { return }
+        pendingExternalURL = nil
+        handleURL(url)
+    }
+
+    func confirmExternalDownload(_ prompt: ExternalDownloadPrompt) {
+        externalDownloadPrompt = nil
+        do {
+            try downloads.enqueueURL(prompt.url)
+            selectTab(.downloads)
+            infoMessage = AppText.text("已开始下载")
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func handleURL(_ url: URL) {
         if url.isFileURL {
             selectTab(.downloads)
@@ -2023,9 +2208,17 @@ final class ToolStore: ObservableObject {
                     Task { await checkForUpdates(force: true) }
                 }
             } else if let id = items.first(where: { $0.name == "id" })?.value { selectTab(.search); search(id) }
-            else if let address = items.first(where: { $0.name == "url" })?.value,
-                    let download = URL(string: address) {
-                do { try downloads.enqueueURL(download); selectTab(.downloads) } catch { errorMessage = error.localizedDescription }
+            else if let address = items.first(where: { $0.name == "url" })?.value {
+                let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let download = URL(string: trimmed),
+                      download.scheme == "https",
+                      let host = download.host, !host.isEmpty,
+                      !DownloadManager.isLoopbackHost(host),
+                      download.user == nil, download.password == nil else {
+                    errorMessage = AppText.text("请输入有效的下载链接")
+                    return
+                }
+                externalDownloadPrompt = ExternalDownloadPrompt(url: download)
             }
         } else if url.host == "apps.apple.com" { selectTab(.search); search(url.absoluteString) }
     }
@@ -2058,7 +2251,7 @@ final class ToolStore: ObservableObject {
         let day = Date().formatted(.iso8601.year().month().day())
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("iPadn-Backup-\(day)-\(UUID().uuidString.prefix(8)).json")
-        try outputData.write(to: url, options: .atomic)
+        try outputData.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         return url
     }
 
@@ -2120,6 +2313,7 @@ final class ToolStore: ObservableObject {
         accountPolicy: AccountBackupConflictPolicy = .skipExisting,
         restoreDeviceIdentity: Bool = true
     ) async throws {
+        await cacheLoadTask?.value
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            (object["schema"] as? String) == AccountProfileBackup.schemaIdentifier {
             let legacy = try AccountProfileBackup.decode(data)
@@ -2133,9 +2327,20 @@ final class ToolStore: ObservableObject {
             return
         }
         let backup = try AppBackup.decode(data)
+        if let storageError = favoritesStorageError {
+            throw ToolError.message(storageError)
+        }
+        let next = AppBackup.merged(backup.favorites, with: favorites)
+        let previous = favoriteTask
+        await previous?.value
+        // Persist favorites on disk before mutating Keychain accounts so disk errors cannot leave half-imported state.
+        try await saveCache(next, filename: "favorites.json")
+
         let entries = backup.effectiveAccountEntries
         let hasDeviceIdentity = restoreDeviceIdentity && (backup.deviceGUID != nil || !(backup.storeProofRecords?.isEmpty ?? true))
         var accountOutcome: AppleService.AccountBackupImportOutcome?
+        isImportingBackup = true
+        defer { isImportingBackup = false }
         if !entries.isEmpty || hasDeviceIdentity {
             accountOutcome = try apple.importAccountBackup(
                 entries: entries,
@@ -2146,27 +2351,36 @@ final class ToolStore: ObservableObject {
                 restoreDeviceIdentity: restoreDeviceIdentity
             )
         }
-        let next = AppBackup.merged(backup.favorites, with: favorites)
-        let previous = favoriteTask
-        await previous?.value
-        try await saveCache(next, filename: "favorites.json")
         favorites = next
         let followed = Set(next.map(\.id))
         watch = watch.merging(backup.watch) { _, imported in imported }.filter { followed.contains($0.value.id) }
         persistWatch()
         keptVersions = keptVersions.merging(backup.keptVersions) { _, imported in imported }
         LocalResources.defaults.set(keptVersions, forKey: "storage_keptVersions")
-        let terms = Set(backup.searchHistory.map(\.term))
-        searchHistory = Array((backup.searchHistory + searchHistory.filter { !terms.contains($0.term) }).prefix(50))
+        var seenTerms = Set<String>()
+        let mergedHistory = (backup.searchHistory + searchHistory).filter { entry in
+            let trimmed = entry.term.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !trimmed.isEmpty && seenTerms.insert(trimmed).inserted
+        }
+        searchHistory = Array(mergedHistory.prefix(50))
         persistHistory()
-        settings = backup.settings
+        var restoredSettings = backup.settings
+        if AppLock.method == .unavailable {
+            restoredSettings.appLock = false
+        }
+        settings = restoredSettings
         updateLocalResults()
         if let accountOutcome {
             infoMessage = Self.accountImportMessage(accountOutcome, includedSettings: true)
         } else {
             infoMessage = AppText.text("已导入备份")
         }
-        Task { await checkWatched(force: true) }
+        Task {
+            await checkWatched(force: true)
+            if apple.activeID != nil {
+                await refreshOwned()
+            }
+        }
     }
 
     private static func accountImportMessage(

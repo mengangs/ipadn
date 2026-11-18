@@ -18,7 +18,16 @@ struct StandalonePackageMeta: Equatable {
 @MainActor
 final class FairPlayPresentation: ObservableObject {
     static let shared = FairPlayPresentation()
-    @Published var path: [PackageRoute] = []
+    @Published var path = NavigationPath() {
+        didSet {
+            if path.isEmpty {
+                routes.removeAll()
+            } else if path.count < routes.count {
+                routes = Array(routes.prefix(path.count))
+            }
+        }
+    }
+    private(set) var routes: [PackageRoute] = []
     @Published private(set) var navigationRevision = UUID()
     @Published private(set) var fileRevision = UUID()
     @Published var replacement: StartRequest?
@@ -45,18 +54,41 @@ final class FairPlayPresentation: ObservableObject {
     var records: DecryptRecordStore { .shared }
 
     func navigate(_ route: PackageRoute) {
-        path = [route]
+        var next = NavigationPath()
+        next.append(route)
+        routes = [route]
+        path = next
         navigationRevision = UUID()
     }
 
     func push(_ route: PackageRoute) {
+        routes.append(route)
         path.append(route)
         navigationRevision = UUID()
     }
 
     func showLibrary() {
-        path = []
+        clearPath()
         navigationRevision = UUID()
+    }
+
+    /// Resets the package stack without bumping `navigationRevision` (used when leaving Pro Mode).
+    func clearPath() {
+        routes.removeAll()
+        if !path.isEmpty { path = NavigationPath() }
+    }
+
+    func notePresented(_ route: PackageRoute) {
+        guard path.count > 0 else { return }
+        if routes.count == path.count {
+            routes[routes.count - 1] = route
+        } else if routes.count < path.count {
+            routes.append(route)
+        }
+    }
+
+    var previousRoute: PackageRoute? {
+        routes.dropLast().last
     }
 
     func markFilesChanged() {

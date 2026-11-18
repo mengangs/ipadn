@@ -304,7 +304,9 @@ final class RevealIconView: UIView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         fallback.frame = bounds.insetBy(dx: bounds.width * 0.26, dy: bounds.height * 0.24)
-        if let asset = prepared?.asset {
+        if let asset = prepared?.asset,
+           bounds.width > 0, bounds.height > 0,
+           asset.canvas[0] > 0, asset.canvas[1] > 0 {
             stage.anchorPoint = .zero
             stage.position = .zero
             stage.bounds = CGRect(x: 0, y: 0, width: asset.canvas[0], height: asset.canvas[1])

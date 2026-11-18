@@ -72,24 +72,37 @@ final class DecryptRecordStore: ObservableObject {
         records.first { $0.sourceJobID == jobID && ($0.state == .finished || $0.state == .plain) }
     }
 
+    private static func safeBasename(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              !trimmed.contains("/"),
+              !trimmed.contains("\\"),
+              !trimmed.contains("\0"),
+              trimmed != ".",
+              trimmed != ".." else { return nil }
+        return trimmed
+    }
+
     func outputURL(for record: DecryptRecord) -> URL? {
-        guard let name = record.outputName else { return nil }
+        guard let name = Self.safeBasename(record.outputName) else { return nil }
         let url = outputDirectory.appendingPathComponent(name)
         return fileManager.fileExists(atPath: url.path) ? url : nil
     }
 
     func sourceURL(for record: DecryptRecord) -> URL? {
+        guard let name = Self.safeBasename(record.sourceName) else { return nil }
         let candidates = [
-            FairPlayEnvironment.documentsDirectory.appendingPathComponent(record.sourceName),
+            FairPlayEnvironment.documentsDirectory.appendingPathComponent(name),
             FairPlayEnvironment.documentsDirectory
                 .appendingPathComponent("Packages", isDirectory: true)
-                .appendingPathComponent(record.sourceName),
+                .appendingPathComponent(name),
         ]
         return candidates.first { fileManager.fileExists(atPath: $0.path) }
     }
 
     func iconURL(for record: DecryptRecord) -> URL? {
-        guard let name = record.iconName else { return nil }
+        guard let name = Self.safeBasename(record.iconName) else { return nil }
         let url = iconDirectory.appendingPathComponent(name)
         return fileManager.fileExists(atPath: url.path) ? url : nil
     }

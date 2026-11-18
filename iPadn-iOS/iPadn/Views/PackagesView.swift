@@ -349,6 +349,8 @@ struct PackagesView: View {
     }
 
     private func finishImports() {
+        let existingIDs = Set(manager.jobs.map(\.id))
+        importedIDs.formIntersection(existingIDs)
         var finished = Set<UUID>()
         for job in manager.jobs {
             guard importedIDs.contains(job.id) else { continue }
@@ -438,54 +440,56 @@ struct PackagesView: View {
         }
     }
 
+    @ViewBuilder
     private func originalJobRow(_ job: DownloadJob) -> some View {
-        let url = manager.fileURL(job)!
-        let result = ui.attempts(url: url, jobID: job.id).first
-        let hasOutput = result.flatMap { ui.currentOutput($0) } != nil
-        let status = PackageStage.sourceSummary(
-            checking: ui.detecting.contains(url),
-            detection: ui.detections[url],
-            latest: result,
-            hasOutput: hasOutput
-        )
-        let metadata = [job.conciseVersionLabel, job.app.size > 0 ? job.app.size.byteLabel : ""]
-            .filter { !$0.isEmpty }.joined(separator: " · ")
-        let rowName = PackageStage.displayName(job.app.name)
-        let row = PackageLibraryRow(
-            name: rowName,
-            icon: manager.packageIconURL(job) ?? job.app.iconURL,
-            metadata: metadata,
-            status: status.text,
-            symbol: status.symbol,
-            color: status.color
-        )
-        return selectableRow(.job(job.id), disabled: ui.protects(job.id), content: { row }) {
-            NavigationLink(value: PackageRoute.source(job.id)) { row }
-                .revealActions(
-                    id: "pkg.job." + job.id.uuidString,
-                    enabled: !ui.protects(job.id),
-                    [
-                        .delete(fills: false) { requestDeleteOriginalJob(job) },
-                        RevealAction(title: "分享", systemImage: "square.and.arrow.up", tint: .blue, role: nil) {
-                            exportFile(url, suggestedName: rowName + ".ipa", kind: .share)
+        if let url = manager.fileURL(job) {
+            let result = ui.attempts(url: url, jobID: job.id).first
+            let hasOutput = result.flatMap { ui.currentOutput($0) } != nil
+            let status = PackageStage.sourceSummary(
+                checking: ui.detecting.contains(url),
+                detection: ui.detections[url],
+                latest: result,
+                hasOutput: hasOutput
+            )
+            let metadata = [job.conciseVersionLabel, job.app.size > 0 ? job.app.size.byteLabel : ""]
+                .filter { !$0.isEmpty }.joined(separator: " · ")
+            let rowName = PackageStage.displayName(job.app.name)
+            let row = PackageLibraryRow(
+                name: rowName,
+                icon: manager.packageIconURL(job) ?? job.app.iconURL,
+                metadata: metadata,
+                status: status.text,
+                symbol: status.symbol,
+                color: status.color
+            )
+            selectableRow(.job(job.id), disabled: ui.protects(job.id), content: { row }) {
+                NavigationLink(value: PackageRoute.source(job.id)) { row }
+                    .revealActions(
+                        id: "pkg.job." + job.id.uuidString,
+                        enabled: !ui.protects(job.id),
+                        [
+                            .delete(fills: false) { requestDeleteOriginalJob(job) },
+                            RevealAction(title: "分享", systemImage: "square.and.arrow.up", tint: .blue, role: nil) {
+                                exportFile(url, suggestedName: rowName + ".ipa", kind: .share)
+                            }
+                        ]
+                    )
+                    .contextMenu {
+                        if let active = result, active.id == service.activeRecordID, service.isRunning {
+                            Button("查看解密进度", systemImage: "circle.dotted") { ui.navigate(.record(active.id)) }
+                        } else if let output = result, DecryptOutcomeStyle(output) == .success, ui.currentOutput(output) != nil {
+                            Button("查看解密结果", systemImage: "checkmark.circle") { ui.navigate(.record(output.id)) }
+                            Button("重新解密", systemImage: "arrow.clockwise") { ui.requestStart(url: url, job: job) }
+                        } else if ui.detections[url]?.state != .plain {
+                            Button("解密 IPA", systemImage: "lock.open") { ui.requestStart(url: url, job: job) }
                         }
-                    ]
-                )
-                .contextMenu {
-                    if let active = result, active.id == service.activeRecordID, service.isRunning {
-                        Button("查看解密进度", systemImage: "circle.dotted") { ui.navigate(.record(active.id)) }
-                    } else if let output = result, DecryptOutcomeStyle(output) == .success, ui.currentOutput(output) != nil {
-                        Button("查看解密结果", systemImage: "checkmark.circle") { ui.navigate(.record(output.id)) }
-                        Button("重新解密", systemImage: "arrow.clockwise") { ui.requestStart(url: url, job: job) }
-                    } else if ui.detections[url]?.state != .plain {
-                        Button("解密 IPA", systemImage: "lock.open") { ui.requestStart(url: url, job: job) }
+                        Button("保存原始 IPA", systemImage: "folder") { exportFile(url, suggestedName: rowName + ".ipa", kind: .save) }
+                        Button("分享原始 IPA", systemImage: "square.and.arrow.up") { exportFile(url, suggestedName: rowName + ".ipa", kind: .share) }
+                        Button("重新检查", systemImage: "arrow.triangle.2.circlepath") { Task { await ui.detect(url, force: true) } }
+                        Button("删除原始 IPA", systemImage: "trash", role: .destructive) { requestDeleteOriginalJob(job) }
+                            .disabled(ui.protects(job.id))
                     }
-                    Button("保存原始 IPA", systemImage: "folder") { exportFile(url, suggestedName: rowName + ".ipa", kind: .save) }
-                    Button("分享原始 IPA", systemImage: "square.and.arrow.up") { exportFile(url, suggestedName: rowName + ".ipa", kind: .share) }
-                    Button("重新检查", systemImage: "arrow.triangle.2.circlepath") { Task { await ui.detect(url, force: true) } }
-                    Button("删除原始 IPA", systemImage: "trash", role: .destructive) { requestDeleteOriginalJob(job) }
-                        .disabled(ui.protects(job.id))
-                }
+            }
         }
     }
 
@@ -501,7 +505,8 @@ struct PackagesView: View {
             hasOutput: hasOutput
         )
         let version = (meta?.version ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let sizeText = (meta?.bytes ?? 0) > 0 ? Int64(meta!.bytes).byteLabel : ""
+        let bytes = meta?.bytes ?? 0
+        let sizeText = bytes > 0 ? bytes.byteLabel : ""
         let metadata = [version.isEmpty ? "" : "v\(version)", sizeText, AppText.text("本地文件")]
             .filter { !$0.isEmpty }.joined(separator: " · ")
         let row = PackageLibraryRow(
@@ -516,7 +521,7 @@ struct PackagesView: View {
         return selectableRow(.standalone(url), disabled: ui.protects(url: url), content: { row }) {
             NavigationLink(value: PackageRoute.file(url)) { row }
                 .revealActions(
-                    id: "pkg.file." + url.lastPathComponent,
+                    id: "pkg.file." + PackageOutputPolicy.canonicalPath(url),
                     enabled: !ui.protects(url: url),
                     [
                         .delete(fills: false) { requestDeleteStandaloneFile(url) },

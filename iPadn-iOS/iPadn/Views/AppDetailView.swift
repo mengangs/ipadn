@@ -1151,8 +1151,10 @@ private struct ScreenshotStrip: View {
     @State private var legacyWidth: CGFloat = 1
     private var ready: Bool { !screenshots.isEmpty && screenshots.allSatisfy { images[$0.url] != nil || failed.contains($0.url) } }
     private func aspect(_ shot: StoreService.Screenshot) -> Double {
-        guard ready, let image = images[shot.url], image.size.height > 0 else { return shot.aspect }
-        return image.size.width / image.size.height
+        let fallback = (shot.aspect.isFinite && shot.aspect > 0) ? max(0.1, shot.aspect) : 0.5625
+        guard ready, let image = images[shot.url], image.size.width > 0, image.size.height > 0 else { return fallback }
+        let ratio = Double(image.size.width / image.size.height)
+        return (ratio.isFinite && ratio > 0) ? max(0.1, ratio) : fallback
     }
     var body: some View {
         let margin = CardSection<EmptyView, EmptyView>.pageMargin
@@ -1396,15 +1398,18 @@ private struct ScreenshotViewer: View {
         _current = State(initialValue: selection.id)
     }
     private func aspect(_ shot: StoreService.Screenshot) -> Double {
-        guard let image = images[shot.url] ?? ScreenshotCache.cached(shot.url), image.size.height > 0 else { return shot.aspect }
-        return image.size.width / image.size.height
+        let fallback = (shot.aspect.isFinite && shot.aspect > 0) ? max(0.1, shot.aspect) : 0.5625
+        guard let image = images[shot.url] ?? ScreenshotCache.cached(shot.url),
+              image.size.width > 0, image.size.height > 0 else { return fallback }
+        let ratio = Double(image.size.width / image.size.height)
+        return (ratio.isFinite && ratio > 0) ? max(0.1, ratio) : fallback
     }
     var body: some View {
         GeometryReader { proxy in
             let height = max(1, proxy.size.height - 96)
-            let widest = proxy.size.width - 64
+            let widest = max(1, proxy.size.width - 64)
             // Each screenshot as large as fits, leaving room for the neighbours.
-            let widths = screenshots.map { min(widest, height * aspect($0)) }
+            let widths = screenshots.map { max(1, min(widest, height * aspect($0))) }
             let margin = max(24, (proxy.size.width - (widths.max() ?? widest)) / 2)
             if #available(iOS 17, *) {
                 ScrollViewReader { reader in

@@ -102,7 +102,7 @@ final class DownloadManager: NSObject, ObservableObject {
     private func updateInstallKeepAlive() {
         let busy = silentInstall && (silentRunning || !silentQueue.isEmpty || jobs.contains { job in
             [.running, .queued, .processing].contains(job.status)
-                && job.rawFormat == nil && job.protectedMacPackage != true && job.sourceURL != nil
+                && job.rawFormat == nil && job.protectedMacPackage != true && job.asset != nil
         })
         guard busy != keepingAlive else { return }
         keepingAlive = busy
@@ -296,18 +296,23 @@ final class DownloadManager: NSObject, ObservableObject {
         if hasActive {
             if backgroundTaskID == .invalid {
                 backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "iPadn.foregroundDownload") { [weak self] in
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        if self.backgroundTaskID != .invalid {
-                            UIApplication.shared.endBackgroundTask(self.backgroundTaskID)
-                            self.backgroundTaskID = .invalid
-                        }
+                    let endNow = {
+                        guard let self, self.backgroundTaskID != .invalid else { return }
+                        let current = self.backgroundTaskID
+                        self.backgroundTaskID = .invalid
+                        UIApplication.shared.endBackgroundTask(current)
+                    }
+                    if Thread.isMainThread {
+                        MainActor.assumeIsolated { endNow() }
+                    } else {
+                        DispatchQueue.main.sync { MainActor.assumeIsolated { endNow() } }
                     }
                 }
             }
         } else if backgroundTaskID != .invalid {
-            UIApplication.shared.endBackgroundTask(backgroundTaskID)
+            let current = backgroundTaskID
             backgroundTaskID = .invalid
+            UIApplication.shared.endBackgroundTask(current)
         }
     }
 
@@ -566,8 +571,26 @@ final class DownloadManager: NSObject, ObservableObject {
         schedule()
     }
 
+    nonisolated static func isLoopbackHost(_ rawHost: String) -> Bool {
+        let host = rawHost.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
+        if host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host == "0:0:0:0:0:0:0:1" {
+            return true
+        }
+        if host.hasPrefix("127.") || host == "0.0.0.0" {
+            return true
+        }
+        if host.hasPrefix("::ffff:127.") {
+            return true
+        }
+        return false
+    }
+
     func enqueueURL(_ url: URL) throws {
-        guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ToolError.message(AppText.text("请输入有效的下载链接")) }
+        guard url.scheme == "https",
+              let host = url.host, !host.isEmpty, !Self.isLoopbackHost(host),
+              url.user == nil, url.password == nil else {
+            throw ToolError.message(AppText.text("请输入有效的下载链接"))
+        }
         guard storageError == nil else { throw ToolError.message(storageError!) }
         guard jobs.filter({ $0.status != .completed && $0.status != .failed }).count < maxQueued else {
             throw DownloadQueueLimitError()
@@ -577,6 +600,42 @@ final class DownloadManager: NSObject, ObservableObject {
         next.insert(DownloadJob(app: StoreApp(id: UUID().uuidString, name: name.isEmpty ? AppText.text("导入安装包") : name), sourceURL: url), at: 0)
         try saveNewJobs(next)
         requestNotifications(); schedule()
+    }
+
+    func refreshFailedMacPackage(_ id: UUID, offer: MacPackageOffer) throws {
+        guard storageError == nil else { throw ToolError.message(storageError!) }
+        guard let index = jobs.firstIndex(where: { $0.id == id }),
+              jobs[index].status == .failed,
+              jobs[index].rawFormat == "pkg" else {
+            throw ToolError.message(AppText.text("此任务无法重试"))
+        }
+        if offer.protectedByApple {
+            guard MacPackageDecryptor.isAvailable else {
+                throw ToolError.message(AppText.text("当前版本不支持下载此 Mac 安装包"))
+            }
+            guard let dpInfo = offer.dpInfo, offer.hardwareID.count == 12 else {
+                throw ToolError.message(AppText.text("暂时无法下载 Mac 安装包，请重试"))
+            }
+            try MacPackageSecrets.save(.init(hardwareID: offer.hardwareID, dpInfo: dpInfo), for: id)
+        } else {
+            MacPackageSecrets.delete(id)
+        }
+        var next = jobs
+        if next[index].foregroundFallback == true || next[index].error?.contains("无法创建") == true {
+            fallbackForegroundIDs.insert(id)
+        }
+        if !offer.displayVersion.isEmpty {
+            next[index].app.version = offer.displayVersion
+        }
+        next[index].sourceURL = offer.downloadURL
+        next[index].protectedMacPackage = offer.protectedByApple ? true : nil
+        next[index].error = nil
+        let staged = FileManager.default.fileExists(atPath: LocalResources.stagingURL(id).path)
+        next[index].status = staged ? .processing : .queued
+        if !staged { next[index].downloaded = 0 }
+        try saveNewJobs(next)
+        try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
+        if staged { process(id) } else { schedule() }
     }
 
     func refreshFailed(_ id: UUID, asset: DownloadAsset) throws {
@@ -789,6 +848,7 @@ final class DownloadManager: NSObject, ObservableObject {
                 for url in [LocalResources.resumeURL(id), LocalResources.stagingURL(id), PackageIconService.cacheURL(id), Self.decryptedURL(id)] {
                     try? FileManager.default.removeItem(at: url)
                 }
+                TemporaryExportSweeper.removeShareHardLink(for: id)
                 MacPackageSecrets.delete(id)
             }
         }
@@ -926,6 +986,7 @@ final class DownloadManager: NSObject, ObservableObject {
                         for url in [LocalResources.resumeURL(id), LocalResources.stagingURL(id), PackageIconService.cacheURL(id), Self.decryptedURL(id)] {
                             try? FileManager.default.removeItem(at: url)
                         }
+                        TemporaryExportSweeper.removeShareHardLink(for: id)
                         MacPackageSecrets.delete(id)
                     }
                 }
@@ -1187,8 +1248,8 @@ final class DownloadManager: NSObject, ObservableObject {
                 try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
                 if job.protectedMacPackage == true { MacPackageSecrets.delete(id) }
                 self.persist()
-                // Only downloaded app packages; imported files and Mac packages are not installed here.
-                let installs = self.autoInstall && job.rawFormat == nil && job.protectedMacPackage != true && job.sourceURL != nil
+                // Only downloaded Apple Store app packages auto-install; external URLs, imported files, and Mac packages require manual action.
+                let installs = self.autoInstall && job.rawFormat == nil && job.protectedMacPackage != true && job.asset != nil
                 // Kept across launches only for the silent install, which iOS can interrupt.
                 if installs && self.silentInstall { self.markWaiting(id, true) }
                 if installs && self.silentInstall {

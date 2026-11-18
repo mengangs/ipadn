@@ -42,10 +42,11 @@ final class AppLock: ObservableObject {
 
     /// Called with the settings at launch and whenever they change.
     func configure(enabled: Bool, delay: Int, appearance: String, launching: Bool) {
-        self.enabled = enabled
+        let supported = Self.method != .unavailable
+        self.enabled = enabled && supported
         self.delay = TimeInterval(max(0, delay))
         self.appearance = appearance
-        if !enabled { locked = false }
+        if !self.enabled { locked = false }
         else if launching { locked = true }
         updateCover(active: true)
         window?.overrideUserInterfaceStyle = style
@@ -59,6 +60,12 @@ final class AppLock: ObservableObject {
         case .inactive:
             updateCover(active: false)
         case .active:
+            if Self.method == .unavailable {
+                locked = false
+                leftAt = nil
+                updateCover(active: true)
+                return
+            }
             // Only a return from the background asks again: the scene also
             // turns active when a cancelled prompt goes away.
             guard let left = leftAt else { updateCover(active: true); return }
@@ -72,6 +79,7 @@ final class AppLock: ObservableObject {
 
     /// Asks for Face ID, Touch ID or the passcode.
     func authenticate(reason: String) async -> Bool {
+        guard Self.method != .unavailable else { return false }
         guard !authenticating else { return false }
         authenticating = true
         defer { authenticating = false }
@@ -82,10 +90,18 @@ final class AppLock: ObservableObject {
 
     #if DEBUG
     /// Screenshots of the lock screen without asking anyone to authenticate.
-    func showPreview() { locked = true }
+    func showPreview() {
+        enabled = true
+        locked = true
+    }
     #endif
 
     func unlock() async {
+        if Self.method == .unavailable {
+            locked = false
+            updateCover(active: true)
+            return
+        }
         guard locked, UIApplication.shared.applicationState == .active else { return }
         if await authenticate(reason: AppText.text("解锁 iPadn")) {
             locked = false

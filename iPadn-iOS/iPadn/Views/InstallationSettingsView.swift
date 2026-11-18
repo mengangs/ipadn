@@ -8,13 +8,15 @@ struct InstallationSettingsView: View {
     @EnvironmentObject private var store: ToolStore
     @Environment(\.openURL) private var openURL
     @State private var importing = false
+    @State private var deferredCertificateData: Data?
+    @State private var deferredImportIssue: String?
     @State private var hasLocalProfile = false
     @State private var replacingCertificate = false
     @State private var certificateData: Data?
     @State private var password = ""
     @State private var certificateName = Self.notImported
     /// Stored value, not display text: the certificate is either present or not.
-    private static let notImported = "未导入"
+    nonisolated private static let notImported = "未导入"
     @State private var issue: String?
     @State private var busy = false
     /// Which action is running, shown with a spinner on its own row.
@@ -167,8 +169,15 @@ struct InstallationSettingsView: View {
                         return
                     }
                     guard let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 2 * 1024 * 1024 else { throw ToolError.message(AppText.text("请选择 .p12 或 .pfx 证书文件")) }
-                    certificateData = try Data(contentsOf: url); password = ""
-                } catch { issue = error.localizedDescription }
+                    deferredCertificateData = try Data(contentsOf: url)
+                    scheduleImportPresentation()
+                } catch {
+                    deferredImportIssue = error.localizedDescription
+                    scheduleImportPresentation()
+                }
+            }
+            .compatibleOnChange(of: importing) { isImporting in
+                if !isImporting { scheduleImportPresentation() }
             }
             .sheet(isPresented: Binding(get: { certificateData != nil }, set: { if !$0 { certificateData = nil; password = "" } })) {
                 NavigationStack {
@@ -192,6 +201,21 @@ struct InstallationSettingsView: View {
             .alert("安装设置", isPresented: Binding(get: { issue != nil && certificateData == nil }, set: { if !$0 { issue = nil } })) {
                 Button("知道了", role: .cancel) { issue = nil }
             } message: { Text(issue ?? "") }
+    }
+    private func scheduleImportPresentation() {
+        guard !importing, (deferredCertificateData != nil || deferredImportIssue != nil) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            guard !importing else { return }
+            if let data = deferredCertificateData {
+                deferredCertificateData = nil
+                deferredImportIssue = nil
+                password = ""
+                certificateData = data
+            } else if let pendingIssue = deferredImportIssue {
+                deferredImportIssue = nil
+                issue = pendingIssue
+            }
+        }
     }
     private func actionLabel(_ title: LocalizedStringKey, systemImage: String, action: Action) -> some View {
         actionLabel(title, systemImage: systemImage, running: working == action)

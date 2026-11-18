@@ -25,6 +25,9 @@ import Foundation
         precondition(DiagnosticRedactor.sanitize("[INFO] SINF placed beside 5 nested binaries") == "[INFO] SINF placed beside 5 nested binaries")
         precondition(!DiagnosticRedactor.sanitize("sinf=secret-blob\n<key>sinf</key>\n<data>abc</data>").contains("secret-blob"))
         precondition(DiagnosticRedactor.sanitize("[OK] decrypted Frameworks/App\n[PHASE] PACK").contains("Frameworks/App"))
+        let guidance = "这台设备没有该 Apple 账号的解密授权，系统拒绝了 FairPlay 解密。\n请用下载这个应用时所用的 Apple 账号登录一次系统「App Store」。"
+        precondition(!DiagnosticRedactor.sanitize(guidance).contains(DiagnosticRedactor.replacement),
+                     "Built-in FairPlay EACCES/EPERM guidance must survive DiagnosticRedactor intact")
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ipadn-ui-safety-\(UUID())")
         try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -413,8 +413,32 @@ enum NativeInstaller {
             metadata = record
         }
         // Sending the package takes a while; keep running if the user leaves.
-        let background = await UIApplication.shared.beginBackgroundTask(withName: "iPadn native installation") { cancelIfActive(token) }
-        defer { Task { @MainActor in UIApplication.shared.endBackgroundTask(background) } }
+        final class BackgroundTokenBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var id: UIBackgroundTaskIdentifier = .invalid
+            func assign(_ value: UIBackgroundTaskIdentifier) {
+                lock.lock(); id = value; lock.unlock()
+            }
+            func endIfNeeded() {
+                lock.lock()
+                let current = id
+                id = .invalid
+                lock.unlock()
+                guard current != .invalid else { return }
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated { UIApplication.shared.endBackgroundTask(current) }
+                } else {
+                    DispatchQueue.main.sync { MainActor.assumeIsolated { UIApplication.shared.endBackgroundTask(current) } }
+                }
+            }
+        }
+        let bgBox = BackgroundTokenBox()
+        let startedID = await UIApplication.shared.beginBackgroundTask(withName: "iPadn native installation") {
+            cancelIfActive(token)
+            bgBox.endIfNeeded()
+        }
+        bgBox.assign(startedID)
+        defer { bgBox.endIfNeeded() }
         do {
             let outcome = try await runWithPortRetry { port in
                 try Task.checkCancellation()

@@ -969,7 +969,7 @@ private struct RevealDeleteModifier: ViewModifier {
 }
 
 extension View {
-    func dismissRevealsWhenTabChanges(_ tab: Int) -> some View {
+    func dismissRevealsWhenTabChanges<T: Equatable>(_ tab: T) -> some View {
         compatibleOnChange(of: tab) { _ in RevealCoordinator.shared.clear(immediately: false) }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
                 RevealCoordinator.shared.clear(immediately: true)

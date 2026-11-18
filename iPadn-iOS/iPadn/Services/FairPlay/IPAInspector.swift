@@ -14,7 +14,7 @@ enum IPAInspector {
         if archive.isZip64 {
             return IPADetection(state: .unknown, note: "ZIP64 布局，未做部分读取")
         }
-        let candidates = archive.entries.filter { isCandidateBinary($0.name) }
+        let candidates = deduplicatedCandidates(in: archive.entries)
         guard !candidates.isEmpty else {
             return IPADetection(state: .unknown, note: "没有找到可检查的 Mach-O")
         }
@@ -64,7 +64,7 @@ enum IPAInspector {
             return lines + ["zip: unreadable"]
         }
         lines.append("zip: entries=\(archive.entries.count) zip64=\(archive.isZip64) size=\(archive.fileSize)")
-        let candidates = archive.entries.filter { isCandidateBinary($0.name) }
+        let candidates = deduplicatedCandidates(in: archive.entries)
         lines.append("candidates: \(candidates.count)")
         for entry in candidates.prefix(6) {
             guard let reader = archive.reader(for: entry) else {
@@ -83,17 +83,55 @@ enum IPAInspector {
     }
     #endif
 
-    /// Any file without an extension inside the payload is a candidate: the main
-    /// executable, framework binaries and app-extension binaries all look like
-    /// that, while resources keep their extension.
+    private static let nonBinaryExtensions: Set<String> = [
+        "plist", "strings", "stringsdict", "xcstrings", "nib", "storyboardc", "car",
+        "png", "jpg", "jpeg", "gif", "webp", "heic", "pdf", "svg", "ico",
+        "json", "xml", "txt", "md", "html", "css", "js", "otf", "ttf", "ttc",
+        "mp3", "m4a", "wav", "caf", "aac", "mp4", "mov", "sinf", "supp", "supf", "scx",
+        "mobileprovision", "der", "cer", "crt", "pem", "mom", "omo", "db", "sqlite"
+    ]
+
+    /// Deduplicates central-directory entries by path (keeping the last entry to match
+    /// standard ZIP extraction semantics) so patched/resigned IPAs never yield duplicate IDs.
+    private static func deduplicatedCandidates(in entries: [ZipEntry]) -> [ZipEntry] {
+        var indexByName: [String: Int] = [:]
+        var result: [ZipEntry] = []
+        for entry in entries where isCandidateBinary(entry.name) {
+            if let existing = indexByName[entry.name] {
+                result[existing] = entry
+            } else {
+                indexByName[entry.name] = result.count
+                result.append(entry)
+            }
+        }
+        return result
+    }
+
+    /// Any extensionless file, `.dylib`, or executable bundle member inside `Payload/`
+    /// (excluding known resource extensions and `SC_Info`/`_CodeSignature` metadata).
     private static func isCandidateBinary(_ path: String) -> Bool {
         guard path.hasPrefix("Payload/") else { return false }
         // Directory entries end with "/" and carry no payload; treating them as
         // binaries would mark every package "unknown".
         guard !path.hasSuffix("/") else { return false }
-        guard let last = path.split(separator: "/").last else { return false }
-        guard !last.contains(".") else { return false }
-        return true
+        let parts = path.split(separator: "/")
+        guard let last = parts.last else { return false }
+        if parts.contains("_CodeSignature") || parts.contains("SC_Info") { return false }
+        if parts.contains(where: { $0.hasSuffix(".lproj") || $0.hasSuffix(".bundle") || $0.hasSuffix(".momd") }) {
+            return false
+        }
+        if !last.contains(".") { return true }
+        let ext = (String(last) as NSString).pathExtension.lowercased()
+        if ext == "dylib" || ext == "so" { return true }
+        if nonBinaryExtensions.contains(ext) { return false }
+        // Support dotted CFBundleExecutable names directly inside *.app/ or *.appex/ or *.framework/.
+        if parts.count >= 3 {
+            let parent = parts[parts.count - 2]
+            if parent.hasSuffix(".app") || parent.hasSuffix(".appex") || parent.hasSuffix(".framework") {
+                return true
+            }
+        }
+        return false
     }
 
     // MARK: - per binary
@@ -185,11 +223,11 @@ enum IPAInspector {
             let headerSize = is64 ? 32 : 28
             guard data.count >= headerSize else { return .needMore(headerSize) }
             // mach_header_64: magic, cputype, cpusubtype, filetype, ncmds(16), sizeofcmds(20).
-            guard let sizeofcmds = data.le32(20) else { return nil }
+            guard let sizeofcmds = data.le32(20), sizeofcmds <= UInt32(maxLoadCommands - headerSize) else { return nil }
             let needed = headerSize + Int(sizeofcmds)
-            guard needed <= maxLoadCommands else { return nil }
             if data.count < needed { return .needMore(needed) }
-            return .thin(scanLoadCommands(data, total: needed))
+            guard let cryptid = scanLoadCommands(data, total: needed) else { return nil }
+            return .thin(cryptid)
         }
 
         // Fat: the arch table is big endian.
@@ -197,16 +235,18 @@ enum IPAInspector {
             let is64 = magicBE == 0xCAFEBABF
             guard data.count >= 8, let count = data.be32(4) else { return nil }
             let stride = is64 ? 32 : 20
+            guard count > 0, count <= 32 else { return nil }
             let tableSize = 8 + Int(count) * stride
-            guard count > 0, count <= 32, tableSize <= maxLoadCommands else { return nil }
+            guard tableSize <= maxLoadCommands else { return nil }
             if data.count < tableSize { return .needMore(tableSize) }
             var slices: [FatSlice] = []
             for index in 0..<Int(count) {
                 let base = 8 + index * stride
-                let offset: UInt32? = data.be32(base + 8)
-                let size: UInt32? = data.be32(base + 12)
-                guard let offset, let size, size > 0, offset > 0 else { return nil }
-                slices.append(FatSlice(offset: Int(offset), size: Int(size)))
+                let offset64: UInt64? = is64 ? data.be64(base + 8) : data.be32(base + 8).map(UInt64.init)
+                let size64: UInt64? = is64 ? data.be64(base + 16) : data.be32(base + 12).map(UInt64.init)
+                guard let offset64, let size64, size64 > 0, offset64 > 0,
+                      offset64 <= UInt64(Int.max / 2), size64 <= UInt64(Int.max / 2) else { return nil }
+                slices.append(FatSlice(offset: Int(offset64), size: Int(size64)))
             }
             return .fat(slices)
         }
@@ -214,19 +254,22 @@ enum IPAInspector {
         return .notMachO
     }
 
-    private static func scanLoadCommands(_ data: Data, total: Int) -> Int32 {
-        guard let rawCount = data.le32(16) else { return -1 }
+    private static func scanLoadCommands(_ data: Data, total: Int) -> Int32? {
+        guard let rawCount = data.le32(16) else { return nil }
         let is64 = data.le32(0) == 0xFEEDFACF
         var offset = is64 ? 32 : 28
         var cryptid: Int32 = 0
         for _ in 0..<Int(rawCount) {
             guard offset + 8 <= total, let cmd = data.le32(offset),
-                  let size = data.le32(offset + 4) else { break }
+                  let size = data.le32(offset + 4) else { return nil }
             let commandSize = Int(size)
-            guard commandSize >= 8, offset + commandSize <= total else { break }
+            guard commandSize >= 8, (commandSize & 3) == 0, offset <= total - commandSize else { return nil }
             if cmd == 0x2C || cmd == 0x21 {   // LC_ENCRYPTION_INFO_64 / LC_ENCRYPTION_INFO
-                if let value = data.le32(offset + 16) {
-                    cryptid = Int32(bitPattern: value)
+                let minCmd = cmd == 0x2C ? 24 : 20
+                guard commandSize >= minCmd, let value = data.le32(offset + 16) else { return nil }
+                let candidate = Int32(bitPattern: value)
+                if cryptid == 0 || candidate > 0 {
+                    cryptid = candidate
                 }
             }
             offset += commandSize
@@ -427,16 +470,23 @@ final class InflatingReader {
             }
 
             var buffer = [UInt8](repeating: 0, count: 32 * 1024)
+            let srcBefore = stream.pointee.src_size
+            let flags: Int32 = consumed >= compressedSize ? Int32(COMPRESSION_STREAM_FINALIZE.rawValue) : 0
             let produced = buffer.withUnsafeMutableBufferPointer { out -> Int in
                 stream.pointee.dst_ptr = out.baseAddress!
                 stream.pointee.dst_size = out.count
-                let status = compression_stream_process(stream, 0)
+                let status = compression_stream_process(stream, flags)
                 if status == COMPRESSION_STATUS_END || status == COMPRESSION_STATUS_ERROR {
                     finished = true
                 }
                 return out.count - stream.pointee.dst_size
             }
             if produced > 0 { data.append(contentsOf: buffer[0..<produced]) }
+            if produced == 0 && stream.pointee.src_size == srcBefore {
+                // Truncated or stalled deflate stream made zero forward progress; stop spinning.
+                finished = true
+                break
+            }
             if produced == 0 && stream.pointee.src_size == 0 && consumed >= compressedSize {
                 break
             }
@@ -467,5 +517,10 @@ private extension Data {
             | (UInt32(self[offset + 1]) << 16)
             | (UInt32(self[offset + 2]) << 8)
             | UInt32(self[offset + 3])
+    }
+
+    func be64(_ offset: Int) -> UInt64? {
+        guard offset + 8 <= count, let hi = be32(offset), let lo = be32(offset + 4) else { return nil }
+        return (UInt64(hi) << 32) | UInt64(lo)
     }
 }

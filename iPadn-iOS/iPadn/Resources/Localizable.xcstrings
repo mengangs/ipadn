@@ -108491,6 +108491,146 @@
           }
         }
       }
+    },
+    "确认通过外部链接下载？": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认通过外部链接下载？"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download from External Link?"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認透過外部連結下載？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外部リンクからダウンロードしますか？"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "외부 링크에서 다운로드할까요?"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скачать по внешней ссылке?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Descargar desde enlace externo?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Télécharger depuis un lien externe ?"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Über externen Link laden?"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baixar pelo link externo?"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التنزيل من رابط خارجي؟"
+          }
+        }
+      }
+    },
+    "来源：%@\n%@\n\n外部直链下载完成后不会自动安装，可在「下载」页手动检查或安装。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来源：%@\n%@\n\n外部直链下载完成后不会自动安装，可在「下载」页手动检查或安装。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source: %@\n%@\n\nExternal link downloads are not installed automatically. You can inspect or install the package manually in Downloads."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "來源：%@\n%@\n\n外部直連下載完成後不會自動安裝，可在「下載」頁手動檢查或安裝。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提供元：%@\n%@\n\n外部リンクからのダウンロードは自動インストールされません。「ダウンロード」画面で手動で確認・インストールできます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "출처: %@\n%@\n\n외부 링크 다운로드는 자동으로 설치되지 않으며, 다운로드 탭에서 직접 확인하거나 설치할 수 있습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Источник: %@\n%@\n\nПакеты по внешним ссылкам не устанавливаются автоматически. Вы можете проверить или установить их вручную на вкладке «Загрузки»."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Origen: %@\n%@\n\nLas descargas de enlaces externos no se instalan automáticamente. Puedes revisarlas o instalarlas manualmente en Descargas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source : %@\n%@\n\nLes téléchargements issus de liens externes ne sont pas installés automatiquement. Vous pouvez les vérifier ou les installer manuellement dans Téléchargements."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quelle: %@\n%@\n\nDownloads über externe Links werden nicht automatisch installiert. Du kannst sie im Tab „Downloads“ manuell prüfen oder installieren."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Origem: %@\n%@\n\nDownloads de links externos não são instalados automaticamente. Você pode verificar ou instalar manualmente na aba Downloads."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "المصدر: %@\n%@\n\nلا يتم تثبيت التنزيلات من الروابط الخارجية تلقائيًا. يمكنك فحص الحزمة أو تثبيتها يدويًا في علامة تبويب التنزيلات."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

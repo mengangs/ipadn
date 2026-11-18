@@ -1,6 +1,6 @@
 # 自行编译 iPadn
 
-iPadn 是一个 SwiftUI 应用，最低支持 iOS / iPadOS 16（原生安装需 17.4+，实时活动需 16.1+，本机配对需 27+），适用于 iPhone 和 iPad。当前源码版本为 2.2.0（build 34）。
+iPadn 是一个 SwiftUI 应用，最低支持 iOS / iPadOS 16（原生安装需 17.4+，实时活动需 16.1+，本机配对需 27+），适用于 iPhone 和 iPad。当前源码版本为 2.2.1（build 35）。
 
 ## GitHub 云编译（无需本地 Mac）
 
@@ -8,7 +8,7 @@ iPadn 是一个 SwiftUI 应用，最低支持 iOS / iPadOS 16（原生安装需 
 
 日常构建执行完整 `iPadnTests`（含安装、认证、FairPlay 解密、加密备份、签名组件和布局测试）。界面交互测试 `iPadnUITests` 可在手动运行时同时勾选 `run_tests` 和 `run_ui_tests` 执行。
 
-也支持推送与项目版本一致的新标签（例如 `v2.2.0`）触发编译、单元测试和 Release 发布；标签与 IPA 版本不一致时拒绝发布。安装包在检查与测试全部通过后才发布，发布完成后工作流自动调用 `scripts/generate_altstore_source.py` 同步根目录 `altstore-source.json`。
+也支持推送与项目版本一致的新标签（例如 `v2.2.1`）触发编译、单元测试和 Release 发布；标签与 IPA 版本不一致时拒绝发布。安装包在检查与测试全部通过后才发布，发布完成后工作流自动调用 `scripts/generate_altstore_source.py` 同步根目录 `altstore-source.json`。
 
 下文的 Mac 和 Xcode 要求仅适用于自行在本地编译。
 

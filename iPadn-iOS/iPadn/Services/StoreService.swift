@@ -54,36 +54,41 @@ enum StoreService {
         return countries
     }
 
+    static func deduplicatingResults(_ apps: [StoreApp], limit: Int? = nil) -> [StoreApp] {
+        let unique = AppSearchRanking.deduplicatePreservingOrder(apps)
+        guard let limit else { return unique }
+        return Array(unique.prefix(max(0, limit)))
+    }
+
     static func mergeResults(_ primary: [StoreApp], _ account: [StoreApp], limit: Int) -> [StoreApp] {
-        var merged: [StoreApp] = []
-        var indices: [String: Int] = [:]
+        let uniquePrimary = deduplicatingResults(primary)
+        let uniqueAccount = deduplicatingResults(account)
         // Two selected-region results followed by one account-region result
         // keeps the secondary store visible even if the primary fills the limit.
-        let regionalIDs = Set(primary.map(\.id))
-        let accountOnly = account.filter { !regionalIDs.contains($0.id) }
+        let regionalIDs = Set(uniquePrimary.map(\.id))
+        let regionalBundles = Set(uniquePrimary.compactMap { app -> String? in
+            let key = app.bundleID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return key.isEmpty ? nil : key
+        })
+        let accountOnly = uniqueAccount.filter { app in
+            guard !regionalIDs.contains(app.id) else { return false }
+            let bundleKey = app.bundleID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return bundleKey.isEmpty || !regionalBundles.contains(bundleKey)
+        }
         var candidates: [StoreApp] = []
         var primaryIndex = 0
         var accountIndex = 0
-        while primaryIndex < primary.count || accountIndex < accountOnly.count {
-            for _ in 0..<2 where primaryIndex < primary.count {
-                candidates.append(primary[primaryIndex]); primaryIndex += 1
+        while primaryIndex < uniquePrimary.count || accountIndex < accountOnly.count {
+            for _ in 0..<2 where primaryIndex < uniquePrimary.count {
+                candidates.append(uniquePrimary[primaryIndex]); primaryIndex += 1
             }
             if accountIndex < accountOnly.count {
                 candidates.append(accountOnly[accountIndex]); accountIndex += 1
             }
         }
         // Also inspect overlapping results to fill missing artwork.
-        candidates.append(contentsOf: account)
-        for app in candidates where !app.id.isEmpty {
-            if let index = indices[app.id] {
-                // An app found in both stores may have missing artwork in one.
-                if merged[index].iconURL == nil { merged[index].iconURL = app.iconURL }
-            } else {
-                indices[app.id] = merged.count
-                merged.append(app)
-            }
-        }
-        return Array(merged.prefix(max(0, limit)))
+        candidates.append(contentsOf: uniqueAccount)
+        return deduplicatingResults(candidates, limit: limit)
     }
 
     /// Storefronts tried, in order, when an App ID is not listed in the
@@ -117,7 +122,7 @@ enum StoreService {
             if !answered, let firstError { throw firstError }
             return []
         }
-        let primary = try await searchInCountry(query, store: store, limit: limit)
+        let primary = deduplicatingResults(try await searchInCountry(query, store: store, limit: limit), limit: limit)
         let countries = searchCountries(selected: store.country, accountCountry: accountCountry)
         guard countries.count > 1 else { return primary }
         var accountStore = store
@@ -146,11 +151,17 @@ enum StoreService {
             if store.platform == .macOS {
                 // macSoftware is the native Mac App Store catalog. Exclude
                 // unrelated mobile-only results before showing Mac installers.
-                return try await searchEntities(store.platform.searchEntity)
-                    .filter(Self.supportsNativeMac).map(mapMacLookup)
+                return deduplicatingResults(
+                    try await searchEntities(store.platform.searchEntity)
+                        .filter(Self.supportsNativeMac).map(mapMacLookup),
+                    limit: limit
+                )
             }
             guard store.platform == .tvOS else {
-                return try await searchEntities(store.platform.searchEntity).map(mapLookup)
+                return deduplicatingResults(
+                    try await searchEntities(store.platform.searchEntity).map(mapLookup),
+                    limit: limit
+                )
             }
             // Apple TV has a distinct store offer. Search the combined catalogs,
             // then require explicit AppleTV device metadata rather than labeling
@@ -161,7 +172,8 @@ enum StoreService {
                 // The tvSoftware entity is unreliable on some storefronts.
                 rows = (try? await searchEntities("software")) ?? []
             }
-            return await withAppleTVListings(rows.filter(Self.supportsAppleTV).map(mapLookup), store: store)
+            let candidates = deduplicatingResults(rows.filter(Self.supportsAppleTV).map(mapLookup), limit: limit)
+            return deduplicatingResults(await withAppleTVListings(candidates, store: store), limit: limit)
         case .appID(let id, _):
             if store.platform == .tvOS { return try await platformApp(id, store: store).map { [$0] } ?? [] }
             // No "entity" here: on an ID lookup it requests *related* items
@@ -428,6 +440,21 @@ enum StoreService {
                 }
             }
         }
+        if !remaining.isEmpty, fetcher == nil, store.platform == .tvOS, !Task.isCancelled {
+            // Pure Apple TV listings are omitted by default iTunes lookup unless entity=tvSoftware is queried.
+            if let tvURL = try? endpoint("https://itunes.apple.com/lookup", items: [
+                URLQueryItem(name: "id", value: Array(remaining).joined(separator: ",")),
+                URLQueryItem(name: "country", value: store.country),
+                URLQueryItem(name: "entity", value: "tvSoftware")
+            ]), let tvRows = (try? await HTTPClient.shared.json(tvURL, timeoutInterval: 4, retryTransient: false) as? [String: Any])?["results"] as? [[String: Any]] {
+                for row in tvRows {
+                    let id = plistString(row["trackId"])
+                    if remaining.remove(id) != nil {
+                        statuses[id] = .listed
+                    }
+                }
+            }
+        }
         for id in remaining {
             statuses[id] = (!hadFailure && !Task.isCancelled) ? .delisted : .inconclusive
         }
@@ -489,7 +516,9 @@ enum StoreService {
         case .macOS: preferred = plistString(row["kind"]).lowercased() == "mac-software" ? shots("screenshotUrls") : []
         }
         let developerID = plistString(row["artistId"])
-        return ListingExtras(screenshots: preferred.prefix(10).compactMap(screenshot),
+        var seenShotURLs = Set<URL>()
+        let uniqueShots = preferred.compactMap(screenshot).filter { seenShotURLs.insert($0.url).inserted }
+        return ListingExtras(screenshots: Array(uniqueShots.prefix(10)),
                              developerID: developerID.isEmpty ? nil : developerID,
                              developer: plistString(row["artistName"] ?? row["sellerName"]))
     }

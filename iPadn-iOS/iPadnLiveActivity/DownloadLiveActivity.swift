@@ -137,8 +137,9 @@ private struct DownloadRing: View {
 private struct DownloadTrailing: View {
     let state: DownloadActivityAttributes.ContentState
     var body: some View {
-        if let interval = state.interval, interval.upperBound > .now {
-            Text(timerInterval: Date.now...interval.upperBound, countsDown: true)
+        let now = Date.now
+        if let interval = state.interval, interval.upperBound > now {
+            Text(timerInterval: now...interval.upperBound, countsDown: true)
                 .monospacedDigit().multilineTextAlignment(.trailing)
         } else if state.isInstallIndeterminate {
             Text(String(localized: "准备中"))

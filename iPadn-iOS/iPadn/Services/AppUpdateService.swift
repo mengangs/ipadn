@@ -151,7 +151,7 @@ enum AppUpdateService {
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
                         totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
             guard totalBytesExpectedToWrite > 0 else { return }
-            let fraction = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+            let fraction = min(1, max(0, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)))
             // Whole percents only: the screen doesn't need thousands of updates.
             let percent = Int(fraction * 100)
             guard lock.withLock({ () -> Bool in

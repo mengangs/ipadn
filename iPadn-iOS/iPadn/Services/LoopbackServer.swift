@@ -132,7 +132,11 @@ final class LoopbackServer: @unchecked Sendable {
                 self.listener = nil
                 self.lock.lock(); self.readyURL = nil; self.lock.unlock()
                 old?.newConnectionHandler = nil
+                old?.stateUpdateHandler = nil
                 old?.cancel()
+                if !self.starters.isEmpty {
+                    self.finishStart(.failure(ToolError.message(AppText.text("安装已中断，请重试"))))
+                }
                 continuation.resume()
             }
         }

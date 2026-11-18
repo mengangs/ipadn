@@ -45,35 +45,57 @@ final class WiFiTransferServer: @unchecked Sendable {
     /// Starts listening on every interface, on `port` when given (to keep an
     /// address the user already shared), and returns the port.
     func start(items: [Item], port: UInt16? = nil) async throws -> UInt16 {
-        self.items = items
         let parameters = NWParameters.tcp
         parameters.includePeerToPeer = false
         let fixed = port.flatMap(NWEndpoint.Port.init(rawValue:))
         if fixed != nil { parameters.allowLocalEndpointReuse = true }
         let listener = try NWListener(using: parameters, on: fixed ?? .any)
-        self.listener = listener
-        return try await withCheckedThrowingContinuation { continuation in
-            var resumed = false
-            listener.stateUpdateHandler = { [weak self] state in
-                switch state {
-                case .ready:
-                    guard !resumed, let port = listener.port?.rawValue else { return }
-                    resumed = true; continuation.resume(returning: port)
-                case .failed(let error):
-                    if !resumed { resumed = true; continuation.resume(throwing: error) }
-                    else { self?.stop(reason: error.localizedDescription) }
-                case .waiting(let error):
-                    // A port still held by the previous listener waits instead
-                    // of failing; give up so the caller can retry or move on.
-                    guard !resumed else { return }
-                    resumed = true
-                    listener.cancel()
-                    continuation.resume(throwing: error)
-                default: break
-                }
+
+        final class StartContinuationBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var continuation: CheckedContinuation<UInt16, Error>?
+            init(_ continuation: CheckedContinuation<UInt16, Error>) {
+                self.continuation = continuation
             }
-            listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
-            listener.start(queue: queue)
+            func resume(_ result: Result<UInt16, Error>) -> Bool {
+                lock.lock()
+                let pending = continuation
+                continuation = nil
+                lock.unlock()
+                pending?.resume(with: result)
+                return pending != nil
+            }
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let box = StartContinuationBox(continuation)
+            queue.async {
+                self.items = items
+                self.listener?.cancel()
+                self.listener = listener
+                listener.stateUpdateHandler = { [weak self] state in
+                    switch state {
+                    case .ready:
+                        guard let port = listener.port?.rawValue else { return }
+                        _ = box.resume(.success(port))
+                    case .failed(let error):
+                        if !box.resume(.failure(error)) {
+                            self?.stop(reason: error.localizedDescription)
+                        }
+                    case .waiting(let error):
+                        // A port still held by the previous listener waits instead
+                        // of failing; give up so the caller can retry or move on.
+                        if box.resume(.failure(error)) {
+                            listener.cancel()
+                        }
+                    case .cancelled:
+                        _ = box.resume(.failure(CancellationError()))
+                    default: break
+                    }
+                }
+                listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
+                listener.start(queue: self.queue)
+            }
         }
     }
 
@@ -100,23 +122,33 @@ final class WiFiTransferServer: @unchecked Sendable {
             connection.cancel(); return
         }
         connection.start(queue: queue)
-        read(connection, client: client, buffer: Data())
-        // A client that never finishes its request is dropped.
-        queue.asyncAfter(deadline: .now() + 30) { if connection.state != .cancelled { connection.cancel() } }
+        // Drop idle clients that never finish sending HTTP request headers, without
+        // interrupting active multi-minute file transfers once headers are parsed.
+        let headerTimeout = DispatchWorkItem {
+            if connection.state != .cancelled { connection.cancel() }
+        }
+        queue.asyncAfter(deadline: .now() + 30, execute: headerTimeout)
+        read(connection, client: client, buffer: Data(), headerTimeout: headerTimeout)
     }
 
-    private func read(_ connection: NWConnection, client: String, buffer: Data) {
+    private func read(_ connection: NWConnection, client: String, buffer: Data, headerTimeout: DispatchWorkItem) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 16 * 1024) { [weak self] data, _, complete, error in
-            guard let self else { return }
+            guard let self else {
+                headerTimeout.cancel()
+                connection.cancel()
+                return
+            }
             var buffer = buffer
             if let data { buffer.append(data) }
             if let end = buffer.range(of: Data("\r\n\r\n".utf8)) {
+                headerTimeout.cancel()
                 let head = String(decoding: buffer[..<end.lowerBound], as: UTF8.self)
                 self.route(connection, client: client, head: head)
             } else if error != nil || complete || buffer.count > 16 * 1024 {
+                headerTimeout.cancel()
                 connection.cancel()
             } else {
-                self.read(connection, client: client, buffer: buffer)
+                self.read(connection, client: client, buffer: buffer, headerTimeout: headerTimeout)
             }
         }
     }
