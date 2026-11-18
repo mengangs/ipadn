@@ -27,20 +27,33 @@ final class InteractionTests: XCTestCase {
             let inner = toggle.switches.firstMatch
             return inner.exists ? inner : toggle
         }
+        func isClearOfBars(_ element: XCUIElement) -> Bool {
+            guard element.exists else { return false }
+            let winH = app.windows.firstMatch.frame.height
+            let frame = element.frame
+            guard winH > 0, frame.height > 0 else { return element.isHittable }
+            return element.isHittable && frame.minY > 110 && frame.maxY < winH - 130
+        }
         func openTranslationGroup() {
             let settings = app.buttons["accounts.settings"]
+            for _ in 0..<4 { if settings.exists && settings.isHittable { break }; app.swipeUp() }
             XCTAssertTrue(settings.waitForExistence(timeout: 10)); settings.tap()
             XCTAssertFalse(app.buttons["settings.page.translation"].exists, "Translation must not add another settings page")
             openSettingsPage("appearance", in: app)
             let toggle = app.switches["settings.translation.direct"]
-            for _ in 0..<5 { if toggle.exists && switchControl(for: toggle).isHittable { break }; app.swipeUp() }
+            for _ in 0..<6 { if isClearOfBars(switchControl(for: toggle)) { break }; app.swipeUp() }
             XCTAssertTrue(toggle.waitForExistence(timeout: 10))
         }
         app.launch()
         openTranslationGroup()
         let direct = app.switches["settings.translation.direct"]
-        if direct.value as? String == "1" { switchControl(for: direct).tap() }
+        if direct.value as? String == "1" {
+            switchControl(for: direct).tap()
+            let resetOff = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: direct)
+            _ = XCTWaiter.wait(for: [resetOff], timeout: 3)
+        }
         XCTAssertFalse(app.buttons["settings.translation.prepare"].exists)
+        for _ in 0..<4 { if isClearOfBars(switchControl(for: direct)) { break }; app.swipeUp() }
         switchControl(for: direct).tap()
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: direct)
         XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 3), .completed, "Tapping the switch control must enable direct translation")
@@ -48,7 +61,7 @@ final class InteractionTests: XCTestCase {
         for _ in 0..<4 { if status.exists && status.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(status.waitForExistence(timeout: 15))
         XCTAssertFalse(app.staticTexts["所需下载"].exists, "Enabling only checks availability; download requires an explicit tap")
-        for _ in 0..<4 { if switchControl(for: direct).isHittable { break }; app.swipeDown() }
+        for _ in 0..<4 { if isClearOfBars(switchControl(for: direct)) { break }; app.swipeDown() }
         switchControl(for: direct).tap()
         let disabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: direct)
         XCTAssertEqual(XCTWaiter.wait(for: [disabled], timeout: 3), .completed, "Tapping the switch control must disable direct translation")
@@ -1005,18 +1018,25 @@ final class InteractionTests: XCTestCase {
         app.launch()
 
         _ = app.windows.firstMatch.waitForExistence(timeout: 10)
-        let installedApps = app.buttons["本机应用"]
-        for _ in 0..<4 { if installedApps.exists && installedApps.isHittable { break }; app.swipeUp() }
-        XCTAssertTrue(installedApps.waitForExistence(timeout: 8))
-        installedApps.tap()
-        XCTAssertTrue(app.navigationBars["本机应用"].waitForExistence(timeout: 5))
-
-        let installSettings = app.buttons["前往安装设置"]
-        if installSettings.waitForExistence(timeout: 3) && installSettings.isHittable {
-            installSettings.tap()
-            XCTAssertTrue(app.navigationBars["安装设置"].waitForExistence(timeout: 5))
-            app.navigationBars.buttons.element(boundBy: 0).tap()
+        let installedApps = app.buttons["accounts.installed-apps"]
+        if installedApps.exists {
+            for _ in 0..<4 { if installedApps.isHittable { break }; app.swipeUp() }
+            installedApps.tap()
             XCTAssertTrue(app.navigationBars["本机应用"].waitForExistence(timeout: 5))
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+        }
+
+        let settings = app.buttons["accounts.settings"]
+        for _ in 0..<4 { if settings.exists && settings.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(settings.waitForExistence(timeout: 8))
+        settings.tap()
+
+        openSettingsPage("sources", in: app)
+        let firstSource = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Timbrd'")).firstMatch
+        if firstSource.waitForExistence(timeout: 5) {
+            firstSource.tap()
+            XCTAssertTrue(app.navigationBars["Timbrd"].waitForExistence(timeout: 5))
+            app.navigationBars.buttons.element(boundBy: 0).tap()
         }
         app.terminate()
     }
