@@ -50,7 +50,15 @@ struct DecryptDetailView: View {
                     }
                 }
             } else {
-                ContentUnavailableView("记录已不存在", systemImage: "clock.arrow.circlepath")
+                if #available(iOS 17, *) {
+                    ContentUnavailableView("记录已不存在", systemImage: "clock.arrow.circlepath")
+                } else {
+                    EmptyState(
+                        title: "记录已不存在",
+                        message: "移除处理记录不会删除原始 IPA 或已保存的副本。",
+                        symbol: "clock.arrow.circlepath"
+                    )
+                }
             }
         }
         .toolPage()
