@@ -742,8 +742,9 @@ private struct RevealPreviewShape: Shape {
     let verticalInset: CGFloat
 
     func path(in rect: CGRect) -> Path {
-        CompatibleCardShape(top: top, bottom: bottom)
-            .path(in: rect.insetBy(dx: 0, dy: verticalInset))
+        let clampedInset = min(max(0, verticalInset), max(0, rect.height / 2))
+        return CompatibleCardShape(top: top, bottom: bottom)
+            .path(in: rect.insetBy(dx: 0, dy: clampedInset))
     }
 }
 

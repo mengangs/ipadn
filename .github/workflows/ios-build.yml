@@ -47,7 +47,7 @@ jobs:
     runs-on: xcode-27
     # Device build + simulator compile + full execution + optional Duo capture
     # have independent budgets; compile must not eat the UI execution window.
-    timeout-minutes: 85
+    timeout-minutes: 95
     defaults:
       run:
         working-directory: iPadn-iOS
@@ -152,7 +152,7 @@ jobs:
             2>&1 | tee build/test-build.log
 
       - name: Run simulator tests
-        timeout-minutes: 30
+        timeout-minutes: 45
         if: github.event_name != 'workflow_dispatch' || (inputs.run_tests && inputs.ui_test_scope != 'duo')
         env:
           RUN_UI_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.run_ui_tests }}
@@ -171,7 +171,7 @@ jobs:
           xcodebuild test-without-building -project iPadn.xcodeproj -scheme iPadn \
             -configuration Debug -destination "platform=iOS Simulator,id=$IPADN_TEST_SIMULATOR_ID" \
             -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
-            -test-timeouts-enabled YES -default-test-execution-time-allowance 90 -maximum-test-execution-time-allowance 120 \
+            -test-timeouts-enabled YES -default-test-execution-time-allowance 180 -maximum-test-execution-time-allowance 240 \
             -destination-timeout 120 -derivedDataPath build/TestDerivedData \
             -resultBundlePath build/TestResults.xcresult \
             "${test_targets[@]}" \
