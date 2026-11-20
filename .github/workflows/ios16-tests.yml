@@ -1,0 +1,45 @@
+name: iOS 16 compatibility
+
+on:
+  push:
+    branches: [fix-ios-16]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    defaults:
+      run:
+        working-directory: iPadn-iOS
+    steps:
+      - uses: actions/checkout@v4
+      - name: Boot iOS 16.4
+        run: |
+          xcodebuild -downloadPlatform iOS -buildVersion 16.4
+          device=$(xcrun simctl create iPadn-iOS-16 com.apple.CoreSimulator.SimDeviceType.iPhone-14 com.apple.CoreSimulator.SimRuntime.iOS-16-4)
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          echo "SIMULATOR_ID=$device" >> "$GITHUB_ENV"
+      - name: Run unit tests and launch the app on iOS 16.4
+        run: |
+          mkdir -p build
+          xcodebuild test -project iPadn.xcodeproj -scheme iPadn \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -only-testing:iPadnTests \
+            -only-testing:iPadnUITests/InteractionTests/testCompletedActionsHaveEqualSizeAndOpenInstallationSettings \
+            -parallel-testing-enabled NO -resultBundlePath build/iOS16.xcresult \
+            CODE_SIGNING_ALLOWED=NO
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios16-test-results
+          path: iPadn-iOS/build/iOS16.xcresult
+          if-no-files-found: ignore
