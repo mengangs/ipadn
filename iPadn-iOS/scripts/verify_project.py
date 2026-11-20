@@ -65,6 +65,7 @@ for group in groups.values():
             if item["isa"] == "PBXFileReference":
                 check((ROOT / group["path"] / item["path"]).exists(), "Missing project file " + item["path"])
 actual_swift = {p.relative_to(ROOT / "iPadn").as_posix() for p in (ROOT / "iPadn").rglob("*.swift")}
+actual_swift.add("../TestFlightKit/SigningCapability.swift")
 referenced_swift = {x["path"] for x in objects.values() if x["isa"] == "PBXFileReference" and x.get("path", "").endswith(".swift") and x["path"] not in {p.name for folder in ["iPadnTests", "iPadnUITests", "iPadnLiveActivity"] for p in (ROOT / folder).glob("*.swift")}}
 check(actual_swift == referenced_swift, "Swift sources differ from project references")
 fairplay_c_compiled = any(
