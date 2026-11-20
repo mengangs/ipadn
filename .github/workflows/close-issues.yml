@@ -1,0 +1,52 @@
+name: Redirect New Issues to Telegram
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  close-and-redirect:
+    if: github.event.issue.author_association != 'OWNER' && !startsWith(github.event.issue.title, '[公告 / Notice]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment, close, and lock issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              "感谢关注 iPadn！",
+              "",
+              "由于维护精力有限，**GitHub Issues 已停止受理并转为只读归档**，不再于此处处理 BUG 反馈或功能请求。",
+              "",
+              "请前往官方 Telegram 频道对应版本贴文评论区反馈，便于集中排查与统一跟进：",
+              "- 📢 官方频道：https://t.me/ipadn_official",
+              "",
+              "---",
+              "",
+              "Thank you for using iPadn! **GitHub Issues are now archived (read-only)** due to limited maintainer bandwidth.",
+              "Please submit bug reports and questions under the matching release post in our Official Telegram Channel: https://t.me/ipadn_official"
+            ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: "closed",
+              state_reason: "not_planned"
+            });
+
+            await github.rest.issues.lock({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });

@@ -18,10 +18,19 @@ struct PackageSourceDetailView: View {
     private var exists: Bool { url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false }
     private var attempts: [DecryptRecord] { url.map { ui.attempts(url: $0, jobID: jobID) } ?? [] }
     private var localMeta: StandalonePackageMeta? { url.flatMap { ui.localMetadata[$0] } }
+    #if canImport(TestFlightKit)
+    private var tfItem: TFProductItem? { url.flatMap { TFProductIndex.shared.item(forFile: $0) } }
+    #endif
 
     private var name: String {
-        PackageStage.displayName(
+        #if canImport(TestFlightKit)
+        let tfName = tfItem?.displayName
+        #else
+        let tfName: String? = nil
+        #endif
+        return PackageStage.displayName(
             job?.app.name
+                ?? tfName
                 ?? localMeta?.name
                 ?? url?.deletingPathExtension().lastPathComponent
                 ?? AppText.text("原始 IPA")
@@ -35,6 +44,13 @@ struct PackageSourceDetailView: View {
             version = job.conciseVersionLabel
             bytes = job.app.size
         } else {
+            #if canImport(TestFlightKit)
+            if let tfItem {
+                version = tfItem.versionBuildLabel
+                bytes = tfItem.fileSize
+                return [version, bytes > 0 ? bytes.byteLabel : ""].filter { !$0.isEmpty }.joined(separator: " · ")
+            }
+            #endif
             let v = (localMeta?.version ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             version = v.isEmpty ? "" : "v\(v)"
             bytes = localMeta?.bytes ?? 0
@@ -44,7 +60,11 @@ struct PackageSourceDetailView: View {
 
     private var iconURL: URL? {
         if let job { return manager.packageIconURL(job) ?? job.app.iconURL }
-        return localMeta?.iconURL
+        if let icon = localMeta?.iconURL { return icon }
+        #if canImport(TestFlightKit)
+        if let icon = tfItem?.iconURL { return icon }
+        #endif
+        return nil
     }
 
     private var activeAttempt: DecryptRecord? {
@@ -284,8 +304,19 @@ struct PackageSourceDetailView: View {
         Task { @MainActor in
             defer { deleting = false }
             do {
-                if let job { _ = try await manager.removeBatch([job.id]) }
-                else if let url { try FileManager.default.removeItem(at: url) }
+                if let job {
+                    _ = try await manager.removeBatch([job.id])
+                } else if let url {
+                    #if canImport(TestFlightKit)
+                    if let tfItem = TFProductIndex.shared.item(forFile: url) {
+                        TFProductIndex.shared.delete(tfItem)
+                    } else {
+                        try FileManager.default.removeItem(at: url)
+                    }
+                    #else
+                    try FileManager.default.removeItem(at: url)
+                    #endif
+                }
                 ui.markFilesChanged()
                 store.infoMessage = AppText.text("已删除原始 IPA")
                 dismiss()

@@ -151,6 +151,7 @@ enum AccountRoute: Hashable, Codable {
     case reauthenticate(String)
     case installedApps
     case wifiTransfer
+    case testFlight
     case settings(SettingsView.Page)
     case installation
     case credentials
@@ -1831,29 +1832,42 @@ final class ToolStore: ObservableObject {
     @Published private(set) var appUpdateChecking = false
     private(set) var appUpdateDiagnostic = "No update check attempted in this session."
 
-    /// Looks for a newer iPadn release at most every 12 hours unless forced.
+    /// Automatic check cooldown (1 hour; manual checks bypass this).
+    static let autoUpdateCheckInterval: TimeInterval = 3600
+
+    /// Looks for a newer iPadn release at most once per `autoUpdateCheckInterval` unless forced.
     /// Returns whether the check reached GitHub.
     @discardableResult
-    func checkAppUpdate(force: Bool = false) async -> Bool {
+    func checkAppUpdate(force: Bool = false, session: URLSession = .shared) async -> Bool {
         #if DEBUG
         if visualPreview { return false }
         #endif
         let key = "storage_appUpdateChecked"
-        if !force, let last = LocalResources.defaults.object(forKey: key) as? Date, Date().timeIntervalSince(last) < 12 * 3600 {
-            if appUpdate == nil, let data = LocalResources.defaults.data(forKey: "storage_appUpdate") {
-                appUpdate = AppUpdateService.newer(try? JSONDecoder().decode(AppRelease.self, from: data))
+        let cachedRelease: AppRelease? = LocalResources.defaults.data(forKey: "storage_appUpdate")
+            .flatMap { try? JSONDecoder().decode(AppRelease.self, from: $0) }
+        // Upgrade legacy single-URL cache entries where `package` mistakenly pointed at `-lite-`.
+        let legacyLiteOnlyCache = cachedRelease.map {
+            ($0.package?.lastPathComponent.lowercased().contains("-lite") == true) && $0.litePackage == nil
+        } ?? false
+        if !force, !legacyLiteOnlyCache,
+           let last = LocalResources.defaults.object(forKey: key) as? Date,
+           Date().timeIntervalSince(last) < Self.autoUpdateCheckInterval {
+            if appUpdate == nil, let cachedRelease {
+                appUpdate = AppUpdateService.newer(cachedRelease)
             }
             return true
         }
         guard !appUpdateChecking else { return false }
         appUpdateChecking = true
         defer { appUpdateChecking = false }
-        guard let latest = await AppUpdateService.latest(report: { self.appUpdateDiagnostic = $0 }) else { return false }
+        guard let latest = await AppUpdateService.latest(session: session, report: { self.appUpdateDiagnostic = $0 }) else { return false }
         LocalResources.defaults.set(Date(), forKey: key)
         LocalResources.defaults.set(try? JSONEncoder().encode(latest), forKey: "storage_appUpdate")
         appUpdate = AppUpdateService.newer(latest)
         // Installed already: the kept package is no longer needed.
-        if appUpdate == nil { AppUpdateService.removeDownloads() }
+        if appUpdate == nil {
+            AppUpdateService.removeDownloads()
+        }
         return true
     }
 

@@ -324,15 +324,15 @@ struct DecryptDetailView: View {
                                 .font(.subheadline)
                                 .fixedSize(horizontal: false, vertical: true)
                         } else {
-                            Text(verbatim: failure.title).font(.headline)
+                            Text(failure.title).font(.headline)
                             if !failure.isCertain {
                                 Text("可能原因").font(.caption.weight(.semibold)).foregroundStyle(.orange)
                             }
-                            Text(verbatim: DiagnosticRedactor.sanitize(failure.reason))
+                            Text(DiagnosticRedactor.sanitize(failure.reason))
                                 .font(.subheadline)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        Text(verbatim: DiagnosticRedactor.sanitize(failure.advice))
+                        Text(DiagnosticRedactor.sanitize(failure.advice))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

@@ -155,6 +155,9 @@ struct iPadnApp: App {
                 store.downloads.resumeAutoInstalls()
                 AutoInstall.presentNext(store)
                 DownloadActivity.shared.sync()
+                if !LocalResources.isPreview, store.settings.appUpdateCheck {
+                    Task { await store.checkAppUpdate() }
+                }
             }
             guard phase == .background, !LocalResources.isPreview else { return }
             TemporaryExportSweeper.sweepStaleFiles(maxAge: 900)

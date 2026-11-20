@@ -39,6 +39,25 @@ struct DownloadsView: View {
     @State private var pendingLibrary = false
     @State private var pendingAddLink = false
     @State private var pendingActionError: String?
+    #if canImport(TestFlightKit)
+    @ObservedObject private var tfProducts = TFProductIndex.shared
+    @ObservedObject private var tfModel = TFHomeModel.shared
+    @State private var installingTFItem: TFProductItem?
+    @State private var pendingDeleteTF: TFProductItem?
+    private var filteredTFItems: [TFProductItem] {
+        guard filter.includesTestFlight else { return [] }
+        return tfProducts.items.filter { item in
+            term.isEmpty
+                || item.displayName.localizedCaseInsensitiveContains(term)
+                || item.bundleID.localizedCaseInsensitiveContains(term)
+                || item.shortVersion.localizedCaseInsensitiveContains(term)
+                || item.buildVersion.localizedCaseInsensitiveContains(term)
+        }
+    }
+    private var hasAnyDownloads: Bool { !manager.jobs.isEmpty || !tfProducts.items.isEmpty }
+    #else
+    private var hasAnyDownloads: Bool { !manager.jobs.isEmpty }
+    #endif
     private var filteredJobs: [DownloadJob] {
         manager.jobs.filter { !swipingDelete.contains($0.id) && filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
     }
@@ -74,11 +93,24 @@ struct DownloadsView: View {
         }
         .task(id: manager.jobs.filter { $0.status == .completed }.map { $0.id.uuidString }.joined()) {
             await manager.loadPackageIcons()
+            #if canImport(TestFlightKit)
+            tfProducts.refresh()
+            #endif
             if store.settings.updateNotifications { await store.checkForUpdates() }
             // Automatic starts are coordinated by RootView, including while
             // this tab is not visible. Existing products are never replaced.
         }
-        .refreshable { await store.checkForUpdates(force: true) }
+        .onAppear {
+            #if canImport(TestFlightKit)
+            tfProducts.refresh()
+            #endif
+        }
+        .refreshable {
+            #if canImport(TestFlightKit)
+            tfProducts.refresh()
+            #endif
+            await store.checkForUpdates(force: true)
+        }
         .animation(UX.motion(reduceMotion), value: manager.jobs.map(\.id))
         .toolPage().navigationTitle("下载").navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -86,7 +118,7 @@ struct DownloadsView: View {
                 Button(editMode.isEditing ? "完成" : "编辑") { toggleEditMode() }
                 .disabled(manager.jobs.isEmpty || switchingMode)
                 .accessibilityIdentifier("downloads.edit")
-                if !manager.jobs.isEmpty {
+                if hasAnyDownloads {
                     Menu {
                         // Buttons rather than a Picker: each menu item keeps its
                         // own accessibility identifier, which a Picker does not
@@ -259,6 +291,48 @@ struct DownloadsView: View {
         .sheet(item: $installing) { job in
             PackageInstallationView(job: job).sheetNotice().environmentObject(store).environmentObject(manager)
         }
+        #if canImport(TestFlightKit)
+        .sheet(item: $installingTFItem) { item in
+            let beta = item.betaApp
+            TFInstallSheet(
+                app: beta,
+                packageURL: item.fileURL,
+                iconURL: item.iconURL,
+                iconColors: item.iconColors,
+                iconRevision: tfModel.iconRevisions[item.appID] ?? 0,
+                installation: store.installation,
+                isInstalling: tfModel.installingAppIDs.contains(item.appID),
+                isInstalled: tfModel.installedAppIDs.contains(item.appID),
+                installNote: tfModel.installNotes[item.appID],
+                installFailed: tfModel.installFailedAppIDs.contains(item.appID),
+                needsChannelGuide: tfModel.installNeedsChannelAppIDs.contains(item.appID),
+                onInstall: { method in
+                    tfModel.install(beta, method: method, installation: store.installation)
+                },
+                onDelete: {
+                    tfProducts.delete(item)
+                    installingTFItem = nil
+                },
+                onOpenSettings: {
+                    installingTFItem = nil
+                    store.selectTab(.accounts)
+                    store.accountNav.push(.installation)
+                }
+            )
+        }
+        .actionConfirmation(
+            isPresented: Binding(get: { pendingDeleteTF != nil }, set: { if !$0 { pendingDeleteTF = nil } }),
+            title: "删除 TestFlight 安装包？",
+            message: "已下载的 TestFlight 安装包会被删除，TestFlight 页对应应用将同步恢复为「获取」。",
+            confirmTitle: "删除文件"
+        ) {
+            if let item = pendingDeleteTF {
+                pendingDeleteTF = nil
+                tfProducts.delete(item)
+                store.infoMessage = AppText.text("已删除 TestFlight 安装包")
+            }
+        }
+        #endif
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
     }
     /// Row-header count: the active filter, then how many have updates.
@@ -375,8 +449,13 @@ struct DownloadsView: View {
     }
     /// One layout of the list: task cards, or the compact rows of edit mode.
     @ViewBuilder private func downloadList(edit: Bool, visible: [DownloadJob], updates: [UUID: StoreApp]) -> some View {
+            #if canImport(TestFlightKit)
+            let visibleTF = edit ? [] : filteredTFItems
+            #else
+            let visibleTF: [Int] = []
+            #endif
             List {
-                if !manager.jobs.isEmpty {
+                if hasAnyDownloads {
                     Section {
                         SearchInput(text: $term, placeholder: "搜索名称、版本或 Bundle ID", capsule: true)
                             .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
@@ -436,10 +515,10 @@ struct DownloadsView: View {
             }
                 if let warning = manager.discoveryWarning { Section { InlineIssue(message: warning) } }
                 if let warning = manager.saveWarning { Section { InlineIssue(message: warning) } }
-                if visible.isEmpty {
+                if visible.isEmpty && visibleTF.isEmpty {
                     Section {
-                        EmptyState(title: manager.jobs.isEmpty ? "暂无下载任务" : "没有匹配任务", message: manager.jobs.isEmpty ? "在搜索中获取应用，或点按右上角的 + 导入安装包。" : "试试其他筛选条件。", symbol: manager.jobs.isEmpty ? "tray.and.arrow.down" : "line.3.horizontal.decrease.circle", actionTitle: manager.jobs.isEmpty ? "搜索应用" : "显示全部", action: {
-                            if manager.jobs.isEmpty { store.selectTab(.search) } else { term = ""; filter = .all }
+                        EmptyState(title: !hasAnyDownloads ? "暂无下载任务" : "没有匹配任务", message: !hasAnyDownloads ? "在搜索中获取应用，或点按右上角的 + 导入安装包。" : "试试其他筛选条件。", symbol: !hasAnyDownloads ? "tray.and.arrow.down" : "line.3.horizontal.decrease.circle", actionTitle: !hasAnyDownloads ? "搜索应用" : "显示全部", action: {
+                            if !hasAnyDownloads { store.selectTab(.search) } else { term = ""; filter = .all }
                         })
                     }
                 } else if edit {
@@ -537,9 +616,127 @@ struct DownloadsView: View {
                             }
                         }
                     }
+                    #if canImport(TestFlightKit)
+                    if !visibleTF.isEmpty {
+                        Section {
+                            ForEach(visibleTF) { item in
+                                tfProductRow(item)
+                            }
+                        } header: {
+                            Text("TestFlight · \(visibleTF.count)")
+                        }
+                    }
+                    #endif
                 }
             }
     }
+
+    #if canImport(TestFlightKit)
+    private func tfProductRow(_ item: TFProductItem) -> some View {
+        let isInstalled = tfModel.installedAppIDs.contains(item.appID)
+        let isInstalling = tfModel.installingAppIDs.contains(item.appID)
+        let record = packages.attempts(url: item.fileURL).first
+        let hasDecrypted = store.settings.proMode
+            && record.map { DecryptOutcomeStyle($0) == .success && packages.currentOutput($0) != nil } == true
+        let sizeText = item.fileSize > 0 ? item.fileSize.byteLabel : ""
+        let metaText = [item.compactVersionLabel, sizeText].filter { !$0.isEmpty }.joined(separator: " · ")
+
+        return HStack(spacing: 12) {
+            TFAppIconView(
+                fileURL: item.iconURL,
+                colors: item.iconColors,
+                appName: item.displayName,
+                size: 64,
+                revision: tfModel.iconRevisions[item.appID] ?? 0
+            )
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(verbatim: item.displayName)
+                        .font(.body.weight(.medium))
+                        .lineLimit(2)
+                    TagBadge(text: "TF", tint: .blue)
+                }
+                if !metaText.isEmpty {
+                    Text(verbatim: metaText)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                HStack(spacing: 8) {
+                    TaskStatusPill(status: .completed)
+                    if isInstalled {
+                        TagBadge(text: "已安装", tint: .green)
+                    }
+                    if hasDecrypted {
+                        HStack(spacing: 3) {
+                            Image(systemName: "lock.open.fill").imageScale(.small).accessibilityHidden(true)
+                            Text("已解密")
+                        }
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(isInstalling ? "正在处理…" : "安装") {
+                UX.tapLight()
+                installingTFItem = item
+            }
+            .buttonStyle(CapsuleButtonStyle(filled: !isInstalled))
+            .disabled(isInstalling)
+            .accessibilityIdentifier("download.tf.install." + item.bundleID)
+        }
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("download.tf." + item.bundleID)
+        .revealActions(
+            id: "download.tf." + item.bundleID,
+            enabled: !actionBusy && !packages.protects(url: item.fileURL),
+            [
+                .delete(fills: false) { pendingDeleteTF = item },
+                RevealAction(title: "分享", systemImage: "square.and.arrow.up", tint: .blue, role: nil) {
+                    share = SharedFile(url: item.fileURL)
+                }
+            ]
+        )
+        .contextMenu {
+            Button("安装", systemImage: "square.and.arrow.down") {
+                installingTFItem = item
+            }
+            if store.settings.proMode {
+                if let record {
+                    let style = DecryptOutcomeStyle(record)
+                    if style == .running {
+                        Button("查看解密进度", systemImage: "circle.dotted") { openPackage(.record(record.id)) }
+                    } else if style == .success && packages.currentOutput(record) != nil {
+                        Button("查看解密结果", systemImage: "lock.open") { openPackage(.record(record.id)) }
+                    } else {
+                        Button("解密 IPA", systemImage: "lock.open") {
+                            openPackage(.file(item.fileURL))
+                            packages.requestStart(url: item.fileURL)
+                        }
+                    }
+                } else {
+                    Button("解密 IPA", systemImage: "lock.open") {
+                        openPackage(.file(item.fileURL))
+                        packages.requestStart(url: item.fileURL)
+                    }
+                }
+                Button("查看原始 IPA", systemImage: "shippingbox") {
+                    openPackage(.file(item.fileURL))
+                }
+            }
+            Button("导出文件", systemImage: "square.and.arrow.up") {
+                share = SharedFile(url: item.fileURL)
+            }
+            Button("删除任务及文件", systemImage: "trash", role: .destructive) {
+                pendingDeleteTF = item
+            }
+            .disabled(packages.protects(url: item.fileURL))
+        }
+    }
+    #endif
 
     /// Like a drawer: the current rows slide up and in, the list swaps while
     /// nothing is showing, then the other layout's rows slide down and out.

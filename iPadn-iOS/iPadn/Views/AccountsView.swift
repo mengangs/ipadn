@@ -99,8 +99,23 @@ struct AccountsView: View {
                     NavigationLink(value: AccountRoute.wifiTransfer) { Label("Wi‑Fi 传输", systemImage: "laptopcomputer.and.arrow.down") }
                         .accessibilityIdentifier("account.wifi-transfer")
                 }
-                NavigationLink(value: AccountRoute.settings(.root)) { Label("设置", systemImage: "gearshape") }
-                    .accessibilityIdentifier("accounts.settings")
+                NavigationLink(value: AccountRoute.testFlight) { Label("TestFlight", systemImage: "airplane") }
+                    .accessibilityIdentifier("account.testflight")
+                NavigationLink(value: AccountRoute.settings(.root)) {
+                    HStack {
+                        Label("设置", systemImage: "gearshape")
+                        if let update = store.appUpdate {
+                            Spacer()
+                            Text("可更新 v\(update.version)")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .foregroundStyle(.white)
+                                .background(Color.accentColor, in: Capsule())
+                        }
+                    }
+                }
+                .accessibilityIdentifier("accounts.settings")
             }
             if apple.active != nil {
                 Section {

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(TestFlightKit)
+import TestFlightKit
+#endif
 #if canImport(FairPlayCore)
 import FairPlayCore
 #endif
@@ -28,60 +31,21 @@ enum FairPlayEnvironment {
     /// App Group identifiers this build may use: an explicit Info.plist value,
     /// then whatever the embedded provisioning profile authorises (so the app is
     /// not tied to one certificate), then the identifiers of the research builds.
-    static let groupCandidates: [String] = {
-        var values: [String] = []
-        if let configured = Bundle.main.object(forInfoDictionaryKey: "FairPlayAppGroup") as? String,
-           !configured.isEmpty {
-            values.append(configured)
-        }
-        values.append(contentsOf: profileGroups)
-        values.append(contentsOf: [
-            "group.b049540b2af108ef.1",
-            "group.b049540b2af108ef.2",
-            "group.b049540b2af108ef.3",
-            "group.b049540b2af108ef.4",
-            "group.b049540b2af108ef.5",
-        ])
-        var seen = Set<String>()
-        return values.filter { seen.insert($0).inserted }
-    }()
+    /// Whatever `SigningCapability` resolved. One resolver for the whole app: the profile
+    /// parse, the writability probe and the process cache all live there.
+    static var groupCandidates: [String] { SigningCapability.groups() }
 
-    /// App Groups granted by the provisioning profile embedded at signing time.
-    static var profileGroups: [String] {
-        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
-              let raw = try? Data(contentsOf: url),
-              let start = raw.range(of: Data("<?xml".utf8)),
-              let end = raw.range(of: Data("</plist>".utf8), options: .backwards),
-              start.lowerBound < end.upperBound,
-              let plist = try? PropertyListSerialization.propertyList(
-                from: raw.subdata(in: start.lowerBound..<end.upperBound), format: nil),
-              let dictionary = plist as? [String: Any],
-              let entitlements = dictionary["Entitlements"] as? [String: Any],
-              let groups = entitlements["com.apple.security.application-groups"] as? [String]
-        else { return [] }
-        return groups
-    }
-
-    /// First group container this build is entitled to, if any.
+    /// The shared container this build may stage in, or nil when the signing grants none.
+    /// Deliberately no fallback: FairPlay only reads that container, so pretending otherwise
+    /// would turn "no capability" into an obscure EPERM later.
     static func groupContainer() -> URL? {
-        #if canImport(Darwin)
-        for group in groupCandidates {
-            if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) {
-                return url
-            }
-        }
-        #endif
-        return nil
+        SigningCapability.resolved?.url
     }
 
     static func groupIdentifier(for url: URL) -> String? {
-        #if canImport(Darwin)
-        for group in groupCandidates where
-            FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)?.path == url.path {
-            return group
-        }
-        #endif
-        return nil
+        guard let resolved = SigningCapability.resolved,
+              resolved.url.path == url.path else { return nil }
+        return resolved.identifier
     }
 
     /// Bundle-internal staging directory; writing here invalidates the seal.
@@ -138,7 +102,7 @@ enum FairPlayEnvironment {
             lines.append(FairPlayLine(kind: .info, text: "group writable: \(isWritable(group) ? "yes" : "no")"))
         } else {
             lines.append(FairPlayLine(kind: .fail,
-                text: "no App Group container (profile lacks com.apple.security.application-groups?)"))
+                text: "没有可用的 App Group 容器：当前签名未授予共享容器能力"))
         }
         lines.append(FairPlayLine(kind: .info, text: "data container: \(NSHomeDirectory())"))
         lines.append(FairPlayLine(kind: .info,

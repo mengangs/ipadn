@@ -7,16 +7,22 @@
 **在 iPhone 和 iPad 上搜索、下载、安装你拥有的 App。**
 支持 iPhone、iPad、Apple TV 与 Mac 应用，包括历史版本与已下架应用。
 
+✨ **v2.3.0 重磅新增 [TestFlight 下载与安装（实验性）](#testflight-实验性新功能)** · 📢 **反馈与新版优先前往 [官方 Telegram 频道](https://t.me/ipadn_official)**
+
 [![最新版本](https://img.shields.io/github/v/release/mengangs/ipadn?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
+[![Telegram 频道](https://img.shields.io/badge/Telegram-%40ipadn__official-26A5E4?logo=telegram&logoColor=white)](https://t.me/ipadn_official)
 [![下载量](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F&color=111111)](https://github.com/mengangs/ipadn/releases)
 ![系统要求](https://img.shields.io/badge/iOS%20%2F%20iPadOS-16%2B-111111)
 [![许可证](https://img.shields.io/github/license/mengangs/ipadn?label=%E8%AE%B8%E5%8F%AF%E8%AF%81&color=111111)](LICENSE)
 
 **简体中文** · [English](README_EN.md)
 
-[下载](https://github.com/mengangs/ipadn/releases/latest) · [安装下载的应用](#安装下载的应用) · [常见问题](#常见问题) · [反馈问题](https://github.com/mengangs/ipadn/issues) · [支持 iPadn](#支持-ipadn)
+[下载](https://github.com/mengangs/ipadn/releases/latest) · [Telegram 官方频道](https://t.me/ipadn_official) · [TestFlight 说明](#testflight-实验性新功能) · [安装下载的应用](#安装下载的应用) · [常见问题](#常见问题) · [支持 iPadn](#支持-ipadn)
 
 </div>
+
+> [!IMPORTANT]
+> **加入官方频道 & Issues 归档说明**：为了将有限的维护精力集中在核心开发与更及时的交互支持上，**新版本（标准版、精简版及源码包）现优先发布在 [官方 Telegram 频道 (`@ipadn_official`)](https://t.me/ipadn_official)**（GitHub 同步略慢一步）。同时 **GitHub Issues 已停止受理新提问**（历史 Issues 保留只读归档以供检索），所有使用交流、TestFlight 排障与 BUG 反馈请直接前往频道**对应版本贴文评论区**提交。
 
 <p align="center">
   <img src="docs/images/zh/01-search.jpg" width="24%" alt="搜索应用">
@@ -33,6 +39,17 @@
 </p>
 
 ---
+
+## 2.3.0 更新
+
+> **从 v2.2.1 到 v2.3.0 的跨度说明**：自 GitHub 上一个正式版 **v2.2.1** 发布以来，我们在本地持续完成了 **20+ 次功能研发与底层重构迭代**，现统一合并发布 **v2.3.0**。除了从零打造的 **TestFlight 模块**，也囊括了应用内更新选择器、本地化名称展示与社区体系迁移。
+
+- **🆕 TestFlight 主页、下载与原生安装（实验性新功能）**：在「账号 › TestFlight」从零构建原生 Store 风格页面，按「测试中 / 平台不兼容 / 以往测试」分类浏览、搜索并多账号切换；支持实时速度与 ETA 进度条下载、SINF 注入与 `InstallCoordinator` 统一安装（原生安装可免解密免重签直装运行），并接入专业模式「应用包」与 `FairPlayCore` 解密定位；内置 `TFNet` 网络三模式、代理失败自动直连旁路、DoH/Fake-IP 预检及严格脱敏的轮转诊断日志。
+- **⬆️ 应用内更新弹窗升级（`AppUpdateView`）**：当发现 iPadn 新版本时，直接在应用内提示并支持一键切换 **标准版 / 精简版**、核对体积与更新说明后下载。
+- **🌏 本地化名称与界面打磨**：TestFlight、商店列表、「下载」及专业模式「应用包」列表全面支持中文等本地化应用名称显示；补充包体详情元数据与一键复制 `Bundle ID`，优化滚动性能与视觉质感。
+- **📢 接入官方 Telegram 频道（11 种语言同步）**：在「账号 › 设置 › 支持 iPadn」下方及支持详情页加入 [官方 Telegram 频道](https://t.me/ipadn_official) 入口；继续保持免费开源，新版优先于频道发布，GitHub Issues 停止受理并保留历史只读归档。
+- ⚠️ **实验性与免责提醒**：TestFlight 为全新开发功能，受 Apple 服务端策略、测试资格与网络规则影响，存在一定不稳定性；仅建议管理个人合法授权的测试应用，建议先用备用账号体验，详见下方 [TestFlight 实验性新功能](#testflight-实验性新功能) 说明与 [更新说明](RELEASE_NOTES.md)。
+- 继续提供标准版和精简版，支持 iOS / iPadOS 16 及更新版本。
 
 ## 2.2.1 更新
 
@@ -82,6 +99,7 @@
 
 | | |
 | --- | --- |
+| ✈️ **TestFlight（🆕 实验性）** | 在「账号 › TestFlight」管理名下测试应用：按测试中/平台不兼容/以往测试分类展示、搜索与多账号切换，支持实时速度与 SINF 注入原生免重签直装、投影到「下载」/「应用包」与本机解密，内置 `TFNet` 代理旁路与脱敏诊断。 |
 | 🔍 **搜索与发现** | 输入应用名称、App ID 或 App Store 链接，切换商店地区和平台（iPhone / iPad / Apple TV / Mac）。最近搜索以标签显示；「发现」、详情页预览图和用户评论均可按需在设置中关闭，开启时可浏览各地区的免费榜、付费榜、畅销榜以及同一开发者的其他应用。 |
 | 🌐 **翻译** | 简介和更新说明不是你的语言时，默认打开系统翻译面板。iOS 18 及以上可在「设置 › 外观与图标 › 翻译」开启直接替换并提前准备语言包，译文跟随软件语言，可显示原文。 |
 | 🕘 **历史版本** | 查看每个版本的版本号、日期、IPA 安装包大小、对应版本图标和更新说明并下载旧版本，也可以直接输入版本 ID。长按版本行可复制版本号或版本 ID；大字体下自动纵向排版。无法取得大小时显示「—」，不会套用最新版的大小。图标按需从对应 IPA 的主图标 PNG 读取并缓存（可在外观与图标设置关闭读取以节省流量），无法提取时显示占位，不套用当前商店图标；仅含 Assets.car 的版本暂不支持。已下载的应用可以「保留此版本」，不再提醒更新。 |
@@ -106,7 +124,7 @@
 
 界面参考 App Store 设计，外观默认跟随系统、图标默认深色（都可在设置中更改），支持动态字体和 iPad 侧栏，还可以在设置中更换应用图标。
 
-**界面语言**：简体中文、繁體中文、English、日本語、한국어、Русский、Español、Français、Deutsch、Português (Brasil)、العربية，阿拉伯语使用从右到左的排版。iPadn 跟随系统语言，也可以在「设置 › iPadn › 语言」中单独设置。英文由社区贡献者完善，其他语言为机器辅助翻译，欢迎在 [Issues](https://github.com/mengangs/ipadn/issues) 或 Pull Request 中纠错。
+**界面语言**：简体中文、繁體中文、English、日本語、한국어、Русский、Español、Français、Deutsch、Português (Brasil)、العربية，阿拉伯语使用从右到左的排版。iPadn 跟随系统语言，也可以在「设置 › iPadn › 语言」中单独设置。英文由社区贡献者完善，其他语言为机器辅助翻译，欢迎在 [官方 Telegram 频道](https://t.me/ipadn_official) 或 Pull Request 中纠错。
 
 ## 开始使用
 
@@ -193,6 +211,18 @@ https://raw.githubusercontent.com/mengangs/ipadn/main/altstore-source.json
 3. 下载完成后点分享按钮，通过隔空投送或「文件」传到 Mac 上安装。
 
 第一次下载 Mac 应用时，iPadn 会额外下载约 47 MB 的组件，之后会重复使用。开发者在官网提供的 DMG / PKG / ZIP 也可以在详情页直接下载。
+
+## TestFlight 实验性新功能
+
+> [!WARNING]
+> **实验性功能、稳定性与免责声明**：TestFlight 模块在 **v2.3.0** 中首次以**实验性新功能**形式推出。受 Apple 服务端接口策略、账号测试资格、网络/代理规则以及本机原生安装配对状态影响，部分场景可能遇到会话过期需重登、风控二次验证、详情解析失败或下载中断。**建议优先使用备用/测试账号体验，切勿分享配对文件、令牌或完整备份。** 本工具以 [GPL-2.0-or-later](LICENSE) 开源且与 Apple Inc. 无关，仅限合法授权测试与个人研究；使用过程中因接口变动、网络或签名环境导致的任何账号受限或数据损失，开发者不承担责任。
+
+**使用步骤：**
+
+1. 打开 **账号 › TestFlight**，登录或通过右上角头像切换你已加入 TestFlight 测试的 Apple 账号（TestFlight 与主站 iOS 解密会话按 DSID 各自独立持久化，不串号，因此首次进入 TF 可能需要单独完成一次认证）。
+2. 列表自动归类为三栏：**测试中**（当前设备可下载安装的活跃 iOS 构建）、**平台不兼容**（如仅限 Mac / tvOS / visionOS 或仅限 iPad 的测试版）与 **以往测试**（已过期或已移除的旧列表，只读展示）。
+3. 点按下载可实时查看下载速度与剩余时间；带有注入 SINF 的加密包体通过 **原生安装**（需完成本机配对并开启 LocalDevVPN）可直接安装运行，**无需解密或重签**。你也可以将其导出/分享，或在开启「专业模式」后于 **应用包** 页进行本地查看与 `FairPlayCore` 解密。
+4. 若遇到无法加载目录、卡在加载或 401/网络异常，点开 TF 页内的 **网络与诊断**：可在 **跟随系统 / 强制直连 / 强制代理** 间切换，查看 DNS 路径与 Fake-IP 预检，并一键复制严格脱敏的诊断日志到 [官方 Telegram 频道](https://t.me/ipadn_official) 对应版本贴文下反馈。
 
 ## 专业模式
 
@@ -301,9 +331,23 @@ Apple 只允许下载你的账号拥有许可的应用。版本也可能已经�
 </details>
 
 <details>
-<summary><b>可以下载 TestFlight 测试版吗？</b></summary>
+<summary><b>TestFlight 测试版怎么下载和安装？需要解密重签吗？</b></summary>
 
-暂不支持。已有的 IPA 文件可以通过下载页右上角的「+」导入管理。
+前往「账号 › TestFlight」即可浏览名下所有测试应用（按「测试中 / 平台不兼容 / 以往测试」自动分类）。下载完成后：
+- **原生安装**：TestFlight 安装包自带与下载账号绑定的 SINF 授权；在完成设备配对并开启 LocalDevVPN 后点「原生安装」，可直接安装运行，**无需额外解密或重签**。
+- **自签或保存**：也可以在安装包弹窗或「专业模式 › 应用包」中导出、分享或进行本机 FairPlay 解密（依赖签名工具提供的 App Group 权限；若为免费签名或受限环境，界面会自动提示可用方式并降级为保存/分享）。
+</details>
+
+<details>
+<summary><b>为什么「以往测试」里的旧 TestFlight 版本或 Mac 测试版不能下载？</b></summary>
+
+受 Apple TestFlight 服务端策略限制，仅能下载当前账号仍处于测试资格内、且尚未过期或被开发者移除的活跃 **iOS / iPadOS** 构建。已过期/已下架的「以往测试」条目及仅限 macOS / tvOS / visionOS 的项目目前仅作列表只读展示，无法像 App Store 应用那样回溯历史旧版。
+</details>
+
+<details>
+<summary><b>为什么 TestFlight 要重新登录，或者遇到 401 / 加载失败怎么办？</b></summary>
+
+为了防串号与安全隔离，TestFlight 会话（Mac/akd 作用域）与主站解密会话（iOS 作用域）按账号 DSID 分开持久化保存，因此首次使用或会话过期时可能需要单独认证一次（建议先用备用/测试号体验）。若遇到卡在加载、401 或代理不通，可在 TF 页面内点开「网络与诊断」，切换 **跟随系统 / 强制直连 / 强制代理**，查看 DoH 与 Fake-IP 预检，并复制脱敏日志到 [官方 Telegram 频道](https://t.me/ipadn_official) 反馈。
 </details>
 
 <details>
@@ -324,7 +368,7 @@ Apple 只允许下载你的账号拥有许可的应用。版本也可能已经�
 
 <sub>❤️ ❤️ ❤️</sub>
 
-iPadn 会一直**免费、开源、没有广告**。<br>
+iPadn **免费、开源、没有广告**。<br>
 如果它帮你省下了时间，或者你只是喜欢这个项目，欢迎请作者喝杯咖啡 ☕<br>
 你的鼓励是持续更新的动力。
 
@@ -335,15 +379,16 @@ iPadn 会一直**免费、开源、没有广告**。<br>
 | :---: | :---: |
 | [**afdian.com/a/mengangs**](https://afdian.com/a/mengangs)<br><sub>可按月赞助，也可一次性支持</sub> | <img src="docs/images/usdt-bep20.png" width="180" alt="USDT 收款二维码"><br><code>0x5f0cff7587b9fc305f9fa626135789bd5100818e</code> |
 
-<sub>转账 USDT 前请核对网络为 BEP20、地址完全一致，其他网络或币种转入可能无法找回。<br>在 iPadn「账号 › 设置 › 支持 iPadn」中也可以扫码或复制地址。<br>点个 Star、反馈问题或帮忙改进翻译，同样是很大的支持。</sub>
+<sub>转账 USDT 前请核对网络为 BEP20、地址完全一致，其他网络或币种转入可能无法找回。<br>在 iPadn「账号 › 设置 › 支持 iPadn」中也可以扫码或复制地址。<br>点个 Star、加入官方 Telegram 频道或帮忙改进翻译，同样是很大的支持。</sub>
 
 </div>
 
-## 参与贡献
+## 官方频道与反馈说明
 
-- **翻译**：所有界面文字在 [`Localizable.xcstrings`](iPadn-iOS/iPadn/Resources/Localizable.xcstrings) 中，用 Xcode 打开即可逐条编辑。改进现有语言或新增语言都欢迎提交 Pull Request。
-- **反馈问题**：在 [Issues](https://github.com/mengangs/ipadn/issues) 中描述设备、系统版本和操作步骤；方便的话附上「账号 › 设置 › 导出诊断信息」生成的文件，其中不含账号名称和登录凭据。
-- **自行编译**：步骤见 [BUILDING.md](iPadn-iOS/BUILDING.md)。
+- **官方 Telegram 频道**：👉 [**https://t.me/ipadn_official**](https://t.me/ipadn_official)
+- **开源与发布节奏**：iPadn 继续保持**免费开源**，GitHub 仍会同步更新与发布源码；新版本安装包与源码归档会优先发布在官方 Telegram 频道（GitHub 同步略慢一步）。
+- **为什么关闭 GitHub Issues（仅保留历史归档）**：由于作者个人维护精力有限，分散在 GitHub Issues 与社区之间回复容易遗漏，也较难实时核对网络/配对/账号上下文。因此 **GitHub Issues 已停止受理新提交，原有历史 Issues（#1–#106）完整保留为只读归档以便检索参考**；所有新版本交流、TestFlight 问题排查与 BUG 反馈请前往官方 Telegram 频道**对应版本贴文评论区**提交（反馈时建议附上设备型号、系统版本、复现步骤，以及「账号 › 设置 › 备份与维护 › 导出诊断信息」生成的文件——内含严格脱敏处理，不含密码与凭据）。
+- **参与翻译与自编译**：界面文字位于 [`Localizable.xcstrings`](iPadn-iOS/iPadn/Resources/Localizable.xcstrings)，欢迎提交 Pull Request 改进翻译；自行编译步骤见 [BUILDING.md](iPadn-iOS/BUILDING.md)。
 
 ## 致谢
 
@@ -360,4 +405,4 @@ iPadn 会一直**免费、开源、没有广告**。<br>
 
 iPadn 以 [GPL-2.0-or-later](LICENSE) 发布：你可以自由使用、修改和再分发，分发修改版时需要同样开放源代码。
 
-<sub>iPadn 与 Apple Inc. 无关。请只下载你拥有合法许可的应用。</sub>
+<sub>iPadn 与 Apple Inc. 无关，仅限合法授权应用下载、个人技术研究及本人测试版管理。实验性 TestFlight 功能及相关网络/账号操作风险由使用者自行承担。</sub>

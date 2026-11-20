@@ -11,14 +11,15 @@ struct FairPlayFileReport: Sendable {
     /// True when the slice was encrypted before this run.
     let wasEncrypted: Bool
 
+    /// `codeWords` stays in the report as a diagnostic, but it no longer decides
+    /// the verdict: heavily obfuscated or data-only payloads decrypt correctly
+    /// with zero ARM64 landmarks (measured on device 2026-11-19: 14 files landed
+    /// at 0.53–6.19 bits/byte with `code 0->0`, while every accepted file sat at
+    /// or below 7.06). The gate is therefore "the ciphertext really collapsed".
     var ok: Bool {
         guard cryptid == 0 else { return false }
         guard wasEncrypted else { return true }
-        // Real ARM64 code is well below 8 bits/byte and contains RET/PACIBSP
-        // landmarks. A header-only "fix" keeps the ciphertext, so both checks
-        // fail together. Tiny extension stubs are mostly zero padding, which is
-        // why there is no entropy floor: the landmarks are the proof.
-        return entropy < 7.5 && codeWords > 0
+        return entropy < 7.5
     }
 }
 

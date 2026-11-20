@@ -48,6 +48,11 @@ enum PackageInfoService {
         for entry in archive where entry.path.hasPrefix(prefix) { paths.append(String(entry.path.dropFirst(prefix.count))) }
 
         var info = describe(plist)
+        let metadata: [String: Any]
+        if let entry = archive["iTunesMetadata.plist"] { metadata = (try? readPlist(entry, archive: archive)) ?? [:] }
+        else { metadata = [:] }
+        let localizedName = PackageService.localizedBundleDisplayName(in: archive, appPrefix: prefix, basePlist: plist, metadata: metadata)
+        if !localizedName.isEmpty { info.name = localizedName }
         info.devices = PackageService.describePlatforms(families: Set(plist["UIDeviceFamily"] as? [Int] ?? []),
                                                         platforms: Set(plist["CFBundleSupportedPlatforms"] as? [String] ?? []))
         info.languages = languages(in: paths)

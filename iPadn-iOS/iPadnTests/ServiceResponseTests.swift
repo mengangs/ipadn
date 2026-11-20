@@ -108,6 +108,7 @@ final class ServiceResponseTests: XCTestCase {
         let release = try XCTUnwrap(AppReleaseFeed.parse(data))
         XCTAssertEqual(release.version, "1.7.4")
         XCTAssertEqual(release.package?.absoluteString, "https://github.com/mengangs/ipadn/releases/download/v1.7.4/iPadn-1.7.4-unsigned.ipa")
+        XCTAssertEqual(release.litePackage?.absoluteString, "https://github.com/mengangs/ipadn/releases/download/v1.7.4/iPadn-1.7.4-lite-unsigned.ipa")
         XCTAssertTrue(release.notes.contains("登录修复"))
         XCTAssertTrue(release.notes.contains("A & B"))
         XCTAssertNotNil(release.published)

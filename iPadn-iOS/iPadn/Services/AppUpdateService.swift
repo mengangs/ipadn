@@ -2,19 +2,100 @@ import Foundation
 
 /// A published iPadn release on GitHub.
 struct AppRelease: Codable, Equatable {
+    enum Variant: String, CaseIterable, Codable, Identifiable {
+        case standard
+        case lite
+        var id: String { rawValue }
+    }
+
     var version: String
     var notes: String
     var page: URL
-    /// The unsigned IPA; sign it with the tool used to install iPadn.
+    /// Standard unsigned IPA (includes Live Activity / widget extension).
     var package: URL?
     var packageSize: Int64
+    /// Lite unsigned IPA (extension stripped, needs only 1 App ID).
+    var litePackage: URL?
+    var litePackageSize: Int64
     var published: Date?
+
+    init(
+        version: String,
+        notes: String,
+        page: URL,
+        package: URL?,
+        packageSize: Int64,
+        litePackage: URL? = nil,
+        litePackageSize: Int64 = 0,
+        published: Date?
+    ) {
+        self.version = version
+        self.notes = notes
+        self.page = page
+        self.package = package
+        self.packageSize = packageSize
+        self.litePackage = litePackage
+        self.litePackageSize = litePackageSize
+        self.published = published
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version, notes, page, package, packageSize, litePackage, litePackageSize, published
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decode(String.self, forKey: .version)
+        notes = try c.decode(String.self, forKey: .notes)
+        page = try c.decode(URL.self, forKey: .page)
+        package = try c.decodeIfPresent(URL.self, forKey: .package)
+        packageSize = try c.decodeIfPresent(Int64.self, forKey: .packageSize) ?? 0
+        litePackage = try c.decodeIfPresent(URL.self, forKey: .litePackage)
+        litePackageSize = try c.decodeIfPresent(Int64.self, forKey: .litePackageSize) ?? 0
+        published = try c.decodeIfPresent(Date.self, forKey: .published)
+    }
+
+    var hasBothVariants: Bool { package != nil && litePackage != nil }
+    var hasAnyPackage: Bool { package != nil || litePackage != nil }
+
+    func url(for variant: Variant) -> URL? {
+        switch variant {
+        case .standard: return package ?? litePackage
+        case .lite: return litePackage ?? package
+        }
+    }
+
+    func size(for variant: Variant) -> Int64 {
+        switch variant {
+        case .standard: return package != nil ? packageSize : litePackageSize
+        case .lite: return litePackage != nil ? litePackageSize : packageSize
+        }
+    }
 }
 
 enum AppUpdateService {
     static let repository = "mengangs/ipadn"
     static var currentVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+    }
+
+    /// Detects whether the currently running iPadn bundle embeds the Live Activity extension.
+    static var installedVariant: AppRelease.Variant {
+        if let plugIns = Bundle.main.builtInPlugInsURL,
+           FileManager.default.fileExists(atPath: plugIns.appendingPathComponent("iPadnLiveActivity.appex").path) {
+            return .standard
+        }
+        return .lite
+    }
+
+    /// Preferred default variant for `release` based on the running installation.
+    static func defaultVariant(for release: AppRelease, preferred: AppRelease.Variant = installedVariant) -> AppRelease.Variant {
+        switch preferred {
+        case .standard:
+            return release.package != nil ? .standard : .lite
+        case .lite:
+            return release.litePackage != nil ? .lite : .standard
+        }
     }
 
     /// API first, then the public release feed. Diagnostics contain metadata only.
@@ -56,6 +137,11 @@ enum AppUpdateService {
         return nil
     }
 
+    private static func isLiteAssetName(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        return lower.contains("-lite.") || lower.contains("-lite-")
+    }
+
     static func parse(_ data: Data) -> AppRelease? {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               json["draft"] as? Bool != true, json["prerelease"] as? Bool != true,
@@ -64,11 +150,20 @@ enum AppUpdateService {
         let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
         guard version.first?.isNumber == true else { return nil }
         let assets = json["assets"] as? [[String: Any]] ?? []
-        let ipa = assets.first { ($0["name"] as? String)?.hasSuffix(".ipa") == true }
+        let ipas = assets.filter { ($0["name"] as? String)?.lowercased().hasSuffix(".ipa") == true }
+        let standard = ipas.first { !isLiteAssetName($0["name"] as? String ?? "") }
+        let lite = ipas.first { isLiteAssetName($0["name"] as? String ?? "") }
         let published = (json["published_at"] as? String).flatMap { try? Date($0, strategy: .iso8601) }
-        return AppRelease(version: version, notes: notes(json["body"] as? String ?? ""), page: page,
-                          package: (ipa?["browser_download_url"] as? String).flatMap(URL.init(string:)),
-                          packageSize: (ipa?["size"] as? NSNumber)?.int64Value ?? 0, published: published)
+        return AppRelease(
+            version: version,
+            notes: notes(json["body"] as? String ?? ""),
+            page: page,
+            package: (standard?["browser_download_url"] as? String).flatMap(URL.init(string:)),
+            packageSize: (standard?["size"] as? NSNumber)?.int64Value ?? 0,
+            litePackage: (lite?["browser_download_url"] as? String).flatMap(URL.init(string:)),
+            litePackageSize: (lite?["size"] as? NSNumber)?.int64Value ?? 0,
+            published: published
+        )
     }
 
     /// The release notes for people: without the build's verification line.
@@ -90,14 +185,16 @@ enum AppUpdateService {
     static var packageFolder: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("AppUpdate", isDirectory: true)
     }
-    static func packageFile(for release: AppRelease) -> URL {
-        packageFolder.appendingPathComponent("iPadn-\(release.version).ipa")
+    static func packageFile(for release: AppRelease, variant: AppRelease.Variant = .standard) -> URL {
+        let suffix = variant == .lite ? "-lite" : ""
+        return packageFolder.appendingPathComponent("iPadn-\(release.version)\(suffix).ipa")
     }
     /// The release's package if it was downloaded completely before.
-    static func downloadedPackage(for release: AppRelease) -> URL? {
-        let file = packageFile(for: release)
+    static func downloadedPackage(for release: AppRelease, variant: AppRelease.Variant = .standard) -> URL? {
+        let file = packageFile(for: release, variant: variant)
+        let expected = release.size(for: variant)
         guard let size = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? NSNumber,
-              size.int64Value > 0, release.packageSize <= 0 || size.int64Value == release.packageSize else { return nil }
+              size.int64Value > 0, expected <= 0 || size.int64Value == expected else { return nil }
         return file
     }
     /// Removes kept packages, for example once the update is installed.
@@ -105,9 +202,13 @@ enum AppUpdateService {
         try? FileManager.default.removeItem(at: packageFolder)
     }
 
-    /// Downloads the release's IPA and keeps it in `packageFolder`, replacing older versions.
-    static func download(_ release: AppRelease, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
-        guard let url = release.package else { throw ToolError.message(AppText.text("这个版本没有可下载的安装包")) }
+    /// Downloads the release's IPA and keeps it in `packageFolder`, pruning older release files.
+    static func download(
+        _ release: AppRelease,
+        variant: AppRelease.Variant = .standard,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> URL {
+        guard let url = release.url(for: variant) else { throw ToolError.message(AppText.text("这个版本没有可下载的安装包")) }
         try Task.checkCancellation()
         // Its own folder while downloading; moved into place once complete.
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -122,13 +223,20 @@ enum AppUpdateService {
                 session.downloadTask(with: url).resume()
             }
         } onCancel: { session.invalidateAndCancel() }
-        removeDownloads()
         var kept = packageFolder
         try FileManager.default.createDirectory(at: kept, withIntermediateDirectories: true)
+        // Remove stale packages from earlier versions while keeping sibling variant of current release.
+        let versionPrefix = "iPadn-\(release.version)"
+        if let existing = try? FileManager.default.contentsOfDirectory(at: kept, includingPropertiesForKeys: nil) {
+            for item in existing where !item.lastPathComponent.hasPrefix(versionPrefix) {
+                try? FileManager.default.removeItem(at: item)
+            }
+        }
         // A package that can be downloaded again does not belong in device backups.
         var values = URLResourceValues(); values.isExcludedFromBackup = true
         try? kept.setResourceValues(values)
-        let target = packageFile(for: release)
+        let target = packageFile(for: release, variant: variant)
+        try? FileManager.default.removeItem(at: target)
         try FileManager.default.moveItem(at: downloaded, to: target)
         return target
     }
@@ -178,8 +286,8 @@ enum AppUpdateService {
     /// TrollStore installs an IPA from a link through this URL scheme. Without
     /// TrollStore the system Magnifier app answers it, so offer it only when
     /// TrollStore installed iPadn.
-    static func trollStoreURL(for release: AppRelease) -> URL? {
-        guard let package = release.package?.absoluteString,
+    static func trollStoreURL(for release: AppRelease, variant: AppRelease.Variant = .standard) -> URL? {
+        guard let package = release.url(for: variant)?.absoluteString,
               let encoded = package.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { return nil }
         return URL(string: "apple-magnifier://install?url=" + encoded)
     }

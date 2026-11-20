@@ -254,6 +254,15 @@ struct DownloadJob: Codable, Identifiable {
     // already associated with the authorized download.
     func completing(with inspected: StoreApp) -> StoreApp {
         var completed = inspected
+        // Narrow overwrite guard: only retain previous name when new name is pure ASCII fallback
+        // (e.g. "Kwai") while old name already contains non-ASCII localized characters (e.g. "快手").
+        let oldName = app.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newName = inspected.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !oldName.isEmpty,
+           oldName.contains(where: { !$0.isASCII }),
+           (newName.isEmpty || newName.allSatisfy(\.isASCII)) {
+            completed.name = oldName
+        }
         completed.iconURL = inspected.iconURL ?? app.iconURL ?? asset?.app.iconURL
         completed.storeMarketingVersion = inspected.storeMarketingVersion ?? app.storeMarketingVersion ?? asset?.app.storeMarketingVersion
         if completed.bundleVersion == nil {
@@ -668,7 +677,7 @@ enum VersionOrder {
 }
 
 enum DownloadFilter: String, CaseIterable, Identifiable {
-    case all = "全部", active = "进行中", paused = "已暂停", completed = "已完成", failed = "失败"
+    case all = "全部", active = "进行中", paused = "已暂停", completed = "已完成", failed = "失败", testFlight = "TestFlight"
     var id: String { rawValue }
     /// Shown in menus and row headers; `rawValue` also tags the row identifiers.
     var title: String {
@@ -678,6 +687,7 @@ enum DownloadFilter: String, CaseIterable, Identifiable {
         case .paused: return AppText.text("已暂停")
         case .completed: return AppText.text("已完成")
         case .failed: return AppText.text("失败")
+        case .testFlight: return "TestFlight"
         }
     }
     var symbol: String {
@@ -687,6 +697,7 @@ enum DownloadFilter: String, CaseIterable, Identifiable {
         case .paused: return "pause.circle"
         case .completed: return "checkmark.circle"
         case .failed: return "exclamationmark.circle"
+        case .testFlight: return "airplane"
         }
     }
     func includes(_ status: DownloadStatus) -> Bool {
@@ -696,7 +707,11 @@ enum DownloadFilter: String, CaseIterable, Identifiable {
         case .paused: return status == .paused
         case .completed: return status == .completed
         case .failed: return status == .failed
+        case .testFlight: return false
         }
+    }
+    var includesTestFlight: Bool {
+        self == .all || self == .completed || self == .testFlight
     }
 }
 

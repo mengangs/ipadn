@@ -30,7 +30,7 @@ enum UpdateCheckScheduler {
                     }
                     if store.settings.appUpdateCheck {
                         group.addTask { @MainActor in
-                            await store.checkAppUpdate()
+                            await store.checkAppUpdate(force: true)
                             if !Task.isCancelled { store.notifyAppUpdate() }
                         }
                     }
@@ -43,7 +43,7 @@ enum UpdateCheckScheduler {
 
     static func schedule() {
         let request = BGAppRefreshTaskRequest(identifier: identifier)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 6 * 3600)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 2 * 3600)
         try? BGTaskScheduler.shared.submit(request)
     }
 

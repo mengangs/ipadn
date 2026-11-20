@@ -8,11 +8,12 @@ enum PackageService {
             let parts = entry.path.split(separator: "/")
             return parts.count == 3 && parts[0] == "Payload" && parts[1].hasSuffix(".app") && parts[2] == "Info.plist"
         }) else { throw ToolError.message(AppText.text("这不是有效的 IPA 安装包")) }
+        let appPrefix = String(info.path.dropLast("Info.plist".count))
         let plist = try readPlist(info, archive: archive)
         let metadata: [String: Any]
         if let entry = archive["iTunesMetadata.plist"] { metadata = (try? readPlist(entry, archive: archive)) ?? [:] }
         else { metadata = [:] }
-        let name = plistString(plist["CFBundleDisplayName"] ?? plist["CFBundleName"])
+        let name = localizedBundleDisplayName(in: archive, appPrefix: appPrefix, basePlist: plist, metadata: metadata)
         let id = plistString(metadata["itemId"])
         let build = plistString(plist["CFBundleVersion"])
         let externalID = plistString(metadata["softwareVersionExternalIdentifier"])
@@ -22,6 +23,100 @@ enum PackageService {
                         size: size, minimumOS: plistString(plist["MinimumOSVersion"]),
                         externalVersionID: externalID.isEmpty ? nil : externalID,
                         bundleVersion: build.isEmpty ? nil : build)
+    }
+
+    /// Resolves an IPA's display name in priority order:
+    /// 1) `iTunesMetadata.plist["itemName"]`
+    /// 2) `*.lproj/InfoPlist.strings` matching `Locale.preferredLanguages` (`CFBundleDisplayName` / `CFBundleName`)
+    /// 3) root `Info.plist` (`CFBundleDisplayName` / `CFBundleName`)
+    static func localizedBundleDisplayName(in archive: Archive, appPrefix: String,
+                                           basePlist: [String: Any], metadata: [String: Any]) -> String {
+        let storeItemName = plistString(metadata["itemName"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !storeItemName.isEmpty { return storeItemName }
+
+        if let localized = localizedInfoPlistName(in: archive, appPrefix: appPrefix) {
+            return localized
+        }
+
+        return plistString(basePlist["CFBundleDisplayName"] ?? basePlist["CFBundleName"])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func localizedInfoPlistName(in archive: Archive, appPrefix: String,
+                                               preferredLanguages: [String] = Locale.preferredLanguages) -> String? {
+        var candidates: [String] = []
+        var seen = Set<String>()
+        func addCandidate(_ code: String) {
+            let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, seen.insert(trimmed.lowercased()).inserted else { return }
+            candidates.append(trimmed)
+        }
+        for pref in preferredLanguages {
+            let normalized = pref.replacingOccurrences(of: "_", with: "-")
+            addCandidate(normalized)
+            addCandidate(pref)
+            let parts = normalized.split(separator: "-").map(String.init)
+            if parts.count >= 2 {
+                addCandidate(parts[0] + "-" + parts[1])
+                addCandidate(parts[0] + "_" + parts[1])
+            }
+            if parts.first?.lowercased() == "zh" {
+                let lowerParts = parts.map { $0.lowercased() }
+                let isHant = lowerParts.contains("hant") || lowerParts.contains("tw") || lowerParts.contains("hk") || lowerParts.contains("mo")
+                if isHant {
+                    for code in ["zh-Hant", "zh_TW", "zh-TW", "zh_HK", "zh-HK", "zh-Hant-TW", "zh-Hant-HK"] { addCandidate(code) }
+                } else {
+                    for code in ["zh-Hans", "zh_CN", "zh-CN", "zh-Hans-CN", "zh"] { addCandidate(code) }
+                }
+            }
+            if let lang = parts.first { addCandidate(lang) }
+        }
+        for code in candidates {
+            let entryPath = appPrefix + code + ".lproj/InfoPlist.strings"
+            guard let entry = archive[entryPath] else { continue }
+            if let dict = try? readStrings(entry, archive: archive) {
+                let display = (dict["CFBundleDisplayName"] ?? dict["CFBundleName"] ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !display.isEmpty { return display }
+            }
+        }
+        return nil
+    }
+
+    private static func readStrings(_ entry: Entry, archive: Archive) throws -> [String: String] {
+        let limit = 512 * 1024
+        guard entry.type == .file, entry.uncompressedSize <= UInt64(limit) else { return [:] }
+        var data = Data()
+        _ = try archive.extract(entry, consumer: {
+            guard data.count + $0.count <= limit else { throw ToolError.message(AppText.text("安装包已损坏")) }
+            data.append($0)
+        })
+        if let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
+            var result: [String: String] = [:]
+            for (k, v) in plist {
+                if let s = v as? String { result[k] = s }
+            }
+            if !result.isEmpty { return result }
+        }
+        // Fallback for UTF-16 / UTF-8 `.strings` text format if PropertyListSerialization declines comments/BOM.
+        let text = String(data: data, encoding: .utf8)
+            ?? String(data: data, encoding: .utf16)
+            ?? String(data: data, encoding: .utf16LittleEndian)
+            ?? String(data: data, encoding: .utf16BigEndian)
+            ?? ""
+        guard !text.isEmpty else { return [:] }
+        var parsed: [String: String] = [:]
+        let pattern = #"\"([^\"]+)\"\s*=\s*\"([^\"]*)\"\s*;"#
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let range = NSRange(text.startIndex..., in: text)
+            for match in regex.matches(in: text, range: range) {
+                if let kr = Range(match.range(at: 1), in: text),
+                   let vr = Range(match.range(at: 2), in: text) {
+                    parsed[String(text[kr])] = String(text[vr])
+                }
+            }
+        }
+        return parsed
     }
 
     static func deviceFamilies(_ url: URL) throws -> Set<Int> {

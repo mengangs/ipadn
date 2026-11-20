@@ -22,8 +22,8 @@ OUTPUT = ROOT / "altstore-source.json"
 KEEP = 10
 DESCRIPTION = (
     "Search, download and install the apps you own on iPhone and iPad: older versions, "
-    "apps removed from sale, regional price comparison and native install. Free, open source, 11 languages.\n\n"
-    "在 iPhone 和 iPad 上搜索、下载、安装你拥有的 App：历史版本、已下架应用、多地区比价与原生安装。永久免费开源。"
+    "apps removed from sale, regional price comparison, TestFlight download and native install. Free, open source, ad-free, 11 languages.\n\n"
+    "在 iPhone 和 iPad 上搜索、下载、安装你拥有的 App：历史版本、已下架应用、多地区比价、TestFlight 下载与原生安装。免费开源，没有广告。"
 )
 SCREENSHOTS = ["01-search", "02-detail", "03-versions", "04-prices", "05-downloads", "06-purchased", "07-native-install"]
 

@@ -39,6 +39,11 @@ enum FairPlayDecryptor {
         let elapsed: TimeInterval
         let partial: Bool
         let verification: FairPlayVerification?
+        /// Files whose kernel call succeeded, whose every page was read back and
+        /// whose bytes changed, but which the plausibility rule still rejected.
+        /// Zero once the entropy rule is active; non-zero means "the tool said no
+        /// to something it actually decrypted", never "FairPlay refused".
+        var heuristicRejected = 0
     }
 
     enum Failure: LocalizedError {
@@ -225,6 +230,8 @@ enum FairPlayDecryptor {
         log(FairPlayLine(kind: .phase,
                          text: "DECRYPT \(encryptedFiles.count) encrypted of \(inventory.count) Mach-O"))
         var decrypted = 0, plain = 0, failed = 0
+        var heuristicRejected = 0
+        var flagsCleared = 0
         var lastAttempt: String?
         var firstFailure: String?
         let total = max(encryptedFiles.count, 1)
@@ -245,14 +252,17 @@ enum FairPlayDecryptor {
                 attemptLines.append(line)
                 log(FairPlayLine(kind: .info, text: line.trimmingCharacters(in: .whitespaces)))
             }
+            var stats = fp_file_stats_t()
             let status: Int32 = withExtendedLifetime(logBox) {
                 let ctx = Unmanaged.passUnretained(logBox).toOpaque()
                 return url.path.withCString { input in
                     scratch.path.withCString { output in
-                        fp_decrypt_file(input, output, coreLogTrampoline, ctx)
+                        fp_decrypt_file_ex(input, output, coreLogTrampoline, ctx, &stats)
                     }
                 }
             }
+            heuristicRejected += Int(stats.heuristic_rejected)
+            flagsCleared += Int(stats.slices_plain)
             if isCancelled() {
                 try? manager.removeItem(at: scratch)
                 throw Failure.cancelled
@@ -271,8 +281,15 @@ enum FairPlayDecryptor {
                     }
                 }
                 if replaced {
-                    decrypted += 1
-                    log(FairPlayLine(kind: .ok, text: "decrypted \(row.path)"))
+                    // A file whose only "encryption" was a set flag had nothing to
+                    // decrypt: report it as already plain, not as a decryption.
+                    if stats.slices_ok == 0 && stats.slices_plain > 0 {
+                        plain += 1
+                        log(FairPlayLine(kind: .info, text: "flag cleared (cryptsize=0) \(row.path)"))
+                    } else {
+                        decrypted += 1
+                        log(FairPlayLine(kind: .ok, text: "decrypted \(row.path)"))
+                    }
                 } else {
                     try? manager.removeItem(at: scratch)
                     failed += 1
@@ -291,6 +308,16 @@ enum FairPlayDecryptor {
         }
         plain += inventory.count - encryptedFiles.count
         if isCancelled() { throw Failure.cancelled }
+        if flagsCleared > 0 {
+            log(FairPlayLine(kind: .info,
+                             text: "flags cleared on \(flagsCleared) slice(s) with cryptsize=0 (no plaintext to produce)"))
+        }
+        if heuristicRejected > 0 {
+            // Never described as "FairPlay refused": the kernel did the work.
+            log(FairPlayLine(kind: .warn,
+                             text: "plausibility check rejected \(heuristicRejected) slice(s): mremap ok, "
+                                 + "every page read back, bytes changed — see verdict new=/legacy= in the lines above"))
+        }
 
         // 4. quick on-disk check before packing
         let after = MachOScan.scanTree(appDir)
@@ -354,21 +381,25 @@ enum FairPlayDecryptor {
         report(FairPlayProgress(phase: "完成", fraction: 1, detail: output.lastPathComponent))
         return Outcome(outputURL: output, decrypted: decrypted, plain: plain, failed: failed,
                        machO: after.count, elapsed: Date().timeIntervalSince(started),
-                       partial: partial || !(verification?.isClean ?? true), verification: verification)
+                       partial: partial || !(verification?.isClean ?? true), verification: verification,
+                       heuristicRejected: heuristicRejected)
     }
 
     // MARK: - helpers
 
     /// Turns the C core's failure line into something the user can act on.
-    /// `fairplayd` refuses a binary when this device holds no FairPlay key for
-    /// the Apple ID that downloaded the app, which is by far the most common
-    /// "decryption failed" for an app that was never installed from the App Store.
+    ///
+    /// Only the main path's errno (`…cid2…`) is allowed to produce a conclusion:
+    /// the `READ|EXEC/cryptid1` fallback always fails with mmap EPERM on an
+    /// unentitled process, and reading that as "no key for this account" is what
+    /// used to send users on a pointless App Store detour.
     private static func diagnose(firstFailure: String?, failed: Int, stillEncrypted: Int) -> String {
         var text = "\(failed) 个文件失败，\(stillEncrypted) 个切片仍加密"
         guard let raw = firstFailure else { return text }
         let line = raw.trimmingCharacters(in: .whitespaces)
         let lower = line.lowercased()
-        if lower.contains("not permitted") || lower.contains("permission denied") {
+        let mainPath = lower.contains("cid2") && !lower.contains("exec")
+        if mainPath && (lower.contains("not permitted") || lower.contains("permission denied")) {
             // The most common cause by far, and the only one the user can fix:
             // the account that downloaded the app was never signed into the
             // system App Store on this device, so fairplayd holds no key.
@@ -380,7 +411,9 @@ enum FairPlayDecryptor {
             return text
         }
         text += "\n内核返回：\(line)"
-        if lower.contains("invalid argument") {
+        if mainPath, lower.contains("cannot allocate memory") {
+            text += "\n系统无法为该授权建立 FairPlay 上下文（ENOMEM），不等于账号或授权有问题。"
+        } else if lower.contains("invalid argument") {
             text += "\n映射参数被拒绝：请确认包内有与二进制同名的 SC_Info/<名称>.sinf。"
         }
         return text

@@ -234,6 +234,22 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(AppUpdateService.trollStoreURL(for: release)?.scheme, "apple-magnifier")
         // The test host was not installed by TrollStore, so its button stays hidden.
         XCTAssertFalse(AppUpdateService.installedByTrollStore)
+
+        // When GitHub lists `-lite-unsigned.ipa` alphabetically before `-unsigned.ipa`,
+        // `package` must still resolve to Standard while `litePackage` captures Lite.
+        let dualJSON = ###"{"tag_name":"v2.2.1","html_url":"https://github.com/mengangs/ipadn/releases/tag/v2.2.1","draft":false,"prerelease":false,"published_at":"2026-11-18T10:00:00Z","body":"## iPadn 2.2.1\n- Fix","assets":[{"name":"build-info.json","browser_download_url":"https://github.com/mengangs/ipadn/releases/download/v2.2.1/build-info.json","size":240},{"name":"iPadn-2.2.1-lite-unsigned.ipa","browser_download_url":"https://github.com/mengangs/ipadn/releases/download/v2.2.1/iPadn-2.2.1-lite-unsigned.ipa","size":49800000},{"name":"iPadn-2.2.1-lite-unsigned.ipa.sha256","browser_download_url":"https://github.com/x-lite.sha256","size":95},{"name":"iPadn-2.2.1-unsigned.ipa","browser_download_url":"https://github.com/mengangs/ipadn/releases/download/v2.2.1/iPadn-2.2.1-unsigned.ipa","size":50742804}]}"###
+        let dual = try XCTUnwrap(AppUpdateService.parse(Data(dualJSON.utf8)))
+        XCTAssertTrue(dual.hasBothVariants)
+        XCTAssertEqual(dual.package?.lastPathComponent, "iPadn-2.2.1-unsigned.ipa")
+        XCTAssertEqual(dual.packageSize, 50_742_804)
+        XCTAssertEqual(dual.litePackage?.lastPathComponent, "iPadn-2.2.1-lite-unsigned.ipa")
+        XCTAssertEqual(dual.litePackageSize, 49_800_000)
+        XCTAssertEqual(AppUpdateService.defaultVariant(for: dual, preferred: .standard), .standard)
+        XCTAssertEqual(AppUpdateService.defaultVariant(for: dual, preferred: .lite), .lite)
+        XCTAssertEqual(AppUpdateService.packageFile(for: dual, variant: .standard).lastPathComponent, "iPadn-2.2.1.ipa")
+        XCTAssertEqual(AppUpdateService.packageFile(for: dual, variant: .lite).lastPathComponent, "iPadn-2.2.1-lite.ipa")
+        XCTAssertEqual(AppUpdateService.trollStoreURL(for: dual, variant: .standard)?.absoluteString.contains("2.2.1-unsigned.ipa"), true)
+        XCTAssertEqual(AppUpdateService.trollStoreURL(for: dual, variant: .lite)?.absoluteString.contains("2.2.1-lite-unsigned.ipa"), true)
     }
 
     func testReleaseNotesBecomeBlocksWithoutTheVersionTitle() {

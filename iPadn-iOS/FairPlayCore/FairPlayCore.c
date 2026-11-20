@@ -312,27 +312,89 @@ int fp_parse(const char *path, fp_slice_t *slices, int max, int *count,
     return rc;
 }
 
-#pragma mark - attempt
+#pragma mark - plausibility rule
 
-bool fp_attempt_looks_decrypted(const fp_attempt_t *a) {
-    // Encrypted text stays at ~8.0 bits/byte regardless of size; real ARM64
-    // code is well below 7.5. One extra RET/PACIBSP word is enough for a
-    // single-page binary.
-    return a->mremap_ret == 0 && a->pages_ok == a->pages_total && a->changed &&
+// 0 = entropy collapse (default), 1 = legacy "must contain ARM64 landmarks".
+// Kept build-time switchable so a future regression can be compared against the
+// old behaviour without editing code; IPADN_FP_HEURISTIC=legacy|new overrides it
+// at launch (cached on first use).
+#ifndef FP_HEURISTIC_LEGACY_DEFAULT
+#define FP_HEURISTIC_LEGACY_DEFAULT 0
+#endif
+
+static pthread_once_t fp_heuristic_once = PTHREAD_ONCE_INIT;
+static int fp_heuristic_legacy = FP_HEURISTIC_LEGACY_DEFAULT;
+
+static void fp_resolve_heuristic(void) {
+    const char *value = getenv("IPADN_FP_HEURISTIC");
+    if (!value || !*value) return;
+    if (!strcmp(value, "legacy") || !strcmp(value, "1")) fp_heuristic_legacy = 1;
+    else if (!strcmp(value, "new") || !strcmp(value, "entropy") || !strcmp(value, "0")) fp_heuristic_legacy = 0;
+}
+
+int fp_heuristic_mode(void) {
+    pthread_once(&fp_heuristic_once, fp_resolve_heuristic);
+    return fp_heuristic_legacy;
+}
+
+// The hard requirements never change: the kernel call must have succeeded, every
+// page must have been read back, and the bytes must actually differ from the
+// ciphertext on disk. A half-decrypted mapping can satisfy none of the three.
+static bool fp_attempt_hard_ok(const fp_attempt_t *a) {
+    return a->mremap_ret == 0 && a->pages_ok == a->pages_total && a->changed;
+}
+
+bool fp_attempt_looks_decrypted_legacy(const fp_attempt_t *a) {
+    // Pre-2026-11 rule: the decrypted text had to contain ARM64 landmarks.
+    // Kept only so IPADN_FP_HEURISTIC=legacy reproduces the old verdicts.
+    return fp_attempt_hard_ok(a) &&
            a->ent_before > 7.9 && a->ent_after < 7.5 && a->ret_after > a->ret_before;
 }
+
+bool fp_attempt_looks_decrypted(const fp_attempt_t *a) {
+    if (fp_heuristic_mode() != 0) return fp_attempt_looks_decrypted_legacy(a);
+
+    // Real decryption always collapses entropy: FairPlay ciphertext sits at ~8.0
+    // bits/byte, code lands near 6.0-7.1 and data/zero padding far below.
+    // Measured on device (2026-11-19): 17 accepted files peaked at 7.06, the 14
+    // misjudged ones landed at 0.53-6.19, and a half-decrypted page stays > 7.8.
+    if (!fp_attempt_hard_ok(a)) return false;
+    if (!(a->ent_before > 7.9)) return false;
+    if (a->ent_after >= 7.5) return false;
+    if ((a->ent_before - a->ent_after) < 0.5) return false;
+    // ret_after / ret_before stay in the log as a diagnostic: heavily obfuscated
+    // or data-only payloads decrypt correctly without a single `ret` word.
+    return true;
+}
+
+/// Short reason for the log: why a verdict did or did not pass.
+static const char *fp_attempt_reason(bool legacy, const fp_attempt_t *a) {
+    if (a->mremap_ret != 0 || a->pages_ok != a->pages_total || !a->changed) return "hard";
+    if (!(a->ent_before > 7.9)) return "src_plain";
+    if (legacy) {
+        if (a->ent_after >= 7.5) return "ent_high";
+        if (a->ret_after <= a->ret_before) return "no_landmark";
+        return "pass";
+    }
+    if (a->ent_after >= 7.5) return "ent_high";
+    if ((a->ent_before - a->ent_after) < 0.5) return "drop_small";
+    return "pass";
+}
+
+#pragma mark - attempt
 
 void fp_attempt_describe(const fp_attempt_t *a, char *buf, size_t len) {
     snprintf(buf, len,
              "%s%s mremap=%d(%s) mmap=%s pages=%llu/%llu changed=%d "
-             "code %u->%u entropy %.2f->%.2f %.0fms",
+             "code %u->%u entropy %.2f->%.2f %.0fms verdict new=%s/legacy=%s",
              fp_mode_name(a->mode), a->addsigs ? "+sigs" : "",
              a->mremap_ret,
              a->mremap_ret == 0 ? "ok" : strerror(a->mremap_errno ? a->mremap_errno : EINVAL),
              a->mmap_errno ? strerror(a->mmap_errno) : "ok",
              (unsigned long long)a->pages_ok, (unsigned long long)a->pages_total,
              a->changed ? 1 : 0, a->ret_before, a->ret_after,
-             a->ent_before, a->ent_after, a->ms);
+             a->ent_before, a->ent_after, a->ms,
+             fp_attempt_reason(false, a), fp_attempt_reason(true, a));
 }
 
 static int fp_attempt_internal(const char *path, const fp_slice_t *s, int mode, bool addsigs,
@@ -544,7 +606,13 @@ static int fp_copy_file(const char *src, const char *dst) {
 }
 
 int fp_decrypt_file(const char *in_path, const char *out_path, fp_log_t log, void *ctx) {
+    return fp_decrypt_file_ex(in_path, out_path, log, ctx, NULL);
+}
+
+int fp_decrypt_file_ex(const char *in_path, const char *out_path, fp_log_t log, void *ctx,
+                       fp_file_stats_t *stats) {
     if (!in_path || !out_path) return -1;
+    if (stats) memset(stats, 0, sizeof *stats);
     fp_slice_t slices[FP_MAX_SLICES];
     int count = 0;
     char err[256] = {0};
@@ -556,6 +624,9 @@ int fp_decrypt_file(const char *in_path, const char *out_path, fp_log_t log, voi
     bool encrypted = false;
     for (int i = 0; i < count; i++) {
         if (slices[i].has_enc && slices[i].cryptid != 0) encrypted = true;
+        if (slices[i].has_enc && slices[i].cryptid != 0 && slices[i].cryptsize > 0 && stats) {
+            stats->slices_total++;
+        }
     }
     bool same_path = strcmp(in_path, out_path) == 0;
     if (!encrypted) {
@@ -587,6 +658,8 @@ int fp_decrypt_file(const char *in_path, const char *out_path, fp_log_t log, voi
         return -1;
     }
 
+    fp_log(log, ctx, "  plausibility=%s", fp_heuristic_mode() ? "legacy(code)" : "entropy");
+
     // The READ/cryptid2 attempt is the one that works without PROT_EXEC; the
     // others are fallbacks for releases where the model-encryption path is not
     // reachable.
@@ -607,21 +680,54 @@ int fp_decrypt_file(const char *in_path, const char *out_path, fp_log_t log, voi
             rc = -1;
             break;
         }
+
+        // cryptid != 0 but nothing declared as encrypted: there is no plaintext
+        // to produce, so only the flag has to be cleared.
+        if (s->cryptsize == 0) {
+            uint32_t zero = 0;
+            if (!fp_pwrite_full(out, &zero, 4, (off_t)cid_off)) {
+                fp_log(log, ctx, "  slice[%d] flag clear failed: %s", i, strerror(errno));
+                rc = -1;
+                break;
+            }
+            if (stats) stats->slices_plain++;
+            fp_log(log, ctx, "  slice[%d] cryptid=%u cryptsize=0: flag cleared, no plaintext",
+                   i, s->cryptid);
+            continue;
+        }
+
         bool done = false;
         for (size_t k = 0; k < sizeof order / sizeof order[0] && !done; k++) {
             fp_attempt_t attempt;
             char line[512];
             int attempt_rc = fp_attempt_internal(in_path, s, order[k].mode, order[k].addsigs,
                                                  NULL, out, &attempt);
+            bool verdict = (attempt_rc == 0) && fp_attempt_looks_decrypted(&attempt);
+            bool hard_ok = fp_attempt_hard_ok(&attempt);
             fp_attempt_describe(&attempt, line, sizeof line);
-            done = (attempt_rc == 0) && fp_attempt_looks_decrypted(&attempt);
-            fp_log(log, ctx, "  slice[%d] %s %s", i, done ? "[OK]" : "[--]", line);
+            fp_log(log, ctx, "  slice[%d] %s %s", i, verdict ? "[OK]" : "[--]", line);
+            done = verdict;
+            if (hard_ok && !verdict) {
+                // Every page decrypted and the bytes changed, yet the verdict said
+                // no: the other modes decrypt the same range and cannot do better.
+                if (stats) stats->heuristic_rejected++;
+                fp_log(log, ctx,
+                       "  slice[%d] heuristic rejected: kernel ok, pages %llu/%llu, "
+                       "entropy %.2f->%.2f, code %u->%u",
+                       i, (unsigned long long)attempt.pages_ok,
+                       (unsigned long long)attempt.pages_total,
+                       attempt.ent_before, attempt.ent_after,
+                       attempt.ret_before, attempt.ret_after);
+                break;
+            }
         }
         if (!done) { rc = -1; break; }
         uint32_t zero = 0;
         if (!fp_pwrite_full(out, &zero, 4, (off_t)cid_off)) {
             fp_log(log, ctx, "  write failed: %s", strerror(errno));
             rc = -1;
+        } else if (stats) {
+            stats->slices_ok++;
         }
     }
     close(out);

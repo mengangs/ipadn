@@ -7,16 +7,22 @@
 **Search, download and install the apps you own, on iPhone and iPad.**
 Works with iPhone, iPad, Apple TV and Mac apps, including older versions and apps removed from sale.
 
+✨ **New in v2.3.0: [TestFlight Support (Experimental)](#testflight-experimental)** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
+
 [![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
+[![Telegram Channel](https://img.shields.io/badge/Telegram-%40ipadn__official-26A5E4?logo=telegram&logoColor=white)](https://t.me/ipadn_official)
 [![Downloads](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=downloads&color=111111)](https://github.com/mengangs/ipadn/releases)
 ![Requires](https://img.shields.io/badge/iOS%20%2F%20iPadOS-16%2B-111111)
 [![License](https://img.shields.io/github/license/mengangs/ipadn?label=license&color=111111)](LICENSE)
 
 [简体中文](README.md) · **English**
 
-[Download](https://github.com/mengangs/ipadn/releases/latest) · [Install a download](#installing-a-downloaded-app) · [FAQ](#frequently-asked-questions) · [Report a problem](https://github.com/mengangs/ipadn/issues) · [Support iPadn](#support-ipadn)
+[Download](https://github.com/mengangs/ipadn/releases/latest) · [Official Telegram](https://t.me/ipadn_official) · [TestFlight Guide](#testflight-experimental) · [Install a download](#installing-a-downloaded-app) · [FAQ](#frequently-asked-questions) · [Support iPadn](#support-ipadn)
 
 </div>
+
+> [!IMPORTANT]
+> **Join Telegram & GitHub Issues Archive**: To focus limited maintainer bandwidth on core engineering and faster user support, **new builds and source archives are now released first in our [Official Telegram Channel (`@ipadn_official`)](https://t.me/ipadn_official)** (with GitHub synced slightly later). **GitHub Issues are now closed to new reports** while existing issues remain as a read-only searchable archive — please post questions and bug reports **under the matching version post** in Telegram.
 
 <p align="center">
   <img src="docs/images/en/01-search.jpg" width="24%" alt="Search">
@@ -33,6 +39,17 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 </p>
 
 ---
+
+## What’s new in 2.3.0
+
+> **v2.2.1 → v2.3.0 Milestone Jump**: Since the last GitHub release (**v2.2.1**), iPadn accumulated **20+ consecutive local feature & architecture iterations** before tagging **v2.3.0**—headlined by a brand-new **TestFlight hub (Experimental)**, an in-app Standard/Lite update picker, localized titles, and our official Telegram community hub.
+
+- **🆕 TestFlight Hub, SINF Downloads & Unified Install (Experimental)**: Built a dedicated Store-styled **Account › TestFlight** page separating builds into **Testing**, **Incompatible**, and **Previously Tested**, with keyword filtering, localized app titles, and multi-account avatar switching. Supports live speed/ETA cards, injected SINF for zero-decrypt **Native Install** via `InstallCoordinator`, read-only projection into **Downloads** & Pro mode **Packages** (with `FairPlayCore` decryption resolution), and `TFNet` networking controls (Follow System / Force Direct / Force Proxy), automatic single direct bypass, DoH/fake-IP preflight diagnostics, and strictly redacted rotating logs.
+- **⬆️ In-App Update Variant Picker (`AppUpdateView`)**: Surface timely release alerts and pick **Standard** or **Lite** builds directly inside the update sheet with size and changelog preview.
+- **🌏 Localized Names & Polish**: Prefer localized app names across TestFlight, Store, Downloads, and Pro mode Packages, plus quick Bundle ID copy and responsive UI refinements.
+- **📢 Official Telegram Channel (All 11 Languages)**: Adds direct links to [https://t.me/ipadn_official](https://t.me/ipadn_official) in Account › Settings › Support iPadn and SupportView. iPadn stays free and open source, publishes new releases to Telegram first, and archives GitHub Issues as read-only.
+- ⚠️ **Experimental Notice & Disclaimer**: TestFlight is newly developed and subject to Apple server behavior, active invite eligibility, and network rules—treat it as experimental and test with a secondary account first. See the [TestFlight Experimental](#testflight-experimental) guide and [release notes](RELEASE_NOTES.md).
+- Standard and lite packages remain available for iOS / iPadOS 16 and later.
 
 ## What’s new in 2.2.1
 
@@ -82,6 +99,7 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 | | |
 | --- | --- |
+| ✈️ **TestFlight (🆕 Experimental)** | Browse and download your account's TestFlight apps under Account › TestFlight: grouped by Testing / Incompatible / Previously Tested with search, multi-account switching, SINF-injected zero-decrypt Native Install, projection into Downloads & Pro Packages, plus `TFNet` proxy bypass and redacted diagnostics. |
 | 🔍 **Search & discover** | Search by app name, App ID or App Store link, and switch storefront region and platform (iPhone / iPad / Apple TV / Mac). Recent searches appear as chips. Discover, App Screenshots and Customer Reviews can each be turned off in Settings; when enabled, Discover shows Top Free, Top Paid and Top Grossing for any region by category alongside other apps by the same developer. |
 | 🌐 **Translation** | Descriptions and release notes use the system translation sheet by default. On iOS 18+, opt into in-place translation under Settings › Appearance & icon › Translation and prepare languages there. The target follows the app language, with Show original. |
 | 🕘 **Older versions** | See each version's number, date, IPA package size, version-specific icon and release notes and download older versions, or enter a version ID directly. Long-press a row to copy its version number or ID; accessibility text sizes use a vertical layout. Unavailable sizes show “—”, never the latest version's size. Primary icon PNGs are read on demand from each version's IPA and cached separately (or disable loading in Appearance & icon settings to save bandwidth). Unavailable icons use a placeholder, never current store artwork; asset-catalog-only icons are not yet supported. Downloaded apps can “Keep this version” to stop update reminders. |
@@ -106,7 +124,7 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 The interface follows the App Store's design. Appearance follows the system and the icon is dark by default (both can be changed in Settings), with Dynamic Type, the iPad sidebar and alternate app icons.
 
-**Languages:** English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Russian, Spanish, French, German, Portuguese (Brazil) and Arabic, with a right-to-left layout for Arabic. iPadn follows the system language; to choose a different one for iPadn only, use Settings › iPadn › Language. English was refined by a community contributor and the other languages are machine-assisted translations; corrections are welcome in [Issues](https://github.com/mengangs/ipadn/issues) or a pull request.
+**Languages:** English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Russian, Spanish, French, German, Portuguese (Brazil) and Arabic, with a right-to-left layout for Arabic. iPadn follows the system language; to choose a different one for iPadn only, use Settings › iPadn › Language. English was refined by a community contributor and the other languages are machine-assisted translations; corrections are welcome in our [Official Telegram Channel](https://t.me/ipadn_official) or a pull request.
 
 ## Getting started
 
@@ -193,6 +211,18 @@ You can also tap the share button to hand the package to another installation to
 3. When the download finishes, tap the share button and send it to your Mac with AirDrop or Files to install it.
 
 The first Mac download fetches about 47 MB of extra components, which are reused afterwards. DMG / PKG / ZIP installers the developer offers on their website can also be downloaded from the app page.
+
+## TestFlight Experimental
+
+> [!WARNING]
+> **Experimental Status, Stability & Disclaimer**: The TestFlight module debuts in **v2.3.0** as an **experimental feature**. Because it depends on Apple server behavior, active per-account beta invitations, local proxy/DNS rules, and on-device pairing state, you may run into session expiration, re-authentication prompts, 401/risk checks, or interrupted downloads. **Testing with a secondary Apple Account first is recommended, and never share pairing files, tokens, or unencrypted backups.** Released under [GPL-2.0-or-later](LICENSE) and unaffiliated with Apple Inc. for authorized testing and personal research only—the author assumes no liability for account restrictions or data loss.
+
+**Quick start:**
+
+1. Open **Account › TestFlight** and sign in or switch accounts via the top-right avatar (TestFlight sessions are stored per DSID and intentionally isolated from iOS App Store sessions, so TF may ask for its own initial sign-in).
+2. Apps are grouped into three buckets: **Testing** (active iOS builds eligible for this device), **Incompatible** (macOS / tvOS / visionOS / iPad-only builds), and **Previously Tested** (expired or retired builds shown read-only).
+3. Tap download for live speed/ETA progress. Downloaded builds include injected SINF bound to your `ApplicationDSID` and run directly via **Native Install** (with device pairing + LocalDevVPN) **without needing decryption or re-signing**, or can be exported/shared and inspected/decrypted under Pro mode › **Packages** when App Group access is available.
+4. If catalog loading stalls or fails with network/401 errors, open **Network & Diagnostics** inside TestFlight to switch between **Follow System / Force Direct / Force Proxy**, check DNS/fake-IP preflight results, and copy strictly redacted logs when reporting under the release post in [Official Telegram](https://t.me/ipadn_official).
 
 ## Pro mode
 
@@ -301,9 +331,23 @@ Check the connection, then pause and resume. A failed download can be retried di
 </details>
 
 <details>
-<summary><b>Can I download TestFlight builds?</b></summary>
+<summary><b>How do I download and install TestFlight builds? Do they need decryption or re-signing?</b></summary>
 
-Not currently. Existing IPA files can be imported with the “+” button on the Downloads page.
+Open **Account › TestFlight** to view beta apps grouped into Testing, Incompatible, and Previously Tested. After downloading:
+- **Native Install**: TestFlight packages include injected SINF tied to the downloading account. With on-device pairing + LocalDevVPN, Native Install runs the beta build directly **without decryption or re-signing**.
+- **Sideload / Save**: You can also export/share packages or decrypt eligible builds locally under Pro mode › Packages (requires matching App Group entitlements from your signing tool; otherwise iPadn reports why Native Install is unavailable and offers Save/Share).
+</details>
+
+<details>
+<summary><b>Why can't I download builds under Previously Tested or macOS-only items?</b></summary>
+
+Due to Apple TestFlight server rules, only active **iOS / iPadOS** builds that your account currently holds an active beta invite for can be downloaded. Expired/retired items under Previously Tested and macOS/tvOS/visionOS-only builds are shown read-only; Apple does not serve historical expired TestFlight builds.
+</details>
+
+<details>
+<summary><b>Why does TestFlight ask to sign in again, or hit 401 / loading errors?</b></summary>
+
+TestFlight uses an isolated Mac/akd session store scoped per DSID and separated from iOS App Store decryption sessions, so TF may request its own initial sign-in (testing with a secondary account first is recommended). If loading stalls or throws 401/network errors, open **Network & Diagnostics** inside TestFlight to switch between Follow System / Force Direct / Force Proxy, inspect DoH/fake-IP preflight status, and copy redacted diagnostics to our [Official Telegram Channel](https://t.me/ipadn_official).
 </details>
 
 <details>
@@ -324,7 +368,7 @@ No. Removing an account only clears that account's sign-in details and purchase 
 
 <sub>❤️ ❤️ ❤️</sub>
 
-iPadn will always be **free, open source and ad-free**.<br>
+iPadn is **free, open source and ad-free**.<br>
 If it saves you time or you simply enjoy it, you're welcome to buy the author a coffee ☕<br>
 Your support keeps the updates coming.
 
@@ -335,15 +379,16 @@ Your support keeps the updates coming.
 | :---: | :---: |
 | [**afdian.com/a/mengangs**](https://afdian.com/a/mengangs)<br><sub>Monthly or one-time</sub> | <img src="docs/images/usdt-bep20.png" width="180" alt="USDT QR code"><br><code>0x5f0cff7587b9fc305f9fa626135789bd5100818e</code> |
 
-<sub>Before sending USDT, check that the network is BEP20 and the address matches exactly; funds sent on another network or in another token may be lost.<br>You can also scan or copy the address in iPadn under Account › Settings › Support iPadn.<br>Starring the repo, reporting problems and improving translations help just as much.</sub>
+<sub>Before sending USDT, check that the network is BEP20 and the address matches exactly; funds sent on another network or in another token may be lost.<br>You can also scan or copy the address in iPadn under Account › Settings › Support iPadn.<br>Starring the repo, joining our official Telegram channel and improving translations help just as much.</sub>
 
 </div>
 
-## Contributing
+## Official Channel & Feedback
 
-- **Translations:** every interface string lives in [`Localizable.xcstrings`](iPadn-iOS/iPadn/Resources/Localizable.xcstrings); open it in Xcode to edit entries one by one. Pull requests that improve a language or add a new one are welcome.
-- **Bug reports:** describe your device, system version and steps in [Issues](https://github.com/mengangs/ipadn/issues). If you can, attach the file from Account › Settings › Export diagnostics; it contains no account names or credentials.
-- **Building:** see [BUILDING.md](iPadn-iOS/BUILDING.md).
+- **Official Telegram Channel**: 👉 [**https://t.me/ipadn_official**](https://t.me/ipadn_official)
+- **Open-Source & Release Cadence**: iPadn remains **free and open source**, and GitHub continues to publish source code and releases. New builds and source archives are posted first in our official Telegram channel, with GitHub updates following slightly behind.
+- **Why GitHub Issues Are Archived (Read-Only)**: Because maintainer time is limited and troubleshooting network/pairing/account behavior works much faster in one thread per release, **GitHub Issues are closed to new submissions while existing historical issues (#1–#106) stay preserved as a read-only archive**. Please post questions, TestFlight feedback, and bug reports **under the matching version post** in Telegram, including your device, OS version, steps, and optionally the redacted diagnostic file from Account › Settings › Backup & Maintenance › Export diagnostics.
+- **Translations & Building**: Every interface string lives in [`Localizable.xcstrings`](iPadn-iOS/iPadn/Resources/Localizable.xcstrings); pull requests improving translations are welcome. For building from source, see [BUILDING.md](iPadn-iOS/BUILDING.md).
 
 ## Acknowledgements
 
@@ -360,4 +405,4 @@ Your support keeps the updates coming.
 
 iPadn is released under [GPL-2.0-or-later](LICENSE): you may use, modify and redistribute it, and modified versions must be released under the same license.
 
-<sub>iPadn is not affiliated with Apple Inc. Only download apps you are legally licensed to use.</sub>
+<sub>iPadn is not affiliated with Apple Inc. Only download apps and authorized beta builds you are legally licensed to access; use experimental TestFlight features at your own risk.</sub>

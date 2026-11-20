@@ -70,12 +70,35 @@ int fp_parse(const char *path, fp_slice_t *slices, int max, int *count, char *er
 int fp_attempt(const char *path, const fp_slice_t *slice, int mode, bool addsigs,
                uint8_t *out, fp_attempt_t *result);
 
+/// Per-file tallies, so the caller can tell "the kernel refused" apart from
+/// "the kernel succeeded but the plausibility check rejected the result".
+typedef struct {
+    int slices_total;         ///< encrypted slices with a non-zero cryptsize
+    int slices_ok;            ///< slices whose plaintext was written back
+    int slices_plain;         ///< cryptid != 0 but cryptsize == 0: flag cleared, no work
+    int heuristic_rejected;   ///< kernel ok + every page + changed, but verdict said no
+} fp_file_stats_t;
+
 /// 0 = success, 1 = not encrypted (copied as-is), -1 = failure.
 int fp_decrypt_file(const char *in_path, const char *out_path, fp_log_t log, void *ctx);
 
-/// Formats one attempt as a single diagnostic line.
-const char *fp_mode_name(int mode);
+/// Same as `fp_decrypt_file`, plus per-file tallies (`stats` may be NULL).
+int fp_decrypt_file_ex(const char *in_path, const char *out_path, fp_log_t log, void *ctx,
+                       fp_file_stats_t *stats);
+
+/// Which plausibility rule is active: 0 = entropy collapse (default),
+/// 1 = the legacy "must contain ARM64 landmarks" rule.
+/// Overridable at launch with IPADN_FP_HEURISTIC=legacy|new (cached on first use).
+int fp_heuristic_mode(void);
+
+/// Formats one attempt as a single diagnostic line (includes both verdicts).
 void fp_attempt_describe(const fp_attempt_t *a, char *buf, size_t len);
+
+/// Name of one attempt mode, for logs.
+const char *fp_mode_name(int mode);
 
 /// True when the attempt produced plausible decrypted ARM64 code.
 bool fp_attempt_looks_decrypted(const fp_attempt_t *a);
+
+/// The pre-entropy rule, kept for regression comparisons and for the switch.
+bool fp_attempt_looks_decrypted_legacy(const fp_attempt_t *a);

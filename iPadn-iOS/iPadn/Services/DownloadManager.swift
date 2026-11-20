@@ -488,7 +488,52 @@ final class DownloadManager: NSObject, ObservableObject {
             else { fail(job.id, error: ToolError.message(AppText.text("下载文件丢失，请重试"))) }
         }
         discoverLocalFiles()
+        reconcileCompletedLocalizedNames()
         persist(); schedule()
+    }
+
+    /// Heals previously completed jobs whose `app.name` was overwritten by an ASCII Info.plist
+    /// fallback (e.g. "Kwai") when `iTunesMetadata.itemName` or `*.lproj/InfoPlist.strings`
+    /// carries the localized display name (e.g. "快手").
+    private func reconcileCompletedLocalizedNames() {
+        var needsZipCheck: [(UUID, URL)] = []
+        var changed = false
+        for index in jobs.indices where jobs[index].status == .completed && jobs[index].rawFormat == nil {
+            let current = jobs[index].app.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let plist = jobs[index].asset?.decodedMetadata {
+                let itemName = plistString(plist["itemName"]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !itemName.isEmpty && itemName != current && (current.isEmpty || current.allSatisfy(\.isASCII)) {
+                    jobs[index].app.name = itemName
+                    changed = true
+                    continue
+                }
+            }
+            if (current.isEmpty || current.allSatisfy(\.isASCII)), let url = fileURL(jobs[index]) {
+                needsZipCheck.append((jobs[index].id, url))
+            }
+        }
+        if changed { persist() }
+        guard !needsZipCheck.isEmpty else { return }
+        Task { [weak self] in
+            var updates: [(UUID, String)] = []
+            for (id, url) in needsZipCheck {
+                if let inspected = await Task.detached(priority: .utility, operation: { try? PackageService.inspect(url) }).value {
+                    let resolved = inspected.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !resolved.isEmpty { updates.append((id, resolved)) }
+                }
+            }
+            guard let self, !updates.isEmpty else { return }
+            var mutated = false
+            for (id, name) in updates {
+                if let idx = self.jobs.firstIndex(where: { $0.id == id }),
+                   self.jobs[idx].app.name != name,
+                   name.contains(where: { !$0.isASCII }) {
+                    self.jobs[idx].app.name = name
+                    mutated = true
+                }
+            }
+            if mutated { self.persist() }
+        }
     }
 
     static func isSameDownloadVersion(_ lhs: StoreApp, _ rhs: StoreApp) -> Bool {

@@ -336,7 +336,9 @@ struct RootView: View {
                     List(selection: sidebarSelectionBinding) {
                         Section {
                             ForEach(destinations, id: \.id) { item in
-                                Label(item.title, systemImage: item.symbol).tag(item.id)
+                                Label(item.title, systemImage: item.symbol)
+                                    .badge(item.id == .downloads ? downloadsBadge : (item.id == .accounts && store.appUpdate != nil ? 1 : 0))
+                                    .tag(item.id)
                             }
                         }
 
@@ -374,6 +376,7 @@ struct RootView: View {
                         .tag(TabID.purchased)
                     pageStack(.accounts)
                         .tabItem { tabLabel(accountsDestination) }
+                        .badge(store.appUpdate != nil ? 1 : 0)
                         .tag(TabID.accounts)
                 }
                 .toolbarBackground(.visible, for: .tabBar)
@@ -606,6 +609,8 @@ private struct AccountNavigationDestinationsModifier: ViewModifier {
                     InstalledAppsView()
                 case .wifiTransfer:
                     WiFiTransferView()
+                case .testFlight:
+                    TestFlightRouteDestination()
                 case .settings(let page):
                     SettingsView(page: page)
                 case .installation:
@@ -624,6 +629,32 @@ private struct AccountNavigationDestinationsModifier: ViewModifier {
             }
             .onAppear { store.accountNav.notePresented(route) }
         }
+    }
+}
+
+/// TestFlight entry point.
+///
+/// The page lives in the `TestFlightKit` package target, which only links in the
+/// device (xtool) build; every other build gets an explicit "unavailable" page
+/// instead of a compile error, so Xcode and CI stay green.
+private struct TestFlightRouteDestination: View {
+    var body: some View {
+        #if canImport(TestFlightKit)
+        TestFlightHomeView()
+        #else
+        List {
+            Section {
+                EmptyState(
+                    title: "TestFlight 不可用",
+                    message: "当前构建未包含 TestFlight 模块。",
+                    symbol: "airplane"
+                )
+            }
+        }
+        .toolPage()
+        .navigationTitle("TestFlight")
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
     }
 }
 

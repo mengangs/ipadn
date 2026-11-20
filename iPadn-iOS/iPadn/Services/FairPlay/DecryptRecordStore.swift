@@ -92,13 +92,52 @@ final class DecryptRecordStore: ObservableObject {
 
     func sourceURL(for record: DecryptRecord) -> URL? {
         guard let name = Self.safeBasename(record.sourceName) else { return nil }
-        let candidates = [
-            FairPlayEnvironment.documentsDirectory.appendingPathComponent(name),
-            FairPlayEnvironment.documentsDirectory
-                .appendingPathComponent("Packages", isDirectory: true)
+        let docs = FairPlayEnvironment.documentsDirectory
+        let tfRoot = docs.appendingPathComponent("TestFlight", isDirectory: true)
+        let stem = Self.safeBasename((name as NSString).deletingPathExtension)
+        let bundle = Self.safeBasename(record.bundleID)
+        var candidates: [URL] = [
+            docs.appendingPathComponent(name),
+            docs.appendingPathComponent("Packages", isDirectory: true)
                 .appendingPathComponent(name),
         ]
-        return candidates.first { fileManager.fileExists(atPath: $0.path) }
+        for b in [bundle, stem].compactMap({ $0 }) {
+            let bundleDir = tfRoot.appendingPathComponent(b, isDirectory: true)
+            candidates.append(bundleDir.appendingPathComponent(name))
+            if let subdirs = try? fileManager.contentsOfDirectory(
+                at: bundleDir,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) {
+                for sub in subdirs {
+                    candidates.append(sub.appendingPathComponent(name))
+                }
+            }
+        }
+        if let hit = candidates.first(where: { fileManager.fileExists(atPath: $0.path) }) {
+            return hit
+        }
+        if let dirs = try? fileManager.contentsOfDirectory(
+            at: tfRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for dir in dirs {
+                let direct = dir.appendingPathComponent(name)
+                if fileManager.fileExists(atPath: direct.path) { return direct }
+                if let subdirs = try? fileManager.contentsOfDirectory(
+                    at: dir,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles]
+                ) {
+                    for sub in subdirs {
+                        let nested = sub.appendingPathComponent(name)
+                        if fileManager.fileExists(atPath: nested.path) { return nested }
+                    }
+                }
+            }
+        }
+        return nil
     }
 
     func iconURL(for record: DecryptRecord) -> URL? {

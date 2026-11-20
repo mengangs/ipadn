@@ -6,31 +6,48 @@ struct AppUpdateView: View {
     @EnvironmentObject private var store: ToolStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let release: AppRelease
+    @State private var selectedVariant: AppRelease.Variant
     @State private var progress: Double?
     @State private var downloaded: URL?
     @State private var share: SharedFile?
     @State private var downloading: Task<Void, Never>?
 
+    init(release: AppRelease) {
+        self.release = release
+        _selectedVariant = State(initialValue: AppUpdateService.defaultVariant(for: release))
+    }
+
+    private var selectedSize: Int64 {
+        release.size(for: selectedVariant)
+    }
+
     var body: some View {
-        List {
+        Form {
             Section {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("iPadn \(release.version)").font(.title2.weight(.bold))
                     Text([release.published?.formatted(date: .abbreviated, time: .omitted),
-                          release.packageSize > 0 ? release.packageSize.byteLabel : nil,
+                          selectedSize > 0 ? selectedSize.byteLabel : nil,
                           AppText.text("当前 \(AppUpdateService.currentVersion)")].compactMap { $0 }.joined(separator: " · "))
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
             }
-            let notes = AppUpdateService.blocks(release.notes, version: release.version)
-            if !notes.isEmpty {
-                Section("更新内容") {
-                    ReleaseNotesText(blocks: notes).padding(.vertical, 4)
+
+            if release.hasBothVariants {
+                Section {
+                    Picker("安装包版本", selection: $selectedVariant) {
+                        Text("标准版").tag(AppRelease.Variant.standard)
+                        Text("精简版").tag(AppRelease.Variant.lite)
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(progress != nil)
+                    .accessibilityIdentifier("update.variant")
                 }
             }
+
             Section {
-                if release.package != nil {
+                if release.url(for: selectedVariant) != nil {
                     if let downloaded {
                         Button { share = SharedFile(url: downloaded) } label: {
                             HStack {
@@ -57,7 +74,8 @@ struct AppUpdateView: View {
                                 .transition(.opacity)
                         }
                     }
-                    if AppUpdateService.installedByTrollStore, let url = AppUpdateService.trollStoreURL(for: release) {
+                    if AppUpdateService.installedByTrollStore,
+                       let url = AppUpdateService.trollStoreURL(for: release, variant: selectedVariant) {
                         Button("用 TrollStore 安装", systemImage: "square.and.arrow.down") {
                             UIApplication.shared.open(url) { opened in
                                 if !opened { store.errorMessage = AppText.text("没有打开 TrollStore，请在 TrollStore 设置中开启 URL Scheme，或下载后通过分享安装。") }
@@ -67,28 +85,49 @@ struct AppUpdateView: View {
                 }
                 Link(destination: release.page) { Label("在 GitHub 查看", systemImage: "arrow.up.right.square") }
             } footer: {
-                Text(downloaded == nil
-                     ? "安装包未签名。下载后在分享面板中选择你安装 iPadn 时用的签名工具（例如 TrollStore、轻松签），按原来的方式安装新版本即可。"
-                     : "安装包已保存在本机，离开这个页面也不用重新下载。点「安装新版本」后，在分享面板中选择你安装 iPadn 时用的签名工具。")
+                VStack(alignment: .leading, spacing: 6) {
+                    if release.hasBothVariants {
+                        Text("标准版含灵动岛实时活动与桌面小组件（签名需 2 个 App ID）；精简版移除扩展（只需 1 个 App ID），其余功能一致。")
+                    }
+                    Text(downloaded == nil
+                         ? "安装包未签名。下载后在分享面板中选择你安装 iPadn 时用的签名工具（例如 TrollStore、轻松签），按原来的方式安装新版本即可。"
+                         : "安装包已保存在本机，离开这个页面也不用重新下载。点「安装新版本」后，在分享面板中选择你安装 iPadn 时用的签名工具。")
+                }
+            }
+
+            let notes = AppUpdateService.blocks(release.notes, version: release.version)
+            if !notes.isEmpty {
+                Section("更新内容") {
+                    ReleaseNotesText(blocks: notes).padding(.vertical, 4)
+                }
             }
         }
         .navigationTitle("iPadn 更新")
         .navigationBarTitleDisplayMode(.inline)
         .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.25), value: progress != nil)
         .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.25), value: downloaded != nil)
+        .compatibleOnChange(of: selectedVariant) { next in
+            guard progress == nil else { return }
+            downloaded = AppUpdateService.downloadedPackage(for: release, variant: next)
+        }
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
-        .onAppear { if downloaded == nil { downloaded = AppUpdateService.downloadedPackage(for: release) } }
+        .onAppear {
+            if downloaded == nil {
+                downloaded = AppUpdateService.downloadedPackage(for: release, variant: selectedVariant)
+            }
+        }
         .onDisappear { if share == nil { downloading?.cancel() } }
     }
 
     private func download() {
         guard downloading == nil else { return }
+        let variant = selectedVariant
         UX.tapLight()
         progress = 0
         downloading = Task {
             defer { downloading = nil }
             do {
-                let file = try await AppUpdateService.download(release) { value in
+                let file = try await AppUpdateService.download(release, variant: variant) { value in
                     // A late report must not bring back a finished download's bar.
                     Task { @MainActor in if progress != nil { progress = value } }
                 }

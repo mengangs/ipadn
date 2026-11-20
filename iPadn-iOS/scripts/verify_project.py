@@ -128,7 +128,7 @@ def balance_swift(source):
         i += 1
     assert not stack, "Unclosed delimiters"
 for file in ROOT.rglob("*.swift"):
-    try: balance_swift(file.read_text())
+    try: balance_swift(file.read_text(encoding="utf-8", errors="replace"))
     except AssertionError as error: failures.append(str(file.relative_to(ROOT)) + ": " + str(error))
 
 # Localization: Chinese source strings keyed by their own text, every shipped
@@ -143,7 +143,7 @@ for name, file in [("Localizable", ROOT / "iPadn/Resources/Localizable.xcstrings
                    ("LiveActivity", ROOT / "iPadnLiveActivity/Localizable.xcstrings")]:
     check(file.exists(), "Missing string catalog " + name)
     if not file.exists(): continue
-    catalog = json.loads(file.read_text())
+    catalog = json.loads(file.read_text(encoding="utf-8"))
     catalogs[name] = catalog
     check(catalog.get("sourceLanguage") == "zh-Hans", name + ".xcstrings source language must be zh-Hans")
     check(isinstance(catalog.get("strings"), dict), name + ".xcstrings has no strings")

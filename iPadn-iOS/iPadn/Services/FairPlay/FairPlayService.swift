@@ -137,7 +137,8 @@ final class FairPlayService: ObservableObject {
                     self.failure = value.failed > 0
                         ? DecryptFailureMapper.partial(decrypted: value.decrypted,
                                                        failed: value.failed,
-                                                       summary: summary)
+                                                       summary: summary,
+                                                       heuristicRejected: value.heuristicRejected)
                         : DecryptFailureMapper.verificationFailure(summary: summary, details: nil)
                     self.errorText = self.failure?.reason
                 }

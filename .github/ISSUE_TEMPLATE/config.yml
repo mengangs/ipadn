@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "📢 官方 Telegram 频道 / Official Telegram Channel"
+    url: "https://t.me/ipadn_official"
+    about: "GitHub Issues 已停止受理（仅保留历史归档）。问题反馈、TestFlight 说明与新版发布请前往官方 Telegram 频道对应贴文评论区。"

@@ -119,7 +119,11 @@ final class FairPlayPresentation: ObservableObject {
 
     func iconURL(for url: URL, job: DownloadJob?, manager: DownloadManager) -> URL? {
         if let job { return manager.packageIconURL(job) ?? job.app.iconURL }
-        return localMetadata[url]?.iconURL
+        if let icon = localMetadata[url]?.iconURL { return icon }
+        #if canImport(TestFlightKit)
+        if let icon = TFProductIndex.shared.item(forFile: url)?.iconURL { return icon }
+        #endif
+        return nil
     }
 
     func iconURL(for record: DecryptRecord, manager: DownloadManager) -> URL? {
@@ -128,7 +132,10 @@ final class FairPlayPresentation: ObservableObject {
             return manager.packageIconURL(job) ?? job.app.iconURL
         }
         if let source = records.sourceURL(for: record) {
-            return localMetadata[source]?.iconURL
+            if let icon = localMetadata[source]?.iconURL { return icon }
+            #if canImport(TestFlightKit)
+            if let icon = TFProductIndex.shared.item(forFile: source)?.iconURL { return icon }
+            #endif
         }
         return nil
     }
@@ -187,7 +194,19 @@ final class FairPlayPresentation: ObservableObject {
         guard AppContainer.shared.settings.proMode else { return }
         guard FileManager.default.fileExists(atPath: url.path) else { message = AppText.text("原始 IPA 已不存在，请重新导入。"); return }
         let meta = localMetadata[url]
-        let name = job?.app.name ?? meta?.name ?? url.deletingPathExtension().lastPathComponent
+        #if canImport(TestFlightKit)
+        let tfItem = TFProductIndex.shared.item(forFile: url)
+        let tfDisplayName = tfItem?.displayName
+        let tfBundleID = tfItem?.bundleID
+        let tfVersion = tfItem?.shortVersion.isEmpty == false ? tfItem?.shortVersion : nil
+        let tfIconURL = tfItem?.iconURL
+        #else
+        let tfDisplayName: String? = nil
+        let tfBundleID: String? = nil
+        let tfVersion: String? = nil
+        let tfIconURL: URL? = nil
+        #endif
+        let name = job?.app.name ?? tfDisplayName ?? meta?.name ?? url.deletingPathExtension().lastPathComponent
         if automatic {
             service.autoStartIfNeeded(source: url, displayName: name, appName: name, jobID: job?.id)
         } else {
@@ -195,10 +214,10 @@ final class FairPlayPresentation: ObservableObject {
                           origin: job?.asset == nil && job?.sourceURL == nil ? .imported : .manual)
         }
         if let id = service.activeRecordID {
-            let fallbackIcon = job.flatMap({ DownloadManagerIcon.url($0) }) ?? meta?.iconURL
+            let fallbackIcon = job.flatMap({ DownloadManagerIcon.url($0) }) ?? meta?.iconURL ?? tfIconURL
             records.update(id: id) { record in
-                record.bundleID = job?.app.bundleID ?? meta?.bundleID
-                record.version = job?.app.version ?? meta?.version
+                record.bundleID = job?.app.bundleID ?? meta?.bundleID ?? tfBundleID
+                record.version = job?.app.version ?? meta?.version ?? tfVersion
                 record.detection = detections[url]
                 if let icon = fallbackIcon, let data = try? Data(contentsOf: icon) {
                     record.iconName = records.storeIcon(data, for: id)
@@ -218,6 +237,69 @@ final class FairPlayPresentation: ObservableObject {
             }
             if !automatic { navigate(.record(id)) }
         }
+    }
+
+    enum StandaloneDecryptOutcome {
+        case started(UUID)
+        case unavailable(String)
+    }
+
+    /// Starts decryption for a standalone / TestFlight IPA from an in-place modal sheet,
+    /// enforcing file existence, single-active-run guard, and full metadata/icon recording
+    /// (never hijacking another running job's `activeRecordID`).
+    func startStandaloneDecrypt(url: URL, displayName: String) -> StandaloneDecryptOutcome {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return .unavailable(AppText.text("原始 IPA 已不存在，请重新导入。"))
+        }
+        if service.isRunning {
+            if let activeID = service.activeRecordID,
+               let active = records.records.first(where: { $0.id == activeID }),
+               active.sourceJobID == nil,
+               active.sourceName == url.lastPathComponent {
+                return .started(activeID)
+            }
+            return .unavailable(AppText.text("当前已有解密任务正在进行，请等待完成后再试。"))
+        }
+        let meta = localMetadata[url]
+        #if canImport(TestFlightKit)
+        let tfItem = TFProductIndex.shared.item(forFile: url)
+        let tfName = tfItem?.displayName
+        let tfBundleID = tfItem?.bundleID
+        let tfVersion = tfItem?.shortVersion.isEmpty == false ? tfItem?.shortVersion : nil
+        let tfIconURL = tfItem?.iconURL
+        #else
+        let tfName: String? = nil
+        let tfBundleID: String? = nil
+        let tfVersion: String? = nil
+        let tfIconURL: URL? = nil
+        #endif
+        let resolvedName = displayName.isEmpty ? (tfName ?? meta?.name ?? url.deletingPathExtension().lastPathComponent) : displayName
+        service.start(source: url, displayName: resolvedName, appName: resolvedName, jobID: nil, origin: .imported)
+        guard let id = service.activeRecordID else {
+            return .unavailable(AppText.text("无法启动解密任务，请稍后重试。"))
+        }
+        let fallbackIcon = meta?.iconURL ?? tfIconURL
+        records.update(id: id) { record in
+            record.bundleID = meta?.bundleID ?? tfBundleID
+            record.version = meta?.version ?? tfVersion
+            record.detection = detections[url]
+            if let icon = fallbackIcon, let data = try? Data(contentsOf: icon) {
+                record.iconName = records.storeIcon(data, for: id)
+            }
+        }
+        if fallbackIcon == nil {
+            Task.detached(priority: .utility) { [url, id] in
+                guard let png = try? PackageIconService.png(from: url) else { return }
+                await MainActor.run {
+                    DecryptRecordStore.shared.update(id: id) { record in
+                        if record.iconName == nil {
+                            record.iconName = DecryptRecordStore.shared.storeIcon(png, for: id)
+                        }
+                    }
+                }
+            }
+        }
+        return .started(id)
     }
 
     func collisionURLs(source: URL) -> [URL] {

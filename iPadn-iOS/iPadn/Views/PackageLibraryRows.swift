@@ -9,6 +9,8 @@ struct PackageLibraryRow: View {
     var color: Color = .secondary
     var iconSize: CGFloat = 54
     var trailingNote: String? = nil
+    var badge: String? = nil
+    var badgeTint: Color = .blue
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -18,9 +20,14 @@ struct PackageLibraryRow: View {
                     HStack(alignment: .center, spacing: 12) {
                         AppIcon(url: icon, size: min(iconSize, 44)).accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: name)
-                                .font(.body.weight(.medium))
-                                .fixedSize(horizontal: false, vertical: true)
+                            HStack(spacing: 6) {
+                                Text(verbatim: name)
+                                    .font(.body.weight(.medium))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if let badge, !badge.isEmpty {
+                                    TagBadge(text: LocalizedStringKey(badge), tint: badgeTint)
+                                }
+                            }
                             if let trailingNote, !trailingNote.isEmpty {
                                 Text(verbatim: trailingNote)
                                     .font(.caption.monospacedDigit())
@@ -35,11 +42,14 @@ struct PackageLibraryRow: View {
                 HStack(alignment: .center, spacing: 12) {
                     AppIcon(url: icon, size: iconSize).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(verbatim: name)
                                 .font(.body.weight(.medium))
                                 .lineLimit(2)
                                 .fixedSize(horizontal: false, vertical: true)
+                            if let badge, !badge.isEmpty {
+                                TagBadge(text: LocalizedStringKey(badge), tint: badgeTint)
+                            }
                             if let trailingNote, !trailingNote.isEmpty {
                                 Spacer(minLength: 4)
                                 Text(verbatim: trailingNote)

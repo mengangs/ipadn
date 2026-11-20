@@ -15,6 +15,7 @@
 
 # Private edition isolation: never track artifacts, certs, profiles or signed/test IPAs
 /artifacts/
+/Documents/
 *.p12
 !/iPadn-iOS/iPadnTests/Fixtures/localhost-test-only.p12
 *.mobileprovision

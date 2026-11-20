@@ -356,7 +356,8 @@ struct SettingsView: View {
                     Task {
                         let reached = await store.checkAppUpdate(force: true)
                         if !reached { store.errorMessage = AppText.text("暂时无法检查更新，请稍后重试。") }
-                        else if store.appUpdate == nil { store.infoMessage = AppText.text("已是最新版本") }
+                        else if store.appUpdate != nil { store.accountNav.push(.appUpdate) }
+                        else { store.infoMessage = AppText.text("已是最新版本") }
                     }
                 } label: {
                     HStack {
@@ -368,13 +369,18 @@ struct SettingsView: View {
                 .disabled(store.appUpdateChecking)
                 Toggle("自动检查更新", isOn: $store.settings.appUpdateCheck)
                     .compatibleOnChange(of: store.settings.appUpdateCheck) { on in
-                        if on { UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in } }
+                        if on {
+                            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+                            Task { await store.checkAppUpdate() }
+                        }
                     }
-                Link("项目与更新", destination: URL(string: "https://github.com/mengangs/ipadn")!)
+                Link("项目与更新", destination: SupportLinks.releases)
             }
             Section {
                 NavigationLink(value: AccountRoute.support) { SupportRow() }
                     .accessibilityIdentifier("settings.support")
+                Link(destination: SupportLinks.telegram) { TelegramChannelRow() }
+                    .accessibilityIdentifier("settings.telegram")
             }
             }
         }

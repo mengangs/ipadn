@@ -69,9 +69,10 @@ enum AppReleaseFeed {
             let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
             guard version.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil else { return }
             let package = URL(string: "https://github.com/\(AppUpdateService.repository)/releases/download/\(tag)/iPadn-\(version)-unsigned.ipa")
+            let litePackage = URL(string: "https://github.com/\(AppUpdateService.repository)/releases/download/\(tag)/iPadn-\(version)-lite-unsigned.ipa")
             let date = try? Date(updated.trimmingCharacters(in: .whitespacesAndNewlines), strategy: .iso8601)
             releases.append(AppRelease(version: version, notes: plainNotes(content), page: page,
-                package: package, packageSize: 0, published: date))
+                package: package, packageSize: 0, litePackage: litePackage, litePackageSize: 0, published: date))
         }
         private func plainNotes(_ html: String) -> String {
             var text = html.replacingOccurrences(of: #"(?i)</(?:p|h[1-6]|li|ul|ol|div)>|<br\s*/?>"#, with: "\n", options: .regularExpression)

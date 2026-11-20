@@ -106,7 +106,8 @@ enum FairPlayLab {
             target = FairPlayDecryptor.candidateIPAs().first
         }
         guard let ipa = target else {
-            append(FairPlayLine(kind: .fail, text: "no IPA in Documents (push one with apps push)"))
+            append(FairPlayLine(kind: .fail,
+                            text: "no IPA at that path — pass the app-visible absolute path, e.g. " + documents.path + "/<name>.ipa"))
             return
         }
         let size = (try? FileManager.default.attributesOfItem(atPath: ipa.path)[.size] as? Int64) ?? 0
