@@ -61,7 +61,7 @@ struct ShortcutsWidgetView: View {
                 Image(systemName: "arrow.down.app").font(.title2.weight(.semibold))
             }
             .widgetURL(Shortcut.search.url)
-            .containerBackground(for: .widget) { Color.clear }
+            .shortcutBackground(.clear)
         case .systemSmall:
             VStack(alignment: .leading, spacing: 0) {
                 AppMarkView(size: 44)
@@ -72,7 +72,7 @@ struct ShortcutsWidgetView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .widgetURL(Shortcut.search.url)
-            .containerBackground(for: .widget) { Color(.systemBackground) }
+            .shortcutBackground(Color(.systemBackground))
         default:
             HStack(spacing: 14) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -86,7 +86,7 @@ struct ShortcutsWidgetView: View {
                 }
             }
             .widgetURL(Shortcut.search.url)
-            .containerBackground(for: .widget) { Color(.systemBackground) }
+            .shortcutBackground(Color(.systemBackground))
         }
     }
 
@@ -100,5 +100,16 @@ struct ShortcutsWidgetView: View {
             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .foregroundStyle(.primary)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func shortcutBackground(_ color: Color) -> some View {
+        if #available(iOSApplicationExtension 17.0, *) {
+            containerBackground(for: .widget) { color }
+        } else {
+            background(color)
+        }
     }
 }

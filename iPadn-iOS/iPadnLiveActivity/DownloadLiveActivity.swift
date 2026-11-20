@@ -2,6 +2,7 @@ import ActivityKit
 import SwiftUI
 import WidgetKit
 
+@available(iOSApplicationExtension 16.2, *)
 private extension DownloadActivityAttributes.ContentState {
     private static let byteFormatter: ByteCountFormatter = {
         let style = ByteCountFormatter()
@@ -93,6 +94,7 @@ private extension DownloadActivityAttributes.ContentState {
     }
 }
 
+@available(iOSApplicationExtension 16.2, *)
 private struct DownloadBar: View {
     let state: DownloadActivityAttributes.ContentState
     var body: some View {
@@ -109,6 +111,7 @@ private struct DownloadBar: View {
     }
 }
 
+@available(iOSApplicationExtension 16.2, *)
 private struct DownloadRing: View {
     let state: DownloadActivityAttributes.ContentState
     var body: some View {
@@ -134,6 +137,7 @@ private struct DownloadRing: View {
 }
 
 /// Time left while downloading, otherwise the state in a word or two.
+@available(iOSApplicationExtension 16.2, *)
 private struct DownloadTrailing: View {
     let state: DownloadActivityAttributes.ContentState
     var body: some View {
@@ -151,6 +155,7 @@ private struct DownloadTrailing: View {
     }
 }
 
+@available(iOSApplicationExtension 16.2, *)
 struct DownloadLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: DownloadActivityAttributes.self) { context in
