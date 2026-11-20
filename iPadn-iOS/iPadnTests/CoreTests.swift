@@ -248,8 +248,12 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(AppUpdateService.defaultVariant(for: dual, preferred: .lite), .lite)
         XCTAssertEqual(AppUpdateService.packageFile(for: dual, variant: .standard).lastPathComponent, "iPadn-2.2.1.ipa")
         XCTAssertEqual(AppUpdateService.packageFile(for: dual, variant: .lite).lastPathComponent, "iPadn-2.2.1-lite.ipa")
-        XCTAssertEqual(AppUpdateService.trollStoreURL(for: dual, variant: .standard)?.absoluteString.contains("2.2.1-unsigned.ipa"), true)
-        XCTAssertEqual(AppUpdateService.trollStoreURL(for: dual, variant: .lite)?.absoluteString.contains("2.2.1-lite-unsigned.ipa"), true)
+        for variant in [AppRelease.Variant.standard, .lite] {
+            let updateURL = try XCTUnwrap(AppUpdateService.trollStoreURL(for: dual, variant: variant))
+            let components = try XCTUnwrap(URLComponents(url: updateURL, resolvingAgainstBaseURL: false))
+            let expected = try XCTUnwrap(variant == .standard ? dual.package : dual.litePackage)
+            XCTAssertEqual(components.queryItems, [URLQueryItem(name: "url", value: expected.absoluteString)])
+        }
     }
 
     func testReleaseNotesBecomeBlocksWithoutTheVersionTitle() {
