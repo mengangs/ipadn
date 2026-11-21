@@ -9,15 +9,15 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 ✨ **New in v2.3.2: Full purchase history & delisted app sync · TestFlight sign-in & Dark Mode update badge fixes** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
 
-[![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&logo=github&logoColor=white&color=007AFF)](https://github.com/mengangs/ipadn/releases/latest)
-[![Telegram Channel](https://img.shields.io/badge/Telegram-%40ipadn__official-26A5E4?logo=telegram&logoColor=white)](https://t.me/ipadn_official)
-[![Downloads](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=downloads&logo=icloud&logoColor=white&color=34C759)](https://github.com/mengangs/ipadn/releases)
-![Requires](https://img.shields.io/badge/iOS%20%2F%20iPadOS-16%2B-5856D6?logo=apple&logoColor=white)
-[![License](https://img.shields.io/github/license/mengangs/ipadn?label=license&logo=opensourceinitiative&logoColor=white&color=FF9500)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&logo=github&logoColor=white&labelColor=1C1C1E&color=3A3A3C)](https://github.com/mengangs/ipadn/releases/latest)
+[![Telegram Channel](https://img.shields.io/badge/Telegram-%40ipadn__official-3A3A3C?logo=telegram&logoColor=64B5F6&labelColor=1C1C1E)](https://t.me/ipadn_official)
+[![Downloads](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=downloads&logo=icloud&logoColor=white&labelColor=1C1C1E&color=3A3A3C)](https://github.com/mengangs/ipadn/releases)
+![Requires](https://img.shields.io/badge/iOS%20%2F%20iPadOS-16%2B-3A3A3C?logo=apple&logoColor=white&labelColor=1C1C1E)
+[![License](https://img.shields.io/github/license/mengangs/ipadn?label=license&logo=opensourceinitiative&logoColor=white&labelColor=1C1C1E&color=3A3A3C)](LICENSE)
 
 <p>
-  <a href="#support-ipadn"><img src="https://img.shields.io/badge/Support%20iPadn-Free%20%26%20Open%20Source%20%C2%B7%20Buy%20a%20Coffee-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Support iPadn"></a>
-  <a href="https://afdian.com/a/mengangs"><img src="https://img.shields.io/badge/Afdian-Sponsor-946CE6?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="Afdian"></a>
+  <a href="#support-ipadn"><img src="https://img.shields.io/badge/Support%20iPadn-Free%20%26%20Open%20Source%20%C2%B7%20Buy%20a%20Coffee-323236?style=for-the-badge&logo=githubsponsors&logoColor=F472B6&labelColor=1C1C1E" alt="Support iPadn"></a>
+  <a href="https://afdian.com/a/mengangs"><img src="https://img.shields.io/badge/Afdian-Sponsor-323236?style=for-the-badge&logo=buymeacoffee&logoColor=FBBF24&labelColor=1C1C1E" alt="Afdian"></a>
 </p>
 
 [简体中文](README.md) · **English**
@@ -349,8 +349,8 @@ iPadn is **free, open source and ad-free**.<br>
 If it saves you time or you simply enjoy it, you're welcome to buy the author a coffee ☕<br>
 Your support keeps the updates coming.
 
-<a href="https://afdian.com/a/mengangs"><img src="https://img.shields.io/badge/Afdian-Buy%20me%20a%20coffee-946ce6?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="Afdian"></a>
-<img src="https://img.shields.io/badge/USDT-BEP20-26a17b?style=for-the-badge&logo=tether&logoColor=white" alt="USDT BEP20">
+<a href="https://afdian.com/a/mengangs"><img src="https://img.shields.io/badge/Afdian-Buy%20me%20a%20coffee-323236?style=for-the-badge&logo=buymeacoffee&logoColor=FBBF24&labelColor=1C1C1E" alt="Afdian"></a>
+<img src="https://img.shields.io/badge/USDT-BEP20-323236?style=for-the-badge&logo=tether&logoColor=52B788&labelColor=1C1C1E" alt="USDT BEP20">
 
 | Afdian (Alipay, WeChat Pay) | USDT (BNB Smart Chain / BEP20) |
 | :---: | :---: |

@@ -9,15 +9,15 @@
 
 ✨ **v2.3.2 完整已购历史与下架应用补全 · TestFlight 登录与深色模式更新标签修复** · 📢 **反馈与新版优先前往 [官方 Telegram 频道](https://t.me/ipadn_official)**
 
-[![最新版本](https://img.shields.io/github/v/release/mengangs/ipadn?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&logo=github&logoColor=white&color=007AFF)](https://github.com/mengangs/ipadn/releases/latest)
-[![Telegram 频道](https://img.shields.io/badge/Telegram-%40ipadn__official-26A5E4?logo=telegram&logoColor=white)](https://t.me/ipadn_official)
-[![下载量](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F&logo=icloud&logoColor=white&color=34C759)](https://github.com/mengangs/ipadn/releases)
-![系统要求](https://img.shields.io/badge/iOS%20%2F%20iPadOS-16%2B-5856D6?logo=apple&logoColor=white)
-[![许可证](https://img.shields.io/github/license/mengangs/ipadn?label=%E8%AE%B8%E5%8F%AF%E8%AF%81&logo=opensourceinitiative&logoColor=white&color=FF9500)](LICENSE)
+[![最新版本](https://img.shields.io/github/v/release/mengangs/ipadn?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&logo=github&logoColor=white&labelColor=1C1C1E&color=3A3A3C)](https://github.com/mengangs/ipadn/releases/latest)
+[![Telegram 频道](https://img.shields.io/badge/Telegram-%40ipadn__official-3A3A3C?logo=telegram&logoColor=64B5F6&labelColor=1C1C1E)](https://t.me/ipadn_official)
+[![下载量](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F&logo=icloud&logoColor=white&labelColor=1C1C1E&color=3A3A3C)](https://github.com/mengangs/ipadn/releases)
+![系统要求](https://img.shields.io/badge/iOS%20%2F%20iPadOS-16%2B-3A3A3C?logo=apple&logoColor=white&labelColor=1C1C1E)
+[![许可证](https://img.shields.io/github/license/mengangs/ipadn?label=%E8%AE%B8%E5%8F%AF%E8%AF%81&logo=opensourceinitiative&logoColor=white&labelColor=1C1C1E&color=3A3A3C)](LICENSE)
 
 <p>
-  <a href="#支持-ipadn"><img src="https://img.shields.io/badge/%E6%94%AF%E6%8C%81%20iPadn-%E5%85%8D%E8%B4%B9%E5%BC%80%E6%BA%90%20%C2%B7%20%E8%AF%B7%E4%BD%9C%E8%80%85%E5%96%9D%E6%9D%AF%E5%92%96%E5%95%A1-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="支持 iPadn"></a>
-  <a href="https://afdian.com/a/mengangs"><img src="https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E8%B5%9E%E5%8A%A9%E6%94%AF%E6%8C%81-946CE6?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="爱发电赞助"></a>
+  <a href="#支持-ipadn"><img src="https://img.shields.io/badge/%E6%94%AF%E6%8C%81%20iPadn-%E5%85%8D%E8%B4%B9%E5%BC%80%E6%BA%90%20%C2%B7%20%E8%AF%B7%E4%BD%9C%E8%80%85%E5%96%9D%E6%9D%AF%E5%92%96%E5%95%A1-323236?style=for-the-badge&logo=githubsponsors&logoColor=F472B6&labelColor=1C1C1E" alt="支持 iPadn"></a>
+  <a href="https://afdian.com/a/mengangs"><img src="https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E8%B5%9E%E5%8A%A9%E6%94%AF%E6%8C%81-323236?style=for-the-badge&logo=buymeacoffee&logoColor=FBBF24&labelColor=1C1C1E" alt="爱发电赞助"></a>
 </p>
 
 **简体中文** · [English](README_EN.md)
@@ -349,8 +349,8 @@ iPadn **免费、开源、没有广告**。<br>
 如果它帮你省下了时间，或者你只是喜欢这个项目，欢迎请作者喝杯咖啡 ☕<br>
 你的鼓励是持续更新的动力。
 
-<a href="https://afdian.com/a/mengangs"><img src="https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E8%AF%B7%E4%BD%9C%E8%80%85%E5%96%9D%E6%9D%AF%E5%92%96%E5%95%A1-946ce6?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="爱发电"></a>
-<img src="https://img.shields.io/badge/USDT-BEP20-26a17b?style=for-the-badge&logo=tether&logoColor=white" alt="USDT BEP20">
+<a href="https://afdian.com/a/mengangs"><img src="https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E8%AF%B7%E4%BD%9C%E8%80%85%E5%96%9D%E6%9D%AF%E5%92%96%E5%95%A1-323236?style=for-the-badge&logo=buymeacoffee&logoColor=FBBF24&labelColor=1C1C1E" alt="爱发电"></a>
+<img src="https://img.shields.io/badge/USDT-BEP20-323236?style=for-the-badge&logo=tether&logoColor=52B788&labelColor=1C1C1E" alt="USDT BEP20">
 
 | 爱发电（支付宝、微信） | USDT（BNB Smart Chain / BEP20） |
 | :---: | :---: |
