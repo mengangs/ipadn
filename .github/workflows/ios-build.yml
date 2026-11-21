@@ -3,7 +3,6 @@ name: Build iPadn
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -275,7 +274,7 @@ jobs:
 
   publish-release:
     needs: build
-    if: (github.event_name == 'workflow_dispatch' && inputs.publish_release && inputs.run_tests && inputs.ui_test_scope != 'notices') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release && inputs.run_tests && inputs.ui_test_scope != 'notices'
     runs-on: ubuntu-latest
     permissions:
       contents: write
