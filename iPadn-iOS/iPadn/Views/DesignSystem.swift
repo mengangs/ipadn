@@ -1142,6 +1142,7 @@ struct VerificationCodeField: View {
                             .stroke(current ? UX.tint : Color(.separator), lineWidth: current ? 2 : 0.5))
                 }
             }
+            .environment(\.layoutDirection, .leftToRight)
             .contentShape(Rectangle())
             .onTapGesture { focused = true }
             .accessibilityElement(children: .ignore)

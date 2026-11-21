@@ -43,6 +43,8 @@ struct PackageComparison: Equatable {
         basic(AppText.text("版本"), old.version, new.version)
         basic(AppText.text("构建号"), old.build, new.build)
         basic(AppText.text("最低系统"), old.minimumOS.isEmpty ? "" : "iOS " + old.minimumOS, new.minimumOS.isEmpty ? "" : "iOS " + new.minimumOS)
+        basic(AppText.text("编译 SDK"), old.formattedSDK, new.formattedSDK)
+        basic(AppText.text("Xcode 版本"), old.formattedXcode, new.formattedXcode)
         basic(AppText.text("适用设备"), old.devices, new.devices)
         // Only a difference the reader can see: a few bytes print the same.
         if old.packageSize > 0, new.packageSize > 0, old.packageSize.byteLabel != new.packageSize.byteLabel {

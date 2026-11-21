@@ -14,6 +14,7 @@ public enum TFLogin {
     public actor CodeRelay {
         private var waiting: CheckedContinuation<String, Error>?
         private var pending: String?
+        private var cancelled = false
         private let onRequest: (@Sendable () -> Void)?
 
         public init(onRequest: (@Sendable () -> Void)? = nil) {
@@ -21,17 +22,32 @@ public enum TFLogin {
         }
 
         public func request() async throws -> String {
+            if cancelled || Task.isCancelled {
+                throw TFError.cancelled
+            }
             if let pending {
                 self.pending = nil
                 return pending
             }
             onRequest?()
-            return try await withCheckedThrowingContinuation { continuation in
-                waiting = continuation
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    if cancelled || Task.isCancelled {
+                        continuation.resume(throwing: TFError.cancelled)
+                        return
+                    }
+                    if let previous = waiting {
+                        previous.resume(throwing: TFError.cancelled)
+                    }
+                    waiting = continuation
+                }
+            } onCancel: {
+                Task { await self.cancel() }
             }
         }
 
         public func submit(_ code: String) {
+            guard !cancelled else { return }
             let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return }
             if let waiting {
@@ -43,6 +59,8 @@ public enum TFLogin {
         }
 
         public func cancel() {
+            cancelled = true
+            pending = nil
             waiting?.resume(throwing: TFError.cancelled)
             waiting = nil
         }
@@ -125,14 +143,21 @@ public enum TFLogin {
                                                   storeFront: String?,
                                                   log: @escaping @Sendable (String) -> Void) throws -> TFContext {
         try TFInvariants.check(log: log)
+        // Always flush prior account cookies before validating the target snapshot so a missing
+        // snapshot can never leave account A's cookies in HTTPCookieStorage.shared.
+        if let currentDsid, currentDsid != dsid {
+            AccountScope.writeBack(dsid: currentDsid)
+        }
+        AccountScope.clearSharedCookies()
+        TFStoreCapture.reset()
+        defer { TFStoreCapture.reset() }
         guard !dsid.isEmpty, !amdm.isEmpty else {
             throw TFError.malformed("缺少可复用的 TestFlight 会话凭据")
         }
         guard let snapshot = AccountScope.cookies(for: dsid) else {
             throw TFError.malformed("账号未保存 cookie 快照")
         }
-        AccountScope.activate(dsid: dsid, currentDsid: currentDsid, log: log)
-        TFStoreCapture.reset()
+        AccountScope.activate(dsid: dsid, currentDsid: nil, log: log)
         TFStoreCapture.amdm = amdm
         TFStoreCapture.storeFront = storeFront
         TFStoreCapture.cookies = snapshot

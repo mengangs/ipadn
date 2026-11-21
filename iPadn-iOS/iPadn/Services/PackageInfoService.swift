@@ -21,6 +21,12 @@ struct PackageInfo: Equatable {
     var version = ""
     var build = ""
     var minimumOS = ""
+    var sdkName = ""
+    var sdkVersion = ""
+    var sdkBuild = ""
+    var machOSDKVersion = ""
+    var xcodeVersion = ""
+    var xcodeBuild = ""
     var devices = ""
     var languages: [String] = []
     var permissions: [Permission] = []
@@ -33,6 +39,48 @@ struct PackageInfo: Equatable {
     var frameworkNames: [String] = []
     /// The package file's size on disk.
     var packageSize: Int64 = 0
+
+    var formattedSDK: String {
+        let lower = sdkName.lowercased()
+        let platform: String
+        if lower.hasPrefix("appletvos") { platform = "tvOS" }
+        else if lower.hasPrefix("macosx") { platform = "macOS" }
+        else if lower.hasPrefix("xros") { platform = "visionOS" }
+        else if lower.hasPrefix("watchos") { platform = "watchOS" }
+        else { platform = "iOS" }
+        let version = !machOSDKVersion.isEmpty ? machOSDKVersion : sdkVersion
+        if version.isEmpty { return sdkName }
+        return sdkBuild.isEmpty ? "\(platform) \(version)" : "\(platform) \(version) (\(sdkBuild))"
+    }
+
+    var formattedXcode: String {
+        if !xcodeVersion.isEmpty {
+            return xcodeBuild.isEmpty ? "Xcode \(xcodeVersion)" : "Xcode \(xcodeVersion) (\(xcodeBuild))"
+        }
+        if !xcodeBuild.isEmpty { return "Xcode (\(xcodeBuild))" }
+        return ""
+    }
+}
+
+struct QuickBuildInfo: Equatable, Sendable {
+    let sdk: String
+    let xcode: String
+    let minimumOS: String
+
+    var isEmpty: Bool { sdk.isEmpty && xcode.isEmpty }
+    var compactLabel: String {
+        let shortSDK = Self.stripBuildSuffix(sdk)
+        let shortXcode = Self.stripBuildSuffix(xcode)
+        return [shortSDK.isEmpty ? "" : "SDK " + shortSDK, shortXcode]
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
+    private static func stripBuildSuffix(_ value: String) -> String {
+        guard let range = value.range(of: " ("), value.hasSuffix(")") else { return value }
+        let prefix = String(value[..<range.lowerBound])
+        return prefix == "Xcode" ? value : prefix
+    }
 }
 
 enum PackageInfoService {
@@ -48,6 +96,10 @@ enum PackageInfoService {
         for entry in archive where entry.path.hasPrefix(prefix) { paths.append(String(entry.path.dropFirst(prefix.count))) }
 
         var info = describe(plist)
+        let executableName = plistString(plist["CFBundleExecutable"])
+        if !executableName.isEmpty {
+            info.machOSDKVersion = readMachOSDKVersion(executableName: executableName, appPrefix: prefix, archive: archive)
+        }
         let metadata: [String: Any]
         if let entry = archive["iTunesMetadata.plist"] { metadata = (try? readPlist(entry, archive: archive)) ?? [:] }
         else { metadata = [:] }
@@ -82,6 +134,27 @@ enum PackageInfoService {
         return info
     }
 
+    /// Fast read of SDK version, Xcode version and MinimumOSVersion from an IPA without scanning all bundle entries.
+    static func quickBuildInfo(_ url: URL) -> QuickBuildInfo? {
+        guard let archive = try? Archive(url: url, accessMode: .read),
+              let main = archive.first(where: { entry in
+                  let parts = entry.path.split(separator: "/")
+                  return parts.count == 3 && parts[0] == "Payload" && parts[1].hasSuffix(".app") && parts[2] == "Info.plist"
+              }),
+              let plist = try? readPlist(main, archive: archive) else { return nil }
+        let prefix = String(main.path.dropLast("Info.plist".count))
+        var info = describe(plist)
+        let executableName = plistString(plist["CFBundleExecutable"])
+        if !executableName.isEmpty {
+            info.machOSDKVersion = readMachOSDKVersion(executableName: executableName, appPrefix: prefix, archive: archive)
+        }
+        return QuickBuildInfo(
+            sdk: info.formattedSDK,
+            xcode: info.formattedXcode,
+            minimumOS: info.minimumOS.isEmpty ? "" : "iOS " + info.minimumOS
+        )
+    }
+
     /// The parts of a main Info.plist the page shows. Internal for tests.
     static func describe(_ plist: [String: Any]) -> PackageInfo {
         var info = PackageInfo()
@@ -90,6 +163,11 @@ enum PackageInfoService {
         info.version = plistString(plist["CFBundleShortVersionString"])
         info.build = plistString(plist["CFBundleVersion"])
         info.minimumOS = plistString(plist["MinimumOSVersion"])
+        info.sdkName = plistString(plist["DTSDKName"])
+        info.sdkVersion = extractSDKVersion(from: info.sdkName, platformVersion: plistString(plist["DTPlatformVersion"]))
+        info.sdkBuild = plistString(plist["DTSDKBuild"])
+        info.xcodeVersion = formatDTXcode(plistString(plist["DTXcode"]))
+        info.xcodeBuild = plistString(plist["DTXcodeBuild"])
         info.permissions = plist.keys.filter { $0.hasPrefix("NS") && $0.hasSuffix("UsageDescription") }.sorted()
             .map { PackageInfo.Permission(key: $0, reason: plistString(plist[$0])) }
         info.urlSchemes = ((plist["CFBundleURLTypes"] as? [[String: Any]]) ?? [])
@@ -98,6 +176,121 @@ enum PackageInfoService {
         info.urlSchemes = Array(NSOrderedSet(array: info.urlSchemes)) as? [String] ?? info.urlSchemes
         info.backgroundModes = (plist["UIBackgroundModes"] as? [String] ?? []).sorted()
         return info
+    }
+
+    /// Parses Apple's 4-digit `DTXcode` (e.g. `"1620"` -> `"16.2"`, `"1601"` -> `"16.0.1"`, `"2600"` -> `"26.0"`).
+    static func formatDTXcode(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        guard trimmed.allSatisfy({ $0.isASCII && $0.isNumber }) else { return trimmed }
+        let chars = Array(trimmed)
+        if chars.count == 4,
+           let major = Int(String(chars[0...1])),
+           let minor = Int(String(chars[2])),
+           let patch = Int(String(chars[3])) {
+            return patch == 0 ? "\(major).\(minor)" : "\(major).\(minor).\(patch)"
+        }
+        if chars.count == 3,
+           let major = Int(String(chars[0])),
+           let minor = Int(String(chars[1])),
+           let patch = Int(String(chars[2])) {
+            return patch == 0 ? "\(major).\(minor)" : "\(major).\(minor).\(patch)"
+        }
+        return trimmed
+    }
+
+    static func extractSDKVersion(from sdkName: String, platformVersion: String) -> String {
+        let pv = platformVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !pv.isEmpty { return pv }
+        let trimmed = sdkName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let firstDigit = trimmed.firstIndex(where: { $0.isASCII && $0.isNumber }) else { return "" }
+        return String(trimmed[firstDigit...])
+    }
+
+    private struct MachOHeaderStop: Error {}
+
+    private static func readEntryPrefix(_ entry: Entry, archive: Archive, limit: Int) -> Data {
+        var data = Data()
+        data.reserveCapacity(min(limit, Int(min(entry.uncompressedSize, UInt64(limit)))))
+        do {
+            _ = try archive.extract(entry, bufferSize: 1 << 16, skipCRC32: true) { chunk in
+                data.append(chunk)
+                if data.count >= limit { throw MachOHeaderStop() }
+            }
+        } catch {
+            // Early stop or unreadable entry; parse whatever prefix was read.
+        }
+        return data
+    }
+
+    private static func formatPackedSDK(_ value: UInt32) -> String {
+        guard value > 0 else { return "" }
+        let major = (value >> 16) & 0xFFFF
+        let minor = (value >> 8) & 0xFF
+        let patch = value & 0xFF
+        return patch == 0 ? "\(major).\(minor)" : "\(major).\(minor).\(patch)"
+    }
+
+    static func parseMachOSDKVersion(from data: Data, sliceOffset: Int = 0) -> String {
+        guard sliceOffset >= 0, sliceOffset <= data.count - 32 else { return "" }
+        let magic = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: sliceOffset, as: UInt32.self) }
+        guard magic == 0xFEEDFACF else { return "" }
+        let ncmds = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: sliceOffset + 16, as: UInt32.self) }
+        let sizeofcmds = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: sliceOffset + 20, as: UInt32.self) }
+        var cursor = sliceOffset + 32
+        let end = min(data.count, cursor + Int(sizeofcmds))
+        for _ in 0..<ncmds {
+            guard cursor <= end - 8 else { break }
+            let cmd = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: cursor, as: UInt32.self) }
+            let cmdsize = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: cursor + 4, as: UInt32.self) }
+            guard cmdsize >= 8, (cmdsize & 3) == 0, cursor <= end - Int(cmdsize) else { break }
+            if cmd == 0x32, cmdsize >= 24, cursor + 20 <= end { // LC_BUILD_VERSION
+                let sdk = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: cursor + 16, as: UInt32.self) }
+                let formatted = formatPackedSDK(sdk)
+                if !formatted.isEmpty { return formatted }
+            } else if cmd == 0x25, cmdsize >= 16, cursor + 16 <= end { // LC_VERSION_MIN_IPHONEOS
+                let sdk = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: cursor + 12, as: UInt32.self) }
+                let formatted = formatPackedSDK(sdk)
+                if !formatted.isEmpty { return formatted }
+            }
+            cursor += Int(cmdsize)
+        }
+        return ""
+    }
+
+    private static func readMachOSDKVersion(executableName: String, appPrefix: String, archive: Archive) -> String {
+        guard let entry = archive[appPrefix + executableName], entry.type == .file, entry.uncompressedSize >= 32 else {
+            return ""
+        }
+        var head = readEntryPrefix(entry, archive: archive, limit: 64 << 10)
+        guard head.count >= 32 else { return "" }
+        let magicBE = head.withUnsafeBytes { UInt32(bigEndian: $0.loadUnaligned(fromByteOffset: 0, as: UInt32.self)) }
+        if magicBE == 0xCAFEBABE || magicBE == 0xCAFEBABF {
+            let is64 = magicBE == 0xCAFEBABF
+            let count = Int(min(head.withUnsafeBytes { UInt32(bigEndian: $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self)) }, 16))
+            let stride = is64 ? 32 : 20
+            guard 8 + count * stride <= head.count else { return "" }
+            var offsets: [Int] = []
+            for i in 0..<count {
+                let base = 8 + i * stride
+                let cputype = head.withUnsafeBytes { UInt32(bigEndian: $0.loadUnaligned(fromByteOffset: base, as: UInt32.self)) }
+                guard (cputype & 0x0100_0000) != 0 else { continue }
+                let off: UInt64 = head.withUnsafeBytes {
+                    is64 ? UInt64(bigEndian: $0.loadUnaligned(fromByteOffset: base + 8, as: UInt64.self))
+                         : UInt64(UInt32(bigEndian: $0.loadUnaligned(fromByteOffset: base + 8, as: UInt32.self)))
+                }
+                if off <= 4 * 1024 * 1024 { offsets.append(Int(off)) }
+            }
+            if let maxOffset = offsets.max(), maxOffset + (64 << 10) > head.count {
+                head = readEntryPrefix(entry, archive: archive, limit: min(maxOffset + (64 << 10), 4 * 1024 * 1024 + (64 << 10)))
+            }
+            for offset in offsets {
+                let version = parseMachOSDKVersion(from: head, sliceOffset: offset)
+                if !version.isEmpty { return version }
+            }
+            return ""
+        }
+        return parseMachOSDKVersion(from: head, sliceOffset: 0)
     }
 
     static func isExtensionInfo(_ path: String) -> Bool {

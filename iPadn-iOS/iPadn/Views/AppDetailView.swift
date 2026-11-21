@@ -377,7 +377,7 @@ struct AppDetailView: View {
                     if let developer = extras?.developer, !developer.isEmpty { LabeledContent("开发者", value: developer) }
                     if store.settings.store.platform != .macOS {
                         if let storeURL {
-                            Link(destination: storeURL) { Label("在 App Store 中查看", systemImage: "arrow.up.right.square") }
+                            Link(destination: storeURL) { Label("在 App Store 中查看", systemImage: "arrow.up.forward.square") }
                         }
                     }
                 } header: { sectionTitle("信息") }
@@ -1051,8 +1051,9 @@ struct AppDetailView: View {
             metadataBox.versionsSnapshot = sanitizedResult
             metadataBox.releaseNotesSnapshot = releaseNotes
             let rowVersions = Dictionary(sanitizedResult.map { ($0.id, $0.version) }, uniquingKeysWith: { first, _ in first })
+            let rowIndices = Dictionary(sanitizedResult.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
             for (id, entry) in cached {
-                let rowIndex = sanitizedResult.firstIndex(where: { $0.id == id })
+                let rowIndex = rowIndices[id]
                 if Self.isLegacyStaleFallback(entry.version, versionID: id, schema: entry.metadataSchema,
                                               released: entry.released, appVersion: currentApp.version,
                                               in: sanitizedResult, cachedMetadata: cached,
@@ -1161,7 +1162,7 @@ private struct ScreenshotStrip: View {
             // Full page width: screenshots scroll from screen edge to screen
             // edge and rest lined up with the cards.
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
+                LazyHStack(spacing: 10) {
                     if placeholders {
                         ForEach(0..<3, id: \.self) { _ in
                             screenshotWidth(of: ScreenshotTile(image: nil, failed: false, cornerRadius: placeholderAspect < 1 ? 22 : 14)
@@ -1196,6 +1197,7 @@ private struct ScreenshotStrip: View {
         }
         .measureLegacyWidth($legacyWidth)
         .task(id: screenshots.map(\.url)) { await load() }
+        .onDisappear { images.removeAll() }
         .accessibilityIdentifier("detail.screenshots")
     }
 
@@ -1310,7 +1312,7 @@ extension View {
 private struct CardRows: _VariadicView_UnaryViewRoot {
     func body(children: _VariadicView.Children) -> some View {
         let last = children.last?.id
-        LazyVStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(children) { child in
                 child
                     .padding(child[CardRowInsetsKey.self] ?? EdgeInsets(top: 11, leading: 20, bottom: 11, trailing: 20))
@@ -1342,6 +1344,15 @@ private enum ScreenshotCache {
             if let task = pending[url] { return await task.value }
             let task = Task.detached(priority: .utility) { () -> UIImage? in
                 guard let (data, _) = try? await URLSession.shared.data(from: url), let image = UIImage(data: data) else { return nil }
+                let pixelW = image.size.width * image.scale
+                let pixelH = image.size.height * image.scale
+                let maxDim: CGFloat = 1400
+                if max(pixelW, pixelH) > maxDim {
+                    let factor = maxDim / max(pixelW, pixelH)
+                    let target = CGSize(width: max(1, (pixelW * factor).rounded()),
+                                        height: max(1, (pixelH * factor).rounded()))
+                    return await image.byPreparingThumbnail(ofSize: target) ?? image
+                }
                 return await image.byPreparingForDisplay() ?? image
             }
             pending[url] = task
@@ -1459,6 +1470,7 @@ private struct ScreenshotViewer: View {
                 if let image = await ScreenshotCache.image(shot.url) { images[shot.url] = image }
             }
         }
+        .onDisappear { images.removeAll() }
     }
 }
 

@@ -34,8 +34,8 @@ struct FairPlayVerification: Sendable {
 
     var summary: String {
         let decrypted = files.filter { $0.wasEncrypted && $0.ok }.count
-        var text = "Mach-O \(machOCount) 个，本次解密 \(decrypted) 个，残留加密 \(encryptedRemaining) 个"
-        if !failures.isEmpty { text += "，校验失败 \(failures.count) 个" }
+        var text = AppText.text("Mach-O \(machOCount) 个，本次解密 \(decrypted) 个，残留加密 \(encryptedRemaining) 个")
+        if !failures.isEmpty { text += AppText.text("，校验失败 \(failures.count) 个") }
         return text
     }
 }
@@ -194,7 +194,7 @@ enum FairPlayVerifier {
     /// look like real code.
     static func verify(ipa url: URL, wasEncrypted: [String: Int]) throws -> FairPlayVerification {
         guard let archive = try? Archive(url: url, accessMode: .read, pathEncoding: nil) else {
-            throw ToolError.message("无法打开导出的安装包")
+            throw ToolError.message(AppText.text("无法打开导出的安装包"))
         }
         var files: [FairPlayFileReport] = []
         var remaining = 0

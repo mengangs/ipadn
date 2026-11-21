@@ -55,18 +55,6 @@ struct TestFlightHomeView: View {
     @State private var expandIncompatible = true
     @State private var expandPreviouslyTested = true
 
-    private var testingApps: [TFBetaApp] {
-        filteredApps.filter { (model.details[$0.id]?.availability ?? .testing) == .testing }
-    }
-
-    private var incompatibleApps: [TFBetaApp] {
-        filteredApps.filter { model.details[$0.id]?.availability == .incompatible }
-    }
-
-    private var previouslyTestedApps: [TFBetaApp] {
-        filteredApps.filter { model.details[$0.id]?.availability == .previouslyTested }
-    }
-
     private enum SwitchTarget: Equatable {
         case account(TFAccountIdentity)
         case custom
@@ -122,7 +110,8 @@ struct TestFlightHomeView: View {
                         }
                         Spacer(minLength: 8)
                         Button("切换账号") {
-                            if let target = accountStore.accounts.first(where: { $0.email == externalEmail }) {
+                            let targetKey = AppleAccount.normalizedIdentifier(externalEmail)
+                            if let target = accountStore.accounts.first(where: { AppleAccount.normalizedIdentifier($0.email) == targetKey }) {
                                 requestAccountSwitch(.account(target))
                             }
                         }
@@ -162,6 +151,8 @@ struct TestFlightHomeView: View {
             case .authFailed, .networkBlocked:
                 if !model.apps.isEmpty {
                     catalogSection
+                } else if model.isUsingCustomSignIn {
+                    customSignInSection
                 }
             case let .authenticating(stageText):
                 authenticatingSection(stageText)
@@ -214,7 +205,11 @@ struct TestFlightHomeView: View {
                 }
             )
         }
-        .sheet(isPresented: $model.needsCode) {
+        .sheet(isPresented: $model.needsCode, onDismiss: {
+            if model.phase == .working && !model.isSubmittingCode {
+                model.cancelSignIn()
+            }
+        }) {
             TFVerificationSheet(
                 accountDisplay: TFHomeModel.mask(model.email),
                 code: $model.code,
@@ -244,7 +239,8 @@ struct TestFlightHomeView: View {
                         model.install(app, method: method, installation: store.installation)
                     },
                     onDelete: {
-                        model.deleteLocalProduct(app)
+                        store.removeTFProductWithUndo(for: app)
+                        installingApp = nil
                     },
                     onOpenSettings: {
                         store.accountNav.push(.installation)
@@ -277,10 +273,12 @@ struct TestFlightHomeView: View {
         .compatibleOnChange(of: scenePhase) { newPhase in
             if newPhase == .active {
                 capabilityRefreshTick += 1
+                model.invalidateProductCache()
             }
         }
         .onAppear {
             capabilityRefreshTick += 1
+            model.handleExternalActiveAccountChange(newActiveID: apple.activeID, accountStore: accountStore)
         }
     }
 
@@ -554,7 +552,8 @@ struct TestFlightHomeView: View {
 
     @ViewBuilder
     private var catalogSection: some View {
-        if filteredApps.isEmpty {
+        let visible = filteredApps
+        if visible.isEmpty {
             Section {
                 Text("未找到匹配的测试 App")
                     .font(.subheadline)
@@ -563,6 +562,22 @@ struct TestFlightHomeView: View {
                     .padding(.vertical, 12)
             }
         } else {
+            let partitioned: (testing: [TFBetaApp], incompatible: [TFBetaApp], previouslyTested: [TFBetaApp]) = {
+                var testing: [TFBetaApp] = []
+                var incompatible: [TFBetaApp] = []
+                var previouslyTested: [TFBetaApp] = []
+                for app in visible {
+                    switch model.details[app.id]?.availability ?? .testing {
+                    case .testing: testing.append(app)
+                    case .incompatible: incompatible.append(app)
+                    case .previouslyTested: previouslyTested.append(app)
+                    }
+                }
+                return (testing, incompatible, previouslyTested)
+            }()
+            let testingApps = partitioned.testing
+            let incompatibleApps = partitioned.incompatible
+            let previouslyTestedApps = partitioned.previouslyTested
             if !testingApps.isEmpty {
                 Section {
                     ForEach(testingApps) { app in
@@ -628,7 +643,7 @@ struct TestFlightHomeView: View {
                 Text(title)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Image(systemName: expanded.wrappedValue ? "chevron.down" : "chevron.right")
+                Image(systemName: expanded.wrappedValue ? "chevron.down" : "chevron.forward")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tint)
             }
@@ -683,7 +698,6 @@ struct TestFlightHomeView: View {
             }
             .padding(.vertical, 4)
         }
-        .accessibilityLabel(Text(verbatim: model.details[app.id]?.name ?? app.name))
     }
 
     @ViewBuilder
@@ -975,12 +989,15 @@ final class TFHomeModel: ObservableObject {
     @Published var dsidConflict = false
     @Published var externalActiveSwitchEmail: String?
     @Published var networkMode: TFNetworkMode = TFNet.mode
+    @Published private(set) var isUsingCustomSignIn = false
 
     private var runs: [String: TFTransferHandle] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
+    private var downloadTokens: [String: UUID] = [:]
     private var detailTask: Task<Void, Never>?
     private var hydrateTask: Task<Void, Never>?
     private var restoreTask: Task<Void, Never>?
+    private var accountEpoch = 0
     private var session: TFSession?
     private var context: TFContext?
     private var bootstrapped = false
@@ -988,6 +1005,9 @@ final class TFHomeModel: ObservableObject {
     private var lastSyncedAt: [String: Date] = [:]
     /// Guards automatic first-time sign-in so each account tries at most ONCE per launch (anti-503).
     private var attemptedAutoSignInEmails: Set<String> = []
+    private var productsCache: [String: String] = UserDefaults.standard.dictionary(forKey: "tf.products") as? [String: String] ?? [:]
+    private var resolvedProductURLs: [String: URL] = [:]
+    private var checkedProductBundles: Set<String> = []
     var accountSummary = ""
 
     private var relay: TFLogin.CodeRelay?
@@ -1020,12 +1040,18 @@ final class TFHomeModel: ObservableObject {
         TFSessionStore.prune(keepingAccounts: accountStore.apple.accounts)
 
         if bootstrapped {
+            if (pageState == .noAccount || email.isEmpty),
+               let active = accountStore.apple.active ?? accountStore.apple.accounts.first {
+                switchToAccount(email: active.id, password: active.password, storeAccountDsid: active.dsid)
+                return
+            }
             // Already alive in memory: 0ms re-entry with zero redundant reload!
             if !apps.isEmpty { loadProducts() }
             return
         }
         bootstrapped = true
 
+        #if DEBUG
         let wanted = ProcessInfo.processInfo.arguments
             .first { $0.hasPrefix("--tf-account=") }
             .map { String($0.dropFirst("--tf-account=".count)) }
@@ -1036,6 +1062,9 @@ final class TFHomeModel: ObservableObject {
                     || account.id.localizedCaseInsensitiveContains(needle)
             }
         }
+        #else
+        let picked: AppleAccount? = nil
+        #endif
         let remembered = TFSessionStore.lastAccountEmail.flatMap { accountStore.account(for: $0) }
         let roster = accountStore.apple.accounts
             .map { TFHomeModel.mask($0.id) }
@@ -1055,11 +1084,12 @@ final class TFHomeModel: ObservableObject {
     }
 
     func enterCustomSignIn() {
+        isUsingCustomSignIn = true
         pageState = .customSignIn
     }
 
     func handleExternalActiveAccountChange(newActiveID: String?, accountStore: TFAccountStore) {
-        guard let newActiveID, !newActiveID.isEmpty else { return }
+        guard bootstrapped, let newActiveID, !newActiveID.isEmpty else { return }
         let normalizedNew = AppleAccount.normalizedIdentifier(newActiveID)
         let normalizedCurrent = AppleAccount.normalizedIdentifier(email)
         guard normalizedNew != normalizedCurrent else {
@@ -1078,9 +1108,12 @@ final class TFHomeModel: ObservableObject {
     func switchToAccount(email newEmail: String, password newPassword: String,
                          storeAccountDsid: String, custom: Bool = false) {
         let previousDsid = session?.dsid
+        accountEpoch += 1
         cancelAllDownloads()
         cancelSignIn()
         restoreTask?.cancel()
+        restoreTask = nil
+        isRestoringSilently = false
         detailTask?.cancel()
         hydrateTask?.cancel()
 
@@ -1104,7 +1137,11 @@ final class TFHomeModel: ObservableObject {
 
         email = newEmail
         password = newPassword
+        isUsingCustomSignIn = custom || newEmail.isEmpty
         if custom || newEmail.isEmpty {
+            if let previousDsid { AccountScope.writeBack(dsid: previousDsid) }
+            AccountScope.clearSharedCookies()
+            TFStoreCapture.reset()
             pageState = .customSignIn
             return
         }
@@ -1115,10 +1152,16 @@ final class TFHomeModel: ObservableObject {
 
     func clearPersistedSession(storeAccountDsid: String) {
         let dsid = session?.dsid ?? storeAccountDsid
+        accountEpoch += 1
         TFSessionStore.delete(dsid: dsid, email: email)
+        AccountScope.clearSharedCookies()
+        TFStoreCapture.reset()
         lastSyncedAt.removeValue(forKey: dsid)
         cancelAllDownloads()
+        cancelSignIn()
         restoreTask?.cancel()
+        restoreTask = nil
+        isRestoringSilently = false
         detailTask?.cancel()
         hydrateTask?.cancel()
         session = nil
@@ -1183,19 +1226,28 @@ final class TFHomeModel: ObservableObject {
 
             restoreTask?.cancel()
             isRestoringSilently = true
+            let epoch = accountEpoch
             restoreTask = Task { [weak self] in
                 guard let self else { return }
-                defer { Task { @MainActor in self.isRestoringSilently = false } }
+                defer {
+                    Task { @MainActor in
+                        if self.accountEpoch == epoch { self.isRestoringSilently = false }
+                    }
+                }
                 let append: @Sendable (String) -> Void = { line in
                     TFLog.append(line)
-                    Task { @MainActor in self.push(line) }
+                    Task { @MainActor in
+                        if self.accountEpoch == epoch { self.push(line) }
+                    }
                 }
                 append("restore: 尝试恢复 dsid …" + String(stored.dsid.suffix(4)))
 
                 // L3: Persisted Keychain TFSession directly.
                 do {
                     let catalog = try await TFAPI.catalog(session: candidateSession, log: append)
+                    guard !Task.isCancelled else { return }
                     await MainActor.run {
+                        guard self.accountEpoch == epoch else { return }
                         self.applyCatalogSuccess(
                             catalog: catalog,
                             session: candidateSession,
@@ -1207,9 +1259,13 @@ final class TFHomeModel: ObservableObject {
                     append("restore: L3 钥匙串会话恢复成功（\(catalog.count) 个 App）")
                     return
                 } catch {
+                    if Task.isCancelled || error is CancellationError || (error as NSError).code == NSURLErrorCancelled {
+                        return
+                    }
                     append("restore: L3 未通过（" + TFLogin.shortDescription(error) + "）")
                     if !isSessionExpiredError(error) {
                         await MainActor.run {
+                            guard self.accountEpoch == epoch else { return }
                             self.session = candidateSession
                             self.context = rebuiltContext
                         }
@@ -1222,7 +1278,9 @@ final class TFHomeModel: ObservableObject {
                     do {
                         let freshSession = try await TFAPI.authenticate(context: ctx, log: append)
                         let catalog = try await TFAPI.catalog(session: freshSession, log: append)
+                        guard !Task.isCancelled else { return }
                         await MainActor.run {
+                            guard self.accountEpoch == epoch else { return }
                             TFSessionStore.save(session: freshSession, context: ctx, email: email)
                             self.applyCatalogSuccess(
                                 catalog: catalog,
@@ -1235,11 +1293,16 @@ final class TFHomeModel: ObservableObject {
                         append("restore: L2 10-cookie 无感续期成功（\(catalog.count) 个 App）")
                         return
                     } catch {
+                        if Task.isCancelled || error is CancellationError || (error as NSError).code == NSURLErrorCancelled {
+                            return
+                        }
                         append("restore: L2 无感续期未通过（" + TFLogin.shortDescription(error) + "）")
                     }
                 }
 
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
+                    guard self.accountEpoch == epoch else { return }
                     self.session = nil
                     self.context = nil
                     if allowAutoSignIn {
@@ -1279,6 +1342,7 @@ final class TFHomeModel: ObservableObject {
         self.dsidConflict = TFAccountStore.hasDSIDConflict(storeDsid: storeAccountDsid, petDsid: session.dsid)
         self.proxyBypassed = TFNet.didBypassProxy
         self.phase = .idle
+        self.isUsingCustomSignIn = false
         self.pageState = sorted.isEmpty ? .catalogEmpty : .catalogReady
         self.lastSyncedAt[session.dsid] = Date()
         TFSessionStore.saveCatalog(sorted, dsid: session.dsid)
@@ -1322,39 +1386,52 @@ final class TFHomeModel: ObservableObject {
         self.relay = relay
         let email = email.trimmingCharacters(in: .whitespaces)
         let password = password
+        let epoch = accountEpoch
         TFSessionStore.lastAccountEmail = email
 
         task = Task { [weak self] in
             let append: @Sendable (String) -> Void = { line in
                 TFLog.append(line)
-                Task { @MainActor in self?.push(line) }
+                Task { @MainActor in
+                    guard let self, self.accountEpoch == epoch else { return }
+                    self.push(line)
+                }
             }
             let gsaDNS = await TFDoh.probe("gsa.apple.com", log: append)
             let tfDNS = await TFDoh.probe("testflight.apple.com", log: append)
             let reachability = await TFGSA.probe(log: append)
-            await MainActor.run {
-                self?.dnsPathSummary = gsaDNS == tfDNS ? gsaDNS : "GSA: \(gsaDNS) · TF: \(tfDNS)"
-                self?.probe = reachability
-                self?.pageState = .authenticating(AppText.text("登录 Apple 账号…"))
+            guard !Task.isCancelled else { return }
+            let stillActive = await MainActor.run { () -> Bool in
+                guard let self, self.accountEpoch == epoch else { return false }
+                self.dnsPathSummary = gsaDNS == tfDNS ? gsaDNS : "GSA: \(gsaDNS) · TF: \(tfDNS)"
+                self.probe = reachability
+                self.pageState = .authenticating(AppText.text("登录 Apple 账号…"))
+                return true
             }
+            guard stillActive else { return }
             do {
                 let context = try await TFLogin.signIn(email: email, password: password,
                                                        relay: relay, log: append)
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
-                    self?.needsCode = false
-                    self?.isSubmittingCode = false
-                    self?.pageState = .authenticating(AppText.text("建立 TestFlight 会话…"))
+                    guard let self, self.accountEpoch == epoch else { return }
+                    self.needsCode = false
+                    self.isSubmittingCode = false
+                    self.pageState = .authenticating(AppText.text("建立 TestFlight 会话…"))
                 }
                 let session = try await TFAPI.authenticate(context: context, log: append)
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
-                    self?.dsidTail = String(session.dsid.suffix(4))
-                    self?.dsidConflict = TFAccountStore.hasDSIDConflict(storeDsid: storeAccountDsid, petDsid: session.dsid)
-                    self?.proxyBypassed = TFNet.didBypassProxy
-                    self?.pageState = .authenticating(AppText.text("读取测试列表…"))
+                    guard let self, self.accountEpoch == epoch else { return }
+                    self.dsidTail = String(session.dsid.suffix(4))
+                    self.dsidConflict = TFAccountStore.hasDSIDConflict(storeDsid: storeAccountDsid, petDsid: session.dsid)
+                    self.proxyBypassed = TFNet.didBypassProxy
+                    self.pageState = .authenticating(AppText.text("读取测试列表…"))
                 }
                 let catalog = try await TFAPI.catalog(session: session, log: append)
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
-                    guard let self else { return }
+                    guard let self, self.accountEpoch == epoch else { return }
                     TFSessionStore.save(session: session, context: context, email: email)
                     self.applyCatalogSuccess(
                         catalog: catalog,
@@ -1366,9 +1443,10 @@ final class TFHomeModel: ObservableObject {
                     self.append("完成：\(catalog.count) 个 App（会话已持久化）")
                 }
 
+                #if DEBUG
                 if let wanted = await MainActor.run(body: { self?.autoBundle }) {
                     await MainActor.run {
-                        guard let self else { return }
+                        guard let self, self.accountEpoch == epoch else { return }
                         let match = self.apps.first { $0.name.localizedCaseInsensitiveContains(wanted) }
                             ?? self.apps.first { $0.id == wanted }
                         if let match { self.start(match) }
@@ -1377,9 +1455,11 @@ final class TFHomeModel: ObservableObject {
                 if let bundle = await MainActor.run(body: { self?.autoInstall }) {
                     await self?.installHook(bundle, append: append)
                 }
+                #endif
             } catch {
                 await MainActor.run {
-                    self?.handleSignInError(error)
+                    guard let self, self.accountEpoch == epoch else { return }
+                    self.handleSignInError(error)
                 }
             }
         }
@@ -1413,14 +1493,18 @@ final class TFHomeModel: ObservableObject {
 
     func refreshCatalog(force: Bool = true) async {
         guard let session, phase == .idle, !isRefreshingCatalog else { return }
+        let epoch = accountEpoch
         isRefreshingCatalog = true
         defer { isRefreshingCatalog = false }
         let append: @Sendable (String) -> Void = { line in
             TFLog.append(line)
-            Task { @MainActor in self.push(line) }
+            Task { @MainActor in
+                if self.accountEpoch == epoch { self.push(line) }
+            }
         }
         do {
             let catalog = try await TFAPI.catalog(session: session, log: append)
+            guard !Task.isCancelled, accountEpoch == epoch else { return }
             let sorted = catalog.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             apps = sorted
             proxyBypassed = TFNet.didBypassProxy
@@ -1432,6 +1516,8 @@ final class TFHomeModel: ObservableObject {
             scheduleDetailAndIconFetch(for: sorted, session: session, force: force, log: append)
             append("刷新完成：\(sorted.count) 个 App")
         } catch {
+            guard !Task.isCancelled, accountEpoch == epoch,
+                  !(error is CancellationError), (error as NSError).code != NSURLErrorCancelled else { return }
             if isSessionExpiredError(error) {
                 pageState = .sessionExpired
             }
@@ -1562,6 +1648,7 @@ final class TFHomeModel: ObservableObject {
     private func scheduleDetailAndIconFetch(for list: [TFBetaApp], session: TFSession, force: Bool,
                                             log: @escaping @Sendable (String) -> Void) {
         let isPhone = UIDevice.current.userInterfaceIdiom == .phone
+        let epoch = accountEpoch
         detailTask?.cancel()
         detailTask = Task { [weak self] in
             var resolvedDetails: [String: TFAppDetail] = [:]
@@ -1590,7 +1677,7 @@ final class TFHomeModel: ObservableObject {
                         resolvedDetails[appID] = detail
                     }
                     await MainActor.run {
-                        guard let self else { return }
+                        guard let self, self.accountEpoch == epoch else { return }
                         for (appID, detail) in bulk {
                             self.details[appID] = detail
                             if let colors = detail.iconAsset?.colors {
@@ -1636,20 +1723,38 @@ final class TFHomeModel: ObservableObject {
                     }
                 }
                 for _ in 0..<min(maxConcurrent, list.count) { enqueueNext() }
-                for await (appID, detail, file) in group {
-                    if Task.isCancelled { break }
+                var pendingBatch: [(String, TFAppDetail?, URL?)] = []
+                var lastFlush = ProcessInfo.processInfo.systemUptime
+                func flushBatch() async {
+                    guard !pendingBatch.isEmpty else { return }
+                    let batch = pendingBatch
+                    pendingBatch.removeAll(keepingCapacity: true)
+                    lastFlush = ProcessInfo.processInfo.systemUptime
                     await MainActor.run {
-                        guard let self else { return }
-                        if let detail {
-                            self.details[appID] = detail
-                            if let colors = detail.iconAsset?.colors { self.iconColors[appID] = colors }
-                        }
-                        if let file {
-                            self.iconFiles[appID] = file
-                            self.iconRevisions[appID, default: 0] += 1
+                        guard let self, self.accountEpoch == epoch else { return }
+                        for (appID, detail, file) in batch {
+                            if let detail {
+                                self.details[appID] = detail
+                                if let colors = detail.iconAsset?.colors { self.iconColors[appID] = colors }
+                            }
+                            if let file {
+                                self.iconFiles[appID] = file
+                                self.iconRevisions[appID, default: 0] += 1
+                            }
                         }
                     }
+                }
+                for await (appID, detail, file) in group {
+                    if Task.isCancelled { break }
+                    pendingBatch.append((appID, detail, file))
+                    let now = ProcessInfo.processInfo.systemUptime
+                    if pendingBatch.count >= 4 || now - lastFlush >= 0.25 {
+                        await flushBatch()
+                    }
                     enqueueNext()
+                }
+                if !Task.isCancelled {
+                    await flushBatch()
                 }
             }
         }
@@ -1664,6 +1769,10 @@ final class TFHomeModel: ObservableObject {
         proxyBypassed = TFNet.didBypassProxy
 
         if case TFError.cancelled = error {
+            pageState = session == nil ? (apps.isEmpty ? .readyToSignIn : .sessionExpired) : (apps.isEmpty ? .catalogEmpty : .catalogReady)
+            return
+        }
+        if error is CancellationError || (error as NSError).code == NSURLErrorCancelled {
             pageState = session == nil ? (apps.isEmpty ? .readyToSignIn : .sessionExpired) : (apps.isEmpty ? .catalogEmpty : .catalogReady)
             return
         }
@@ -1753,8 +1862,9 @@ final class TFHomeModel: ObservableObject {
             || (lower.contains("select") && lower.contains("number"))
     }
 
-    // MARK: - Unattended Automation Hooks (Preserved Verbatim)
+    // MARK: - Unattended Automation Hooks (Debug Only)
 
+    #if DEBUG
     var autoBundle: String? {
         ProcessInfo.processInfo.arguments
             .first { $0.hasPrefix("--tf-download=") }
@@ -1790,17 +1900,24 @@ final class TFHomeModel: ObservableObject {
                    + " signer=" + (info.signer ?? "-")
                    + " storeItemID=" + (info.storeItemID ?? "-")
                    + " manifestInstall=" + String(describing: info.manifestInstall))
-            let opened = await MainActor.run {
-                UIApplication.shared.canOpenURL(URL(string: bundle + ":")!)
+            if let schemeURL = URL(string: bundle + ":") {
+                let opened = await MainActor.run {
+                    UIApplication.shared.canOpenURL(schemeURL)
+                }
+                if opened {
+                    _ = await MainActor.run { UIApplication.shared.open(schemeURL) }
+                }
+                append("launch: " + (opened ? "opened" : "no url scheme"))
+            } else {
+                append("launch: invalid bundle scheme")
             }
-            if opened {
-                _ = await MainActor.run { UIApplication.shared.open(URL(string: bundle + ":")!) }
-            }
-            append("launch: " + (opened ? "opened" : "no url scheme"))
         } catch {
             append("install: failed " + TFLogin.shortDescription(error))
         }
     }
+    #else
+    var expectation: (members: Int, encrypted: Int)? { nil }
+    #endif
 
     static func mask(_ email: String) -> String {
         guard let at = email.firstIndex(of: "@") else { return "***" }
@@ -1864,7 +1981,9 @@ final class TFHomeModel: ObservableObject {
         }
 
         let handle = TFTransferHandle()
+        let token = UUID()
         runs[app.id] = handle
+        downloadTokens[app.id] = token
         var state = TFRowState()
         state.stage = .resolving
         rows[app.id] = state
@@ -1873,6 +1992,7 @@ final class TFHomeModel: ObservableObject {
 
         let progress: @Sendable (Int64, Int64) -> Void = { received, total in
             Task { @MainActor in
+                guard self.downloadTokens[app.id] == token else { return }
                 var current = self.rows[app.id] ?? TFRowState()
                 guard current.stage == .downloading else { return }
                 current.received = received
@@ -1889,17 +2009,22 @@ final class TFHomeModel: ObservableObject {
                     do {
                         bundle = try await TFAPI.publicBundleID(appID: app.id, log: append)
                     } catch {
+                        if Task.isCancelled || handle.isCancelled { throw TFError.cancelled }
                         append("lookup 未命中（" + TFLogin.shortDescription(error) + "），改走账号端点")
                     }
                 }
                 if bundle.isEmpty {
                     bundle = await TFAPI.resolveBundle(appID: app.id, session: session, log: append)
                 }
+                if Task.isCancelled || handle.isCancelled { throw TFError.cancelled }
                 guard !bundle.isEmpty else {
                     throw TFError.malformed("解析不到 \(app.name) 的 bundleId")
                 }
-                self.mark(app.id, stage: .installing)
-                self.remember(appID: app.id, bundle: bundle)
+                await MainActor.run {
+                    guard self.downloadTokens[app.id] == token else { return }
+                    self.mark(app.id, stage: .installing)
+                    self.remember(appID: app.id, bundle: bundle)
+                }
 
                 let hardware = TFIdentity.hardware20()
                 let udid = hardware.map { String(format: "%02x", $0) }.joined()
@@ -1910,13 +2035,17 @@ final class TFHomeModel: ObservableObject {
                                                                session: session, headers: resolvedContext.headers,
                                                                dsid: resolvedContext.dsid, hardware20: hardware,
                                                                storefront: resolvedContext.storefront, log: append)
+                if Task.isCancelled || handle.isCancelled { throw TFError.cancelled }
                 let refresh: @Sendable () async -> Data? = {
                     try? await TFAPI.installMetadata(appID: app.id, buildID: buildID,
                                                      session: session, headers: resolvedContext.headers,
                                                      dsid: resolvedContext.dsid, hardware20: hardware,
                                                      storefront: resolvedContext.storefront, log: append)
                 }
-                await MainActor.run { self.mark(app.id, stage: .downloading) }
+                await MainActor.run {
+                    guard self.downloadTokens[app.id] == token else { return }
+                    self.mark(app.id, stage: .downloading)
+                }
                 let report = try await TFDownload.run(
                     bundle: bundle,
                     context: envelope,
@@ -1930,19 +2059,26 @@ final class TFHomeModel: ObservableObject {
                     progress: progress,
                     stage: { name in
                         if name == "verifying" {
-                            Task { @MainActor in self.mark(app.id, stage: .verifying) }
+                            Task { @MainActor in
+                                guard self.downloadTokens[app.id] == token else { return }
+                                self.mark(app.id, stage: .verifying)
+                            }
                         }
                     },
                     refresh: refresh,
                     log: append
                 )
                 await MainActor.run {
+                    guard self.downloadTokens[app.id] == token else { return }
                     var done = TFRowState()
                     done.stage = .done
                     done.output = report.output
                     done.total = Int64(report.outputBytes)
                     done.received = Int64(report.outputBytes)
                     self.rows[app.id] = done
+                    let key = bundle.lowercased()
+                    self.checkedProductBundles.insert(key)
+                    self.resolvedProductURLs[key] = report.output
                     if var detail = self.details[app.id], self.applyLocalDisplayOverrides(to: &detail, app: app) {
                         TFSessionStore.saveDetail(detail)
                         self.details[app.id] = detail
@@ -1954,7 +2090,12 @@ final class TFHomeModel: ObservableObject {
                 }
             } catch {
                 await MainActor.run {
-                    if case TFError.cancelled = error {
+                    guard self.downloadTokens[app.id] == token else { return }
+                    let isCancelled: Bool
+                    if case TFError.cancelled = error { isCancelled = true }
+                    else if error is CancellationError || (error as NSError).code == NSURLErrorCancelled || handle.isCancelled { isCancelled = true }
+                    else { isCancelled = false }
+                    if isCancelled {
                         self.cleanupTemps(appID: app.id)
                         self.rows[app.id] = TFRowState()
                         self.append("已取消：\(app.name)")
@@ -1970,21 +2111,28 @@ final class TFHomeModel: ObservableObject {
                 }
             }
             await MainActor.run {
-                self.runs[app.id] = nil
-                self.tasks[app.id] = nil
+                if self.downloadTokens[app.id] == token {
+                    self.runs[app.id] = nil
+                    self.tasks[app.id] = nil
+                    self.downloadTokens[app.id] = nil
+                }
             }
         }
     }
 
     func cancel(_ app: TFBetaApp) {
+        downloadTokens[app.id] = nil
         runs[app.id]?.cancel()
         tasks[app.id]?.cancel()
+        runs[app.id] = nil
+        tasks[app.id] = nil
         cleanupTemps(appID: app.id)
         rows[app.id] = TFRowState()
         append("已取消：\(app.name)")
     }
 
     func cancelAllDownloads() {
+        downloadTokens.removeAll()
         for (appID, handle) in runs {
             handle.cancel()
             cleanupTemps(appID: appID)
@@ -2004,6 +2152,9 @@ final class TFHomeModel: ObservableObject {
                 try? FileManager.default.removeItem(at: product.ipa)
                 try? FileManager.default.removeItem(at: product.directory)
             }
+            let key = bundle.lowercased()
+            resolvedProductURLs.removeValue(forKey: key)
+            checkedProductBundles.insert(key)
         }
         cleanupTemps(appID: app.id)
         rows[app.id] = TFRowState()
@@ -2021,6 +2172,8 @@ final class TFHomeModel: ObservableObject {
     func didDeleteProduct(appID: String, bundleID: String) {
         var matchedIDs: Set<String> = [appID]
         let lowerBundle = bundleID.lowercased()
+        resolvedProductURLs.removeValue(forKey: lowerBundle)
+        checkedProductBundles.insert(lowerBundle)
         for app in apps {
             let b = (products[app.id] ?? details[app.id]?.bundleID ?? app.bundleID).lowercased()
             if b == lowerBundle { matchedIDs.insert(app.id) }
@@ -2170,23 +2323,40 @@ final class TFHomeModel: ObservableObject {
         }
     }
 
+    func invalidateProductCache() {
+        resolvedProductURLs.removeAll(keepingCapacity: true)
+        checkedProductBundles.removeAll(keepingCapacity: true)
+    }
+
     func productURL(appID: String, bundle: String) -> URL? {
-        TFProducts.newest(bundle: bundle)?.ipa
+        let key = bundle.lowercased()
+        if checkedProductBundles.contains(key) {
+            return resolvedProductURLs[key]
+        }
+        let url = TFProducts.newest(bundle: bundle)?.ipa
+        checkedProductBundles.insert(key)
+        if let url { resolvedProductURLs[key] = url }
+        return url
     }
 
     private var products: [String: String] {
-        get { UserDefaults.standard.dictionary(forKey: "tf.products") as? [String: String] ?? [:] }
-        set { UserDefaults.standard.set(newValue, forKey: "tf.products") }
+        get { productsCache }
+        set {
+            productsCache = newValue
+            UserDefaults.standard.set(newValue, forKey: "tf.products")
+        }
     }
 
     private func remember(appID: String, bundle: String) {
-        var map = products
+        guard productsCache[appID] != bundle else { return }
+        var map = productsCache
         map[appID] = bundle
         products = map
     }
 
     func loadProducts() {
         _ = TFProducts.migrateFlatLayout()
+        invalidateProductCache()
         var changed = false
         for app in apps {
             let bundle = products[app.id] ?? details[app.id]?.bundleID ?? app.bundleID
@@ -2216,7 +2386,7 @@ final class TFHomeModel: ObservableObject {
     }
 
     private func push(_ line: String) {
-        lines.append(line)
+        lines.append(TFRedaction.clean(line))
         if lines.count > 40 { lines.removeFirst(lines.count - 40) }
     }
 }

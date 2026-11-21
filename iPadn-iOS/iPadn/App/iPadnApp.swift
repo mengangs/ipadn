@@ -82,9 +82,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
                      completionHandler: @escaping () -> Void) {
-        Task { @MainActor in
-            guard identifier == DownloadManager.sessionID else { completionHandler(); return }
-            AppContainer.shared.downloads.backgroundCompletion = completionHandler
+        guard identifier == DownloadManager.sessionID else { completionHandler(); return }
+        MainActor.assumeIsolated {
+            let downloads = AppContainer.shared.downloads
+            let previous = downloads.backgroundCompletion
+            downloads.backgroundCompletion = {
+                previous?()
+                completionHandler()
+            }
         }
     }
 }

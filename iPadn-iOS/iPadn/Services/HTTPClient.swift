@@ -20,6 +20,50 @@ enum RequestFailureLog {
     static func endpointName(_ value: String) -> Bool {
         !value.isEmpty && value.count <= 40 && value.allSatisfy { $0.isLetter && $0.isASCII }
     }
+    /// Strict ASCII allowlist for Apple plist diagnostic metadata (failureType,
+    /// jingleDocType, metrics.dialogId). Kept <= 36 chars so safe metadata
+    /// never trips DiagnosticRedactor's 40-char opaque-token filter and
+    /// free-form server messages can never be logged.
+    static func safeDiagnosticToken(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 36 else { return nil }
+        guard trimmed.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == ".") }) else {
+            return nil
+        }
+        return trimmed
+    }
+    /// Strict signed integer validation for Apple `failureType` codes shown
+    /// on unmapped fallback alerts (e.g. `-128`, `5005`).
+    static func safeFailureCode(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 12 else { return nil }
+        let digits = trimmed.hasPrefix("-") ? trimmed.dropFirst() : trimmed[...]
+        guard !digits.isEmpty, digits.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        return trimmed
+    }
+    /// Records redacted metadata for HTTP 200 Apple plist business failures
+    /// (`failureType`, `jingleDocType`, `metrics.dialogId`, non-zero `status`).
+    /// Never records `customerMessage`, URLs, headers, cookies, or account data.
+    static func recordAppleFailure(_ url: URL?, response: [String: Any], stage: String? = nil) {
+        let code = safeDiagnosticToken(plistString(response["failureType"]))
+        let doc = safeDiagnosticToken(plistString(response["jingleDocType"]))
+        let metrics = response["metrics"] as? [String: Any]
+        let dialogID = metrics.flatMap { safeDiagnosticToken(plistString($0["dialogId"])) }
+        let statusVal = (response["status"] as? NSNumber)?.intValue
+        let nonZeroStatus = statusVal.flatMap { $0 != 0 ? $0 : nil }
+        guard code != nil || doc != nil || dialogID != nil || nonZeroStatus != nil else { return }
+        let time = Date().formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
+        var parts = [time]
+        if let stage, let safeStage = safeDiagnosticToken(stage) { parts.append("stage=" + safeStage) }
+        if let host = url?.host { parts.append("host=" + host) }
+        if let last = url?.lastPathComponent, endpointName(last) { parts.append("endpoint=" + last) }
+        if let code { parts.append("code=" + code) }
+        if let doc { parts.append("doc=" + doc) }
+        if let dialogID { parts.append("dialog=" + dialogID) }
+        if let nonZeroStatus { parts.append("status=\(nonZeroStatus)") }
+        let line = parts.joined(separator: "; ")
+        entries.withLock { list in list.append(line); if list.count > 20 { list.removeFirst(list.count - 20) } }
+    }
     static var text: String { entries.withLock { $0.isEmpty ? "(none)" : $0.joined(separator: "\n") } }
 }
 
@@ -211,15 +255,19 @@ final class HTTPClient: Sendable {
                  refreshHeaders: ((URL) async throws -> [String: String])? = nil) async throws -> (Data, HTTPURLResponse) {
         let retries = (retryTransient ?? (method == "GET")) ? 2 : 0
         var attempt = 0
+        var currentHeaders = headers
         while true {
             do {
-                return try await requestOnce(url, method: method, body: body, headers: headers, appleRedirects: appleRedirects,
+                return try await requestOnce(url, method: method, body: body, headers: currentHeaders, appleRedirects: appleRedirects,
                                              authentication: authentication, allowRedirects: allowRedirects,
                                              timeoutInterval: timeoutInterval, refreshHeaders: refreshHeaders)
             } catch {
                 guard attempt < retries, Self.isTransient(error), !Task.isCancelled else { throw error }
                 attempt += 1
                 try await Task.sleep(nanoseconds: UInt64(attempt) * 700_000_000)
+                if let refreshHeaders {
+                    currentHeaders = try await refreshHeaders(url)
+                }
             }
         }
     }
@@ -391,8 +439,16 @@ final class HTTPClient: Sendable {
 
     static func appleFailure(_ response: [String: Any]) -> ToolError? {
         let code = plistString(response["failureType"])
+        let customerMessage = plistString(response["customerMessage"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if customerMessage == "Your account is disabled." {
+            return .message(AppText.text("此 Apple 账号已被停用，请先在 Apple 官网或系统设置中恢复后再试。"))
+        }
+        if customerMessage == "Your password has changed." {
+            return .message(AppText.text("Apple 账号密码已更改，请重新登录。"))
+        }
         guard !code.isEmpty else { return nil }
         let messages = [
+            "1008": AppText.text("Apple 登录已过期，请重新登录。"),
             "2002": AppText.text("Apple 账号需要重新登录，请检查当前密码。"),
             "5002": AppText.text("Apple 服务暂时不可用，请稍后再试。"),
             "2040": AppText.text("该应用目前无法从 Apple 下载。"),
@@ -404,8 +460,16 @@ final class HTTPClient: Sendable {
             "2019": AppText.text("付费应用请先通过 App Store 正常购买。"),
             "9610": AppText.text("当前账号没有此应用的下载许可。请先在 App Store 获取应用。")
         ]
+        if let mapped = messages[code] {
+            return .message(mapped)
+        }
         // Raw customerMessage often contains internal localization keys,
         // response codes, or English diagnostic text; never show it in the UI.
-        return .message(messages[code] ?? AppText.text("Apple 暂时无法完成该操作，请稍后重试。"))
+        // For unmapped failures, surface only a strictly validated numeric code
+        // so reports identify the Apple rejection without leaking server text.
+        if let numericCode = RequestFailureLog.safeFailureCode(code) {
+            return .message(AppText.text("Apple 暂时无法完成该操作，请稍后重试（代码 \(numericCode)）。"))
+        }
+        return .message(AppText.text("Apple 暂时无法完成该操作，请稍后重试。"))
     }
 }

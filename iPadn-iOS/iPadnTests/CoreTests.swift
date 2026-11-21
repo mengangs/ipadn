@@ -3251,7 +3251,172 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(TFHomeModel.isMultiPhoneVerificationError("select a trusted number for verification"))
         XCTAssertTrue(TFHomeModel.isMultiPhoneVerificationError("missing phoneId in challenge"))
     }
+
+    func testTFRedactionScrubsSecretsAndEmails() {
+        let raw = "dpInfo=ABCDEFGHIJKLMNOP12345678 sinf=PD94bWwgdmVyc2lvbj0iMS4wIj8+ X-Apple-AMD-M=secretAmdmToken https://cdn.apple.com/a.ipa?accessKey=12345_secret&sig=abc /accounts/12345678/apps user.test@example.com"
+        let cleaned = TFRedaction.clean(raw)
+        XCTAssertFalse(cleaned.contains("ABCDEFGHIJKLMNOP12345678"))
+        XCTAssertFalse(cleaned.contains("PD94bWwgdmVyc2lvbj0iMS4wIj8+"))
+        XCTAssertFalse(cleaned.contains("secretAmdmToken"))
+        XCTAssertFalse(cleaned.contains("12345_secret"))
+        XCTAssertFalse(cleaned.contains("12345678"))
+        XCTAssertFalse(cleaned.contains("user.test@example.com"))
+    }
     #endif
+
+    func testLoopbackHostBlocksPrivateAndAliasHosts() {
+        for blocked in [
+            "localhost", "sub.localhost", "127.0.0.1", "10.7.0.1", "192.168.1.5",
+            "172.16.0.1", "169.254.169.254", "::1", "[0:0::1]", "[::ffff:7f00:1]",
+            "ipadn.localtest.me", "foo.lvh.me", "127.0.0.1.sslip.io", "ipadn.local", "2130706433"
+        ] {
+            XCTAssertTrue(DownloadManager.isLoopbackHost(blocked), "Expected blocked host: \(blocked)")
+        }
+        for allowed in ["apps.apple.com", "github.com", "objects.githubusercontent.com", "1.1.1.1"] {
+            XCTAssertFalse(DownloadManager.isLoopbackHost(allowed), "Expected allowed host: \(allowed)")
+        }
+    }
+
+    func testAccountSessionEntryRejectsPathTraversalDSID() {
+        let malicious = Data(#"{"id":"user@example.com","dsid":"../evil"}"#.utf8)
+        XCTAssertThrowsError(try JSONDecoder().decode(AccountSessionEntry.self, from: malicious))
+        let valid = Data(#"{"id":"user@example.com","dsid":"19318358872"}"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode(AccountSessionEntry.self, from: valid).dsid, "19318358872")
+    }
+
+    func testPackageInfoParsesSDKAndXcodeVersions() {
+        XCTAssertEqual(PackageInfoService.formatDTXcode("1620"), "16.2")
+        XCTAssertEqual(PackageInfoService.formatDTXcode("1601"), "16.0.1")
+        XCTAssertEqual(PackageInfoService.formatDTXcode("2600"), "26.0")
+        XCTAssertEqual(PackageInfoService.formatDTXcode("0941"), "9.4.1")
+        XCTAssertEqual(PackageInfoService.extractSDKVersion(from: "iphoneos18.2", platformVersion: ""), "18.2")
+        XCTAssertEqual(PackageInfoService.extractSDKVersion(from: "iphoneos26.0", platformVersion: "26.0"), "26.0")
+
+        let info = PackageInfoService.describe([
+            "CFBundleDisplayName": "Demo",
+            "CFBundleIdentifier": "com.example.demo",
+            "DTSDKName": "iphoneos18.2",
+            "DTPlatformVersion": "18.2",
+            "DTSDKBuild": "22C146",
+            "DTXcode": "1620",
+            "DTXcodeBuild": "16C5032a",
+        ])
+        XCTAssertEqual(info.formattedSDK, "iOS 18.2 (22C146)")
+        XCTAssertEqual(info.formattedXcode, "Xcode 16.2 (16C5032a)")
+
+        // Synthetic 64-bit Mach-O header with LC_BUILD_VERSION (platform=2 iOS, minos=16.0, sdk=26.0)
+        var macho = Data(repeating: 0, count: 64)
+        func put32(_ offset: Int, _ val: UInt32) {
+            var le = val.littleEndian
+            withUnsafeBytes(of: &le) { macho.replaceSubrange(offset..<(offset + 4), with: $0) }
+        }
+        put32(0, 0xFEEDFACF) // MH_MAGIC_64
+        put32(16, 1)         // ncmds
+        put32(20, 24)        // sizeofcmds
+        put32(32, 0x32)      // LC_BUILD_VERSION
+        put32(36, 24)        // cmdsize
+        put32(40, 2)         // PLATFORM_IOS
+        put32(44, 0x00100000) // minos 16.0.0
+        put32(48, 0x001A0100) // sdk 26.1.0
+        XCTAssertEqual(PackageInfoService.parseMachOSDKVersion(from: macho), "26.1")
+    }
+
+    func testAppleSessionExpiryStorefrontCorrectionTermsAndDiagnostics() throws {
+        // 1008 (device verification failed) treated as session expiry alongside 2034/2042.
+        XCTAssertTrue(AppleService.isSessionExpiredFailure("1008"))
+        XCTAssertTrue(AppleService.isSessionExpiredFailure("2034"))
+        XCTAssertTrue(AppleService.isSessionExpiredFailure("2042"))
+        XCTAssertFalse(AppleService.isSessionExpiredFailure("9610"))
+        XCTAssertFalse(AppleService.isSessionExpiredFailure("-128"))
+
+        // Password changed triggers explicit reauthentication regardless of failureType.
+        XCTAssertTrue(AppleAuthError.requiresReauthentication([
+            "failureType": "5000", "customerMessage": "Your password has changed."
+        ]))
+
+        // Friendly mapping + unmapped numeric code exposure without leaking server text.
+        let prevLocale = AppText.locale
+        defer { AppText.locale = prevLocale }
+        AppText.locale = Locale(identifier: "zh-Hans")
+
+        let disabled = try XCTUnwrap(HTTPClient.appleFailure([
+            "failureType": "5000", "customerMessage": "Your account is disabled."
+        ])?.localizedDescription)
+        XCTAssertTrue(disabled.contains("停用"))
+        XCTAssertFalse(disabled.contains("Your account"))
+
+        let expired1008 = try XCTUnwrap(HTTPClient.appleFailure([
+            "failureType": "1008"
+        ])?.localizedDescription)
+        XCTAssertTrue(expired1008.contains("过期"))
+        XCTAssertFalse(expired1008.contains("1008"))
+
+        let unmappedNumeric = try XCTUnwrap(HTTPClient.appleFailure([
+            "failureType": "-128", "customerMessage": "Account Not In This Store"
+        ])?.localizedDescription)
+        XCTAssertTrue(unmappedNumeric.contains("-128"))
+        XCTAssertFalse(unmappedNumeric.contains("Account Not In This Store"))
+
+        let unmappedText = try XCTUnwrap(HTTPClient.appleFailure([
+            "failureType": "secret_internal_reason"
+        ])?.localizedDescription)
+        XCTAssertFalse(unmappedText.contains("secret_internal_reason"))
+
+        // MZCommerce.CountryMismatch (-128) storefront recovery.
+        let mismatch: [String: Any] = [
+            "failureType": "-128",
+            "metrics": ["dialogId": "MZCommerce.CountryMismatch"],
+            "dialog": [
+                "okButtonAction": [
+                    "kind": "Goto",
+                    "url": "https://itunes.apple.com/WebObjects/MZStore.woa/wa/resetAndRedirect?dsf=143462"
+                ]
+            ]
+        ]
+        let corrected = try XCTUnwrap(AppleService.purchaseStorefrontCorrection(
+            mismatch, currentFullStoreFront: "143441-1,34", currentStoreFront: "143441"
+        ))
+        XCTAssertEqual(corrected.storeFront, "143462")
+        XCTAssertEqual(corrected.fullStoreFront, "143462-1,34")
+
+        // Same storefront is a no-op; untrusted host or wrong dialogId is rejected.
+        XCTAssertNil(AppleService.purchaseStorefrontCorrection(
+            mismatch, currentFullStoreFront: "143462-1,34", currentStoreFront: "143462"
+        ))
+        var evilMismatch = mismatch
+        evilMismatch["dialog"] = ["okButtonAction": [
+            "kind": "Goto",
+            "url": "https://evil.example.com/WebObjects/MZStore.woa/wa/resetAndRedirect?dsf=143462"
+        ]]
+        XCTAssertNil(AppleService.purchaseStorefrontCorrection(
+            evilMismatch, currentFullStoreFront: "143441-1,34", currentStoreFront: "143441"
+        ))
+
+        // App Store terms acceptance detection.
+        let termsResponse: [String: Any] = [
+            "jingleDocType": "buyProductFailure",
+            "action": [
+                "kind": "Goto",
+                "url": "https://p45-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/com.apple.jingle.app.finance.DirectAction/termsPage"
+            ]
+        ]
+        XCTAssertTrue(AppleService.isPurchaseTermsAction(termsResponse))
+        XCTAssertFalse(AppleService.isPurchaseTermsAction([
+            "jingleDocType": "buyProductFailure",
+            "action": ["kind": "Goto", "url": "https://evil-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/com.apple.jingle.app.finance.DirectAction/termsPage"]
+        ]))
+
+        // RequestFailureLog records HTTP 200 Apple failures cleanly without DiagnosticRedactor collision.
+        let buyURL = URL(string: "https://buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/buyProduct")!
+        RequestFailureLog.recordAppleFailure(buyURL, response: mismatch, stage: "buy")
+        let lastLine = RequestFailureLog.text.components(separatedBy: .newlines).last ?? ""
+        let sanitized = DiagnosticRedactor.sanitize(lastLine)
+        XCTAssertTrue(sanitized.contains("stage=buy"))
+        XCTAssertTrue(sanitized.contains("endpoint=buyProduct"))
+        XCTAssertTrue(sanitized.contains("code=-128"))
+        XCTAssertTrue(sanitized.contains("dialog=MZCommerce.CountryMismatch"))
+        XCTAssertFalse(sanitized.contains("[REDACTED]"))
+    }
 }
 
 private final class LockedCount: @unchecked Sendable {

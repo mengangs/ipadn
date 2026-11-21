@@ -119,35 +119,66 @@ enum TFSessionStore {
 
     static func delete(dsid: String, email: String = "") {
         var map = loadAll()
+        var removedDsids = Set<String>()
         let cleanDsid = dsid.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !cleanDsid.isEmpty { map.removeValue(forKey: cleanDsid) }
+        if !cleanDsid.isEmpty {
+            map.removeValue(forKey: cleanDsid)
+            removedDsids.insert(cleanDsid)
+        }
         let normalized = AppleAccount.normalizedIdentifier(email)
         if !normalized.isEmpty {
             for key in map.keys where AppleAccount.normalizedIdentifier(map[key]?.email ?? "") == normalized {
                 map.removeValue(forKey: key)
+                removedDsids.insert(key)
+            }
+        }
+        for removed in removedDsids {
+            AccountScope.remove(dsid: removed)
+            if let file = catalogFile(dsid: removed) {
+                try? FileManager.default.removeItem(at: file)
             }
         }
         saveAll(map)
     }
 
-    /// Removes orphaned sessions and catalog caches for accounts that were deleted in `AccountsView`.
+    /// Removes orphaned sessions, cookie jars and catalog caches for accounts that were deleted in `AccountsView`.
     static func prune(keepingAccounts accounts: [AppleAccount]) {
-        guard !accounts.isEmpty else { return }
         let keptDsids = Set(accounts.map { $0.dsid.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
         let keptEmails = Set(accounts.map { AppleAccount.normalizedIdentifier($0.id) }.filter { !$0.isEmpty })
         var map = loadAll()
         let removed = map.filter { dsid, entry in
             !keptDsids.contains(dsid) && !keptEmails.contains(AppleAccount.normalizedIdentifier(entry.email))
         }
-        guard !removed.isEmpty else { return }
+        guard !removed.isEmpty else {
+            if accounts.isEmpty { AccountScope.clearSharedCookies() }
+            return
+        }
         for (dsid, _) in removed {
             map.removeValue(forKey: dsid)
-            try? FileManager.default.removeItem(at: catalogFile(dsid: dsid))
+            AccountScope.remove(dsid: dsid)
+            if let file = catalogFile(dsid: dsid) {
+                try? FileManager.default.removeItem(at: file)
+            }
         }
+        if accounts.isEmpty { AccountScope.clearSharedCookies() }
         saveAll(map)
     }
 
     // MARK: - Non-Sensitive Disk Cache (Catalog + v3 App Details)
+
+    private static func safeDigits(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        return trimmed
+    }
+
+    private static func safePathComponent(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              trimmed.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == ".") }),
+              !trimmed.contains("..") else { return nil }
+        return trimmed
+    }
 
     private static func cacheDirectory() -> URL {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -156,22 +187,24 @@ enum TFSessionStore {
         return root
     }
 
-    private static func catalogFile(dsid: String) -> URL {
-        cacheDirectory().appendingPathComponent("catalog-\(dsid).json")
+    private static func catalogFile(dsid: String) -> URL? {
+        guard let safe = safeDigits(dsid) else { return nil }
+        return cacheDirectory().appendingPathComponent("catalog-\(safe).json")
     }
 
-    private static func detailFile(appID: String) -> URL {
-        cacheDirectory().appendingPathComponent("detail-\(appID).json")
+    private static func detailFile(appID: String) -> URL? {
+        guard let safe = safePathComponent(appID) else { return nil }
+        return cacheDirectory().appendingPathComponent("detail-\(safe).json")
     }
 
     static func saveCatalog(_ apps: [TFBetaApp], dsid: String) {
-        guard !dsid.isEmpty, let data = try? JSONEncoder().encode(apps) else { return }
-        try? data.write(to: catalogFile(dsid: dsid), options: .atomic)
+        guard let file = catalogFile(dsid: dsid), let data = try? JSONEncoder().encode(apps) else { return }
+        try? data.write(to: file, options: .atomic)
     }
 
     static func loadCatalog(dsid: String) -> [TFBetaApp] {
-        guard !dsid.isEmpty,
-              let data = try? Data(contentsOf: catalogFile(dsid: dsid)),
+        guard let file = catalogFile(dsid: dsid),
+              let data = try? Data(contentsOf: file),
               let apps = try? JSONDecoder().decode([TFBetaApp].self, from: data) else {
             return []
         }
@@ -179,13 +212,13 @@ enum TFSessionStore {
     }
 
     static func saveDetail(_ detail: TFAppDetail) {
-        guard !detail.appID.isEmpty, let data = try? JSONEncoder().encode(detail) else { return }
-        try? data.write(to: detailFile(appID: detail.appID), options: .atomic)
+        guard let file = detailFile(appID: detail.appID), let data = try? JSONEncoder().encode(detail) else { return }
+        try? data.write(to: file, options: .atomic)
     }
 
     static func loadDetail(appID: String) -> TFAppDetail? {
-        guard !appID.isEmpty,
-              let data = try? Data(contentsOf: detailFile(appID: appID)),
+        guard let file = detailFile(appID: appID),
+              let data = try? Data(contentsOf: file),
               let detail = try? JSONDecoder().decode(TFAppDetail.self, from: data) else {
             return nil
         }

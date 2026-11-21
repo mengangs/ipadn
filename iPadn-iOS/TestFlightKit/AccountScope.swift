@@ -19,8 +19,11 @@ public enum AccountScope {
             let root = resolved.url.appendingPathComponent("tf-jars", isDirectory: true)
             try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             try? setProtection(root)
-            if !didLogGroup {
-                didLogGroup = true
+            var shouldLog = false
+            logLock.lock()
+            if !didLogGroup { didLogGroup = true; shouldLog = true }
+            logLock.unlock()
+            if shouldLog {
                 TFLog.append("jar: 使用已授权分组 " + resolved.identifier)
             }
             return root
@@ -30,8 +33,11 @@ public enum AccountScope {
         let root = base.appendingPathComponent("tf-jars", isDirectory: true)
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try? setProtection(root)
-        if !didLogFallback {
-            didLogFallback = true
+        var shouldLog = false
+        logLock.lock()
+        if !didLogFallback { didLogFallback = true; shouldLog = true }
+        logLock.unlock()
+        if shouldLog {
             TFLog.append("jar: 降级到 Application Support（签名无 App Group）")
         }
         return root
@@ -43,34 +49,61 @@ public enum AccountScope {
             ofItemAtPath: url.path)
     }
 
+    private static let logLock = NSLock()
     nonisolated(unsafe) private static var didLogGroup = false
     nonisolated(unsafe) private static var didLogFallback = false
 
+    private static func safeDsid(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        return trimmed
+    }
+
     public static func snapshotURL(dsid: String) -> URL {
-        directory().appendingPathComponent(dsid + ".json")
+        let safe = safeDsid(dsid) ?? "_invalid"
+        return directory().appendingPathComponent(safe + ".json")
     }
 
     /// Persists the cookies of one account, taken from the auth response's `Set-Cookie`.
     public static func store(dsid: String, wireCookies: [String: String],
                              log: @escaping @Sendable (String) -> Void) throws {
-        let cookies = try StoreContextBuilder.whitelist(wireCookies, dsid: dsid, log: log)
-        try StoreContextBuilder.assertSigned(cookies, dsid: dsid)
+        guard let safe = safeDsid(dsid) else {
+            throw TFError.malformed("无效的 dsid")
+        }
+        let cookies = try StoreContextBuilder.whitelist(wireCookies, dsid: safe, log: log)
+        try StoreContextBuilder.assertSigned(cookies, dsid: safe)
         lock.lock()
         defer { lock.unlock() }
         let data = try JSONSerialization.data(withJSONObject: cookies, options: [.sortedKeys])
-        try data.write(to: snapshotURL(dsid: dsid), options: .atomic)
-        log("jar: 写入 …" + String(dsid.suffix(4)) + " 快照 " + String(data.count) + " B（" + String(cookies.count) + " 个 cookie）")
+        let target = snapshotURL(dsid: safe)
+        try data.write(to: target, options: .atomic)
+        try? setProtection(target)
+        log("jar: 写入 …" + String(safe.suffix(4)) + " 快照 " + String(data.count) + " B（" + String(cookies.count) + " 个 cookie）")
     }
 
     /// The only read point. Missing snapshot means "this account never logged in here".
     public static func cookies(for dsid: String) -> [String: String]? {
+        guard let safe = safeDsid(dsid) else { return nil }
         lock.lock()
         defer { lock.unlock() }
-        guard let data = try? Data(contentsOf: snapshotURL(dsid: dsid)),
+        guard let data = try? Data(contentsOf: snapshotURL(dsid: safe)),
               let payload = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
             return nil
         }
         return payload
+    }
+
+    /// Deletes a persisted jar snapshot when an account or TestFlight session is removed.
+    public static func remove(dsid: String) {
+        guard let safe = safeDsid(dsid) else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        try? FileManager.default.removeItem(at: snapshotURL(dsid: safe))
+    }
+
+    /// Clears all Apple cookies from `HTTPCookieStorage.shared` to prevent cross-account leakage.
+    public static func clearSharedCookies() {
+        clearAppleCookies()
     }
 
     /// Switch: write the current jar back to its own snapshot, clear the shared jar, then
@@ -92,17 +125,22 @@ public enum AccountScope {
 
     /// Snapshot of whatever the shared jar holds right now, for this dsid only.
     public static func writeBack(dsid: String) {
+        guard let safe = safeDsid(dsid) else { return }
         var cookies: [String: String] = [:]
         for cookie in HTTPCookieStorage.shared.cookies ?? [] where cookie.domain.contains("apple.com") {
             let isOurs = cookie.name == "X-Dsid"
-                ? cookie.value == dsid
-                : TFLogin.cookieBelongs(cookie.name, dsid: dsid)
+                ? cookie.value == safe
+                : TFLogin.cookieBelongs(cookie.name, dsid: safe)
             if isOurs, !cookie.value.isEmpty { cookies[cookie.name] = cookie.value }
         }
         guard !cookies.isEmpty,
-              let filtered = try? StoreContextBuilder.whitelist(cookies, dsid: dsid, log: { _ in }) else { return }
+              let filtered = try? StoreContextBuilder.whitelist(cookies, dsid: safe, log: { _ in }) else { return }
+        lock.lock()
+        defer { lock.unlock() }
         if let data = try? JSONSerialization.data(withJSONObject: filtered, options: [.sortedKeys]) {
-            try? data.write(to: snapshotURL(dsid: dsid), options: .atomic)
+            let target = snapshotURL(dsid: safe)
+            try? data.write(to: target, options: .atomic)
+            try? setProtection(target)
         }
     }
 

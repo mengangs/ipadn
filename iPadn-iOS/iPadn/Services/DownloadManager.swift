@@ -482,8 +482,9 @@ final class DownloadManager: NSObject, ObservableObject {
             }
         }
         restoring = false
-        for job in jobs where job.status == .processing {
+        for job in jobs where job.status == .processing || job.status == .paused {
             if adoptFinishedPackage(job.id) { continue }
+            guard job.status == .processing else { continue }
             if FileManager.default.fileExists(atPath: LocalResources.stagingURL(job.id).path) { process(job.id) }
             else { fail(job.id, error: ToolError.message(AppText.text("下载文件丢失，请重试"))) }
         }
@@ -617,14 +618,47 @@ final class DownloadManager: NSObject, ObservableObject {
     }
 
     nonisolated static func isLoopbackHost(_ rawHost: String) -> Bool {
-        let host = rawHost.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
-        if host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host == "0:0:0:0:0:0:0:1" {
+        let host = rawHost.trimmingCharacters(in: CharacterSet(charactersIn: "[] \t\r\n")).lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        if host.isEmpty || host == "localhost" || host.hasSuffix(".localhost") || host == "ipadn.local" {
             return true
         }
-        if host.hasPrefix("127.") || host == "0.0.0.0" {
-            return true
+        // Reject known loopback wildcard DNS aliases (including iPadn's own local-cert domains).
+        for suffix in ["localtest.me", "lvh.me", "sslip.io", "nip.io"] {
+            if host == suffix || host.hasSuffix("." + suffix) { return true }
         }
-        if host.hasPrefix("::ffff:127.") {
+        // Parse IPv4 / IPv6 numerically via inet_pton so alternate encodings ([::ffff:7f00:1], [0:0::1], etc.) cannot bypass.
+        var v4 = in_addr()
+        if inet_pton(AF_INET, host, &v4) == 1 {
+            let ip = UInt32(bigEndian: v4.s_addr)
+            let a = (ip >> 24) & 0xFF
+            let b = (ip >> 16) & 0xFF
+            if a == 0 || a == 127 || a == 10 { return true }
+            if a == 169 && b == 254 { return true }
+            if a == 172 && (16...31).contains(b) { return true }
+            if a == 192 && b == 168 { return true }
+            if a == 100 && (64...127).contains(b) { return true } // CGNAT / Tailscale
+            return false
+        }
+        var v6 = in6_addr()
+        if inet_pton(AF_INET6, host, &v6) == 1 {
+            let bytes = withUnsafeBytes(of: &v6) { Array($0) }
+            if bytes.count == 16 {
+                let isUnspecified = bytes.allSatisfy { $0 == 0 }
+                let isLoopback = bytes.prefix(15).allSatisfy { $0 == 0 } && bytes[15] == 1
+                let isLinkLocal = bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80
+                let isUniqueLocal = (bytes[0] & 0xFE) == 0xFC
+                if isUnspecified || isLoopback || isLinkLocal || isUniqueLocal { return true }
+                // IPv4-mapped IPv6 (::ffff:a.b.c.d)
+                let isMappedV4 = bytes.prefix(10).allSatisfy { $0 == 0 } && bytes[10] == 0xFF && bytes[11] == 0xFF
+                if isMappedV4 {
+                    let mapped = "\(bytes[12]).\(bytes[13]).\(bytes[14]).\(bytes[15])"
+                    return isLoopbackHost(mapped)
+                }
+            }
+        }
+        // Reject bare decimal/hex/octal IPv4 shorthand (e.g. 2130706433 or 0x7f000001).
+        if host.allSatisfy({ $0.isASCII && $0.isNumber }) || host.hasPrefix("0x") {
             return true
         }
         return false
@@ -722,10 +756,26 @@ final class DownloadManager: NSObject, ObservableObject {
         guard tasks[id] == nil, let index = jobs.firstIndex(where: { $0.id == id }), let url = jobs[index].sourceURL else { return }
         LocalResources.ensureDirectoriesExist()
         let active = activeSession(for: id)
+        let usingBackground = (active === session)
         let task: URLSessionDownloadTask
-        if let resume = try? Data(contentsOf: LocalResources.resumeURL(id)), !resume.isEmpty {
+        let rawResume = try? Data(contentsOf: LocalResources.resumeURL(id))
+        let resumeCompatible: Bool = {
+            guard let rawResume, !rawResume.isEmpty else { return false }
+            // Background URLSession resume blobs contain NSURLSessionResumeInfoTempFileName /
+            // background identifier keys that fail when fed into an ephemeral/foreground session.
+            if !usingBackground,
+               let plist = try? PropertyListSerialization.propertyList(from: rawResume, format: nil) as? [String: Any],
+               let bgID = plist["NSURLSessionResumeInfoBackgroundIdentifier"] as? String, !bgID.isEmpty {
+                return false
+            }
+            return true
+        }()
+        if resumeCompatible, let resume = rawResume {
             task = active.downloadTask(withResumeData: resume)
         } else {
+            if rawResume != nil && !resumeCompatible {
+                try? FileManager.default.removeItem(at: LocalResources.resumeURL(id))
+            }
             var request = URLRequest(url: url)
             request.setValue(HTTPClient.userAgent, forHTTPHeaderField: "User-Agent")
             // Also holds while iPadn is suspended and cannot watch the network.
@@ -862,6 +912,14 @@ final class DownloadManager: NSObject, ObservableObject {
         guard try await removeBatch([id], undoToken: token) > 0,
               let receipt = undoRemovals[token] else { return nil }
         return (token, receipt.created)
+    }
+
+    func removeBatchReversibly(_ ids: Set<UUID>) async throws -> (token: UUID, count: Int, created: Date)? {
+        guard !ids.isEmpty else { return nil }
+        let token = UUID()
+        let count = try await removeBatch(ids, undoToken: token)
+        guard count > 0, let receipt = undoRemovals[token] else { return nil }
+        return (token, count, receipt.created)
     }
 
     /// Consecutive swipes share the latest notice and five-second window.
@@ -1080,7 +1138,19 @@ final class DownloadManager: NSObject, ObservableObject {
                 let destination = root.appendingPathComponent(name).standardizedFileURL
                 guard destination.deletingLastPathComponent() == root else { continue }
                 if !fm.fileExists(atPath: destination.path) { try fm.moveItem(at: aside, to: destination) }
-            } else { try? fm.removeItem(at: aside) }
+            } else {
+                try? fm.removeItem(at: aside)
+                for sidecar in [LocalResources.resumeURL(id), LocalResources.stagingURL(id),
+                                PackageIconService.cacheURL(id), Self.decryptedURL(id)] {
+                    try? fm.removeItem(at: sidecar)
+                }
+                TemporaryExportSweeper.removeShareHardLink(for: id)
+                MacPackageSecrets.delete(id)
+            }
+        }
+        // Sweep orphaned crash-interrupted `.received` and `.working.ipa` temp files.
+        for file in files where file.lastPathComponent.hasSuffix(".received") || file.lastPathComponent.hasSuffix(".working.ipa") {
+            try? fm.removeItem(at: file)
         }
     }
 
@@ -1131,7 +1201,11 @@ final class DownloadManager: NSObject, ObservableObject {
     func loadPackageIcons() async {
         guard !iconsLoading else { return }
         iconsLoading = true
-        defer { iconsLoading = false }
+        var pendingPersistCount = 0
+        defer {
+            if pendingPersistCount > 0 { persist() }
+            iconsLoading = false
+        }
         // A scan that ended the app last time is not tried again: the list
         // would otherwise end the app on every launch.
         var interrupted = Set(UserDefaults.standard.stringArray(forKey: Self.iconScanKey) ?? [])
@@ -1141,7 +1215,8 @@ final class DownloadManager: NSObject, ObservableObject {
                let index = jobs.firstIndex(where: { $0.id == job.id }) {
                 jobs[index].packageIconScanned = true
                 if jobs[index].app.iconURL == nil { jobs[index].app.iconURL = jobs[index].asset?.app.iconURL }
-                persist()
+                pendingPersistCount += 1
+                if pendingPersistCount >= 8 { persist(); pendingPersistCount = 0 }
                 UserDefaults.standard.set(Array(interrupted), forKey: Self.iconScanKey)
                 continue
             }
@@ -1171,7 +1246,8 @@ final class DownloadManager: NSObject, ObservableObject {
                 if jobs[index].app.iconURL == nil {
                     jobs[index].app.iconURL = jobs[index].asset?.app.iconURL
                 }
-                persist()
+                pendingPersistCount += 1
+                if pendingPersistCount >= 8 { persist(); pendingPersistCount = 0 }
             }
             // Icons cached before small package PNGs were rejected: fall back to
             // the sharper store artwork.
@@ -1685,7 +1761,8 @@ extension DownloadManager: URLSessionDownloadDelegate {
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask,
                                willPerformHTTPRedirection response: HTTPURLResponse,
                                newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        guard let url = request.url, url.scheme == "https", url.host != nil,
+        guard let url = request.url, url.scheme == "https",
+              let host = url.host, !host.isEmpty, !Self.isLoopbackHost(host),
               url.user == nil, url.password == nil else { completionHandler(nil); return }
         completionHandler(request)
     }
@@ -1752,18 +1829,23 @@ extension DownloadManager: URLSessionDownloadDelegate {
                       self.accepts(downloadTask, id: id, restoredDelivery: restoredDelivery) else { return }
                 do {
                     let destination = LocalResources.stagingURL(id)
-                    try? FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
-                    do {
-                        try FileManager.default.moveItem(at: received, to: destination)
-                    } catch {
-                        try FileManager.default.copyItem(at: received, to: destination)
-                        try? FileManager.default.removeItem(at: received)
-                    }
+                    try await Task.detached(priority: .userInitiated) {
+                        let fm = FileManager()
+                        try? fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                        if fm.fileExists(atPath: destination.path) { try fm.removeItem(at: destination) }
+                        do {
+                            try fm.moveItem(at: received, to: destination)
+                        } catch {
+                            try fm.copyItem(at: received, to: destination)
+                            try? fm.removeItem(at: received)
+                        }
+                    }.value
                 } catch { self.fail(id, error: error); return }
+                guard let updatedIndex = self.jobs.firstIndex(where: { $0.id == id }),
+                      [.running, .pausing, .paused, .queued].contains(self.jobs[updatedIndex].status) else { return }
                 self.tasks.removeValue(forKey: id)
                 self.progressPublishedAt.removeValue(forKey: id)
-                self.jobs[index].status = .processing; self.persist(); self.schedule(); self.process(id)
+                self.jobs[updatedIndex].status = .processing; self.persist(); self.schedule(); self.process(id)
             }
         } catch {
             try? FileManager.default.removeItem(at: received)
@@ -1787,8 +1869,10 @@ extension DownloadManager: URLSessionDownloadDelegate {
             return
         }
         guard let error = error as NSError?, let value = task.taskDescription, let id = UUID(uuidString: value) else { return }
+        deliveries.begin()
         let resume = error.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
         Task { @MainActor in
+            defer { self.deliveries.end(); self.finishBackgroundIfReady() }
             let restoredDelivery = (self.loadingJobs || self.restoring) && session.configuration.identifier == Self.sessionID
             await self.startupTask?.value
             guard let job = self.jobs.first(where: { $0.id == id }), job.status != .completed && job.status != .processing else { return }

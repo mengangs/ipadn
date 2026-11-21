@@ -26,6 +26,7 @@ struct InstalledAppsView: View {
     @State private var loaded = false
     @State private var issue: String?
     @State private var term = ""
+    @State private var query = ""
     @State private var updating = false
 
     /// The system can list apps for iPadn from iOS 17.4, like native installation.
@@ -61,10 +62,10 @@ struct InstalledAppsView: View {
     }
 
     private var visible: [NativeInstaller.InstalledApp] {
-        let query = term.trimmingCharacters(in: .whitespaces)
+        let needle = query.trimmingCharacters(in: .whitespaces)
         return apps.filter { app in
-            query.isEmpty || (app.name ?? "").localizedCaseInsensitiveContains(query)
-                || (app.bundleID ?? "").localizedCaseInsensitiveContains(query)
+            needle.isEmpty || (app.name ?? "").localizedCaseInsensitiveContains(needle)
+                || (app.bundleID ?? "").localizedCaseInsensitiveContains(needle)
         }
     }
 
@@ -119,6 +120,11 @@ struct InstalledAppsView: View {
         // Back from LocalDevVPN: try again without asking.
         .compatibleOnChange(of: scenePhase) { phase in
             if phase == .active, issue != nil, apps.isEmpty { Task { await load() } }
+        }
+        .task(id: term) {
+            if !term.isEmpty { try? await Task.sleep(for: .milliseconds(200)) }
+            guard !Task.isCancelled else { return }
+            query = term
         }
         .overlay { if updating { ProgressView().padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
     }

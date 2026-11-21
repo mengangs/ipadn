@@ -304,6 +304,8 @@ final class DownloadActivity {
         return false
     }
 
+    private var updateTask: Task<Void, Never>?
+
     /// Changes of phase, app, count or ETA availability go out at once; progress once a second.
     @available(iOS 16.2, *)
     private func send(_ state: DownloadActivityAttributes.ContentState, to activity: Activity<DownloadActivityAttributes>) {
@@ -315,7 +317,11 @@ final class DownloadActivity {
         if phaseChanged { activityLog.notice("LA update phase \(state.phase) \(state.name, privacy: .public) bg=\(UIApplication.shared.applicationState != .active)") }
         // Starting to install: the Dynamic Island opens briefly to say so.
         let alert = phaseChanged && state.phase == 4 && last?.phase != 4 ? Self.alert(state) : nil
-        Task { await activity.update(ActivityContent(state: state, staleDate: Self.staleDate(state)), alertConfiguration: alert) }
+        let previous = updateTask
+        updateTask = Task {
+            await previous?.value
+            await activity.update(ActivityContent(state: state, staleDate: Self.staleDate(state)), alertConfiguration: alert)
+        }
     }
 
     /// Shows the final state (downloaded, installed, failed) for a
@@ -323,11 +329,14 @@ final class DownloadActivity {
     @available(iOS 16.2, *)
     private func finish(_ activity: Activity<DownloadActivityAttributes>, with state: DownloadActivityAttributes.ContentState) {
         finishingTask?.cancel()
+        let priorUpdate = updateTask
+        updateTask = nil
         finishingActivity = activity
         let task = BackgroundTime()
         activityLog.notice("LA finish phase \(state.phase) bg=\(UIApplication.shared.applicationState != .active)")
         finishingTask = Task { [weak self] in
             defer { task.end() }
+            await priorUpdate?.value
             await activity.update(ActivityContent(state: state, staleDate: nil))
             do { try await Task.sleep(nanoseconds: 2_000_000_000) }
             catch { return }

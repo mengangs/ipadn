@@ -200,22 +200,32 @@ enum RemoteZip {
         if count == 0xFFFF || directorySize == 0xFFFF_FFFF || directoryOffset == 0xFFFF_FFFF {
             // ZIP64: the locator sits right before the end record.
             let locator = end - 20
-            guard locator >= 0, tail.le32(locator) == 0x0706_4b50 else { throw Failure.unreadable }
-            let recordOffset = Int64(tail.le64(locator + 8))
+            guard locator >= 0, tail.le32(locator) == 0x0706_4b50,
+                  let recordOffset = Int64(exactly: tail.le64(locator + 8)), recordOffset >= 0 else {
+                throw Failure.unreadable
+            }
             let record: Data
-            if recordOffset >= tailStart, recordOffset - tailStart + 56 <= Int64(tail.count) {
-                let start = Int(recordOffset - tailStart)
+            let (recordTailDelta, deltaOverflow) = recordOffset.subtractingReportingOverflow(tailStart)
+            let (recordEnd, endOverflow) = recordTailDelta.addingReportingOverflow(56)
+            if recordOffset >= tailStart, !deltaOverflow, !endOverflow, recordEnd <= Int64(tail.count) {
+                let start = Int(recordTailDelta)
                 record = tail.subdata(in: start..<start + 56)
             } else {
                 record = try await reader.read(offset: recordOffset, count: 56)
             }
-            guard record.le32(0) == 0x0606_4b50 else { throw Failure.unreadable }
-            count = Int64(record.le64(32))
-            directorySize = Int64(record.le64(40))
-            directoryOffset = Int64(record.le64(48))
+            guard record.count >= 56, record.le32(0) == 0x0606_4b50,
+                  let zCount = Int64(exactly: record.le64(32)), zCount >= 0,
+                  let zSize = Int64(exactly: record.le64(40)),
+                  let zOffset = Int64(exactly: record.le64(48)) else {
+                throw Failure.unreadable
+            }
+            count = zCount
+            directorySize = zSize
+            directoryOffset = zOffset
         }
+        let (directoryEnd, dirOverflow) = directoryOffset.addingReportingOverflow(directorySize)
         guard directorySize > 0, directorySize <= Int64(HTTPRangeReader.limit),
-              directoryOffset >= 0, directoryOffset + directorySize <= size else { throw Failure.unreadable }
+              directoryOffset >= 0, !dirOverflow, directoryEnd <= size else { throw Failure.unreadable }
         let directory: Data
         if directoryOffset >= tailStart {
             let start = Int(directoryOffset - tailStart)
@@ -291,9 +301,18 @@ enum RemoteZip {
                 if id == 0x0001 {
                     // ZIP64 sizes and offset, present only for fields set to 0xFFFFFFFF.
                     var field = body
-                    if size == 0xFFFF_FFFF, field + 8 <= body + length { size = Int64(data.le64(field)); field += 8 }
-                    if compressed == 0xFFFF_FFFF, field + 8 <= body + length { compressed = Int64(data.le64(field)); field += 8 }
-                    if offset == 0xFFFF_FFFF, field + 8 <= body + length { offset = Int64(data.le64(field)) }
+                    if size == 0xFFFF_FFFF, field + 8 <= body + length {
+                        guard let v = Int64(exactly: data.le64(field)) else { throw Failure.unreadable }
+                        size = v; field += 8
+                    }
+                    if compressed == 0xFFFF_FFFF, field + 8 <= body + length {
+                        guard let v = Int64(exactly: data.le64(field)) else { throw Failure.unreadable }
+                        compressed = v; field += 8
+                    }
+                    if offset == 0xFFFF_FFFF, field + 8 <= body + length {
+                        guard let v = Int64(exactly: data.le64(field)) else { throw Failure.unreadable }
+                        offset = v
+                    }
                 } else if id == 0x5455, length >= 5, data[data.startIndex + body] & 1 != 0,
                           !filterForVersionResources || isMainInfoPlist(name) {
                     modified = Date(timeIntervalSince1970: TimeInterval(Int32(bitPattern: data.le32(body + 1))))

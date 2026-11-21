@@ -23,10 +23,16 @@ struct ZipReader {
             throw TFError.malformed("zip: 找不到中央目录")
         }
         let eocd = Int(eocdRange.lowerBound)
+        guard eocd + 22 <= tail.count else {
+            throw TFError.malformed("zip: 中央目录头截断")
+        }
         func u16(_ at: Int) -> Int { Int(tail[at]) | Int(tail[at + 1]) << 8 }
         func u32(_ at: Int) -> Int { u16(at) | u16(at + 2) << 16 }
         let count = u16(eocd + 10)
         var cursor = u32(eocd + 16)
+        guard count <= 200_000, cursor >= 0, UInt64(cursor) <= size else {
+            throw TFError.malformed("zip: 中央目录偏移无效")
+        }
         var map: [String: (Int, Int, Int, Int)] = [:]
         var names: [String] = []
         try handle.seek(toOffset: UInt64(cursor))
@@ -40,19 +46,28 @@ struct ZipReader {
             let extraLength = Int(header[30]) | Int(header[31]) << 8
             let commentLength = Int(header[32]) | Int(header[33]) << 8
             let localOffset = Int(header[42]) | Int(header[43]) << 8 | Int(header[44]) << 16 | Int(header[45]) << 24
+            guard compressed >= 0, uncompressed >= 0, localOffset >= 0 else { break }
             let nameData = try handle.read(upToCount: nameLength) ?? Data()
             let name = String(decoding: nameData, as: UTF8.self)
             map[name] = (localOffset, compressed, uncompressed, method)
             names.append(name)
             cursor += 46 + nameLength + extraLength + commentLength
+            guard cursor >= 0, UInt64(cursor) <= size else { break }
             try handle.seek(toOffset: UInt64(cursor))
         }
         self.entries = map
         self.entire = names
     }
 
+    func uncompressedSize(named name: String) -> Int? {
+        entries[name]?.size
+    }
+
     func data(named name: String) -> Data? {
         guard let entry = entries[name] else { return nil }
+        let maxBytes = 8 << 20
+        guard entry.compressed >= 0, entry.compressed <= maxBytes,
+              entry.size >= 0, entry.size <= maxBytes else { return nil }
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard (try? handle.seek(toOffset: UInt64(entry.offset))) != nil,
@@ -62,7 +77,7 @@ struct ZipReader {
         guard (try? handle.seek(toOffset: UInt64(entry.offset + 30 + nameLength + extraLength))) != nil,
               let raw = try? handle.read(upToCount: entry.compressed) else { return nil }
         guard entry.method == 0 else { return raw.isEmpty ? nil : raw.inflate(to: entry.size) }
-        return raw
+        return raw.count <= maxBytes ? raw : nil
     }
 }
 

@@ -162,10 +162,16 @@ enum FairPlayDecryptor {
             }
             if entry.type == .symlink {
                 var targetData = Data()
+                var oversized = false
                 _ = try? preflightArchive.extract(entry, bufferSize: 4096, skipCRC32: true) { chunk in
-                    if targetData.count + chunk.count <= 4096 { targetData.append(chunk) }
+                    if targetData.count + chunk.count > 4096 {
+                        oversized = true
+                    } else {
+                        targetData.append(chunk)
+                    }
                 }
-                guard let targetPath = String(data: targetData, encoding: .utf8),
+                guard !oversized,
+                      let targetPath = String(data: targetData, encoding: .utf8),
                       isSafeRelativeSymlinkTarget(targetPath, fromEntryPath: entry.path) else {
                     throw Failure.badArchive("安装包内包含越界符号链接")
                 }

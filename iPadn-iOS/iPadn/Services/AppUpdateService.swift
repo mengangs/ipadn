@@ -219,10 +219,11 @@ enum AppUpdateService {
         defer { session.finishTasksAndInvalidate() }
         let downloaded: URL = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                downloader.continuation = continuation
-                session.downloadTask(with: url).resume()
+                downloader.start(session: session, url: url, continuation: continuation)
             }
-        } onCancel: { session.invalidateAndCancel() }
+        } onCancel: {
+            downloader.cancel(session: session)
+        }
         var kept = packageFolder
         try FileManager.default.createDirectory(at: kept, withIntermediateDirectories: true)
         // Remove stale packages from earlier versions while keeping sibling variant of current release.
@@ -246,10 +247,28 @@ enum AppUpdateService {
         let progress: @Sendable (Double) -> Void
         private let lock = NSLock()
         private var pending: CheckedContinuation<URL, Error>?
+        private var cancelled = false
         private var reported = -1
-        var continuation: CheckedContinuation<URL, Error>? {
-            get { lock.withLock { pending } }
-            set { lock.withLock { pending = newValue } }
+        func start(session: URLSession, url: URL, continuation: CheckedContinuation<URL, Error>) {
+            lock.lock()
+            if cancelled {
+                lock.unlock()
+                continuation.resume(throwing: CancellationError())
+                return
+            }
+            pending = continuation
+            let task = session.downloadTask(with: url)
+            lock.unlock()
+            task.resume()
+        }
+        func cancel(session: URLSession) {
+            lock.lock()
+            cancelled = true
+            let waiting = pending
+            pending = nil
+            lock.unlock()
+            session.invalidateAndCancel()
+            waiting?.resume(throwing: CancellationError())
         }
         init(target: URL, progress: @escaping @Sendable (Double) -> Void) { self.target = target; self.progress = progress }
         private func finish(_ result: Result<URL, Error>) {

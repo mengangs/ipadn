@@ -133,10 +133,13 @@ struct DecryptLiveSummary: View {
                                 Text("取消")
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.red)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 4)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
                                     .background(Color.red.opacity(0.12), in: Capsule())
+                                    .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
+                                    .contentShape(Rectangle())
                                     .tactileNavigationTap { ui.cancel() }
+                                    .accessibilityAddTraits(.isButton)
                                     .accessibilityLabel("取消解密")
                             }
                         }

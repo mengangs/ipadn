@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// Where a package came from. Display only: the install decision never branches on it.
 enum PackageSource: String, CaseIterable {
@@ -119,6 +120,8 @@ final class InstallCoordinator {
                 }
                 let installed = outcome.after?.installed ?? true
                 return InstallOutcome(upgraded: outcome.upgraded, installed: installed, signedOrOTA: false)
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 throw Self.failure(from: error, package: package)
             }
@@ -128,8 +131,19 @@ final class InstallCoordinator {
             }
             let signed = Self.signedSibling(of: package)
             do {
-                _ = try await installation.localURL(file: signed)
+                let name = signed.deletingPathExtension().lastPathComponent
+                let job = DownloadJob(app: StoreApp(id: bundleID, name: name, bundleID: bundleID, version: ""), status: .completed)
+                let installURL = try await installation.automaticInstallURL(job: job, file: signed)
+                let opened = await UIApplication.shared.open(installURL)
+                guard opened else {
+                    throw InstallFailure(message: AppText.text("安装失败") + "\n" + AppText.text("安装包已保存在本地，可重试或改为分享。"),
+                                         retryable: true)
+                }
                 return InstallOutcome(upgraded: false, installed: true, signedOrOTA: true)
+            } catch let failure as InstallFailure {
+                throw failure
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 throw Self.failure(from: error, package: package)
             }
@@ -156,23 +170,34 @@ final class InstallCoordinator {
     /// Rewrites an installer error into a stage-labelled, actionable sentence and keeps the
     /// package path so the user knows the file is still there.
     nonisolated private static func failure(from error: Error, package: URL) -> InstallFailure {
-        let raw = error.localizedDescription
         let stage: String
-        let retryable: Bool
+        let retryable = true
         var needsChannel = false
-        if raw.contains("连接本机安装服务") || raw.contains("LocalDevVPN") || raw.lowercased().contains("tunnel") || raw.lowercased().contains("pair") {
-            stage = AppText.text("未能连接本机安装通道。请在「安装设置」里连接通道后重试")
-            retryable = true
-            needsChannel = true
-        } else if raw.contains("上传") || raw.lowercased().contains("upload") {
-            stage = AppText.text("安装包传输中断")
-            retryable = true
-        } else if raw.contains("安装") || raw.lowercased().contains("install") {
-            stage = AppText.text("安装阶段失败")
-            retryable = true
+        if let native = error as? NativeInstaller.Failure {
+            switch native.stage {
+            case "connect", "pairing_file", "pairing", "tunnel":
+                stage = AppText.text("未能连接本机安装通道。请在「安装设置」里连接通道后重试")
+                needsChannel = true
+            case "upload":
+                stage = AppText.text("安装包传输中断")
+            case "install":
+                stage = AppText.text("安装阶段失败")
+            default:
+                stage = AppText.text("安装失败")
+            }
         } else {
-            stage = AppText.text("安装失败")
-            retryable = true
+            let raw = error.localizedDescription
+            let lower = raw.lowercased()
+            if raw.contains("连接本机安装服务") || raw.contains("LocalDevVPN") || lower.contains("tunnel") || lower.contains("pair") {
+                stage = AppText.text("未能连接本机安装通道。请在「安装设置」里连接通道后重试")
+                needsChannel = true
+            } else if raw.contains("上传") || lower.contains("upload") {
+                stage = AppText.text("安装包传输中断")
+            } else if raw.contains("安装") || lower.contains("install") {
+                stage = AppText.text("安装阶段失败")
+            } else {
+                stage = AppText.text("安装失败")
+            }
         }
         let kept = "\n" + AppText.text("安装包已保存在本地，可重试或改为分享。")
         return InstallFailure(message: stage + kept, retryable: retryable, needsNativeChannel: needsChannel)

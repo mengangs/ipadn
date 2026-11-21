@@ -245,6 +245,11 @@ static int fp_parse_thin(int fd, uint64_t off, uint64_t size, fp_slice_t *s,
 
 int fp_parse(const char *path, fp_slice_t *slices, int max, int *count,
              char *err, size_t errlen) {
+    char dummy_err[1] = {0};
+    if (!err || errlen == 0) {
+        err = dummy_err;
+        errlen = sizeof dummy_err;
+    }
     if (!path || !slices || !count || max <= 0) return -1;
     *count = 0;
     int fd = open(path, O_RDONLY | O_NOFOLLOW);
@@ -628,7 +633,11 @@ int fp_decrypt_file_ex(const char *in_path, const char *out_path, fp_log_t log, 
             stats->slices_total++;
         }
     }
+    struct stat st_in, st_out;
     bool same_path = strcmp(in_path, out_path) == 0;
+    if (!same_path && stat(in_path, &st_in) == 0 && stat(out_path, &st_out) == 0) {
+        same_path = (st_in.st_dev == st_out.st_dev && st_in.st_ino == st_out.st_ino);
+    }
     if (!encrypted) {
         if (!same_path && fp_copy_file(in_path, out_path) != 0) return -1;
         return 1;

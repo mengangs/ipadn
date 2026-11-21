@@ -148,7 +148,7 @@ enum PackageService {
         let devices = names.filter { families.contains($0.0) }.map(\.1)
         // Device names only; the raw platform identifiers mean nothing to users.
         if devices.isEmpty { return platforms.contains("AppleTVOS") ? "Apple TV" : AppText.text("未知") }
-        return devices.joined(separator: "、")
+        return ListFormatter.localizedString(byJoining: devices)
     }
 
     static func platformSummary(_ url: URL) throws -> String {

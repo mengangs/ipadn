@@ -7,7 +7,7 @@
 **在 iPhone 和 iPad 上搜索、下载、安装你拥有的 App。**
 支持 iPhone、iPad、Apple TV 与 Mac 应用，包括历史版本与已下架应用。
 
-✨ **v2.3.2 完整已购历史与下架应用补全 · TestFlight 登录与深色模式更新标签修复** · 📢 **反馈与新版优先前往 [官方 Telegram 频道](https://t.me/ipadn_official)**
+✨ **v2.3.3 Apple 下载报错修复与诊断完善 · 下载多选/统一撤销、SDK 速查与全量性能安全加固** · 📢 **反馈与新版优先前往 [官方 Telegram 频道](https://t.me/ipadn_official)**
 
 [![最新版本](https://img.shields.io/github/v/release/mengangs/ipadn?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&logo=github&logoColor=white&labelColor=2E3136&color=3A6EA5)](https://github.com/mengangs/ipadn/releases/latest)
 [![Telegram 频道](https://img.shields.io/badge/Telegram-%40ipadn__official-2C82A9?logo=telegram&logoColor=white&labelColor=2E3136)](https://t.me/ipadn_official)
@@ -45,12 +45,19 @@
 
 ---
 
+## 2.3.3 更新
+
+- **修复下载/获取偶发「Apple 暂时无法完成该操作」与诊断盲区**：补齐 `1008` 会话过期自动刷新、`-128`（`CountryMismatch`）账号商店地区自动纠偏、`buyProductFailure` 新版条款（`termsPage`）明确提示及密码变更/账号停用文案；Apple HTTP 200 业务失败现自动写入严格脱敏的 `RequestFailureLog`，未知数字错误码同步显示在提示中便于快速定位。
+- **「下载」页多选升级与统一撤销**：就地勾选交互对齐「应用包」，纳入 TestFlight 任务全选与批量删除，并合并常规下载与 TestFlight 的 5 秒撤销倒计时栈。
+- **SDK / Xcode 版本速查与左滑遮罩修复**：在包体与 TestFlight 详情新增构建 SDK / Xcode 版本速查；修复专业模式「应用包」与「解密记录」左滑时整行变灰遮罩的问题。
+- **全量安全、性能与 11 语言体验加固**：加固日志脱敏、TestFlight 多账号 Cookie 隔离与 `TFSINF` `cryptid` 校验；移除主线程磁盘 I/O 提升长列表滚动帧率；补齐 11 语言本地化、RTL、深浅色对比度与头像质感打磨。详见 [更新说明](RELEASE_NOTES.md)。
+
 ## 2.3.2 更新
 
 - **完整同步「已购项目」历史与已下架应用**：在原有 DMAP 目录之外接入 Apple 完整购买历史接口（`/commerce/account/purchases`）并与 DMAP 合并，补齐多年历史与已下架应用及多语言购买日期；首次全量同步采用 **6 路并发**（顶部显示年份进度），后续日常刷新仅增量扫描当年，几秒即可完成，右上角菜单亦支持手动触发「同步完整购买历史」。
 - **修复切换账号后已购图标卡在灰色占位**：消除切号后防抖更新地区时误中止图标拉取的竞态，改为按 `地区|AppID` 去重并以每批 50 个稳定拉取，保留已有缓存不闪烁。
 - **修复 TestFlight 登录误报与设备身份缓存失效**：自动清理触发 `rinfo=67437824` 的过期 `iphone` 设备槽并重新配置；修复错误分类误将 `"iphone"` 匹配为 `"phone"` 导致提示「暂不支持选择多个受信任号码」的问题。
-- **修复深色模式「可更新」标签看不清**：「账号 › 设置」行右侧更新胶囊前景色改为自适应 `UX.onAccent`，深浅色模式下均清晰可辨。详见 [更新说明](RELEASE_NOTES.md)。
+- **修复深色模式「可更新」标签看不清**：「账号 › 设置」行右侧更新胶囊前景色改为自适应 `UX.onAccent`，深浅色模式下均清晰可辨。
 
 ## 2.3.1 更新
 

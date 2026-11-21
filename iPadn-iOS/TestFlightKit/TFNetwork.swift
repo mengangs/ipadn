@@ -143,6 +143,9 @@ public enum TFNet {
             }
             return (data, http)
         } catch {
+            if error is CancellationError || (error as NSError).code == NSURLErrorCancelled || Task.isCancelled {
+                throw error
+            }
             guard mode == .auto, !startDirect else { throw error }
             let (retryData, retryHTTP) = try await performOnce(request, direct: true,
                                                                cookieStorage: cookieStorage,

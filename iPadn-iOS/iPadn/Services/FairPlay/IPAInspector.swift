@@ -9,14 +9,14 @@ enum IPAInspector {
 
     static func inspect(url: URL) -> IPADetection {
         guard let archive = ZipDirectory(url: url) else {
-            return IPADetection(state: .unknown, note: "无法读取 ZIP 目录")
+            return IPADetection(state: .unknown, note: AppText.text("无法读取 ZIP 目录"))
         }
         if archive.isZip64 {
-            return IPADetection(state: .unknown, note: "ZIP64 布局，未做部分读取")
+            return IPADetection(state: .unknown, note: AppText.text("ZIP64 布局，未做部分读取"))
         }
         let candidates = deduplicatedCandidates(in: archive.entries)
         guard !candidates.isEmpty else {
-            return IPADetection(state: .unknown, note: "没有找到可检查的 Mach-O")
+            return IPADetection(state: .unknown, note: AppText.text("没有找到可检查的 Mach-O"))
         }
 
         var binaries: [BinaryEncryption] = []
@@ -43,12 +43,12 @@ enum IPAInspector {
             state = .encrypted
         } else if sawUnknown {
             state = .unknown
-            note = "部分二进制无法完整读取，未做结论"
+            note = AppText.text("部分二进制无法完整读取，未做结论")
         } else if sawPlain {
             state = .plain
         } else {
             state = .unknown
-            note = "没有可用结论"
+            note = AppText.text("没有可用结论")
         }
         return IPADetection(state: state, binaries: binaries, note: note)
     }

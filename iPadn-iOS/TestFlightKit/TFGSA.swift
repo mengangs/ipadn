@@ -44,7 +44,7 @@ public struct TFGSAProbe: Sendable {
     }
 
     public var verdict: String {
-        if let fakeIP { return "被代理接管（fake-IP \(fakeIP)）" }
+        if fakeIP != nil { return "被代理接管（命中 fake-IP）" }
         if reachable {
             return status == 404 ? "网络正常；裸 GET 404 属正常（需要 Store UA）" : "网络正常"
         }

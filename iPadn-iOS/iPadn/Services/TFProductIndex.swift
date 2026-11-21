@@ -63,10 +63,24 @@ struct TFProductItem: Identifiable, Equatable {
 final class TFProductIndex: ObservableObject {
     static let shared = TFProductIndex()
 
-    @Published private(set) var items: [TFProductItem] = []
-    private var refreshTask: Task<Void, Never>?
+    private struct StagedRemoval {
+        let token: UUID
+        let item: TFProductItem
+        let originalDir: URL
+        let stagedDir: URL
+        let created: Date
+        var timer: Task<Void, Never>?
+    }
 
-    private init() {}
+    @Published private(set) var items: [TFProductItem] = []
+    @Published private(set) var recentlyRestoredBundleIDs: Set<String> = []
+    private var refreshTask: Task<Void, Never>?
+    private var pendingRemovals: [UUID: StagedRemoval] = [:]
+    private static let stagingPrefix = "tf-removing-"
+
+    private init() {
+        sweepOrphanedRemovals()
+    }
 
     func item(forFile url: URL) -> TFProductItem? {
         let canonical = PackageOutputPolicy.canonicalPath(url)
@@ -85,8 +99,120 @@ final class TFProductIndex: ObservableObject {
         }
     }
 
-    /// Deletes a TestFlight IPA on disk and synchronizes `TestFlightHomeView`, `DownloadsView`,
-    /// and `PackagesView` immediately.
+    /// Moves a TestFlight product directory aside for the undo window so the user can restore
+    /// it immediately via `UndoNotice`, then permanently removes it once the window expires.
+    func removeReversibly(_ item: TFProductItem) throws -> (token: UUID, created: Date)? {
+        guard let bundleRoot = TFDownload.directoryURL(bundle: item.bundleID) else {
+            delete(item)
+            return nil
+        }
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: bundleRoot.path) else {
+            delete(item)
+            return nil
+        }
+        // Clean transient scratch files inside the bundle folder before staging.
+        try? fm.removeItem(at: bundleRoot.appendingPathComponent(".work", isDirectory: true))
+        for suffix in ["-transport.bin", "-base.ipa", "-applezip.ipa"] {
+            try? fm.removeItem(at: bundleRoot.appendingPathComponent(item.bundleID + suffix))
+        }
+        LocalResources.ensureDirectoriesExist()
+        let token = UUID()
+        let created = Date()
+        let stagedDir = LocalResources.support.appendingPathComponent(Self.stagingPrefix + token.uuidString, isDirectory: true)
+        if fm.fileExists(atPath: stagedDir.path) {
+            try? fm.removeItem(at: stagedDir)
+        }
+        try fm.moveItem(at: bundleRoot, to: stagedDir)
+
+        items.removeAll { $0.bundleID == item.bundleID }
+        recentlyRestoredBundleIDs.remove(item.bundleID)
+        TFHomeModel.shared.didDeleteProduct(appID: item.appID, bundleID: item.bundleID)
+        FairPlayPresentation.shared.markFilesChanged()
+
+        var entry = StagedRemoval(
+            token: token,
+            item: item,
+            originalDir: bundleRoot,
+            stagedDir: stagedDir,
+            created: created,
+            timer: nil
+        )
+        entry.timer = makeExpiryTimer(for: token, delay: UndoNotice.duration + 0.5)
+        pendingRemovals[token] = entry
+        return (token, created)
+    }
+
+    func extendRemovalUndo(_ tokens: [UUID], until deadline: Date) {
+        let delay = max(0.5, deadline.timeIntervalSinceNow + 0.5)
+        for token in tokens {
+            guard var entry = pendingRemovals[token] else { continue }
+            entry.timer?.cancel()
+            entry.timer = makeExpiryTimer(for: token, delay: delay)
+            pendingRemovals[token] = entry
+        }
+    }
+
+    func undoRemovalGroup(_ tokens: [UUID]) throws {
+        var restoredAny = false
+        for token in tokens.reversed() {
+            guard let entry = pendingRemovals.removeValue(forKey: token) else { continue }
+            entry.timer?.cancel()
+            let fm = FileManager.default
+            guard fm.fileExists(atPath: entry.stagedDir.path) else { continue }
+            let parent = entry.originalDir.deletingLastPathComponent()
+            try fm.createDirectory(at: parent, withIntermediateDirectories: true)
+            if fm.fileExists(atPath: entry.originalDir.path) {
+                // If a fresh download replaced it, keep the newer download and discard staged copy.
+                let staged = entry.stagedDir
+                Task.detached(priority: .utility) { try? FileManager().removeItem(at: staged) }
+                continue
+            }
+            try fm.moveItem(at: entry.stagedDir, to: entry.originalDir)
+            if !items.contains(where: { $0.bundleID == entry.item.bundleID }) {
+                items.append(entry.item)
+            }
+            let bundleID = entry.item.bundleID
+            recentlyRestoredBundleIDs.insert(bundleID)
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(1600))
+                self?.recentlyRestoredBundleIDs.remove(bundleID)
+            }
+            restoredAny = true
+        }
+        if restoredAny {
+            items.sort { $0.modifiedAt > $1.modifiedAt }
+            TFHomeModel.shared.loadProducts()
+            FairPlayPresentation.shared.markFilesChanged()
+            refresh()
+        }
+    }
+
+    private func makeExpiryTimer(for token: UUID, delay: TimeInterval) -> Task<Void, Never> {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(max(0.1, delay) * 1_000_000_000))
+            guard !Task.isCancelled, let self, let entry = self.pendingRemovals.removeValue(forKey: token) else { return }
+            let staged = entry.stagedDir
+            Task.detached(priority: .utility) {
+                try? FileManager().removeItem(at: staged)
+            }
+        }
+    }
+
+    private func sweepOrphanedRemovals() {
+        let activeNames = Set(pendingRemovals.keys.map { Self.stagingPrefix + $0.uuidString })
+        let support = LocalResources.support
+        Task.detached(priority: .utility) {
+            let fm = FileManager()
+            guard let entries = try? fm.contentsOfDirectory(at: support, includingPropertiesForKeys: nil) else { return }
+            for url in entries where url.lastPathComponent.hasPrefix(Self.stagingPrefix) && !activeNames.contains(url.lastPathComponent) {
+                try? fm.removeItem(at: url)
+            }
+        }
+    }
+
+    /// Permanently deletes a TestFlight IPA on disk and synchronizes `TestFlightHomeView`,
+    /// `DownloadsView`, and `PackagesView` immediately.
     func delete(_ item: TFProductItem) {
         try? FileManager.default.removeItem(at: item.fileURL)
         let buildDir = item.fileURL.deletingLastPathComponent()

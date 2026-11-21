@@ -8,10 +8,22 @@ final class DecryptRecordStore: ObservableObject {
     static let shared = DecryptRecordStore()
 
     @Published private(set) var records: [DecryptRecord] = []
+    private(set) var cacheRevision: Int = 0
 
     private let limit = 50
     private var loaded = false
     private let fileManager = FileManager.default
+    private let persistQueue = DispatchQueue(label: "iPadn.decrypt-records", qos: .utility)
+    private var outputURLCache: [String: URL?] = [:]
+    private var sourceURLCache: [String: URL?] = [:]
+    private var iconURLCache: [String: URL?] = [:]
+
+    func invalidateFileCaches() {
+        outputURLCache.removeAll(keepingCapacity: true)
+        sourceURLCache.removeAll(keepingCapacity: true)
+        iconURLCache.removeAll(keepingCapacity: true)
+        cacheRevision &+= 1
+    }
 
     private var storeURL: URL {
         FairPlayEnvironment.documentsDirectory.appendingPathComponent("fairplay-records.json")
@@ -42,20 +54,24 @@ final class DecryptRecordStore: ObservableObject {
             return
         }
         // A run cannot survive the process: never present it as still running.
+        var needsPersist = false
         for index in decoded.indices where decoded[index].state == .running {
             decoded[index].state = .interrupted
             decoded[index].failure = DecryptFailure(
                 kind: .interrupted,
-                title: "任务被中断",
-                reason: "解密进行中时应用被关闭，这次任务没有完成。",
-                advice: "重新发起一次解密；原 IPA 没有被修改，可以直接复用。",
+                title: AppText.text("任务被中断"),
+                reason: AppText.text("解密进行中时应用被关闭，这次任务没有完成。"),
+                advice: AppText.text("重新发起一次解密；原 IPA 没有被修改，可以直接复用。"),
                 details: "interrupted at launch"
             )
             decoded[index].finishedAt = decoded[index].finishedAt ?? Date()
+            needsPersist = true
         }
         decoded.sort { $0.startedAt > $1.startedAt }
+        if decoded.count > limit { needsPersist = true }
         records = Array(decoded.prefix(limit))
-        persist()
+        invalidateFileCaches()
+        if needsPersist { persist() }
     }
 
     // MARK: - queries
@@ -86,12 +102,17 @@ final class DecryptRecordStore: ObservableObject {
 
     func outputURL(for record: DecryptRecord) -> URL? {
         guard let name = Self.safeBasename(record.outputName) else { return nil }
+        if let cached = outputURLCache[name] { return cached }
         let url = outputDirectory.appendingPathComponent(name)
-        return fileManager.fileExists(atPath: url.path) ? url : nil
+        let resolved: URL? = fileManager.fileExists(atPath: url.path) ? url : nil
+        outputURLCache[name] = resolved
+        return resolved
     }
 
     func sourceURL(for record: DecryptRecord) -> URL? {
         guard let name = Self.safeBasename(record.sourceName) else { return nil }
+        let cacheKey = "\(name)|\(record.bundleID ?? "")"
+        if let cached = sourceURLCache[cacheKey] { return cached }
         let docs = FairPlayEnvironment.documentsDirectory
         let tfRoot = docs.appendingPathComponent("TestFlight", isDirectory: true)
         let stem = Self.safeBasename((name as NSString).deletingPathExtension)
@@ -115,6 +136,7 @@ final class DecryptRecordStore: ObservableObject {
             }
         }
         if let hit = candidates.first(where: { fileManager.fileExists(atPath: $0.path) }) {
+            sourceURLCache[cacheKey] = hit
             return hit
         }
         if let dirs = try? fileManager.contentsOfDirectory(
@@ -124,7 +146,10 @@ final class DecryptRecordStore: ObservableObject {
         ) {
             for dir in dirs {
                 let direct = dir.appendingPathComponent(name)
-                if fileManager.fileExists(atPath: direct.path) { return direct }
+                if fileManager.fileExists(atPath: direct.path) {
+                    sourceURLCache[cacheKey] = direct
+                    return direct
+                }
                 if let subdirs = try? fileManager.contentsOfDirectory(
                     at: dir,
                     includingPropertiesForKeys: [.isDirectoryKey],
@@ -132,18 +157,25 @@ final class DecryptRecordStore: ObservableObject {
                 ) {
                     for sub in subdirs {
                         let nested = sub.appendingPathComponent(name)
-                        if fileManager.fileExists(atPath: nested.path) { return nested }
+                        if fileManager.fileExists(atPath: nested.path) {
+                            sourceURLCache[cacheKey] = nested
+                            return nested
+                        }
                     }
                 }
             }
         }
+        sourceURLCache[cacheKey] = nil
         return nil
     }
 
     func iconURL(for record: DecryptRecord) -> URL? {
         guard let name = Self.safeBasename(record.iconName) else { return nil }
+        if let cached = iconURLCache[name] { return cached }
         let url = iconDirectory.appendingPathComponent(name)
-        return fileManager.fileExists(atPath: url.path) ? url : nil
+        let resolved: URL? = fileManager.fileExists(atPath: url.path) ? url : nil
+        iconURLCache[name] = resolved
+        return resolved
     }
 
     var runningRecord: DecryptRecord? { records.first { $0.state == .running } }
@@ -158,6 +190,7 @@ final class DecryptRecordStore: ObservableObject {
         }
         records.sort { $0.startedAt > $1.startedAt }
         if records.count > limit { records = Array(records.prefix(limit)) }
+        invalidateFileCaches()
         persist()
         pruneUnusedIcons()
     }
@@ -165,12 +198,14 @@ final class DecryptRecordStore: ObservableObject {
     func update(id: UUID, _ body: (inout DecryptRecord) -> Void) {
         guard let index = records.firstIndex(where: { $0.id == id }) else { return }
         body(&records[index])
+        invalidateFileCaches()
         persist()
     }
 
     /// Removes the record only; the IPA on disk is untouched.
     func remove(id: UUID) {
         records.removeAll { $0.id == id }
+        invalidateFileCaches()
         persist()
         pruneUnusedIcons()
     }
@@ -178,15 +213,20 @@ final class DecryptRecordStore: ObservableObject {
     /// Removes all inactive records while keeping IPA files on disk intact.
     func removeInactive(keeping activeID: UUID?) {
         records.removeAll { $0.id != activeID && $0.state != .running }
+        invalidateFileCaches()
         persist()
         pruneUnusedIcons()
     }
 
     private func pruneUnusedIcons() {
         let keep = Set(records.compactMap(\.iconName))
-        guard let entries = try? fileManager.contentsOfDirectory(at: iconDirectory, includingPropertiesForKeys: nil) else { return }
-        for url in entries where !keep.contains(url.lastPathComponent) {
-            try? fileManager.removeItem(at: url)
+        let directory = iconDirectory
+        persistQueue.async {
+            let fm = FileManager()
+            guard let entries = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
+            for url in entries where !keep.contains(url.lastPathComponent) {
+                try? fm.removeItem(at: url)
+            }
         }
     }
 
@@ -194,9 +234,11 @@ final class DecryptRecordStore: ObservableObject {
     /// a 200 MB archive on every appearance.
     func storeIcon(_ data: Data, for recordID: UUID) -> String? {
         let name = "\(recordID.uuidString).png"
+        let target = iconDirectory.appendingPathComponent(name)
         do {
             try fileManager.createDirectory(at: iconDirectory, withIntermediateDirectories: true)
-            try data.write(to: iconDirectory.appendingPathComponent(name), options: .atomic)
+            try data.write(to: target, options: .atomic)
+            iconURLCache[name] = target
             return name
         } catch {
             return nil
@@ -210,17 +252,21 @@ final class DecryptRecordStore: ObservableObject {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.withoutEscapingSlashes]
         guard let data = try? encoder.encode(records) else { return }
-        let temporary = storeURL.appendingPathExtension("tmp")
-        do {
-            if !fileManager.fileExists(atPath: storeURL.path) {
-                // A fresh installation has no destination to replace yet.
-                try data.write(to: storeURL, options: .atomic)
-                return
+        let destination = storeURL
+        let temporary = destination.appendingPathExtension("tmp")
+        persistQueue.async {
+            let fm = FileManager()
+            do {
+                if !fm.fileExists(atPath: destination.path) {
+                    // A fresh installation has no destination to replace yet.
+                    try data.write(to: destination, options: .atomic)
+                    return
+                }
+                try data.write(to: temporary, options: .atomic)
+                _ = try fm.replaceItemAt(destination, withItemAt: temporary)
+            } catch {
+                try? fm.removeItem(at: temporary)
             }
-            try data.write(to: temporary, options: .atomic)
-            _ = try fileManager.replaceItemAt(storeURL, withItemAt: temporary)
-        } catch {
-            try? fileManager.removeItem(at: temporary)
         }
     }
 }

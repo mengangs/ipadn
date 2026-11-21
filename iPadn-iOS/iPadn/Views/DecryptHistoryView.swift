@@ -71,9 +71,19 @@ struct DecryptHistoryView: View {
                                 .buttonStyle(.plain)
                                 .disabled(isActive)
                             } else {
-                                NavigationLink(value: PackageRoute.record(record.id)) {
-                                    row(record)
+                                Button {
+                                    ui.push(.record(record.id))
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        row(record)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        Image(systemName: "chevron.forward")
+                                            .font(.footnote.weight(.semibold))
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                    .contentShape(Rectangle())
                                 }
+                                .buttonStyle(RevealRowButtonStyle())
                                 .revealDelete(id: "history." + record.id.uuidString, enabled: !isActive, fills: true) {
                                     records.remove(id: record.id)
                                     ui.markFilesChanged()

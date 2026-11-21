@@ -88,7 +88,7 @@ struct SupportView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Image(systemName: "arrow.up.right")
+                        Image(systemName: "arrow.up.forward")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.tertiary)
                     }
@@ -135,7 +135,11 @@ struct SupportView: View {
                         Text(verbatim: "BNB Smart Chain (BEP20)").font(.caption.weight(.medium))
                             .padding(.horizontal, 8).padding(.vertical, 3)
                             .background(Color(red: 0.95, green: 0.73, blue: 0.18).opacity(0.18), in: Capsule())
-                            .foregroundStyle(Color(red: 0.72, green: 0.52, blue: 0.0))
+                            .foregroundStyle(Color(UIColor { traits in
+                                traits.userInterfaceStyle == .dark
+                                    ? UIColor(red: 1.0, green: 0.80, blue: 0.28, alpha: 1.0)
+                                    : UIColor(red: 0.56, green: 0.38, blue: 0.0, alpha: 1.0)
+                            }))
                     }
                     Text(verbatim: SupportLinks.usdtAddress)
                         .font(.caption.monospaced()).foregroundStyle(.secondary)

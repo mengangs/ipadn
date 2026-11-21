@@ -36,6 +36,7 @@ struct AppIcon: View {
             guard let image = await IconCache.load(source, size: size), !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.2)) { loaded = (source, image) }
         }
+        .onDisappear { loaded = nil }
     }
     private var placeholder: some View {
         ZStack {
@@ -349,7 +350,7 @@ struct RootView: View {
                     ZStack {
                         ForEach(destinations, id: \.id) { item in
                             pageStack(item.id)
-                                .frame(maxWidth: 900).frame(maxWidth: .infinity)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .background(Color(.systemGroupedBackground))
                                 .opacity(tabs.id == item.id ? 1 : 0)
                                 .allowsHitTesting(tabs.id == item.id)
@@ -977,6 +978,9 @@ struct TabReselectScroll: UIViewRepresentable {
         private var installTask: Task<Void, Never>?
         private var followUpTask: Task<Void, Never>?
         private var fallbackNotified = false
+        private var isAttached = false
+        private var lastAppliedKinds: [RevealAnimationKind] = []
+        private var lastAppliedEnableVector: Bool?
         var reduceMotion = false
         var kinds: [RevealAnimationKind] = []
         var enableVectorIcons = true
@@ -1012,6 +1016,7 @@ struct TabReselectScroll: UIViewRepresentable {
                 try? await Task.sleep(for: .milliseconds(50))
                 guard !Task.isCancelled, let self, self.enableVectorIcons, let bar = self.watched else { return }
                 if TabReselectScroll.attachVectorIcons(in: bar, kinds: self.kinds) == .unsupportedHierarchy {
+                    self.isAttached = false
                     self.install()
                 }
             }
@@ -1019,7 +1024,10 @@ struct TabReselectScroll: UIViewRepresentable {
 
         @discardableResult
         private func attachCurrent() -> VectorAttachmentResult {
-            guard let window = anchor?.window, let bar = Self.tabBar(in: window) else { return .deferred }
+            guard let window = anchor?.window, let bar = Self.tabBar(in: window) else {
+                isAttached = false
+                return .deferred
+            }
             if bar !== watched {
                 detachTapOnly()
                 let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
@@ -1031,18 +1039,36 @@ struct TabReselectScroll: UIViewRepresentable {
             }
             guard enableVectorIcons else {
                 TabReselectScroll.removeVectorIcons(in: bar)
+                isAttached = true
+                lastAppliedKinds = kinds
+                lastAppliedEnableVector = false
                 return .attached
             }
-            return TabReselectScroll.attachVectorIcons(in: bar, kinds: kinds)
+            let result = TabReselectScroll.attachVectorIcons(in: bar, kinds: kinds)
+            if result == .attached {
+                isAttached = true
+                lastAppliedKinds = kinds
+                lastAppliedEnableVector = true
+            } else {
+                isAttached = false
+            }
+            return result
         }
 
         func updateSelection(_ selected: Int, selectedID: TabID, reduceMotion: Bool, kinds: [RevealAnimationKind],
                              enableVectorIcons: Bool, onVectorFallback: @escaping () -> Void) {
             self.reduceMotion = reduceMotion
+            self.onVectorFallback = onVectorFallback
+            let needsAttach = !isAttached
+                || watched == nil
+                || watched?.window == nil
+                || lastAppliedKinds != kinds
+                || lastAppliedEnableVector != enableVectorIcons
             self.kinds = kinds
             self.enableVectorIcons = enableVectorIcons
-            self.onVectorFallback = onVectorFallback
-            install()
+            if needsAttach {
+                install()
+            }
             guard let previousID = lastSelectedID else {
                 lastSelectedID = selectedID
                 return
@@ -1056,6 +1082,7 @@ struct TabReselectScroll: UIViewRepresentable {
                 if result == .attached {
                     Self.playTabIcon(at: selected, in: bar, kinds: kinds)
                 } else if result == .unsupportedHierarchy {
+                    self.isAttached = false
                     self.install()
                 }
             }
@@ -1077,7 +1104,7 @@ struct TabReselectScroll: UIViewRepresentable {
 
         private func detachTapOnly() {
             if let tap { watched?.removeGestureRecognizer(tap) }
-            tap = nil; watched = nil; selectedAtTouch = nil
+            tap = nil; watched = nil; selectedAtTouch = nil; isAttached = false
         }
 
         func detach() {

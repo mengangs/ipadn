@@ -59,6 +59,7 @@ public enum TFTransfer {
                 let (temporary, response) = try await attempt.run(url: current,
                                                                   resume: index == 1 ? nil : resumeData)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                defer { try? FileManager.default.removeItem(at: temporary) }
                 try? FileManager.default.removeItem(at: destination)
                 try FileManager.default.moveItem(at: temporary, to: destination)
                 let bytes = (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int) ?? -1
@@ -140,6 +141,16 @@ final class TFTransferAttempt: NSObject, URLSessionDownloadDelegate, @unchecked 
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didFinishDownloadingTo location: URL) {
+        response = downloadTask.response
+        if let http = downloadTask.response as? HTTPURLResponse,
+           !(200..<300).contains(http.statusCode) {
+            try? FileManager.default.removeItem(at: location)
+            saved = nil
+            failure = TFError.http(status: http.statusCode,
+                                   path: downloadTask.currentRequest?.url?.path ?? "/cdn",
+                                   body: "")
+            return
+        }
         let copy = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString + ".part")
         do {
@@ -147,14 +158,18 @@ final class TFTransferAttempt: NSObject, URLSessionDownloadDelegate, @unchecked 
             try FileManager.default.moveItem(at: location, to: copy)
             saved = copy
         } catch {
+            try? FileManager.default.removeItem(at: copy)
             saved = nil
             failure = error
         }
-        response = downloadTask.response
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error {
+            if let saved {
+                try? FileManager.default.removeItem(at: saved)
+                self.saved = nil
+            }
             if (error as NSError).code == NSURLErrorCancelled || handle.isCancelled {
                 finish(.failure(TFError.cancelled))
             } else {

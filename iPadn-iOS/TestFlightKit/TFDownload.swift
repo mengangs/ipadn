@@ -129,9 +129,11 @@ public enum TFDownload {
             log("install: metadata " + String(metadataData.count) + " B")
         }
 
-        // The metadata is the only place the CDN url and the 88-byte dpInfo live; keep a
-        // copy alongside the product (for localized `framework.displayName` / `testNotes`) and in debug.
-        try? metadataData.write(to: root.appendingPathComponent("metadata.json"), options: .atomic)
+        // Keep only non-sensitive display metadata (`data.framework`) alongside the product;
+        // never persist `dpInfo`, `sinf`, or signed CDN URLs in the Files-shared Documents folder.
+        if let sanitized = sanitizedDisplayMetadata(from: metadataData) {
+            try? sanitized.write(to: root.appendingPathComponent("metadata.json"), options: .atomic)
+        }
         let text = String(decoding: metadataData, as: UTF8.self)
         log("install: metadata has "
             + (text.contains("dpInfo") ? "dpInfo" : "NO dpInfo")
@@ -311,8 +313,29 @@ public enum TFDownload {
         guard encrypted > 0 else { throw TFError.malformed("产物里没有加密 Mach-O") }
     }
 
-    /// Prints the metadata `packages` tree with every key and value so a variant mismatch can
-    /// be read off directly (the URL is truncated).
+    /// Strips sensitive fields (`dpInfo`, `sinf`, signed CDN `url`/`packages`) from `installMetadata`,
+    /// preserving only `data.framework` needed for localized `displayName` / `testNotes`.
+    static func sanitizedDisplayMetadata(from data: Data) -> Data? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let payload = (root["data"] as? [String: Any]) ?? root
+        guard let framework = payload["framework"] as? [String: Any] else { return nil }
+        let allowedKeys: Set<String> = [
+            "displayName", "testNotes", "developerName",
+            "shortVersion", "cfBundleShortVersion",
+            "bundleVersion", "cfBundleVersion",
+            "bundleId", "bundleID", "name",
+        ]
+        var safeFramework: [String: Any] = [:]
+        for (key, value) in framework where allowedKeys.contains(key) {
+            safeFramework[key] = value
+        }
+        guard !safeFramework.isEmpty else { return nil }
+        return try? JSONSerialization.data(withJSONObject: ["data": ["framework": safeFramework]],
+                                           options: [.sortedKeys])
+    }
+
+    /// Prints the metadata `packages` tree keys and non-secret metrics only (never logs
+    /// raw `dpInfo`, `sinf`, or signed CDN query strings).
     static func dumpPackages(metadata: Data, log: @escaping @Sendable (String) -> Void) {
         guard let root = try? JSONSerialization.jsonObject(with: metadata) as? [String: Any] else { return }
         let payload = (root["data"] as? [String: Any]) ?? root
@@ -323,12 +346,20 @@ public enum TFDownload {
         log("packages keys [" + packages.keys.sorted().joined(separator: ",") + "]")
         for (variant, value) in packages.sorted(by: { $0.key < $1.key }) {
             guard let dictionary = value as? [String: Any] else {
-                log("  " + variant + " = " + String(describing: value))
+                log("  " + variant + " = <" + String(describing: type(of: value)) + ">")
                 continue
             }
             for (key, item) in dictionary.sorted(by: { $0.key < $1.key }) {
-                if let text = item as? String {
-                    log("  " + variant + "." + key + " = " + (text.count > 80 ? String(text.prefix(80)) + "…" : text))
+                let lower = key.lowercased()
+                if lower.contains("dpinfo") || lower.contains("sinf") || lower.contains("token") || lower.contains("key") {
+                    let count = (item as? String)?.count ?? 0
+                    log("  " + variant + "." + key + " = ‹redacted \(count) chars›")
+                } else if let text = item as? String {
+                    if let parsed = URL(string: text), parsed.scheme?.hasPrefix("http") == true {
+                        log("  " + variant + "." + key + " = " + (parsed.host ?? "-") + parsed.path)
+                    } else {
+                        log("  " + variant + "." + key + " = " + (text.count > 80 ? String(text.prefix(80)) + "…" : text))
+                    }
                 } else {
                     log("  " + variant + "." + key + " = " + String(describing: item))
                 }
@@ -360,7 +391,6 @@ public enum TFDownload {
             let host = request.url?.host ?? "?"
             let path = request.url?.path ?? "/"
             log("  request " + (request.httpMethod ?? "GET") + " " + host + path
-                + (request.url?.query.map { "?" + $0 } ?? "")
                 + " -> " + String(status) + ", " + String(data.count) + " B")
             // Shape check for the install POST: Apple answers a bare 500 when the body is
             // missing keys, so the key list (never the values) is worth logging.

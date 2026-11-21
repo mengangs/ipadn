@@ -29,10 +29,9 @@ enum AutoInstall {
                 ?? scene.windows.first(where: { $0.windowLevel == .normal && !$0.isHidden && $0.rootViewController != nil }),
               var top = window.rootViewController else { return }
         while let next = top.presentedViewController, !next.isBeingDismissed { top = next }
-        guard !top.isBeingDismissed else { return }
-        if top is UIAlertController || String(describing: type(of: top)).contains("PackageInstallation") {
+        if top.isBeingDismissed || top.presentedViewController != nil || top is UIAlertController || String(describing: type(of: top)).contains("PackageInstallation") {
             Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(600))
+                try? await Task.sleep(for: .milliseconds(500))
                 presentNext(store)
             }
             return

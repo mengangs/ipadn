@@ -36,11 +36,44 @@ final class OnDevicePairing: ObservableObject {
     // ActivityKit is unavailable on iOS 16.0. Access the handle only in guarded methods.
     private var activity: Any?
     private var activityTask: Task<Void, Never>?
+    private var eventTask: Task<Void, Never>?
+    private var pairTask: Task<Void, Never>?
     private var activityGeneration = 0
     private var stateGeneration = 0
     private var activityStartedAt = Date.distantPast
     private let keepAlive = BackgroundKeepAlive(name: "iPadn pairing")
     private var running = false
+    /// Non-isolated box so `deinit` can immediately release native pairing gate & keep-alive
+    /// if the view pops while pairing is still in flight.
+    private final class DeinitCleanup: @unchecked Sendable {
+        private let lock = NSLock()
+        private var active = false
+        private var cancelHook: (@MainActor () -> Void)?
+        func arm(_ hook: @escaping @MainActor () -> Void) {
+            lock.lock(); active = true; cancelHook = hook; lock.unlock()
+        }
+        func disarm() {
+            lock.lock(); active = false; cancelHook = nil; lock.unlock()
+        }
+        func triggerIfArmed() {
+            lock.lock()
+            let wasActive = active
+            let hook = cancelHook
+            active = false
+            cancelHook = nil
+            lock.unlock()
+            guard wasActive else { return }
+            NativeInstaller.cancelPairing()
+            if let hook {
+                Task { @MainActor in hook() }
+            }
+        }
+    }
+    private let cleanup = DeinitCleanup()
+
+    deinit {
+        cleanup.triggerIfArmed()
+    }
 
     func start() {
         guard !running else { return }
@@ -50,17 +83,39 @@ final class OnDevicePairing: ObservableObject {
         // task alone ends within seconds, which stops the pairing.
         keepAlive.start()
         startActivity()
+        let keepAliveRef = keepAlive
+        cleanup.arm { [weak self] in
+            self?.pairTask?.cancel()
+            self?.service?.stop()
+            self?.service = nil
+            keepAliveRef.stop()
+            if #available(iOS 16.2, *) {
+                Task {
+                    for item in Activity<PairingActivityAttributes>.activities {
+                        await item.end(nil, dismissalPolicy: .immediate)
+                    }
+                }
+            }
+        }
         let liveActivityActive = hasActiveLiveActivity
         if Self.shouldSendFallbackNotification(hasActiveLiveActivity: liveActivityActive) {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         }
         InstallLog.shared.add("on-device pairing started (live activity: \(liveActivityActive ? "on" : "off"))")
-        Task { [weak self] in
+        pairTask = Task { [weak self] in
             do {
                 let data = try await NativeInstaller.pair(name: Self.hostName) { [weak self] event in
-                    Task { @MainActor in self?.handle(event) }
+                    Task { @MainActor in
+                        guard let self else { return }
+                        let previous = self.eventTask
+                        self.eventTask = Task { @MainActor in
+                            await previous?.value
+                            self.handle(event)
+                        }
+                    }
                 }
                 guard let self else { return }
+                await self.eventTask?.value
                 try NativeInstaller.importPairingFile(data)
                 InstallLog.shared.add("on-device pairing finished")
                 let hadLiveActivity = hasActiveLiveActivity
@@ -79,6 +134,7 @@ final class OnDevicePairing: ObservableObject {
 
     func cancel() {
         guard running else { return }
+        pairTask?.cancel()
         NativeInstaller.cancelPairing()
     }
 
@@ -192,6 +248,8 @@ final class OnDevicePairing: ObservableObject {
 
     private func finish(_ phase: Phase) {
         guard running else { return }
+        cleanup.disarm()
+        pairTask = nil
         service?.stop(); service = nil
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["ipadn-pairing-code"])
         // Hold a background assertion BEFORE stopping keep-alive so the final

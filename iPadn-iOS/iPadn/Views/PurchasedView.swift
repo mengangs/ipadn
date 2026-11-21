@@ -13,6 +13,7 @@ struct PurchasedView: View {
     @State private var selecting = false
     @State private var selection = Set<String>()
     @State private var batchProgress: (done: Int, total: Int)?
+    @State private var pendingBatchDownload: [StoreApp]?
     /// Only purchases no longer on sale in the account's storefront.
     @State private var delistedOnly = false
     @State private var share: SharedFile?
@@ -46,6 +47,7 @@ struct PurchasedView: View {
     }
     private func storeApp(_ app: OwnedApp) -> StoreApp {
         var listing = app.storeApp
+        if listing.iconURL == nil { listing.iconURL = store.localArtwork(app.id) }
         if store.ownedListed[app.id] == false { listing.delisted = true }
         return listing
     }
@@ -64,8 +66,21 @@ struct PurchasedView: View {
         catch { store.errorMessage = AppText.text("导出失败：\(error.localizedDescription)") }
     }
     /// Adds the selected apps one after another; the list order is kept.
+    private func requestBatchDownload(_ apps: [StoreApp]) {
+        guard !apps.isEmpty, batchProgress == nil else { return }
+        if apps.count > 10 {
+            pendingBatchDownload = apps
+        } else {
+            download(apps)
+        }
+    }
     private func downloadSelected() {
-        download(store.owned.filter { selection.contains($0.id) }.map(\.storeApp))
+        requestBatchDownload(store.owned.filter { selection.contains($0.id) }.map(\.storeApp))
+    }
+    private func pruneSelection() {
+        guard !selection.isEmpty else { return }
+        let visibleIDs = Set(filtered.map(\.id))
+        selection.formIntersection(visibleIDs)
     }
     private func download(_ apps: [StoreApp]) {
         guard !apps.isEmpty, batchProgress == nil else { return }
@@ -83,6 +98,7 @@ struct PurchasedView: View {
         }
     }
     var body: some View {
+        let visible = apple.active != nil ? filtered : []
         List {
             Section {
                 PageHeader(title: "已购项目") {
@@ -101,6 +117,8 @@ struct PurchasedView: View {
                             else { Image(systemName: "ellipsis").font(.body.weight(.semibold)) }
                         }
                         .frame(width: 36, height: 36).background(Color(.tertiarySystemFill), in: Circle())
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Circle())
                     }
                     .disabled(apple.active == nil || selecting)
                     .accessibilityLabel("更多操作")
@@ -129,6 +147,10 @@ struct PurchasedView: View {
                             Text("正在补全历史购买记录（\(progress.done)/\(progress.total)）…")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
+                            Spacer(minLength: 8)
+                            Button("取消") { store.cancelOwnedRefresh() }
+                                .font(.footnote.weight(.medium))
+                                .buttonStyle(.borderless)
                         }
                     }
                 }
@@ -145,13 +167,12 @@ struct PurchasedView: View {
                             Button("显示全部") { withAnimation { delistedOnly = false } }
                                 .font(.subheadline).buttonStyle(.borderless)
                         }
-                        let backups = filtered
-                        if !backups.isEmpty {
+                        if !visible.isEmpty {
                             Button {
-                                download(backups.map(\.storeApp))
+                                requestBatchDownload(visible.map(\.storeApp))
                             } label: {
                                 Label(batchProgress.map { AppText.text("正在添加 \($0.done)/\($0.total)") }
-                                        ?? AppText.text("全部备份（\(backups.count) 个）"),
+                                        ?? AppText.text("全部备份（\(visible.count) 个）"),
                                       systemImage: "square.and.arrow.down.on.square")
                                     .fontWeight(.semibold)
                             }
@@ -160,7 +181,6 @@ struct PurchasedView: View {
                         }
                     }
                 }
-                let visible = filtered
                 if (store.ownedLoading || store.cacheLoading) && store.owned.isEmpty {
                     Section {
                         HStack { ProgressView(); Text("正在同步购买记录…").font(.subheadline).foregroundStyle(.secondary) }
@@ -171,6 +191,7 @@ struct PurchasedView: View {
                 if !visible.isEmpty {
                     Section {
                         ForEach(visible) { app in
+                            let listing = storeApp(app)
                             let subtitle = app.purchaseDate.map {
                                 AppText.text("购于 \($0.formatted(.dateTime.year().month(.defaultDigits).day()))")
                             }
@@ -181,19 +202,20 @@ struct PurchasedView: View {
                                             .font(.title2)
                                             .foregroundStyle(selection.contains(app.id) ? Color.accentColor : Color.secondary)
                                             .compatibleSymbolReplacement()
-                                        AppRow(app: storeApp(app), subtitle: subtitle, badge: badges[app.id])
+                                        AppRow(app: listing, subtitle: subtitle, badge: badges[app.id])
                                     }
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel(selection.contains(app.id) ? AppText.text("取消选择 \(app.name)") : AppText.text("选择 \(app.name)"))
+                                .accessibilityAddTraits(selection.contains(app.id) ? .isSelected : [])
                             } else {
-                                NavigationLink { AppDetailView(app: storeApp(app)) } label: {
-                                    AppRow(app: storeApp(app), subtitle: subtitle, badge: badges[app.id]) {
+                                NavigationLink { AppDetailView(app: listing) } label: {
+                                    AppRow(app: listing, subtitle: subtitle, badge: badges[app.id]) {
                                         // The App Store's re-download glyph leaves room for the
                                         // purchase date in longer languages.
                                         StoreDownloadActionButton(
-                                            app: storeApp(app),
+                                            app: listing,
                                             platformOverride: store.settings.store.platform == .iPadOS ? .iPadOS : .iOS,
                                             cloudWhenIdle: true,
                                             insideNavigationLink: true,
@@ -225,7 +247,7 @@ struct PurchasedView: View {
                         } else if term.isEmpty && months == 0 {
                             EmptyState(title: "暂无已购记录", message: "同步后可在这里查找并下载你获取过的应用。", symbol: "clock.arrow.circlepath", actionTitle: "立即同步", action: { Task { await store.refreshOwned() } })
                         } else {
-                            EmptyState(title: "没有匹配的应用", message: "换个关键词，或调整时间范围。", symbol: "line.3.horizontal.decrease.circle", actionTitle: "清除筛选", action: { term = ""; query = ""; months = 0 })
+                            EmptyState(title: "没有匹配的应用", message: "换个关键词，或调整时间范围。", symbol: "line.3.horizontal.decrease.circle", actionTitle: "清除筛选", action: { term = ""; query = ""; months = 0; delistedOnly = false })
                         }
                     }
                 }
@@ -258,7 +280,6 @@ struct PurchasedView: View {
         .safeAreaInset(edge: .bottom) {
             if selecting {
                 HStack(spacing: 12) {
-                    let visible = filtered
                     let allSelected = !visible.isEmpty && visible.allSatisfy { selection.contains($0.id) }
                     Button(allSelected ? "取消全选" : "全选") {
                         if allSelected { selection.subtract(visible.map(\.id)) } else { selection.formUnion(visible.map(\.id)) }
@@ -282,5 +303,20 @@ struct PurchasedView: View {
             }
         }
         .compatibleOnChange(of: apple.activeID) { _ in selecting = false; selection.removeAll(); delistedOnly = false }
+        .compatibleOnChange(of: query) { _ in pruneSelection() }
+        .compatibleOnChange(of: months) { _ in pruneSelection() }
+        .compatibleOnChange(of: delistedOnly) { _ in pruneSelection() }
+        .actionConfirmation(
+            isPresented: Binding(get: { pendingBatchDownload != nil }, set: { if !$0 { pendingBatchDownload = nil } }),
+            title: "批量加入 \(pendingBatchDownload?.count ?? 0) 个下载任务？",
+            message: "将按顺序请求并添加这些应用到下载队列，请确认设备有足够存储空间。",
+            confirmTitle: "开始下载",
+            destructive: false
+        ) {
+            if let apps = pendingBatchDownload {
+                pendingBatchDownload = nil
+                download(apps)
+            }
+        }
     }
 }

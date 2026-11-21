@@ -104,25 +104,40 @@ final class LoopbackServer: @unchecked Sendable {
         self.identity = identity; self.chain = certificates; self.publicHost = publicHost
     }
 
+    private let startCoordinatorLock = NSLock()
+    private var inFlightStart: Task<Void, Error>?
+
     /// Starts the listener, or checks the running one still accepts
     /// connections. iOS reclaims listening sockets of suspended apps without
     /// telling NWListener, which left every later request failing with
     /// "could not connect to the server" until the app was relaunched.
     func start() async throws {
-        if let url = baseURL, let port = url.port.flatMap({ UInt16(exactly: $0) }) {
-            if await Self.isListening(port: port) { return }
-            InstallLog.shared.add((identity == nil ? "http" : "https") + " server unreachable, restarting")
-            await reset()
-            do { try await startListener() }
-            catch {
-                // A fixed port can take a moment to be released.
-                guard self.port != nil else { throw error }
-                try await Task.sleep(nanoseconds: 250_000_000)
-                try await startListener()
+        let task: Task<Void, Error> = startCoordinatorLock.withLock {
+            if let existing = inFlightStart { return existing }
+            let created = Task { [weak self] in
+                guard let self else { return }
+                defer {
+                    self.startCoordinatorLock.withLock { self.inFlightStart = nil }
+                }
+                if let url = self.baseURL, let port = url.port.flatMap({ UInt16(exactly: $0) }) {
+                    if await Self.isListening(port: port) { return }
+                    InstallLog.shared.add((self.identity == nil ? "http" : "https") + " server unreachable, restarting")
+                    await self.reset()
+                    do { try await self.startListener() }
+                    catch {
+                        // A fixed port can take a moment to be released.
+                        guard self.port != nil else { throw error }
+                        try await Task.sleep(nanoseconds: 250_000_000)
+                        try await self.startListener()
+                    }
+                    return
+                }
+                try await self.startListener()
             }
-            return
+            inFlightStart = created
+            return created
         }
-        try await startListener()
+        try await task.value
     }
 
     func reset() async {

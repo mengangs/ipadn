@@ -86161,7 +86161,7 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "اضغط '< الإعدادات' أعلى اليسار › الخصوصية والأمن › نمط المطور › %@"
+            "value": "اضغط '> الإعدادات' أعلى اليمين › الخصوصية والأمن › نمط المطور › %@"
           }
         }
       }
@@ -122775,6 +122775,5466 @@
           "stringUnit": {
             "state": "translated",
             "value": "جارٍ تحميل سجل المشتريات الكامل (%lld/%lld)…"
+          }
+        }
+      }
+    },
+    "可以在下载任务详情中浏览安装包内容、查看账号令牌和设备标识，并在「应用包」页对 IPA 发起 FairPlay 解密与导出。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以在下载任务详情中浏览安装包内容、查看账号令牌和设备标识，并在「应用包」页对 IPA 发起 FairPlay 解密与导出。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browse package contents, inspect account tokens and device IDs in task details, and decrypt or export IPAs via FairPlay in the Packages tab."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以在下載任務詳情中瀏覽安裝包內容、檢視帳號權杖和裝置識別碼，並在「應用包」頁對 IPA 發起 FairPlay 解密與匯出。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タスク詳細でパッケージ内容の閲覧やアカウントトークン・デバイスIDの確認ができ、「パッケージ」タブからIPAのFairPlay復号・書き出しを行えます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 상세에서 패키지 내용 탐색과 계정 토큰·기기 ID 확인이 가능하며, '패키지' 탭에서 IPA의 FairPlay 복호화 및 내보내기를 실행할 수 있습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Просматривайте содержимое пакетов, токены аккаунтов и ID устройств в деталях задачи, а также расшифровывайте и экспортируйте IPA через FairPlay на вкладке «Пакеты»."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explora el contenido de paquetes, consulta tokens de cuenta e IDs de dispositivo en los detalles de tarea y descifra o exporta IPAs con FairPlay en la pestaña Paquetes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parcourez le contenu des paquets, consultez les jetons et identifiants d'appareil dans les détails des tâches et déchiffrez ou exportez des IPA via FairPlay dans l'onglet Paquets."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Durchsuchen Sie Paket-Inhalte, prüfen Sie Kontotoken und Geräte-IDs in den Aufgabendetails und entschlüsseln oder exportieren Sie IPAs per FairPlay im Tab „Pakete“."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explore o conteúdo dos pacotes, consulte tokens da conta e IDs do dispositivo nos detalhes da tarefa e descriptografe ou exporte IPAs via FairPlay na aba Pacotes."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تصفّح محتويات الحزم، واطّلع على رموز الحساب ومعرّفات الجهاز في تفاصيل المهمة، وقم بفك تشفير ملفات IPA وتصديرها عبر FairPlay في تبويب «الحزم»."
+          }
+        }
+      }
+    },
+    "打开后可以浏览安装包内容、查看账号令牌、修改设备标识，并启用「应用包」解密功能。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开后可以浏览安装包内容、查看账号令牌、修改设备标识，并启用「应用包」解密功能。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable to browse package contents, inspect account tokens, edit device IDs, and unlock FairPlay decryption in Packages."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開啟後可以瀏覽安裝包內容、檢視帳號權杖、修改裝置識別碼，並啟用「應用包」解密功能。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オンにするとパッケージ内容の閲覧、アカウントトークンの確認、デバイスIDの編集、「パッケージ」の復号機能が有効になります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "켜면 패키지 내용 탐색, 계정 토큰 확인, 기기 ID 수정 및 '패키지' 복호화 기능을 사용할 수 있습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Включите, чтобы просматривать содержимое пакетов, токены аккаунтов, менять ID устройства и открыть расшифровку в разделе «Пакеты»."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actívalo para explorar contenido de paquetes, consultar tokens de cuenta, editar el ID del dispositivo y habilitar el descifrado en Paquetes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activez cette option pour parcourir le contenu des paquets, consulter les jetons, modifier l'identifiant d'appareil et débloquer le déchiffrement dans Paquets."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktivieren, um Paket-Inhalte zu durchsuchen, Kontotoken anzuzeigen, Geräte-IDs zu bearbeiten und die Entschlüsselung unter „Pakete“ freizuschalten."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ative para explorar conteúdo dos pacotes, consultar tokens da conta, editar o ID do dispositivo e ativar a descriptografia em Pacotes."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فعّل هذا الخيار لتصفح محتوى الحزم ومعاينة رموز الحساب وتعديل معرّف الجهاز وتفعيل فك التشفير في «الحزم»."
+          }
+        }
+      }
+    },
+    "系统正在安装…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统正在安装…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System is installing…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統正在安裝…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システムがインストール中…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템에서 설치 중…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Система выполняет установку…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El sistema está instalando…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installation par le système…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System installiert…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O sistema está instalando…"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يقوم النظام بالتثبيت…"
+          }
+        }
+      }
+    },
+    "正在加载…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在載入…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込み中…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "불러오는 중…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загрузка…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cargando…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chargement…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laden…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Carregando…"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ التحميل…"
+          }
+        }
+      }
+    },
+    "正在与 %@ 配对": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在与 %@ 配对"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing with %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在與 %@ 配對"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ とペアリング中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@와(과) 페어링 중"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сопряжение с %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enlazando con %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jumelage avec %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopplung mit %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Emparelhando com %@"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ الاقتران مع %@"
+          }
+        }
+      }
+    },
+    "在「设置」中输入这个配对码": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在「设置」中输入这个配对码"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter this pairing code in Settings"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在「設定」中輸入這個配對碼"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「設定」でこのペアリングコードを入力してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "'설정'에서 이 페어링 코드를 입력하세요"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Введите этот код сопряжения в «Настройках»"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Introduce este código de enlace en Ajustes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saisissez ce code de jumelage dans Réglages"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geben Sie diesen Kopplungscode in den Einstellungen ein"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Digite este código de emparelhamento nos Ajustes"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أدخل رمز الاقتران هذا في «الإعدادات»"
+          }
+        }
+      }
+    },
+    "回到 %@ 继续安装": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到 %@ 继续安装"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Return to %@ to continue installing"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到 %@ 繼續安裝"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に戻ってインストールを続行"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@(으)로 돌아가 설치를 계속하세요"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вернитесь в %@, чтобы продолжить установку"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vuelve a %@ para continuar la instalación"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revenez dans %@ pour poursuivre l'installation"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kehren Sie zu %@ zurück, um die Installation fortzusetzen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volte ao %@ para continuar a instalação"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ارجع إلى %@ لمتابعة التثبيت"
+          }
+        }
+      }
+    },
+    "配对未完成": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对未完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing incomplete"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配對未完成"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペアリング未完了"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "페어링 미완료"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сопряжение не завершено"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enlace incompleto"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jumelage incomplet"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopplung unvollständig"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Emparelhamento incompleto"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لم يكتمل الاقتران"
+          }
+        }
+      }
+    },
+    "请回到 %@ 重试": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请回到 %@ 重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Return to %@ and try again"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請回到 %@ 重試"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に戻って再試行してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@(으)로 돌아가 다시 시도하세요"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вернитесь в %@ и повторите попытку"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vuelve a %@ e inténtalo de nuevo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revenez dans %@ et réessayez"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kehren Sie zu %@ zurück und versuchen Sie es erneut"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volte ao %@ e tente novamente"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يرجى العودة إلى %@ والمحاولة مجددًا"
+          }
+        }
+      }
+    },
+    "编译 SDK": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编译 SDK"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Build SDK"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "編譯 SDK"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ビルド SDK"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빌드 SDK"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SDK сборки"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SDK de compilación"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SDK de compilation"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Build-SDK"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SDK de compilação"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إصدار SDK للبناء"
+          }
+        }
+      }
+    },
+    "Xcode 版本": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xcode 版本"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xcode version"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xcode 版本"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xcode バージョン"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xcode 버전"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Версия Xcode"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Versión de Xcode"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version de Xcode"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xcode-Version"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Versão do Xcode"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إصدار Xcode"
+          }
+        }
+      }
+    },
+    "已删除 %lld 个 TestFlight 安装包": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已删除 %lld 个 TestFlight 安装包"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deleted %lld TestFlight packages"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已刪除 %lld 個 TestFlight 安裝包"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件の TestFlight パッケージを削除しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TestFlight 패키지 %lld개 삭제됨"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Удалено пакетов TestFlight: %lld"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se eliminaron %lld paquetes de TestFlight"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld paquets TestFlight supprimés"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld TestFlight-Pakete gelöscht"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld pacotes do TestFlight excluídos"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تم حذف %lld من حزم TestFlight"
+          }
+        }
+      }
+    },
+    "批量加入 %lld 个下载任务？": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "批量加入 %lld 个下载任务？"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add %lld downloads to the queue?"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "批次加入 %lld 個下載任務？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件のダウンロードを追加しますか？"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld개의 다운로드를 대기열에 추가할까요?"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавить в очередь %lld загрузок?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Añadir %lld descargas a la cola?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter %lld téléchargements à la file ?"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Downloads zur Warteschlange hinzufügen?"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar %lld downloads à fila?"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إضافة %lld تنزيلًا إلى قائمة الانتظار؟"
+          }
+        }
+      }
+    },
+    "将按顺序请求并添加这些应用到下载队列，请确认设备有足够存储空间。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将按顺序请求并添加这些应用到下载队列，请确认设备有足够存储空间。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These apps will be requested and queued in order. Make sure your device has enough free storage."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "將按順序請求並新增這些應用到下載佇列，請確認裝置有足夠儲存空間。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これらのアプリを順番にリクエストしてダウンロードキューへ追加します。デバイスの空き容量を確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 앱을 순서대로 요청해 다운로드 대기열에 추가합니다. 기기에 충분한 저장 공간이 있는지 확인하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Приложения будут запрошены и добавлены в очередь по порядку. Убедитесь, что на устройстве достаточно свободного места."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estas apps se solicitarán y añadirán en orden a la cola. Asegúrate de tener espacio libre suficiente."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ces apps seront demandées et ajoutées dans l'ordre à la file. Vérifiez que vous disposez d'assez d'espace libre."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Apps werden der Reihe nach angefordert und in die Warteschlange gestellt. Stellen Sie sicher, dass genügend Speicherplatz frei ist."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estes apps serão solicitados e adicionados à fila em ordem. Verifique se há espaço suficiente no dispositivo."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "سيتم طلب هذه التطبيقات وإضافتها بالترتيب إلى قائمة الانتظار. يرجى التأكد من توفر مساحة تخزين كافية على الجهاز."
+          }
+        }
+      }
+    },
+    "开始下载": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始下载"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start download"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開始下載"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダウンロード開始"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다운로드 시작"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Начать загрузку"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar descarga"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lancer le téléchargement"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download starten"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciar download"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "بدء التنزيل"
+          }
+        }
+      }
+    },
+    "%@（%lld%%）": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（%lld%%）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (%lld%%)"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（%lld%%）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（%lld%%）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (%lld%%)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (%lld%%)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (%lld%%)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (%lld%%)"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (%lld%%)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (%lld%%)"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (%lld%%)"
+          }
+        }
+      }
+    },
+    "无法连接 Apple 服务（gsa / testflight）。请检查代理规则是否拦截 *.apple.com，或在设置中把 TF 网络模式改为「强制直连」": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接 Apple 服务（gsa / testflight）。请检查代理规则是否拦截 *.apple.com，或在设置中把 TF 网络模式改为「强制直连」"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to reach Apple services (gsa / testflight). Check whether your proxy blocks *.apple.com, or switch TF Network Mode to Force Direct in Settings."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法連線 Apple 服務（gsa / testflight）。請檢查代理規則是否攔截 *.apple.com，或在設定中把 TF 網路模式改為「強制直連」"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple サービス（gsa / testflight）に接続できません。プロキシが *.apple.com をブロックしていないか確認するか、設定で TF ネットワークモードを「強制ダイレクト」にしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 서비스(gsa / testflight)에 연결할 수 없습니다. 프록시가 *.apple.com을 차단하는지 확인하거나 설정에서 TF 네트워크 모드를 '강제 직접 연결'로 변경하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось подключиться к серверам Apple (gsa / testflight). Проверьте, не блокирует ли прокси *.apple.com, или выберите «Только напрямую» в настройках сети TF."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se puede conectar con los servicios de Apple (gsa / testflight). Comprueba si tu proxy bloquea *.apple.com o cambia el modo de red TF a «Directo forzado» en Ajustes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de joindre les services Apple (gsa / testflight). Vérifiez si votre proxy bloque *.apple.com ou passez le mode réseau TF en « Direct forcé » dans les réglages."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple-Dienste (gsa / testflight) nicht erreichbar. Prüfen Sie, ob Ihr Proxy *.apple.com blockiert, oder stellen Sie den TF-Netzwerkmodus auf „Direkt erzwingen“."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível conectar aos serviços da Apple (gsa / testflight). Verifique se o proxy bloqueia *.apple.com ou mude o modo de rede TF para «Direto forçado»."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر الاتصال بخدمات Apple (gsa / testflight). تحقق مما إذا كان الوكيل يحجب *.apple.com، أو بدّل وضع شبكة TF إلى «اتصال مباشر إجباري» في الإعدادات."
+          }
+        }
+      }
+    },
+    "GSA 不可达：疑似代理/VPN 拦截，请关闭手机上的 VPN 或在代理里放行 gsa.apple.com。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GSA 不可达：疑似代理/VPN 拦截，请关闭手机上的 VPN 或在代理里放行 gsa.apple.com。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GSA unreachable: likely intercepted by a proxy or VPN. Turn off VPN or allow gsa.apple.com directly."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GSA 無法連線：疑似代理/VPN 攔截，請關閉手機上的 VPN 或在代理裡放行 gsa.apple.com。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GSA に接続できません：プロキシまたは VPN による遮断の可能性があります。VPN をオフにするか gsa.apple.com を直接接続にしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GSA에 연결할 수 없습니다: 프록시 또는 VPN 차단으로 추정됩니다. VPN을 끄거나 프록시에서 gsa.apple.com을 예외 처리하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GSA недоступен: возможно, перехватывается прокси/VPN. Отключите VPN или добавьте gsa.apple.com в исключения."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GSA inaccesible: posiblemente interceptado por un proxy o VPN. Desactiva la VPN o permite gsa.apple.com directamente."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GSA inaccessible : probablement intercepté par un proxy ou VPN. Désactivez le VPN ou autorisez gsa.apple.com en direct."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GSA nicht erreichbar: vermutlich durch Proxy/VPN abgefangen. Deaktivieren Sie das VPN oder geben Sie gsa.apple.com direkt frei."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GSA inacessível: possivelmente interceptado por proxy ou VPN. Desative a VPN ou libere gsa.apple.com diretamente."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر الوصول إلى GSA: يُحتمل اعتراضه بواسطة وكيل أو VPN. يرجى إيقاف الـ VPN أو السماح المباشر لنطاق gsa.apple.com."
+          }
+        }
+      }
+    },
+    "系统 DNS": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统 DNS"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System DNS"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統 DNS"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム DNS"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템 DNS"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Системный DNS"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DNS del sistema"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DNS système"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System-DNS"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DNS do sistema"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DNS النظام"
+          }
+        }
+      }
+    },
+    "被代理接管（命中 fake-IP）": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被代理接管（命中 fake-IP）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Intercepted by proxy (fake-IP detected)"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被代理接管（命中 fake-IP）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロキシにより中継（fake-IP 検出）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프록시 가로채기 감지 (fake-IP)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перехвачено прокси (обнаружен fake-IP)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Interceptado por proxy (fake-IP detectado)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Intercepté par un proxy (fake-IP détecté)"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vom Proxy abgefangen (Fake-IP erkannt)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Interceptado por proxy (fake-IP detectado)"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تم الاعتراض بواسطة وكيل (تم رصد fake-IP)"
+          }
+        }
+      }
+    },
+    "网络正常；裸 GET 404 属正常（需要 Store UA）": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络正常；裸 GET 404 属正常（需要 Store UA）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network OK; bare GET 404 is expected (Store UA required)"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "網路正常；裸 GET 404 屬正常（需要 Store UA）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ネットワーク正常（素の GET 404 は正常・Store UA が必要）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "네트워크 정상 (기본 GET 404는 정상이며 Store UA 필요)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сеть в норме; голый GET 404 ожидаем (нужен Store UA)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Red correcta; GET 404 sin cabeceras es normal (requiere Store UA)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réseau OK ; un GET 404 nu est normal (Store UA requis)"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Netzwerk OK; bloßes GET 404 ist normal (Store-UA erforderlich)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rede OK; GET 404 simples é esperado (requer Store UA)"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الشبكة سليمة؛ استجابة GET 404 المباشرة طبيعية (يتطلب Store UA)"
+          }
+        }
+      }
+    },
+    "网络正常": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络正常"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network OK"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "網路正常"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ネットワーク正常"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "네트워크 정상"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сеть в норме"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Red correcta"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réseau OK"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Netzwerk OK"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rede OK"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الشبكة سليمة"
+          }
+        }
+      }
+    },
+    "连接失败": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection failed"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連線失敗"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続に失敗しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 실패"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ошибка подключения"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error de conexión"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec de la connexion"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbindung fehlgeschlagen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falha na conexão"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فشل الاتصال"
+          }
+        }
+      }
+    },
+    "无 HTTP 响应（%@）": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无 HTTP 响应（%@）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No HTTP response (%@)"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無 HTTP 回應（%@）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTP 応答なし（%@）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTP 응답 없음 (%@)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет HTTP-ответа (%@)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin respuesta HTTP (%@)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune réponse HTTP (%@)"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine HTTP-Antwort (%@)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sem resposta HTTP (%@)"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا توجد استجابة HTTP (%@)"
+          }
+        }
+      }
+    },
+    "网络异常": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络异常"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network error"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "網路異常"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ネットワーク異常"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "네트워크 오류"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сетевая ошибка"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error de red"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anomalie réseau"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Netzwerkfehler"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erro de rede"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "خلل في الشبكة"
+          }
+        }
+      }
+    },
+    "解密进行中时应用被关闭，这次任务没有完成。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解密进行中时应用被关闭，这次任务没有完成。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app was closed while decryption was running, so this task did not finish."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解密進行中時應用被關閉，這次任務沒有完成。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復号の途中でアプリが終了したため、このタスクは完了しませんでした。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복호화 진행 중 앱이 종료되어 작업이 완료되지 않았습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Приложение было закрыто во время расшифровки, поэтому задача не завершилась."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La app se cerró mientras se descifraba, por lo que esta tarea no terminó."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'app a été fermée pendant le déchiffrement ; cette tâche ne s'est pas terminée."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die App wurde während der Entschlüsselung geschlossen, daher wurde die Aufgabe nicht abgeschlossen."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O app foi fechado durante a descriptografia, portanto a tarefa não foi concluída."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تم إغلاق التطبيق أثناء فك التشفير، لذا لم تكتمل هذه المهمة."
+          }
+        }
+      }
+    },
+    "重新发起一次解密；原 IPA 没有被修改，可以直接复用。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新发起一次解密；原 IPA 没有被修改，可以直接复用。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start decryption again; the original IPA was not modified and can be reused directly."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新發起一次解密；原 IPA 沒有被修改，可以直接復用。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度復号を開始してください。元の IPA は変更されていないためそのまま再利用できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복호화를 다시 시작하세요. 원본 IPA는 수정되지 않아 그대로 다시 사용할 수 있습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Запустите расшифровку повторно: исходный IPA не изменен и готов к повторному использованию."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vuelve a iniciar el descifrado; el IPA original no se modificó y puede reutilizarse directamente."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relancez le déchiffrement ; l'IPA d'origine n'a pas été modifié et peut être réutilisé directement."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starten Sie die Entschlüsselung erneut; die Original-IPA wurde nicht verändert und kann direkt wiederverwendet werden."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inicie a descriptografia novamente; o IPA original não foi alterado e pode ser reutilizado."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أعد بدء فك التشفير؛ لم يتم تعديل ملف IPA الأصلي ويمكن إعادة استخدامه مباشرة."
+          }
+        }
+      }
+    },
+    "Mach-O %lld 个，本次解密 %lld 个，残留加密 %lld 个": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mach-O %lld 个，本次解密 %lld 个，残留加密 %lld 个"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Mach-O, %lld decrypted, %lld still encrypted"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mach-O %lld 個，本次解密 %lld 個，殘留加密 %lld 個"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mach-O %lld 個、今回復号 %lld 個、暗号化残存 %lld 個"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mach-O %lld개, 복호화 %lld개, 암호화 잔존 %lld개"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mach-O: %lld, расшифровано: %lld, осталось зашифровано: %lld"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Mach-O, %lld descifrados, %lld aún cifrados"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Mach-O, %lld déchiffrés, %lld encore chiffrés"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Mach-O, %lld entschlüsselt, %lld noch verschlüsselt"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Mach-O, %lld descriptografados, %lld ainda criptografados"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Mach-O، تم فك تشفير %lld، المتبقي مشفرًا %lld"
+          }
+        }
+      }
+    },
+    "，校验失败 %lld 个": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "，校验失败 %lld 个"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", %lld verification failures"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "，校驗失敗 %lld 個"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "、検証失敗 %lld 個"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", 검증 실패 %lld개"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", ошибок проверки: %lld"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", %lld errores de verificación"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", %lld échecs de vérification"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", %lld Prüffehler"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", %lld falhas na verificação"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "، فشل التحقق في %lld"
+          }
+        }
+      }
+    },
+    "无法打开导出的安装包": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法打开导出的安装包"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to open the exported package"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法開啟匯出的安裝包"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書き出したパッケージを開けません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내보낸 패키지를 열 수 없습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось открыть экспортированный пакет"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo abrir el paquete exportado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d'ouvrir le paquet exporté"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exportiertes Paket konnte nicht geöffnet werden"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível abrir o pacote exportado"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر فتح الحزمة المصدّرة"
+          }
+        }
+      }
+    },
+    "无法读取 ZIP 目录": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取 ZIP 目录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to read ZIP directory"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法讀取 ZIP 目錄"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZIP ディレクトリを読み取れません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZIP 디렉터리를 읽을 수 없습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось прочитать каталог ZIP"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo leer el directorio ZIP"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de lire le répertoire ZIP"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZIP-Verzeichnis konnte nicht gelesen werden"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível ler o diretório ZIP"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر قراءة دليل ZIP"
+          }
+        }
+      }
+    },
+    "ZIP64 布局，未做部分读取": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZIP64 布局，未做部分读取"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZIP64 archive; partial inspection skipped"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZIP64 佈局，未做部分讀取"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZIP64 形式のため部分読み取りをスキップしました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZIP64 형식이라 부분 읽기를 건너뛰었습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Формат ZIP64: частичное чтение пропущено"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Formato ZIP64; se omitió la lectura parcial"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive ZIP64 ; lecture partielle ignorée"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZIP64-Layout; teilweises Auslesen übersprungen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Formato ZIP64; leitura parcial ignorada"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أرشيف ZIP64؛ تم تخطي القراءة الجزئية"
+          }
+        }
+      }
+    },
+    "没有找到可检查的 Mach-O": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有找到可检查的 Mach-O"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No inspectable Mach-O binaries found"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有找到可檢查的 Mach-O"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検査可能な Mach-O が見つかりません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검사할 수 있는 Mach-O 바이너리를 찾지 못했습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не найдено доступных для проверки Mach-O"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se encontraron binarios Mach-O inspeccionables"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun binaire Mach-O inspectable trouvé"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine prüfbaren Mach-O-Binärdateien gefunden"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhum binário Mach-O inspecionável encontrado"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لم يتم العثور على ملفات Mach-O قابلة للفحص"
+          }
+        }
+      }
+    },
+    "部分二进制无法完整读取，未做结论": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分二进制无法完整读取，未做结论"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some binaries could not be read completely; status uncertain"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分二進位檔案無法完整讀取，未做結論"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一部のバイナリを完全に読み取れなかったため判定を保留しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일부 바이너리를 완전히 읽지 못해 결론을 내리지 않았습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Некоторые бинарные файлы не удалось прочитать полностью; вывод не сделан"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Algunos binarios no pudieron leerse por completo; estado indeterminado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Certains binaires n'ont pas pu être lus intégralement ; statut incertain"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einige Binärdateien konnten nicht vollständig gelesen werden; Status unklar"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alguns binários não puderam ser lidos por completo; status incerto"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّرت قراءة بعض الملفات التنفيذية بالكامل؛ لم يُحسم الوضع"
+          }
+        }
+      }
+    },
+    "没有可用结论": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可用结论"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No determination available"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有可用結論"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "判定結果がありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "판별 결과 없음"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нет данных для вывода"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin conclusión disponible"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune conclusion disponible"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein Ergebnis verfügbar"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhuma conclusão disponível"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا توجد نتيجة متاحة"
+          }
+        }
+      }
+    },
+    "解密失败": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解密失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Decryption failed"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解密失敗"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復号に失敗しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복호화 실패"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ошибка расшифровки"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error al descifrar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec du déchiffrement"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entschlüsselung fehlgeschlagen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falha na descriptografia"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فشل فك التشفير"
+          }
+        }
+      }
+    },
+    "展开技术详情查看原因；如果反复出现，重试或重新下载该 IPA。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展开技术详情查看原因；如果反复出现，重试或重新下载该 IPA。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expand technical details to see why. If it keeps happening, retry or redownload the IPA."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展開技術詳情檢視原因；如果反覆出現，重試或重新下載該 IPA。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "技術詳細を開いて原因を確認してください。繰り返し発生する場合は再試行するか IPA を再ダウンロードしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기술 세부 정보를 펼쳐 원인을 확인하세요. 반복되면 다시 시도하거나 IPA를 다시 다운로드하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Раскройте технические детали, чтобы узнать причину. Если ошибка повторяется, повторите попытку или скачайте IPA заново."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Despliega los detalles técnicos para ver el motivo. Si persiste, reintenta o vuelve a descargar el IPA."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Développez les détails techniques pour voir la cause. Si le problème persiste, réessayez ou retéléchargez l'IPA."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Öffnen Sie die technischen Details für die Ursache. Bei wiederholtem Auftreten erneut versuchen oder die IPA neu laden."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expanda os detalhes técnicos para ver o motivo. Se persistir, tente novamente ou baixe o IPA de novo."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "افتح التفاصيل التقنية لمعرفة السبب. إذا تكرر الخطأ، أعد المحاولة أو أعد تنزيل ملف IPA."
+          }
+        }
+      }
+    },
+    "这次解密被手动取消了，原始 IPA 没有被修改。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这次解密被手动取消了，原始 IPA 没有被修改。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This decryption was cancelled manually. The original IPA was not modified."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這次解密被手動取消了，原始 IPA 沒有被修改。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この復号は手動でキャンセルされました。元の IPA は変更されていません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 복호화는 수동으로 취소되었으며 원본 IPA는 변경되지 않았습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Расшифровка была отменена вручную. Исходный IPA не изменен."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este descifrado se canceló manualmente. El IPA original no se ha modificado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce déchiffrement a été annulé manuellement. L'IPA d'origine n'a pas été modifié."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Entschlüsselung wurde manuell abgebrochen. Die Original-IPA wurde nicht verändert."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta descriptografia foi cancelada manualmente. O IPA original não foi modificado."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تم إلغاء فك التشفير يدويًا، ولم يتم تعديل ملف IPA الأصلي."
+          }
+        }
+      }
+    },
+    "需要时重新发起一次即可。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要时重新发起一次即可。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can start it again whenever needed."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要時重新發起一次即可。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "必要なときに再度開始してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "필요할 때 다시 시작하면 됩니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вы можете запустить ее снова при необходимости."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puedes volver a iniciarlo cuando lo necesites."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vous pouvez relancer l'opération quand vous le souhaitez."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sie können es bei Bedarf einfach erneut starten."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Você pode iniciar novamente quando precisar."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يمكنك إعادة البدء متى احتجت إلى ذلك."
+          }
+        }
+      }
+    },
+    "已有任务在运行": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已有任务在运行"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A task is already running"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已有任務正在執行"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別のタスクが実行中です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미 실행 중인 작업이 있습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Задача уже выполняется"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ya hay una tarea en curso"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une tâche est déjà en cours"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eine Aufgabe läuft bereits"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Já existe uma tarefa em andamento"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "توجد مهمة قيد التشغيل بالفعل"
+          }
+        }
+      }
+    },
+    "同一时间只运行一个解密任务，避免重复读写同一个包。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同一时间只运行一个解密任务，避免重复读写同一个包。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only one decryption runs at a time to avoid conflicting reads and writes on the same package."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同一時間只執行一個解密任務，避免重複讀寫同一個包。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じパッケージへの同時読み書きを防ぐため、復号タスクは一度に 1 件のみ実行されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동일한 패키지에 중복 읽기/쓰기를 방지하기 위해 한 번에 하나의 복호화 작업만 실행합니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Одновременно выполняется только одна расшифровка, чтобы избежать конфликтов при чтении и записи."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo se ejecuta un descifrado a la vez para evitar conflictos de lectura y escritura en el mismo paquete."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un seul déchiffrement s'exécute à la fois pour éviter les conflits d'accès sur le même paquet."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Es läuft jeweils nur eine Entschlüsselung, um gleichzeitige Zugriffe auf dasselbe Paket zu vermeiden."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apenas uma descriptografia é executada por vez para evitar conflitos no mesmo pacote."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتم تشغيل مهمة فك تشفير واحدة فقط في كل مرة لتجنب تعارض القراءة والكتابة على نفس الحزمة."
+          }
+        }
+      }
+    },
+    "等当前任务结束后再开始，或在「应用包」里查看进度。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等当前任务结束后再开始，或在「应用包」里查看进度。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wait for the current task to finish, or check its progress in Packages."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等目前任務結束後再開始，或在「應用包」裡檢視進度。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在のタスクが完了してから開始するか、「パッケージ」で進行状況を確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 작업이 끝난 후 시작하거나 '패키지'에서 진행 상태를 확인하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Дождитесь завершения текущей задачи или посмотрите прогресс в разделе «Пакеты»."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espera a que termine la tarea actual o consulta su progreso en Paquetes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attendez la fin de la tâche en cours ou suivez sa progression dans Paquets."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warten Sie, bis die aktuelle Aufgabe fertig ist, oder prüfen Sie den Fortschritt unter „Pakete“."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aguarde a tarefa atual terminar ou acompanhe o progresso em Pacotes."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "انتظر حتى تنتهي المهمة الحالية، أو تابع التقدم في تبويب «الحزم»."
+          }
+        }
+      }
+    },
+    "安装包无法解压": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装包无法解压"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to unpack IPA"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安裝包無法解壓"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パッケージを展開できません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "패키지 압축을 풀 수 없습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось распаковать пакет"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo descomprimir el paquete"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de décompresser le paquet"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paket konnte nicht entpackt werden"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível descompactar o pacote"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر فك ضغط الحزمة"
+          }
+        }
+      }
+    },
+    "ZIP 结构损坏或不完整：%@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZIP 结构损坏或不完整：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Corrupted or incomplete ZIP archive: %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZIP 結構損壞或不完整：%@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZIP 構造が破損または不完全です：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ZIP 구조가 손상되었거나 불완전합니다: %@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поврежденный или неполный архив ZIP: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estructura ZIP dañada o incompleta: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive ZIP corrompue ou incomplète : %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beschädigte oder unvollständige ZIP-Struktur: %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estrutura ZIP corrompida ou incompleta: %@"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "بنية ZIP تالفة أو غير مكتملة: %@"
+          }
+        }
+      }
+    },
+    "重新下载这个 IPA，确认下载完成后重试。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新下载这个 IPA，确认下载完成后重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Redownload this IPA, verify it finished downloading, and try again."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新下載這個 IPA，確認下載完成後重試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この IPA を再ダウンロードし、完了を確認してから再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 IPA를 다시 다운로드하고 완료를 확인한 뒤 다시 시도하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скачайте этот IPA заново, убедитесь в завершении загрузки и повторите попытку."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vuelve a descargar este IPA, comprueba que terminó la descarga y reintenta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retéléchargez cet IPA, vérifiez que le téléchargement est complet puis réessayez."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laden Sie diese IPA erneut herunter, prüfen Sie den Abschluss und versuchen Sie es erneut."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baixe este IPA novamente, confirme que terminou e tente outra vez."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أعد تنزيل ملف IPA هذا وتأكد من اكتمال التنزيل ثم حاول مجددًا."
+          }
+        }
+      }
+    },
+    "安装包里没有应用": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装包里没有应用"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No app bundle inside package"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安裝包裡沒有應用"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パッケージ内にアプリがありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "패키지 안에 앱이 없습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В пакете нет приложения"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El paquete no contiene ninguna app"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune app trouvée dans le paquet"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine App im Paket gefunden"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhum app encontrado no pacote"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يوجد تطبيق داخل الحزمة"
+          }
+        }
+      }
+    },
+    "压缩包内缺少 Payload/*.app，可能不是 IPA 或已被改坏。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "压缩包内缺少 Payload/*.app，可能不是 IPA 或已被改坏。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The archive is missing Payload/*.app. It may not be an IPA or may be damaged."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "壓縮包內缺少 Payload/*.app，可能不是 IPA 或已被改壞。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アーカイブに Payload/*.app が含まれていません。IPA ではないか破損している可能性があります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "압축 파일에 Payload/*.app이 없습니다. IPA가 아니거나 손상되었을 수 있습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В архиве отсутствует Payload/*.app. Возможно, это не IPA или файл поврежден."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falta Payload/*.app en el archivo; puede que no sea un IPA o esté dañado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Payload/*.app est absent de l'archive ; il ne s'agit peut-être pas d'un IPA ou il est endommagé."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im Archiv fehlt Payload/*.app. Möglicherweise ist es keine IPA oder beschädigt."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falta Payload/*.app no arquivo; pode não ser um IPA ou estar corrompido."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يفتقد الأرشيف إلى Payload/*.app؛ قد لا يكون ملف IPA أو قد يكون تالفًا."
+          }
+        }
+      }
+    },
+    "换一个完整的原始 IPA 再试。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "换一个完整的原始 IPA 再试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again with a complete original IPA."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "換一個完整的原始 IPA 再試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完全なオリジナル IPA で再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "온전한 원본 IPA로 다시 시도하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Попробуйте снова с целым исходным IPA."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vuelve a intentarlo con un IPA original completo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réessayez avec un IPA d'origine complet."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Versuchen Sie es mit einer vollständigen Original-IPA erneut."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tente novamente com um IPA original completo."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جرّب مجددًا باستخدام ملف IPA أصلي ومكتمل."
+          }
+        }
+      }
+    },
+    "重新打包失败": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新打包失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to repackage IPA"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新打包失敗"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再パッケージに失敗しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 패키징 실패"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ошибка переупаковки IPA"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error al reempaquetar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec du réempaquetage"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neuverpacken fehlgeschlagen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falha ao reempacotar"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فشل إعادة تجميع الحزمة"
+          }
+        }
+      }
+    },
+    "解密完成后写回 IPA 时出错：%@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解密完成后写回 IPA 时出错：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error writing the decrypted files back into the IPA: %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解密完成後寫回 IPA 時出錯：%@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復号後に IPA へ書き戻す際にエラーが発生しました：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복호화 후 IPA로 다시 쓰는 중 오류가 발생했습니다: %@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ошибка при записи расшифрованных файлов обратно в IPA: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error al volver a escribir el IPA tras descifrar: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erreur lors de la réécriture de l'IPA après déchiffrement : %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fehler beim Zurückschreiben der IPA nach dem Entschlüsseln: %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erro ao gravar o IPA de volta após descriptografar: %@"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حدث خطأ أثناء إعادة كتابة ملف IPA بعد فك التشفير: %@"
+          }
+        }
+      }
+    },
+    "确认剩余空间充足后重试；若持续失败，展开技术详情反馈。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认剩余空间充足后重试；若持续失败，展开技术详情反馈。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check that you have enough free storage and retry. If it persists, expand technical details to report it."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認剩餘空間充足後重試；若持續失敗，展開技術詳情回饋。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空き容量を確認して再試行してください。続く場合は技術詳細を開いてご報告ください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장 공간이 충분한지 확인 후 다시 시도하세요. 계속 실패하면 기술 세부 정보를 펼쳐 제보해 주세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Убедитесь, что достаточно свободного места, и повторите попытку. Если ошибка сохраняется, откройте технические детали."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comprueba que tienes espacio suficiente y reintenta; si persiste, despliega los detalles técnicos para informar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérifiez l'espace libre disponible et réessayez. Si l'échec persiste, ouvrez les détails techniques pour le signaler."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prüfen Sie den freien Speicherplatz und versuchen Sie es erneut. Bei anhaltendem Fehler technische Details öffnen."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verifique se há espaço livre suficiente e tente novamente. Se persistir, abra os detalhes técnicos para relatar."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تأكد من توفر مساحة تخزين كافية وأعد المحاولة؛ إذا استمر الفشل فافتح التفاصيل التقنية للإبلاغ."
+          }
+        }
+      }
+    },
+    "存储空间不足": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "存储空间不足"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not enough storage"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "儲存空間不足"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空き容量不足"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장 공간 부족"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Недостаточно места"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espacio insuficiente"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espace de stockage insuffisant"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht genügend Speicherplatz"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Armazenamento insuficiente"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "مساحة التخزين غير كافية"
+          }
+        }
+      }
+    },
+    "可用 %@，这次解密大约需要 %@。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可用 %@，这次解密大约需要 %@。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ available; this decryption needs about %@."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可用 %@，這次解密大約需要 %@。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空き容量 %@、今回の復号には約 %@ 必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용 가능 %@, 이번 복호화에는 약 %@가 필요합니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Доступно %@, для расшифровки требуется около %@."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ disponibles; este descifrado necesita aproximadamente %@."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ disponibles ; ce déchiffrement nécessite environ %@."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ verfügbar; diese Entschlüsselung benötigt etwa %@."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ disponíveis; esta descriptografia precisa de cerca de %@."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "المتوفر %@، وتحتاج عملية فك التشفير هذه إلى حوالي %@."
+          }
+        }
+      }
+    },
+    "清理空间后重试；解密过程会在 App 容器里临时占用一个 IPA 大小。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清理空间后重试；解密过程会在 App 容器里临时占用一个 IPA 大小。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free up space and retry; decryption temporarily uses roughly one extra IPA worth of storage."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清理空間後重試；解密過程會在 App 容器裡暫時佔用一個 IPA 大小。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空き容量を確保して再試行してください。復号中はアプリコンテナ内に IPA 1 つ分の一時領域を使用します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장 공간을 확보한 후 다시 시도하세요. 복호화 중 앱 컨테이너에 IPA 크기만큼 임시 공간이 필요합니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Освободите место и повторите попытку: при расшифровке временно требуется объем примерно одного IPA."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Libera espacio y reintenta; el descifrado ocupa temporalmente el tamaño aproximado de un IPA."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Libérez de l'espace et réessayez ; le déchiffrement utilise temporairement l'équivalent d'un IPA."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geben Sie Speicherplatz frei und versuchen Sie es erneut; während der Entschlüsselung wird vorübergehend ca. eine IPA-Größe belegt."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Libere espaço e tente novamente; a descriptografia usa temporariamente o tamanho aproximado de um IPA."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حرّر بعض المساحة وأعد المحاولة؛ تستهلك عملية فك التشفير مؤقتًا مساحة تعادل حجم ملف IPA واحد تقريبًا."
+          }
+        }
+      }
+    },
+    "系统无法为该授权建立解密上下文": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统无法为该授权建立解密上下文"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System could not create a decryption context"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統無法為該授權建立解密上下文"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システムが復号コンテキストを作成できませんでした"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템이 복호화 컨텍스트를 생성하지 못했습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Система не смогла создать контекст расшифровки"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El sistema no pudo crear el contexto de descifrado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le système n'a pas pu créer de contexte de déchiffrement"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System konnte keinen Entschlüsselungskontext erstellen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O sistema não conseguiu criar o contexto de descriptografia"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر على النظام إنشاء سياق فك التشفير لهذا الترخيص"
+          }
+        }
+      }
+    },
+    "内核在请求 FairPlay 解密时返回了 ENOMEM（无法分配内存）。这不等于账号或授权有问题，也不能据此判断该 IPA 不可解。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内核在请求 FairPlay 解密时返回了 ENOMEM（无法分配内存）。这不等于账号或授权有问题，也不能据此判断该 IPA 不可解。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The kernel returned ENOMEM (out of memory) during FairPlay decryption. This does not mean the account or license is invalid, nor that this IPA cannot be decrypted."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核心在請求 FairPlay 解密時傳回了 ENOMEM（無法分配記憶體）。這不等於帳號或授權有問題，也不能據此判斷該 IPA 不可解。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FairPlay 復号リクエスト時にカーネルが ENOMEM（メモリ割り当て不可）を返しました。アカウントやライセンスの問題とは限らず、復号不能と断定できるものでもありません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FairPlay 복호화 요청 중 커널이 ENOMEM(메모리 할당 불가)을 반환했습니다. 계정이나 라이선스 문제 또는 복호화 불가 상태를 의미하지는 않습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ядро вернуло ENOMEM (нехватка памяти) при запросе FairPlay. Это не означает проблем с аккаунтом или лицензией и не доказывает, что IPA нельзя расшифровать."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El kernel devolvió ENOMEM (sin memoria) al solicitar FairPlay. Esto no implica un problema de cuenta o licencia ni que el IPA no pueda descifrarse."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le noyau a renvoyé ENOMEM (mémoire insuffisante) lors du déchiffrement FairPlay. Cela ne signifie pas que le compte ou la licence pose problème."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Kernel gab bei FairPlay ENOMEM (Speichermangel) zurück. Das bedeutet weder ein Konto-/Lizenzproblem noch, dass die IPA nicht entschlüsselbar ist."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O kernel retornou ENOMEM (memória insuficiente) na solicitação FairPlay. Isso não indica problema na conta ou licença nem que o IPA não possa ser descriptografado."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أعاد النواة الخطأ ENOMEM (تعذّر تخصيص الذاكرة) أثناء طلب فك تشفير FairPlay. لا يعني هذا وجود مشكلة في الحساب أو الترخيص."
+          }
+        }
+      }
+    },
+    "稍后重试一次；若持续出现，请保留这个 IPA 与日志反馈，以便按样本分析。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "稍后重试一次；若持续出现，请保留这个 IPA 与日志反馈，以便按样本分析。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry shortly. If it keeps occurring, keep this IPA and log for sample analysis."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "稍後重試一次；若持續出現，請保留這個 IPA 與日誌回饋，以便按樣本分析。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "しばらくしてから再試行してください。続く場合は分析のためこの IPA とログを保存してご報告ください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잠시 후 다시 시도하세요. 계속 발생하면 샘플 분석을 위해 이 IPA와 로그를 보관해 제보해 주세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повторите попытку позже. Если ошибка повторяется, сохраните IPA и журнал для анализа."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reintenta más tarde. Si continúa, conserva este IPA y el registro para analizar el caso."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réessayez plus tard. Si cela persiste, conservez cet IPA et le journal pour analyse."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Versuchen Sie es später erneut. Falls es weiter auftritt, behalten Sie IPA und Protokoll zur Analyse."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tente novamente em breve. Se persistir, guarde este IPA e o log para análise."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أعد المحاولة لاحقًا؛ وإذا استمرت المشكلة فاحتفظ بملف IPA والسجل لتحليله."
+          }
+        }
+      }
+    },
+    "fairplayd 对这次请求返回了 %@。常见原因有三种：当前设备没有下载该应用所用 Apple 账号的解密授权；IPA 的下载账号与系统 App Store 当前授权账号不一致；这个应用来自家庭共享或其他账号的购买记录。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fairplayd 对这次请求返回了 %@。常见原因有三种：当前设备没有下载该应用所用 Apple 账号的解密授权；IPA 的下载账号与系统 App Store 当前授权账号不一致；这个应用来自家庭共享或其他账号的购买记录。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fairplayd returned %@. Common causes: this device lacks decryption authorization for the Apple Account that downloaded the app; the IPA's download account differs from the system App Store account; or the app comes from Family Sharing or another account."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fairplayd 對這次請求傳回了 %@。常見原因有三種：目前裝置沒有下載該應用所用 Apple 帳號的解密授權；IPA 的下載帳號與系統 App Store 目前授權帳號不一致；這個應用來自家庭共享或其他帳號的購買記錄。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fairplayd が %@ を返しました。主な原因は3つあります：ダウンロードに使った Apple Account の復号権限がこの端末にない、IPA のダウンロードアカウントと App Store の現在アカウントが異なる、ファミリー共有や別アカウントの購入品である場合です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fairplayd가 %@를 반환했습니다. 흔한 원인은 세 가지입니다: 이 기기에 해당 앱을 다운로드한 Apple 계정의 복호화 권한이 없거나, IPA 다운로드 계정과 시스템 App Store 계정이 다르거나, 가족 공유 또는 다른 계정의 구매 항목인 경우입니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fairplayd вернул %@. Три частые причины: на устройстве нет авторизации для аккаунта Apple, скачавшего приложение; аккаунт загрузки IPA отличается от аккаунта App Store; приложение получено через Семейный доступ или другой аккаунт."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fairplayd devolvió %@. Hay tres causas frecuentes: el dispositivo no tiene autorización de descifrado para la cuenta Apple que descargó la app; la cuenta del IPA difiere de la de App Store; o procede de En familia u otra cuenta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fairplayd a renvoyé %@. Trois causes fréquentes : l'appareil n'est pas autorisé pour le compte Apple ayant téléchargé l'app ; le compte de l'IPA diffère de celui de l'App Store ; l'app provient du partage familial ou d'un autre compte."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fairplayd hat %@ zurückgegeben. Häufige Ursachen: fehlende Entschlüsselungsautorisierung für das Download-Apple-Konto; abweichendes App-Store-Konto; oder die App stammt aus der Familienfreigabe bzw. einem anderen Konto."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "fairplayd retornou %@. Três causas comuns: o dispositivo não tem autorização de descriptografia para a Conta Apple que baixou o app; a conta do IPA difere da App Store do sistema; ou o app veio do Compartilhamento Familiar ou outra conta."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أعاد fairplayd الخطأ %@. الأسباب الشائعة ثلاثة: عدم وجود تفويض فك تشفير على هذا الجهاز لحساب Apple الذي نزّل التطبيق؛ اختلاف حساب تنزيل IPA عن حساب App Store الحالي؛ أو أن التطبيق من المشاركة العائلية أو حساب آخر."
+          }
+        }
+      }
+    },
+    "用下载该应用时所用的 Apple 账号在系统 App Store 登录一次（App Store → 头像 → 登录），回到这里重新解密。如果已登录仍被拒绝，请核对下载账号是否直接拥有该应用。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用下载该应用时所用的 Apple 账号在系统 App Store 登录一次（App Store → 头像 → 登录），回到这里重新解密。如果已登录仍被拒绝，请核对下载账号是否直接拥有该应用。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in once in the system App Store (App Store → Avatar → Sign In) with the Apple Account used to download this app, then retry decryption here. If still denied, verify that account directly owns the app."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用下載該應用時所用的 Apple 帳號在系統 App Store 登入一次（App Store → 頭像 → 登入），回到這裡重新解密。如果已登入仍被拒絕，請核對下載帳號是否直接擁有該應用。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリをダウンロードした Apple Account で標準の App Store に一度サインインし（App Store → プロフィール → サインイン）、戻って再試行してください。サインイン済みでも拒否される場合は、そのアカウントが直接所有しているか確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 앱을 다운로드한 Apple 계정으로 시스템 App Store에 한 번 로그인한 뒤(App Store → 프로필 → 로그인) 다시 복호화해 보세요. 이미 로그인했는데도 거부되면 해당 계정이 앱을 직접 소유하고 있는지 확인하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Войдите в системный App Store (App Store → аватар → Войти) с аккаунтом Apple, которым скачивалось приложение, затем повторите расшифровку. Если отказ сохраняется, проверьте, принадлежит ли приложение напрямую этому аккаунту."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inicia sesión una vez en el App Store del sistema (App Store → Avatar → Iniciar sesión) con la cuenta Apple que descargó la app y vuelve a intentarlo. Si sigue denegado, comprueba que esa cuenta posea la app directamente."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connectez-vous une fois dans l'App Store système (App Store → Avatar → Se connecter) avec le compte Apple utilisé pour le téléchargement, puis réessayez. Si le refus persiste, vérifiez que ce compte détient directement l'app."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melden Sie sich einmal im System-App-Store (App Store → Profil → Anmelden) mit dem Apple-Konto des Downloads an und versuchen Sie es erneut. Prüfen Sie bei erneutem Fehler, ob das Konto die App direkt besitzt."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entre uma vez na App Store do sistema (App Store → Avatar → Iniciar sessão) com a Conta Apple usada no download e tente novamente. Se continuar recusado, confirme se a conta possui o app diretamente."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "سجّل الدخول مرة واحدة في متجر App Store بالنظام (App Store ← الصورة الشخصية ← تسجيل الدخول) بنفس حساب Apple الذي نزّل التطبيق، ثم أعد محاولة فك التشفير هنا. إذا استمر الرفض فتأكد من امتلاك الحساب للتطبيق مباشرة."
+          }
+        }
+      }
+    },
+    "这个二进制无法解密": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个二进制无法解密"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This binary cannot be decrypted"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個二進位檔案無法解密"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このバイナリは復号できません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 바이너리는 복호화할 수 없습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот бинарный файл нельзя расшифровать"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este binario no puede descifrarse"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce binaire ne peut pas être déchiffré"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Binärdatei kann nicht entschlüsselt werden"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este binário não pode ser descriptografado"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يمكن فك تشفير هذا الملف التنفيذي"
+          }
+        }
+      }
+    },
+    "内核拒绝了映射参数（EINVAL），该二进制可能不是受支持的加密布局。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内核拒绝了映射参数（EINVAL），该二进制可能不是受支持的加密布局。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The kernel rejected the mapping parameters (EINVAL); this binary may use an unsupported encryption layout."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核心拒絕了映射參數（EINVAL），該二進位檔案可能不是受支援的加密佈局。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カーネルがマッピング引数を拒否しました（EINVAL）。未対応の暗号化レイアウトの可能性があります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "커널이 매핑 매개변수를 거부했습니다(EINVAL). 지원되지 않는 암호화 구조일 수 있습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ядро отклонило параметры отображения (EINVAL): возможно, формат шифрования не поддерживается."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El kernel rechazó los parámetros de mapeo (EINVAL); el binario podría tener un formato cifrado no compatible."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le noyau a refusé les paramètres de mappage (EINVAL) ; le format de chiffrement de ce binaire n'est peut-être pas pris en charge."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Kernel hat die Mapping-Parameter abgelehnt (EINVAL); das Verschlüsselungsformat wird möglicherweise nicht unterstützt."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O kernel rejeitou os parâmetros de mapeamento (EINVAL); o binário pode ter um layout de criptografia não suportado."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "رفضت النواة معلمات التعيين (EINVAL)؛ قد يستخدم هذا الملف بنية تشفير غير مدعومة."
+          }
+        }
+      }
+    },
+    "确认包内每个 Mach-O 都有同名的 SC_Info 授权文件；必要时反馈这个样本。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认包内每个 Mach-O 都有同名的 SC_Info 授权文件；必要时反馈这个样本。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check that each Mach-O in the package has its matching SC_Info file, and share this sample if needed."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認包內每個 Mach-O 都有同名的 SC_Info 授權檔案；必要時回饋這個樣本。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パッケージ内の各 Mach-O に対応する SC_Info があるか確認し、必要に応じてサンプルをご報告ください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "패키지 내 각 Mach-O에 동일한 이름의 SC_Info 파일이 있는지 확인하고, 필요 시 샘플을 제보해 주세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Убедитесь, что у каждого Mach-O есть соответствующий файл SC_Info; при необходимости отправьте этот образец."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comprueba que cada Mach-O tenga su archivo SC_Info correspondiente y comparte la muestra si es necesario."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérifiez que chaque Mach-O dispose de son fichier SC_Info correspondant et partagez cet échantillon si nécessaire."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prüfen Sie, ob zu jedem Mach-O eine passende SC_Info-Datei existiert, und melden Sie das Beispiel bei Bedarf."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verifique se cada Mach-O possui o arquivo SC_Info correspondente e envie a amostra se necessário."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تأكد من وجود ملف SC_Info مطابق لكل Mach-O داخل الحزمة، وأبلغ عن هذه العينة عند الحاجة."
+          }
+        }
+      }
+    },
+    "解密没有完成": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解密没有完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Decryption did not finish"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解密沒有完成"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復号が完了しませんでした"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복호화가 완료되지 않았습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Расшифровка не завершена"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El descifrado no se completó"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le déchiffrement ne s'est pas terminé"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entschlüsselung nicht abgeschlossen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A descriptografia não foi concluída"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لم يكتمل فك التشفير"
+          }
+        }
+      }
+    },
+    "所有加密二进制都被系统拒绝。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有加密二进制都被系统拒绝。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All encrypted binaries were rejected by the system."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有加密二進位檔案都被系統拒絕。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての暗号化バイナリがシステムにより拒否されました。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 암호화 바이너리가 시스템에서 거부되었습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все зашифрованные бинарные файлы были отклонены системой."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos los binarios cifrados fueron rechazados por el sistema."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tous les binaires chiffrés ont été refusés par le système."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle verschlüsselten Binärdateien wurden vom System abgelehnt."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos os binários criptografados foram recusados pelo sistema."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "رفض النظام جميع الملفات التنفيذية المشفرة."
+          }
+        }
+      }
+    },
+    "展开技术详情查看内核返回码与失败文件，然后重试。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展开技术详情查看内核返回码与失败文件，然后重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expand technical details to inspect the kernel error code and failed files, then retry."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展開技術詳情檢視核心傳回碼與失敗檔案，然後重試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "技術詳細を開いてカーネルのエラーコードと失敗ファイルを確認してから再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기술 세부 정보를 펼쳐 커널 반환 코드와 실패한 파일을 확인한 뒤 다시 시도하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Откройте технические детали, чтобы увидеть код ошибки ядра и проблемные файлы, затем повторите попытку."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Despliega los detalles técnicos para ver el código del kernel y los archivos fallidos, luego reintenta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Développez les détails techniques pour consulter le code noyau et les fichiers en échec, puis réessayez."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Öffnen Sie die technischen Details für Kernel-Code und fehlgeschlagene Dateien und versuchen Sie es erneut."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expanda os detalhes técnicos para ver o código do kernel e os arquivos com falha e tente novamente."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "افتح التفاصيل التقنية لمعرفة رمز خطأ النواة والملفات الفاشلة، ثم أعد المحاولة."
+          }
+        }
+      }
+    },
+    "解密流程结束，但复查产物时发现仍有加密残留或读取失败：%@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解密流程结束，但复查产物时发现仍有加密残留或读取失败：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Decryption finished, but verification still found encrypted sections or read errors: %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解密流程結束，但複查產物時發現仍有加密殘留或讀取失敗：%@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復号処理は終了しましたが、検証で暗号化の残存または読み取りエラーが見つかりました：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복호화가 끝났지만 결과물 검증에서 암호화 잔존 또는 읽기 실패가 발견되었습니다: %@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Расшифровка завершилась, но проверка обнаружила оставшееся шифрование или ошибки чтения: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El descifrado terminó, pero la verificación encontró restos cifrados o errores de lectura: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le déchiffrement est terminé, mais la vérification a détecté du contenu encore chiffré ou des erreurs de lecture : %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Entschlüsselung ist beendet, aber die Prüfung fand noch verschlüsselte Teile oder Lesefehler: %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A descriptografia terminou, mas a verificação ainda encontrou trechos criptografados ou erros de leitura: %@"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "انتهى فك التشفير، لكن التحقق وجد بقايا مشفرة أو أخطاء قراءة: %@"
+          }
+        }
+      }
+    },
+    "展开技术详情确认残留文件；建议重新下载原始 IPA 后重试。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展开技术详情确认残留文件；建议重新下载原始 IPA 后重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expand technical details to see remaining files; redownload the original IPA and retry."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展開技術詳情確認殘留檔案；建議重新下載原始 IPA 後重試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "技術詳細で残存ファイルを確認してください。元の IPA を再ダウンロードして再試行することをおすすめします。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기술 세부 정보에서 남은 파일을 확인하세요. 원본 IPA를 다시 다운로드한 뒤 재시도하는 것이 좋습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Откройте технические детали для просмотра оставшихся файлов; рекомендуется заново скачать исходный IPA и повторить попытку."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Despliega los detalles técnicos para ver los archivos pendientes; se recomienda volver a descargar el IPA original y reintentar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrez les détails techniques pour voir les fichiers restants ; retéléchargez l'IPA d'origine et réessayez."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prüfen Sie die verbleibenden Dateien in den technischen Details; laden Sie die Original-IPA neu herunter und versuchen Sie es erneut."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abra os detalhes técnicos para ver os arquivos restantes; recomenda-se baixar novamente o IPA original e tentar de novo."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "افتح التفاصيل التقنية لمعرفة الملفات المتبقية؛ يُنصح بإعادة تنزيل ملف IPA الأصلي والمحاولة مجددًا."
+          }
+        }
+      }
+    },
+    "%lld 个二进制已解密，%lld 个失败，产物里仍有加密内容。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个二进制已解密，%lld 个失败，产物里仍有加密内容。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld binaries decrypted, %lld failed; the output still contains encrypted code."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 個二進位檔案已解密，%lld 個失敗，產物裡仍有加密內容。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 個のバイナリを復号し、%lld 個が失敗しました。出力に暗号化データが残っています。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld개 바이너리 복호화됨, %lld개 실패. 결과물에 암호화된 내용이 남아 있습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Расшифровано бинарников: %lld, ошибок: %lld; в файле все еще есть зашифрованные данные."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld binarios descifrados y %lld fallidos; el resultado aún contiene código cifrado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld binaires déchiffrés, %lld en échec ; le fichier contient encore du contenu chiffré."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Binärdateien entschlüsselt, %lld fehlgeschlagen; die Ausgabe enthält noch verschlüsselte Teile."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld binários descriptografados, %lld falharam; a saída ainda contém conteúdo criptografado."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تم فك تشفير %lld ملفًا وفشل %lld؛ لا يزال الناتج يحتوي على أجزاء مشفرة."
+          }
+        }
+      }
+    },
+    "这次产物可能无法直接安装使用；重试，或换一个完整的原始 IPA。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这次产物可能无法直接安装使用；重试，或换一个完整的原始 IPA。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This output may not install or launch properly. Retry or use a complete original IPA."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這次產物可能無法直接安裝使用；重試，或換一個完整的原始 IPA。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この出力はそのままインストール・起動できない可能性があります。再試行するか完全なオリジナル IPA を使用してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 결과물은 바로 설치하거나 실행하지 못할 수 있습니다. 다시 시도하거나 온전한 원본 IPA를 사용하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот файл может не установиться или не запуститься. Повторите попытку или используйте целый исходный IPA."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Es posible que este resultado no se instale o abra bien; reintenta o usa un IPA original completo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce fichier risque de ne pas s'installer ou fonctionner correctement ; réessayez ou utilisez un IPA d'origine complet."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Ausgabe lässt sich möglicherweise nicht direkt installieren oder starten; erneut versuchen oder vollständige Original-IPA verwenden."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta saída pode não instalar ou funcionar corretamente; tente novamente ou use um IPA original completo."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "قد لا يعمل هذا الناتج عند التثبيت مباشرة؛ أعد المحاولة أو استخدم ملف IPA أصليًا ومكتملًا."
+          }
+        }
+      }
+    },
+    "其中 %lld 个是系统已成功解密、但判定未通过的切片（mremap 返回成功、每页都读回、内容已改变）。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其中 %lld 个是系统已成功解密、但判定未通过的切片（mremap 返回成功、每页都读回、内容已改变）。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld of them were decrypted by the system (mremap succeeded and pages changed) but did not pass heuristic verification."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其中 %lld 個是系統已成功解密、但判定未通過的切片（mremap 傳回成功、每頁都讀回、內容已改變）。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのうち %lld 個はシステムによる復号自体は成功したものの、検証判定を通過しなかったスライスです。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "그중 %lld개는 시스템 복호화는 성공했으나 검증 기준을 통과하지 못한 슬라이스입니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Из них %lld были расшифрованы системой (mremap успешен, страницы изменены), но не прошли эвристическую проверку."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld de ellos fueron descifrados por el sistema (mremap correcto), pero no pasaron la verificación heurística."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld d'entre eux ont été déchiffrés par le système (mremap réussi), mais n'ont pas passé la vérification heuristique."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld davon wurden vom System entschlüsselt (mremap erfolgreich), bestanden aber die heuristische Prüfung nicht."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld deles foram descriptografados pelo sistema (mremap bem-sucedido), mas não passaram na verificação heurística."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تم فك تشفير %lld منها بنجاح عبر النظام لكنها لم تجتز الفحص الاستدلالي."
+          }
+        }
+      }
+    },
+    "这部分不是 FairPlay 拒绝；请展开技术详情，按 verdict new=/legacy= 两栏对比后再决定是否反馈。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这部分不是 FairPlay 拒绝；请展开技术详情，按 verdict new=/legacy= 两栏对比后再决定是否反馈。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This is not a FairPlay denial. Expand technical details and compare verdict new=/legacy= before reporting."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這部分不是 FairPlay 拒絕；請展開技術詳情，按 verdict new=/legacy= 兩欄對比後再決定是否回饋。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これは FairPlay の拒否ではありません。技術詳細を開き verdict new=/legacy= を確認してからご報告ください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이는 FairPlay 거부가 아닙니다. 기술 세부 정보를 펼쳐 verdict new=/legacy= 값을 비교한 뒤 제보 여부를 결정하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это не отказ FairPlay. Откройте технические детали и сравните verdict new=/legacy= перед отправкой отчета."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No es un rechazo de FairPlay; despliega los detalles técnicos y compara verdict new=/legacy= antes de informar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce n'est pas un refus FairPlay ; ouvrez les détails techniques et comparez verdict new=/legacy= avant de signaler."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dies ist keine FairPlay-Ablehnung. Öffnen Sie die technischen Details und vergleichen Sie verdict new=/legacy= vor einer Meldung."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Isto não é uma recusa do FairPlay; abra os detalhes técnicos e compare verdict new=/legacy= antes de relatar."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "هذا ليس رفضًا من FairPlay؛ افتح التفاصيل التقنية وقارن verdict new=/legacy= قبل الإبلاغ."
+          }
+        }
+      }
+    },
+    "这个 IPA 无需解密": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个 IPA 无需解密"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This IPA does not need decryption"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個 IPA 無需解密"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この IPA は復号不要です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 IPA는 복호화가 필요하지 않습니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот IPA не требует расшифровки"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este IPA no necesita descifrado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cet IPA n'a pas besoin d'être déchiffré"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese IPA muss nicht entschlüsselt werden"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este IPA não precisa ser descriptografado"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ملف IPA هذا لا يحتاج إلى فك تشفير"
+          }
+        }
+      }
+    },
+    "检查到包内所有 Mach-O 都没有加密（cryptid = 0）。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查到包内所有 Mach-O 都没有加密（cryptid = 0）。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All Mach-O binaries in this package are already unencrypted (cryptid = 0)."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檢查到包內所有 Mach-O 都沒有加密（cryptid = 0）。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パッケージ内のすべての Mach-O は暗号化されていません（cryptid = 0）。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "패키지 내 모든 Mach-O 바이너리가 암호화되어 있지 않습니다 (cryptid = 0)."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все Mach-O в пакете уже не зашифрованы (cryptid = 0)."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos los binarios Mach-O de este paquete ya están sin cifrar (cryptid = 0)."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tous les binaires Mach-O de ce paquet sont déjà non chiffrés (cryptid = 0)."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Mach-O-Binärdateien in diesem Paket sind bereits unverschlüsselt (cryptid = 0)."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos os binários Mach-O neste pacote já estão sem criptografia (cryptid = 0)."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جميع ملفات Mach-O داخل هذه الحزمة غير مشفرة بالفعل (cryptid = 0)."
+          }
+        }
+      }
+    },
+    "可以直接使用或导出这个 IPA。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以直接使用或导出这个 IPA。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can use or export this IPA directly."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以直接使用或匯出這個 IPA。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この IPA はそのまま使用または書き出しできます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 IPA를 바로 사용하거나 내보낼 수 있습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Вы можете сразу использовать или экспортировать этот IPA."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puedes usar o exportar este IPA directamente."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vous pouvez utiliser ou exporter cet IPA directement."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sie können diese IPA direkt verwenden oder exportieren."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Você pode usar ou exportar este IPA diretamente."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يمكنك استخدام ملف IPA هذا أو تصديره مباشرة."
+          }
+        }
+      }
+    },
+    "Apple 暂时无法完成该操作，请稍后重试（代码 %@）。": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذر على Apple إكمال العملية. يرجى المحاولة مرة أخرى لاحقًا (الرمز %@)."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple konnte den Vorgang nicht abschließen. Versuche es später erneut (Code %@)."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple couldn't complete the operation. Try again later (code %@)."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple no pudo completar la operación. Vuelve a intentarlo más tarde (código %@)."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple n’a pas pu terminer l’opération. Réessayez plus tard (code %@)."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple で操作を完了できませんでした。しばらくしてからやり直してください（コード %@）。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple에서 작업을 완료할 수 없습니다. 잠시 후 다시 시도하세요(코드 %@)."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Apple não conseguiu concluir a operação. Tente novamente mais tarde (código %@)."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple не удалось завершить операцию. Повторите попытку позже (код %@)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 暂时无法完成该操作，请稍后重试（代码 %@）。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 暫時無法完成該操作，請稍後重試（代碼 %@）。"
+          }
+        }
+      }
+    },
+    "此 Apple 账号已被停用，请先在 Apple 官网或系统设置中恢复后再试。": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تم تعطيل حساب Apple هذا. استرده عبر موقع Apple أو في الإعدادات ثم حاول مرة أخرى."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Apple Account ist deaktiviert. Stelle ihn auf der Apple-Website oder in den Einstellungen wieder her und versuche es erneut."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Apple Account is disabled. Recover it on Apple's website or in Settings, then try again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta Cuenta de Apple está desactivada. Recupérala en el sitio web de Apple o en Ajustes y vuelve a intentarlo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce compte Apple est désactivé. Récupérez-le sur le site d’Apple ou dans Réglages, puis réessayez."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Apple Account は無効になっています。Apple の公式サイトまたは設定で復旧してからやり直してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Apple 계정이 비활성화되었습니다. Apple 웹사이트나 설정에서 복구한 뒤 다시 시도하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta Conta Apple está desativada. Recupere-a no site da Apple ou nos Ajustes e tente novamente."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот Аккаунт Apple отключён. Восстановите его на сайте Apple или в Настройках и повторите попытку."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Apple 账号已被停用，请先在 Apple 官网或系统设置中恢复后再试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Apple 帳號已被停用，請先在 Apple 官網或系統設定中恢復後再試。"
+          }
+        }
+      }
+    },
+    "Apple 账号密码已更改，请重新登录。": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تم تغيير كلمة سر حساب Apple. يرجى تسجيل الدخول مرة أخرى."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Passwort deines Apple Accounts wurde geändert. Melde dich erneut an."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your Apple Account password has changed. Sign in again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La contraseña de tu Cuenta de Apple ha cambiado. Vuelve a iniciar sesión."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le mot de passe de votre compte Apple a été modifié. Veuillez vous reconnecter."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple Account のパスワードが変更されました。再度サインインしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 계정 암호가 변경되었습니다. 다시 로그인하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A senha da sua Conta Apple foi alterada. Inicie sessão novamente."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Пароль Аккаунта Apple был изменён. Войдите снова."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 账号密码已更改，请重新登录。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 帳號密碼已變更，請重新登入。"
+          }
+        }
+      }
+    },
+    "Apple 需要您先同意最新的 App Store 条款与条件，请先在系统 App Store 中同意后再试。": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تتطلب Apple موافقتك على أحدث شروط وأحكام App Store. وافق عليها في تطبيق App Store ثم حاول مرة أخرى."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple verlangt deine Zustimmung zu den aktuellen App Store-Nutzungsbedingungen. Stimme ihnen in der App Store-App zu und versuche es erneut."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple requires you to agree to the latest App Store Terms and Conditions. Accept them in the App Store app and try again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple requiere que aceptes los últimos Términos y condiciones de App Store. Acéptalos en la app App Store y vuelve a intentarlo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple exige d’accepter les dernières conditions générales de l’App Store. Acceptez-les dans l’app App Store puis réessayez."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple から最新の App Store 利用規約への同意が求められています。App Store アプリで同意してからやり直してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple에서 최신 App Store 이용 약관 동의를 요청하고 있습니다. App Store 앱에서 동의한 후 다시 시도하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Apple exige que você concorde com os Termos e Condições mais recentes da App Store. Aceite-os no app App Store e tente novamente."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple требует принять обновлённые Условия и положения App Store. Примите их в приложении App Store и повторите попытку."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 需要您先同意最新的 App Store 条款与条件，请先在系统 App Store 中同意后再试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 需要您先同意最新的 App Store 條款與條件，請先在系統 App Store 中同意後再試。"
           }
         }
       }

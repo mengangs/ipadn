@@ -138,8 +138,12 @@ struct AccountSessionEntry: Codable, Equatable, Identifiable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         self.password = try container.decodeIfPresent(String.self, forKey: .password) ?? ""
         self.cookie = try container.decodeIfPresent(String.self, forKey: .cookie) ?? ""
-        self.dsid = (try container.decodeIfPresent(String.self, forKey: .dsid) ?? "")
+        let rawDsid = (try container.decodeIfPresent(String.self, forKey: .dsid) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard rawDsid.isEmpty || rawDsid.allSatisfy({ $0.isASCII && $0.isNumber }) else {
+            throw AccountBackupError.invalidAccountEntry
+        }
+        self.dsid = rawDsid
         self.passwordToken = (try container.decodeIfPresent(String.self, forKey: .passwordToken) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         self.storeFront = (try container.decodeIfPresent(String.self, forKey: .storeFront) ?? "")

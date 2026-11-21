@@ -25,6 +25,7 @@ struct TestFlightDetailView: View {
     @State private var heroCollapsed = false
     @State private var copiedBundleID = false
     @State private var cachedPackageBytes: Int64 = 0
+    @State private var quickBuildInfo: QuickBuildInfo?
 
     private var detail: TFAppDetail? { model.details[app.id] }
     private var rowState: TFRowState { model.rowState(app) }
@@ -162,6 +163,7 @@ struct TestFlightDetailView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarColorScheme(heroCollapsed ? nil : .dark, for: .navigationBar)
         .toolbar {
             if let inviteLinkURL {
                 ToolbarItem(placement: .compatibleTopBarTrailing) {
@@ -176,9 +178,18 @@ struct TestFlightDetailView: View {
             await model.ensureDetailLoaded(for: app)
         }
         .task(id: rowState.output) {
-            guard let url = rowState.output else { cachedPackageBytes = 0; return }
-            let size = await Task.detached(priority: .utility) { Int64(url.fileSizeBytes) }.value
-            if !Task.isCancelled { cachedPackageBytes = size }
+            guard let url = rowState.output else {
+                cachedPackageBytes = 0
+                quickBuildInfo = nil
+                return
+            }
+            let (size, build) = await Task.detached(priority: .utility) {
+                (Int64(url.fileSizeBytes), PackageInfoService.quickBuildInfo(url))
+            }.value
+            if !Task.isCancelled {
+                cachedPackageBytes = size
+                quickBuildInfo = build
+            }
         }
         .sheet(isPresented: $showingInstallSheet) {
             if let packageURL = model.productURL(for: app) {
@@ -198,7 +209,8 @@ struct TestFlightDetailView: View {
                         model.install(app, method: method, installation: store.installation)
                     },
                     onDelete: {
-                        model.deleteLocalProduct(app)
+                        store.removeTFProductWithUndo(for: app)
+                        showingInstallSheet = false
                     },
                     onOpenSettings: {
                         store.accountNav.push(.installation)
@@ -472,6 +484,31 @@ struct TestFlightDetailView: View {
 
                 Divider().padding(.leading, 16)
 
+                NavigationLink {
+                    PackageInfoView(file: packageURL)
+                } label: {
+                    HStack(spacing: 10) {
+                        Label("安装包信息", systemImage: "info.circle")
+                        Spacer(minLength: 8)
+                        if let summary = quickBuildInfo?.compactLabel, !summary.isEmpty {
+                            Text(verbatim: summary)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        Image(systemName: "chevron.forward")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 48)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Divider().padding(.leading, 16)
+
                 Button {
                     UX.tapLight()
                     sharedFile = SharedFile(url: packageURL)
@@ -562,7 +599,7 @@ struct TestFlightDetailView: View {
                 }
                 if let devices = detail?.supportedDevices, !devices.isEmpty {
                     Divider().padding(.leading, 16)
-                    infoRow("支持设备", devices.joined(separator: "、"))
+                    infoRow("支持设备", ListFormatter.localizedString(byJoining: devices))
                 }
                 if let size = detail?.fileSizeBytes, size > 0 {
                     Divider().padding(.leading, 16)
@@ -609,7 +646,7 @@ struct TestFlightDetailView: View {
                             Spacer(minLength: 12)
                             Text("查看")
                                 .font(.subheadline)
-                            Image(systemName: "arrow.up.right")
+                            Image(systemName: "arrow.up.forward")
                                 .font(.caption)
                         }
                         .padding(.horizontal, 16)

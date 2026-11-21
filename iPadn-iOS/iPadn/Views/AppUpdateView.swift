@@ -83,7 +83,7 @@ struct AppUpdateView: View {
                         }
                     }
                 }
-                Link(destination: release.page) { Label("在 GitHub 查看", systemImage: "arrow.up.right.square") }
+                Link(destination: release.page) { Label("在 GitHub 查看", systemImage: "arrow.up.forward.square") }
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
                     if release.hasBothVariants {

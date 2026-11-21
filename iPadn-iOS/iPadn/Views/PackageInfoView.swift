@@ -27,6 +27,8 @@ struct PackageInfoView: View {
                         row("商店版本 ID", extID, monospaced: true)
                     }
                     row("最低系统", info.minimumOS.isEmpty ? "" : "iOS " + info.minimumOS)
+                    row("编译 SDK", info.formattedSDK)
+                    row("Xcode 版本", info.formattedXcode)
                     row("适用设备", info.devices)
                     if !info.languages.isEmpty {
                         NavigationLink {
@@ -149,6 +151,53 @@ struct PackageInfoView: View {
             LabeledContent(title) {
                 Text(verbatim: value).font(monospaced ? .footnote.monospaced() : .body)
                     .foregroundStyle(.secondary).textSelection(.enabled).lineLimit(1).minimumScaleFactor(0.7)
+            }
+        }
+    }
+}
+
+/// Fast inline rows showing an IPA's build SDK and Xcode version off the main thread.
+struct PackageBuildInfoRows: View {
+    let file: URL
+    @State private var buildInfo: QuickBuildInfo?
+    @State private var loaded = false
+
+    var body: some View {
+        Group {
+            if let buildInfo {
+                if !buildInfo.sdk.isEmpty {
+                    LabeledContent("编译 SDK") {
+                        Text(verbatim: buildInfo.sdk)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                    }
+                    .accessibilityIdentifier("package.build-sdk")
+                }
+                if !buildInfo.xcode.isEmpty {
+                    LabeledContent("Xcode 版本") {
+                        Text(verbatim: buildInfo.xcode)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                    }
+                    .accessibilityIdentifier("package.build-xcode")
+                }
+            } else if !loaded {
+                LabeledContent("编译 SDK", value: "…")
+            }
+        }
+        .task(id: file) {
+            loaded = false
+            let url = file
+            let result = await Task.detached(priority: .utility) {
+                PackageInfoService.quickBuildInfo(url)
+            }.value
+            if !Task.isCancelled {
+                buildInfo = result
+                loaded = true
             }
         }
     }

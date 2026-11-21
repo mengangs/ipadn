@@ -138,7 +138,12 @@ public enum TFSINF {
     public static func encryptedMachOCount(ipa: URL, limit: Int = 96 << 20,
                                           skipped: inout [String]) -> Int {
         var count = 0
+        let directory = try? ZipReader(url: ipa)
         for name in members(ipa: ipa) where isExecutableCandidate(name) {
+            if let declared = directory?.uncompressedSize(named: name), declared > limit {
+                skipped.append(name)
+                continue
+            }
             guard let data = read(ipa: ipa, entry: name) else { continue }
             guard data.count <= limit else { skipped.append(name); continue }
             guard let cryptid = cryptid(of: data) else { continue }
@@ -182,8 +187,9 @@ public enum TFSINF {
             let commandSize = Int(size)
             guard commandSize >= 8 else { return nil }
             if cmd == 0x21 || cmd == 0x2C {
-                if offset + 16 <= data.count {
-                    return data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 12, as: Int32.self) }
+                // encryption_info_command(_64): cmd(0), cmdsize(4), cryptoff(8), cryptsize(12), cryptid(16).
+                if offset + 20 <= data.count {
+                    return data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 16, as: Int32.self) }
                 }
                 return nil
             }

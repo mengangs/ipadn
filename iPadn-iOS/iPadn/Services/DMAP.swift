@@ -181,7 +181,7 @@ enum CommercePurchaseHistory {
               let attributes = envelope["attributes"] as? [String: Any] else {
             throw ToolError.message(AppText.text("购买历史响应格式异常，请稍后重试"))
         }
-        let isComplete = (attributes["is-complete"] as? Bool) ?? true
+        let isComplete = ((attributes["is-complete"] ?? attributes["isComplete"]) as? Bool) ?? true
         let purchases = (attributes["purchases"] as? [[String: Any]]) ?? []
         var apps: [OwnedApp] = []
         var addedInvoices = 0
@@ -191,7 +191,7 @@ enum CommercePurchaseHistory {
             return ""
         }
         for invoice in purchases {
-            let orderID = rawValueString(invoice["order-id"])
+            let orderID = rawValueString(invoice["order-id"] ?? invoice["orderId"])
             if !orderID.isEmpty, !seenOrderIDs.insert(orderID).inserted { continue }
             addedInvoices += 1
             let invoiceDate = rawValueString(invoice["invoice-date"] ?? invoice["invoiceDate"])

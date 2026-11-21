@@ -14,7 +14,7 @@ struct PackageCompareView: View {
                 HStack {
                     Text(verbatim: older.version.isEmpty ? "–" : older.version).font(.headline.monospacedDigit())
                     Spacer()
-                    Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                    Image(systemName: "arrow.forward").foregroundStyle(.secondary)
                     Spacer()
                     Text(verbatim: newer.version.isEmpty ? "–" : newer.version).font(.headline.monospacedDigit())
                 }

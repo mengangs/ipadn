@@ -291,8 +291,15 @@ struct SettingsView: View {
             if page == .maintenance {
             Section {
                 Button {
-                    exportingBackupSheet = true
                     UX.feedback()
+                    if store.settings.appLock && AppLock.method != .unavailable {
+                        Task {
+                            guard await AppLock.shared.authenticate(reason: AppText.text("导出备份")) else { return }
+                            exportingBackupSheet = true
+                        }
+                    } else {
+                        exportingBackupSheet = true
+                    }
                 } label: {
                     Label("导出备份", systemImage: "square.and.arrow.up")
                 }

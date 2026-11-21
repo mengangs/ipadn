@@ -416,11 +416,26 @@ enum NativeInstaller {
         final class BackgroundTokenBox: @unchecked Sendable {
             private let lock = NSLock()
             private var id: UIBackgroundTaskIdentifier = .invalid
+            private var alreadyEnded = false
             func assign(_ value: UIBackgroundTaskIdentifier) {
-                lock.lock(); id = value; lock.unlock()
+                lock.lock()
+                if alreadyEnded {
+                    lock.unlock()
+                    if value != .invalid {
+                        if Thread.isMainThread {
+                            MainActor.assumeIsolated { UIApplication.shared.endBackgroundTask(value) }
+                        } else {
+                            DispatchQueue.main.async { MainActor.assumeIsolated { UIApplication.shared.endBackgroundTask(value) } }
+                        }
+                    }
+                    return
+                }
+                id = value
+                lock.unlock()
             }
             func endIfNeeded() {
                 lock.lock()
+                alreadyEnded = true
                 let current = id
                 id = .invalid
                 lock.unlock()
@@ -520,26 +535,30 @@ enum NativeInstaller {
         let token = try await acquireGate(waitForCancelled: true)
         defer { end(token: token) }
         let body = String(decoding: try JSONSerialization.data(withJSONObject: ["name": name]), as: UTF8.self)
-        return try await runBlocking {
-            guard let pairFunction, let freeFunction else { throw ToolError.message(AppText.text("当前版本不包含本机配对组件。")) }
-            let box = Unmanaged.passRetained(EventBox(events))
-            defer { box.release() }
-            let callback: EventFunction = { context, kind, payload in
-                guard let context else { return }
-                let text = payload.map { String(cString: $0) } ?? ""
-                let handler = Unmanaged<EventBox>.fromOpaque(context).takeUnretainedValue().handler
-                switch kind {
-                case 0: if let event = NativeInstaller.readyEvent(from: Data(text.utf8)) { handler(event) }
-                case 1: handler(.connected)
-                case 2: handler(.code(text))
-                default: break
+        return try await withTaskCancellationHandler {
+            try await runBlocking {
+                guard let pairFunction, let freeFunction else { throw ToolError.message(AppText.text("当前版本不包含本机配对组件。")) }
+                let box = Unmanaged.passRetained(EventBox(events))
+                defer { box.release() }
+                let callback: EventFunction = { context, kind, payload in
+                    guard let context else { return }
+                    let text = payload.map { String(cString: $0) } ?? ""
+                    let handler = Unmanaged<EventBox>.fromOpaque(context).takeUnretainedValue().handler
+                    switch kind {
+                    case 0: if let event = NativeInstaller.readyEvent(from: Data(text.utf8)) { handler(event) }
+                    case 1: handler(.connected)
+                    case 2: handler(.code(text))
+                    default: break
+                    }
                 }
+                guard let reply = body.withCString({ pairFunction($0, callback, box.toOpaque()) }) else {
+                    throw Failure(stage: "reply", detail: "no reply")
+                }
+                defer { freeFunction(reply) }
+                return try pairingFile(fromReply: Data(String(cString: reply).utf8))
             }
-            guard let reply = body.withCString({ pairFunction($0, callback, box.toOpaque()) }) else {
-                throw Failure(stage: "reply", detail: "no reply")
-            }
-            defer { freeFunction(reply) }
-            return try pairingFile(fromReply: Data(String(cString: reply).utf8))
+        } onCancel: {
+            cancelPairing()
         }
     }
 

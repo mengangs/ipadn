@@ -254,10 +254,16 @@ struct AccountMenuButton: View {
 struct AccountAvatar: View {
     let account: AppleAccount?
     var size: CGFloat = 32
+    @Environment(\.colorScheme) private var colorScheme
     private var initials: String {
         guard let account else { return "" }
         let source = account.name.isEmpty ? account.id : account.name
         return String(source.trimmingCharacters(in: .whitespaces).prefix(1)).uppercased()
+    }
+    private var gradientColors: [Color] {
+        colorScheme == .dark
+            ? [Color(red: 0.42, green: 0.44, blue: 0.46), Color(red: 0.31, green: 0.33, blue: 0.35)]
+            : [Color(red: 0.64, green: 0.65, blue: 0.68), Color(red: 0.52, green: 0.54, blue: 0.57)]
     }
     var body: some View {
         ZStack {
@@ -265,7 +271,7 @@ struct AccountAvatar: View {
                 Circle().fill(Color(.tertiarySystemFill))
                 Image(systemName: "person.fill").font(.system(size: size * 0.5)).foregroundStyle(.secondary)
             } else {
-                Circle().fill(LinearGradient(colors: [Color(.systemGray2), Color(.systemGray)],
+                Circle().fill(LinearGradient(colors: gradientColors,
                                              startPoint: .top, endPoint: .bottom))
                 Text(initials)
                     .font(.system(size: size * 0.45, weight: .semibold, design: .rounded))

@@ -320,6 +320,11 @@ private struct RevealGestureAttachment: UIViewRepresentable {
         }
         private func cancelRowPresses() {
             guard let host else { return }
+            if let cell = host as? UICollectionViewCell {
+                cell.isHighlighted = false
+            } else if let cell = host as? UITableViewCell {
+                cell.setHighlighted(false, animated: false)
+            }
             var views = [host]
             while let view = views.popLast() {
                 views.append(contentsOf: view.subviews)
@@ -349,9 +354,6 @@ private struct RevealGestureAttachment: UIViewRepresentable {
                 target.addGestureRecognizer(recognizer)
                 target.addGestureRecognizer(closeTap)
                 scroll?.panGestureRecognizer.require(toFail: recognizer)
-                #if DEBUG
-                print("Reveal host: \(type(of: target)); bounds: \(anchor.bounds)")
-                #endif
             }
             observeScrollPan(scroll?.panGestureRecognizer)
             updateEnabledState()

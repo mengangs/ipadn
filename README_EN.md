@@ -7,7 +7,7 @@
 **Search, download and install the apps you own, on iPhone and iPad.**
 Works with iPhone, iPad, Apple TV and Mac apps, including older versions and apps removed from sale.
 
-✨ **New in v2.3.2: Full purchase history & delisted app sync · TestFlight sign-in & Dark Mode update badge fixes** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
+✨ **New in v2.3.3: Apple download/region error recovery & diagnostics · Downloads multi-select/Undo, SDK info & full security/performance polish** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
 
 [![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&logo=github&logoColor=white&labelColor=2E3136&color=3A6EA5)](https://github.com/mengangs/ipadn/releases/latest)
 [![Telegram Channel](https://img.shields.io/badge/Telegram-%40ipadn__official-2C82A9?logo=telegram&logoColor=white&labelColor=2E3136)](https://t.me/ipadn_official)
@@ -45,12 +45,19 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 ---
 
+## What’s new in 2.3.3
+
+- **Fixed Apple Download/Purchase Errors & Diagnostic Blind Spots**: Handles `1008` session expiration alongside `2034 / 2042`, auto-recovers `-128` (`CountryMismatch`) account storefronts (`resetAndRedirect?dsf=`), detects `buyProductFailure` App Store Terms prompts (`termsPage`), adds clear password-changed / account-disabled messages, logs redacted HTTP 200 Apple plist failures to `RequestFailureLog`, and includes strictly validated numeric codes on unmapped fallback alerts.
+- **Upgraded Downloads Multi-Select & Unified Undo**: Matches **Packages** in-place selection across regular and TestFlight items with a shared 5-second Undo stack restoring both tasks and files together.
+- **Quick SDK / Xcode Build Info & Swipe Mask Fix**: Displays compiled SDK & Xcode versions in Package & TestFlight details, and fixes the gray dimming mask when swiping rows in Pro mode **Packages** and **Decryption History**.
+- **Security, Performance & 11-Language Polish**: Hardens redaction, TestFlight cookie isolation, and `TFSINF` `cryptid` checks; removes main-thread disk I/O for smoother scrolling; completes 11-language/RTL localization and Light/Dark visual polish. See the [release notes](RELEASE_NOTES.md).
+
 ## What’s new in 2.3.2
 
 - **Full Purchase History & Delisted App Recovery**: Adds Apple's `/commerce/account/purchases` history endpoint alongside DMAP so older and delisted apps (with multi-locale purchase dates) are no longer missing; runs initial full-history sync with **6 concurrent workers** and live year progress, persists state so subsequent refreshes only scan the current year incrementally in seconds, and adds a **Sync Full Purchase History** menu action.
 - **Fixed Purchased List Icons Staying Gray After Account Switch**: Removes the storefront-sync race that aborted `loadOwnedArtwork()` on account switch, scopes deduplication per storefront (`country|appId`), increases batch size to 50, and preserves cached icon URLs across merges.
 - **Fixed TestFlight Sign-In Error Classification & Stale Device Slots**: Automatically wipes and re-provisions stale cached `iphone` slots returning `rinfo=67437824` (with GSA fallback), and stops matching `"iphone"` as a multi-phone verification error.
-- **Fixed Dark Mode Update Badge Contrast**: Switches the Account › Settings update pill text from hardcoded white to `UX.onAccent` on `UX.tint`. See the [release notes](RELEASE_NOTES.md).
+- **Fixed Dark Mode Update Badge Contrast**: Switches the Account › Settings update pill text from hardcoded white to `UX.onAccent` on `UX.tint`.
 
 ## What’s new in 2.3.1
 

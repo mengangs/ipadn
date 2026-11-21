@@ -74,9 +74,25 @@ struct VersionDateRange: Equatable {
         publish()
         guard !pending.isEmpty else { return }
         running = true
-        task = Task { [weak self] in
+        task = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { if generation == token { running = false; task = nil } }
+            var lastPublishedAt = ProcessInfo.processInfo.systemUptime
+            var dirty = false
+            @MainActor func publishIfDue(force: Bool = false) {
+                guard dirty else { return }
+                let now = ProcessInfo.processInfo.systemUptime
+                guard force || now - lastPublishedAt >= 0.15 else { return }
+                dirty = false
+                lastPublishedAt = now
+                publish()
+            }
+            defer {
+                if generation == token {
+                    publishIfDue(force: true)
+                    running = false
+                    task = nil
+                }
+            }
             var consecutiveFailures = 0
             for version in pending {
                 guard !Task.isCancelled, generation == token else { return }
@@ -85,7 +101,8 @@ struct VersionDateRange: Equatable {
                     guard !Task.isCancelled, generation == token else { return }
                     consecutiveFailures = 0
                     record(version, value)
-                    publish()
+                    dirty = true
+                    publishIfDue()
                 } catch {
                     guard !Task.isCancelled, !(error is CancellationError), generation == token else { return }
                     if error is AppleAuthError || error is AppleLoginError {
@@ -93,7 +110,8 @@ struct VersionDateRange: Equatable {
                         return
                     }
                     record(version, nil)
-                    publish()
+                    dirty = true
+                    publishIfDue()
                     consecutiveFailures += 1
                     if consecutiveFailures >= 3 { return }
                 }

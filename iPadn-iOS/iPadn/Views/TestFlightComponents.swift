@@ -91,35 +91,16 @@ struct TFAppIconView: View {
                 loaded = (currentKey, image)
             }
         }
+        .onDisappear { loaded = nil }
     }
 
-    @ViewBuilder
     private var placeholderView: some View {
-        let palette = resolvedPalette
         ZStack {
-            if palette.colors.count >= 2 {
-                LinearGradient(colors: palette.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-            } else if let single = palette.colors.first {
-                LinearGradient(colors: [single, single.opacity(0.82)], startPoint: .topLeading, endPoint: .bottomTrailing)
-            } else {
-                Color(.tertiarySystemFill)
-            }
-            if let initial = monogram {
-                Text(verbatim: initial)
-                    .font(.system(size: size * 0.42, weight: .bold, design: .rounded))
-                    .foregroundStyle(palette.foreground)
-            } else {
-                Image(systemName: "airplane")
-                    .font(.system(size: size * 0.36, weight: .medium))
-                    .foregroundStyle(palette.foreground)
-            }
+            Color(.tertiarySystemFill)
+            Image(systemName: "app.fill")
+                .font(.system(size: size * 0.4))
+                .foregroundStyle(.quaternary)
         }
-    }
-
-    private var monogram: String? {
-        let trimmed = appName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let first = trimmed.first else { return nil }
-        return String(first).uppercased()
     }
 
     private var iconBackdropColor: Color {
@@ -127,35 +108,6 @@ struct TFAppIconView: View {
             return parsed
         }
         return Color(.secondarySystemGroupedBackground)
-    }
-
-    private var resolvedPalette: (colors: [Color], foreground: Color) {
-        var parsed: [(Color, Double)] = []
-        if let gradient = colors?.gradientHexes, !gradient.isEmpty {
-            parsed = gradient.compactMap(Self.parseHexColor)
-        }
-        if parsed.isEmpty, let bg = colors?.bgHex, let item = Self.parseHexColor(bg) {
-            parsed = [item]
-        }
-        guard !parsed.isEmpty else {
-            // Deterministic soft slate gradient when an app has no icon or color palette
-            // (e.g. retired TestFlight builds removed from Apple's servers).
-            let seed = abs(appName.unicodeScalars.reduce(0) { ($0 &* 31) &+ Int($1.value) })
-            let palettes: [[Color]] = [
-                [Color(.sRGB, red: 0.36, green: 0.42, blue: 0.52, opacity: 1),
-                 Color(.sRGB, red: 0.24, green: 0.28, blue: 0.37, opacity: 1)],
-                [Color(.sRGB, red: 0.33, green: 0.46, blue: 0.50, opacity: 1),
-                 Color(.sRGB, red: 0.22, green: 0.32, blue: 0.36, opacity: 1)],
-                [Color(.sRGB, red: 0.43, green: 0.39, blue: 0.52, opacity: 1),
-                 Color(.sRGB, red: 0.29, green: 0.26, blue: 0.38, opacity: 1)],
-                [Color(.sRGB, red: 0.40, green: 0.43, blue: 0.47, opacity: 1),
-                 Color(.sRGB, red: 0.27, green: 0.29, blue: 0.33, opacity: 1)],
-            ]
-            return (palettes[seed % palettes.count], Color.white.opacity(0.92))
-        }
-        let avgLuminance = parsed.map(\.1).reduce(0, +) / Double(parsed.count)
-        let foreground: Color = avgLuminance > 0.62 ? Color.black.opacity(0.78) : Color.white
-        return (parsed.map(\.0), foreground)
     }
 
     static func heroGradientColors(from colors: TFIconColors?) -> [Color] {
@@ -228,9 +180,9 @@ struct TFHeroAmbientBackground: View {
                     }
                     LinearGradient(
                         colors: [
-                            Color.black.opacity(0.24),
-                            Color.black.opacity(0.42),
-                            Color.black.opacity(0.58),
+                            Color.black.opacity(0.36),
+                            Color.black.opacity(0.48),
+                            Color.black.opacity(0.64),
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -329,6 +281,7 @@ struct TFVerificationSheet: View {
                 }
             }
         }
+        .interactiveDismissDisabled()
         .presentationDetents([.medium, .large])
     }
 }
@@ -991,7 +944,7 @@ struct TFDiagnosticsContent: View {
             if let diagnosis = model.networkDiagnosis {
                 Section("网络异常说明") {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(verbatim: diagnosis.summary)
+                        Text(verbatim: AppText.text("无法连接 Apple 服务（gsa / testflight）。请检查代理规则是否拦截 *.apple.com，或在设置中把 TF 网络模式改为「强制直连」"))
                             .font(.footnote)
                             .foregroundStyle(.red)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1017,12 +970,12 @@ struct TFDiagnosticsContent: View {
                     if !model.dsidTail.isEmpty {
                         diagRow("DSID", "…" + model.dsidTail)
                     }
-                    diagRow("DNS 路径", model.dnsPathSummary)
+                    diagRow("DNS 路径", Self.localizedDNSPath(model.dnsPathSummary))
                     diagRow("HTTP", probe.status.map { "\($0) · \(probe.bytes) B" } ?? (probe.failure ?? AppText.text("无响应")))
                     diagRow("fake-IP", probe.fakeIP != nil ? AppText.text("命中代理假地址") : AppText.text("未命中"))
-                    diagRow("判定", probe.verdict)
-                    if let advice = probe.advice {
-                        Text(verbatim: advice)
+                    diagRow("判定", Self.localizedVerdict(probe))
+                    if !probe.reachable {
+                        Text(verbatim: AppText.text("GSA 不可达：疑似代理/VPN 拦截，请关闭手机上的 VPN 或在代理里放行 gsa.apple.com。"))
                             .font(.footnote)
                             .foregroundStyle(.orange)
                     }
@@ -1042,7 +995,8 @@ struct TFDiagnosticsContent: View {
                     .padding(.vertical, 2)
                     Button {
                         #if canImport(UIKit)
-                        UIPasteboard.general.string = model.lines.joined(separator: "\n")
+                        let text = model.lines.joined(separator: "\n")
+                        UIPasteboard.general.setItems([[UIPasteboard.typeAutomatic: text]], options: [.localOnly: true])
                         #endif
                         copied = true
                         UX.feedback()
@@ -1079,6 +1033,26 @@ struct TFDiagnosticsContent: View {
         case .direct: return AppText.text("强制直连")
         case .proxy: return AppText.text("强制代理")
         }
+    }
+
+    private static func localizedDNSPath(_ raw: String) -> String {
+        raw.replacingOccurrences(of: "系统 DNS", with: AppText.text("系统 DNS"))
+    }
+
+    private static func localizedVerdict(_ probe: TFGSAProbe) -> String {
+        if probe.fakeIP != nil {
+            return AppText.text("被代理接管（命中 fake-IP）")
+        }
+        if probe.reachable {
+            return probe.status == 404
+                ? AppText.text("网络正常；裸 GET 404 属正常（需要 Store UA）")
+                : AppText.text("网络正常")
+        }
+        if probe.status == nil {
+            let reason = probe.failure ?? AppText.text("连接失败")
+            return AppText.text("无 HTTP 响应（\(reason)）")
+        }
+        return AppText.text("网络异常")
     }
 }
 

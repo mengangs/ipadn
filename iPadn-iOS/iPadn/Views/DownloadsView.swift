@@ -14,21 +14,31 @@ struct DownloadsView: View {
     @State private var link = ""
     @State private var share: SharedFile?
     @State private var presentedShareURL: URL?
-    @State private var pendingDelete: Set<UUID> = []
+    private enum SelectionItem: Hashable {
+        case job(UUID)
+        #if canImport(TestFlightKit)
+        case tf(String)
+        #endif
+    }
+
+    @State private var pendingDeleteJobs: Set<UUID> = []
+    #if canImport(TestFlightKit)
+    @State private var pendingDeleteTF: [TFProductItem] = []
+    #endif
     @State private var swipingDelete: Set<UUID> = []
     @State private var confirmingDelete = false
     @State private var installing: DownloadJob?
     /// The LiveContainer setup tip, once read, stays closed.
     @AppStorage("liveContainerTipDismissed") private var liveContainerTipDismissed = false
     @State private var inspecting: DownloadJob?
-    @State private var selection = Set<UUID>()
-    @State private var editMode: EditMode = .inactive
-    /// Drives the compact rows' staggered entrance in edit mode.
-    @State private var editRowsShown = false
-    /// The same entrance for the cards when edit mode ends.
-    @State private var cardsShown = true
-    /// A mode change is running; taps wait so two changes never overlap.
-    @State private var switchingMode = false
+    private struct PackageInspectTarget: Identifiable {
+        let id = UUID()
+        let file: URL
+        let job: DownloadJob?
+    }
+    @State private var inspectingPackage: PackageInspectTarget?
+    @State private var editing = false
+    @State private var selection = Set<SelectionItem>()
     @State private var actionBusy = false
     /// FairPlay decryption of a downloaded or imported IPA.
     @ObservedObject private var fairPlay = FairPlayHub.shared.service
@@ -43,7 +53,6 @@ struct DownloadsView: View {
     @ObservedObject private var tfProducts = TFProductIndex.shared
     @ObservedObject private var tfModel = TFHomeModel.shared
     @State private var installingTFItem: TFProductItem?
-    @State private var pendingDeleteTF: TFProductItem?
     private var filteredTFItems: [TFProductItem] {
         guard filter.includesTestFlight else { return [] }
         return tfProducts.items.filter { item in
@@ -55,11 +64,32 @@ struct DownloadsView: View {
         }
     }
     private var hasAnyDownloads: Bool { !manager.jobs.isEmpty || !tfProducts.items.isEmpty }
+    private var pendingDeleteCount: Int { pendingDeleteJobs.count + pendingDeleteTF.count }
     #else
     private var hasAnyDownloads: Bool { !manager.jobs.isEmpty }
+    private var pendingDeleteCount: Int { pendingDeleteJobs.count }
     #endif
     private var filteredJobs: [DownloadJob] {
         manager.jobs.filter { !swipingDelete.contains($0.id) && filter.includes($0.status) && (term.isEmpty || $0.app.name.localizedCaseInsensitiveContains(term) || $0.app.bundleID.localizedCaseInsensitiveContains(term) || $0.app.version.localizedCaseInsensitiveContains(term)) }
+    }
+    private var selectableItems: [SelectionItem] {
+        var items: [SelectionItem] = filteredJobs.compactMap { job in
+            let blocked = packages.protects(job.id) || job.status == .processing || job.status == .pausing
+            return blocked ? nil : .job(job.id)
+        }
+        #if canImport(TestFlightKit)
+        items.append(contentsOf: filteredTFItems.compactMap { item in
+            packages.protects(url: item.fileURL) ? nil : .tf(item.bundleID)
+        })
+        #endif
+        return items
+    }
+    private var selectionPruneKey: [String] {
+        var keys = filteredJobs.map { "\($0.id.uuidString):\($0.status.rawValue)" }
+        #if canImport(TestFlightKit)
+        keys.append(contentsOf: filteredTFItems.map { "tf:\($0.bundleID)" })
+        #endif
+        return keys
     }
     /// The newest finished download of each app with a newer store version.
     private var updateTargets: [UUID: StoreApp] {
@@ -77,20 +107,7 @@ struct DownloadsView: View {
         // Filter once per render; rows and headers read this copy.
         let visible = filteredJobs
         let updates = updateTargets
-        // Both layouts stay alive and only their visibility swaps, so changing
-        // modes rebuilds nothing mid-animation; the rows do all the moving.
-        ZStack {
-            downloadList(edit: false, visible: visible, updates: updates)
-                .environment(\.editMode, .constant(.inactive))
-                .opacity(editMode.isEditing ? 0 : 1)
-                .allowsHitTesting(!editMode.isEditing)
-                .accessibilityHidden(editMode.isEditing)
-            downloadList(edit: true, visible: visible, updates: updates)
-                .environment(\.editMode, $editMode)
-                .opacity(editMode.isEditing ? 1 : 0)
-                .allowsHitTesting(editMode.isEditing)
-                .accessibilityHidden(!editMode.isEditing)
-        }
+        downloadList(visible: visible, updates: updates)
         .task(id: manager.jobs.filter { $0.status == .completed }.map { $0.id.uuidString }.joined()) {
             await manager.loadPackageIcons()
             #if canImport(TestFlightKit)
@@ -115,8 +132,14 @@ struct DownloadsView: View {
         .toolPage().navigationTitle("下载").navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItemGroup(placement: .compatibleTopBarLeading) {
-                Button(editMode.isEditing ? "完成" : "编辑") { toggleEditMode() }
-                .disabled(manager.jobs.isEmpty || switchingMode)
+                Button(editing ? "完成" : "编辑") {
+                    withAnimation(UX.motion(reduceMotion)) {
+                        editing.toggle()
+                        if !editing { selection.removeAll() }
+                    }
+                    UX.feedback()
+                }
+                .disabled(!hasAnyDownloads)
                 .accessibilityIdentifier("downloads.edit")
                 if hasAnyDownloads {
                     Menu {
@@ -140,39 +163,51 @@ struct DownloadsView: View {
             }
             ToolbarItem(placement: .compatibleTopBarTrailing) {
                 Button { showingActions = true } label: { Image(systemName: "plus").frame(minWidth: 44, minHeight: 44) }
-                    .disabled(actionBusy).accessibilityLabel("添加下载").accessibilityIdentifier("downloads.add")
+                    .disabled(actionBusy || editing).accessibilityLabel("添加下载").accessibilityIdentifier("downloads.add")
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if editMode.isEditing {
+            if editing {
                 HStack(spacing: 16) {
-                    let ids = Set(filteredJobs.map(\.id))
-                    let all = !ids.isEmpty && ids.isSubset(of: selection)
+                    let items = Set(selectableItems)
+                    let all = !items.isEmpty && items.isSubset(of: selection)
                     Button(all ? "取消全选" : "全选") {
-                        if all { selection.subtract(ids) } else { selection.formUnion(ids) }
+                        if all { selection.subtract(items) } else { selection.formUnion(items) }
                         UX.feedback()
                     }
-                    .disabled(ids.isEmpty)
+                    .disabled(items.isEmpty)
                     .accessibilityIdentifier("downloads.select-all")
-                    Text("已选 \(selection.count) 项").font(.subheadline).foregroundStyle(.secondary)
+                    Text("已选 \(selection.count) 项")
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
                     Spacer()
                     Button("删除所选", systemImage: "trash", role: .destructive) { askDelete(selection) }
+                        .fontWeight(.semibold)
                         .disabled(selection.isEmpty)
                         .accessibilityIdentifier("downloads.delete-selected")
-                }.padding(18).background(.regularMaterial)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+                .background(.regularMaterial)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .compatibleOnChange(of: editMode) { mode in
-            if !mode.isEditing { selection.removeAll() }
-            // Cards are back on screen: pull them out one after another.
-            if !mode.isEditing && !cardsShown { DispatchQueue.main.async { cardsShown = true } }
-            if !mode.isEditing { editRowsShown = false }
-            // The edit list is already built; pull its rows out once it shows.
-            if mode.isEditing { DispatchQueue.main.async { editRowsShown = true } }
+        .compatibleOnChange(of: filter) { _ in
+            guard !selection.isEmpty else { return }
+            selection.formIntersection(Set(selectableItems))
         }
-        .compatibleOnChange(of: filter) { _ in selection.removeAll() }
-        .compatibleOnChange(of: term) { _ in selection.removeAll() }
+        .compatibleOnChange(of: term) { _ in
+            guard !selection.isEmpty else { return }
+            selection.formIntersection(Set(selectableItems))
+        }
+        .compatibleOnChange(of: selectionPruneKey) { _ in
+            if !selection.isEmpty {
+                selection.formIntersection(Set(selectableItems))
+            }
+            if editing && !hasAnyDownloads {
+                editing = false
+            }
+        }
         .sheet(isPresented: $showingActions, onDismiss: flushPackageNavigation) {
             AddDownloadSheet(
                 hasActiveJobs: manager.jobs.contains { [.running, .queued, .paused].contains($0.status) },
@@ -244,6 +279,7 @@ struct DownloadsView: View {
                                 if job.rawFormat == nil {
                                     Section {
                                         PackagePlatformRow(file: file)
+                                        PackageBuildInfoRows(file: file)
                                         NavigationLink { PackageInfoView(file: file, job: job) } label: {
                                             Label("安装包信息", systemImage: "info.circle")
                                         }
@@ -277,16 +313,36 @@ struct DownloadsView: View {
             }
             Button("取消", role: .cancel) { }
         } message: { Text("输入 IPA 安装包的下载链接。") }
-        .actionConfirmation(isPresented: $confirmingDelete, title: "删除 \(pendingDelete.count) 项任务？", message: "已下载的安装包也会一并删除。", confirmTitle: "删除任务与文件") {
-            // Recheck task states before the durable batch commit.
-            let ids = pendingDelete.filter { !packages.protects($0) }
-            pendingDelete.removeAll()
-            perform {
-                let count = try await manager.removeBatch(ids)
-                selection.subtract(ids)
-                if manager.jobs.isEmpty { editMode = .inactive }
-                store.infoMessage = AppText.text("已删除 \(count) 项任务与文件")
+        .actionConfirmation(isPresented: $confirmingDelete, title: "删除 \(pendingDeleteCount) 项任务？", message: "已下载的安装包也会一并删除。", confirmTitle: "删除任务与文件") {
+            let jobIDs = pendingDeleteJobs.filter { !packages.protects($0) }
+            pendingDeleteJobs.removeAll()
+            #if canImport(TestFlightKit)
+            let tfItems = pendingDeleteTF.filter { !packages.protects(url: $0.fileURL) }
+            pendingDeleteTF.removeAll()
+            #endif
+            withAnimation(UX.motion(reduceMotion)) {
+                selection.removeAll()
+                editing = false
             }
+            perform {
+                #if canImport(TestFlightKit)
+                try await store.removeDownloadsBatchWithUndo(jobIDs: jobIDs, tfItems: tfItems)
+                #else
+                try await store.removeDownloadsBatchWithUndo(jobIDs: jobIDs)
+                #endif
+            }
+        }
+        .sheet(item: $inspectingPackage) { target in
+            NavigationStack {
+                PackageInfoView(file: target.file, job: target.job)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("完成") { inspectingPackage = nil }
+                        }
+                    }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(item: $installing) { job in
             PackageInstallationView(job: job).sheetNotice().environmentObject(store).environmentObject(manager)
@@ -310,8 +366,8 @@ struct DownloadsView: View {
                     tfModel.install(beta, method: method, installation: store.installation)
                 },
                 onDelete: {
-                    tfProducts.delete(item)
                     installingTFItem = nil
+                    removeTFWithUndo(item)
                 },
                 onOpenSettings: {
                     installingTFItem = nil
@@ -319,18 +375,6 @@ struct DownloadsView: View {
                     store.accountNav.push(.installation)
                 }
             )
-        }
-        .actionConfirmation(
-            isPresented: Binding(get: { pendingDeleteTF != nil }, set: { if !$0 { pendingDeleteTF = nil } }),
-            title: "删除 TestFlight 安装包？",
-            message: "已下载的 TestFlight 安装包会被删除，TestFlight 页对应应用将同步恢复为「获取」。",
-            confirmTitle: "删除文件"
-        ) {
-            if let item = pendingDeleteTF {
-                pendingDeleteTF = nil
-                tfProducts.delete(item)
-                store.infoMessage = AppText.text("已删除 TestFlight 安装包")
-            }
         }
         #endif
         .overlay { if actionBusy { HStack { ProgressView(); Text("正在处理…").font(.subheadline) }.padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20)).allowsHitTesting(false) } }
@@ -352,6 +396,7 @@ struct DownloadsView: View {
             update: update,
             kept: store.keepsVersion(job),
             decrypted: hasDecrypted,
+            editing: editing,
             inspecting: { inspecting = job },
             primary: { primary(job) },
             updating: { downloadUpdate(job) }
@@ -447,10 +492,43 @@ struct DownloadsView: View {
         UX.feedback()
         perform { try await store.downloadAllUpdates(of: jobs); filter = .all; term = "" }
     }
-    /// One layout of the list: task cards, or the compact rows of edit mode.
-    @ViewBuilder private func downloadList(edit: Bool, visible: [DownloadJob], updates: [UUID: StoreApp]) -> some View {
+    @ViewBuilder private func selectableRow<Content: View, Active: View>(
+        _ item: SelectionItem,
+        disabled: Bool,
+        identifier: String,
+        accessibilityName: String,
+        @ViewBuilder content: () -> Content,
+        @ViewBuilder active: () -> Active
+    ) -> some View {
+        if editing {
+            let selected = selection.contains(item)
+            Button {
+                if !selection.insert(item).inserted { selection.remove(item) }
+                UX.feedback()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .font(.title2)
+                        .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                        .compatibleSymbolReplacement()
+                    content()
+                        .allowsHitTesting(false)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(disabled)
+            .accessibilityLabel(selected ? AppText.text("取消选择 \(accessibilityName)") : AppText.text("选择 \(accessibilityName)"))
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityIdentifier(identifier)
+        } else {
+            active()
+        }
+    }
+
+    @ViewBuilder private func downloadList(visible: [DownloadJob], updates: [UUID: StoreApp]) -> some View {
             #if canImport(TestFlightKit)
-            let visibleTF = edit ? [] : filteredTFItems
+            let visibleTF = filteredTFItems
             #else
             let visibleTF: [Int] = []
             #endif
@@ -521,92 +599,87 @@ struct DownloadsView: View {
                             if !hasAnyDownloads { store.selectTab(.search) } else { term = ""; filter = .all }
                         })
                     }
-                } else if edit {
-                    Section {
-                        ForEach(Array(visible.enumerated()), id: \.element.id) { index, job in
-                            editRow(job)
-                                // Rows settle in one after another, a few hundredths apart.
-                                .modifier(DrawerRow(shown: editRowsShown || reduceMotion, index: index, travel: 18))
-                        }
-                        .onMove(perform: filter == .all && term.isEmpty ? { manager.move(from: $0, to: $1) } : nil)
-                    } header: {
-                        Text(headerSummary(visible: visible, updates: updates))
-                    } footer: {
-                        if filter == .all && term.isEmpty && visible.count > 1 {
-                            // Shown with the rows, not before them.
-                            Text("拖动右侧的把手调整顺序，等待中的任务按这个顺序下载。")
-                                .opacity(editRowsShown || reduceMotion ? 1 : 0)
-                                .animation(.easeOut(duration: 0.18).delay(0.08), value: editRowsShown)
-                        }
-                    }
                 } else {
-                    ForEach(Array(visible.enumerated()), id: \.element.id) { index, job in
+                    ForEach(visible) { job in
+                        let displayName = job.app.name.isEmpty ? job.app.bundleID : job.app.name
+                        let blocked = packages.protects(job.id) || job.status == .processing || job.status == .pausing
                         Section {
-                            taskContent(job, update: updates[job.id], editing: false)
-                            .accessibilityElement(children: .contain)
-                            .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
-                            // Swipe for Delete (full swipe) and, with a file, Share: the row keeps its room for the version.
-                            .revealActions(id: "download." + job.id.uuidString,
-                                           enabled: !actionBusy && job.status != .processing && job.status != .pausing,
-                                           restored: manager.recentlyRestoredIDs.contains(job.id),
-                                           [.delete(fills: true) { swipeDelete(job.id) }] + shareAction(job))
-                            .contextMenu {
-                                if let latest = updates[job.id] {
-                                    Button("下载新版本 \(latest.version)", systemImage: "arrow.down.circle") { downloadUpdate(job) }
-                                }
-                                if job.status == .completed && job.updateKey != nil {
-                                    if store.keepsVersion(job) {
-                                        Button("恢复更新提醒", systemImage: "bell") { store.keepVersion(false, of: job); UX.feedback() }
-                                    } else {
-                                        Button("保留此版本", systemImage: "pin") {
-                                            store.keepVersion(true, of: job); UX.feedback()
-                                            store.infoMessage = AppText.text("已保留此版本，不再提醒更新")
-                                        }
+                            selectableRow(
+                                .job(job.id),
+                                disabled: blocked,
+                                identifier: "download.select." + job.id.uuidString,
+                                accessibilityName: displayName,
+                                content: { taskContent(job, update: updates[job.id], editing: true) }
+                            ) {
+                                taskContent(job, update: updates[job.id], editing: false)
+                                .accessibilityElement(children: .contain)
+                                .accessibilityIdentifier("download.task." + job.app.id + "." + job.status.rawValue)
+                                // Swipe for Delete (full swipe) and, with a file, Share: the row keeps its room for the version.
+                                .revealActions(id: "download." + job.id.uuidString,
+                                               enabled: !actionBusy && job.status != .processing && job.status != .pausing,
+                                               restored: manager.recentlyRestoredIDs.contains(job.id),
+                                               [.delete(fills: true) { swipeDelete(job.id) }] + shareAction(job))
+                                .contextMenu {
+                                    if let latest = updates[job.id] {
+                                        Button("下载新版本 \(latest.version)", systemImage: "arrow.down.circle") { downloadUpdate(job) }
                                     }
-                                }
-                                Button("任务详情", systemImage: "info.circle") { inspecting = job }
-                                if store.settings.proMode, job.status == .completed, job.rawFormat == nil, manager.fileURL(job) != nil {
-                                    if let record = packageRecord(job) {
-                                        let style = DecryptOutcomeStyle(record)
-                                        if style == .running {
-                                            Button("查看解密进度", systemImage: "circle.dotted") { openPackage(.record(record.id)) }
-                                        } else if style == .success && packages.currentOutput(record) != nil {
-                                            Button("查看解密结果", systemImage: "lock.open") { openPackage(.record(record.id)) }
-                                        } else if style == .partial && packages.currentOutput(record) != nil {
-                                            Button("查看部分成功产物", systemImage: "exclamationmark.triangle") { openPackage(.record(record.id)) }
+                                    if job.status == .completed && job.updateKey != nil {
+                                        if store.keepsVersion(job) {
+                                            Button("恢复更新提醒", systemImage: "bell") { store.keepVersion(false, of: job); UX.feedback() }
                                         } else {
-                                            Button("重新解密", systemImage: "lock.open") { startDecrypt(job) }
-                                        }
-                                    } else {
-                                        Button("解密 IPA", systemImage: "lock.open") { startDecrypt(job) }
-                                    }
-                                }
-                                if let file = manager.fileURL(job) {
-                                    Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: manager.exportURL(job) ?? file) }
-                                    if job.rawFormat == nil {
-                                        Button("安装", systemImage: "square.and.arrow.down") { installing = job }
-                                    }
-                                    Button("复制本机链接", systemImage: "link") {
-                                        perform {
-                                            let url = try await store.installation.localURL(file: file)
-                                            UIPasteboard.general.string = url.absoluteString
-                                            store.infoMessage = AppText.text("已复制链接")
+                                            Button("保留此版本", systemImage: "pin") {
+                                                store.keepVersion(true, of: job); UX.feedback()
+                                                store.infoMessage = AppText.text("已保留此版本，不再提醒更新")
+                                            }
                                         }
                                     }
-                                }
-                                if job.status != .processing && job.status != .pausing {
-                                    Button("删除任务及文件", systemImage: "trash", role: .destructive) { askDelete([job.id]) }
+                                    Button("任务详情", systemImage: "info.circle") { inspecting = job }
+                                    if job.status == .completed, job.rawFormat == nil, let file = manager.fileURL(job) {
+                                        Button("安装包信息", systemImage: "doc.text.magnifyingglass") {
+                                            inspectingPackage = PackageInspectTarget(file: file, job: job)
+                                        }
+                                    }
+                                    if store.settings.proMode, job.status == .completed, job.rawFormat == nil, manager.fileURL(job) != nil {
+                                        if let record = packageRecord(job) {
+                                            let style = DecryptOutcomeStyle(record)
+                                            if style == .running {
+                                                Button("查看解密进度", systemImage: "circle.dotted") { openPackage(.record(record.id)) }
+                                            } else if style == .success && packages.currentOutput(record) != nil {
+                                                Button("查看解密结果", systemImage: "lock.open") { openPackage(.record(record.id)) }
+                                            } else if style == .partial && packages.currentOutput(record) != nil {
+                                                Button("查看部分成功产物", systemImage: "exclamationmark.triangle") { openPackage(.record(record.id)) }
+                                            } else {
+                                                Button("重新解密", systemImage: "lock.open") { startDecrypt(job) }
+                                            }
+                                        } else {
+                                            Button("解密 IPA", systemImage: "lock.open") { startDecrypt(job) }
+                                        }
+                                    }
+                                    if let file = manager.fileURL(job) {
+                                        Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: manager.exportURL(job) ?? file) }
+                                        if job.rawFormat == nil {
+                                            Button("安装", systemImage: "square.and.arrow.down") { installing = job }
+                                        }
+                                        Button("复制本机链接", systemImage: "link") {
+                                            perform {
+                                                let url = try await store.installation.localURL(file: file)
+                                                UIPasteboard.general.string = url.absoluteString
+                                                store.infoMessage = AppText.text("已复制链接")
+                                            }
+                                        }
+                                    }
+                                    if job.status != .processing && job.status != .pausing {
+                                        Button("删除任务及文件", systemImage: "trash", role: .destructive) { askDelete([.job(job.id)]) }
+                                    }
                                 }
                             }
-                            // Outside the card background, so the whole card slides.
-                            .modifier(DrawerRow(shown: cardsShown || reduceMotion, index: index, travel: 28))
                         } header: {
                             if job.id == visible.first?.id {
                                 HStack(alignment: .firstTextBaseline) {
                                     Text(headerSummary(visible: visible, updates: updates))
                                     Spacer()
                                     // One update has its own button on the row.
-                                    if updates.count > 1 {
+                                    if !editing && updates.count > 1 {
                                         Button("全部更新") { downloadAllUpdates() }
                                             .font(.body.weight(.semibold)).textCase(nil).buttonStyle(.borderless)
                                             .disabled(actionBusy)
@@ -632,7 +705,7 @@ struct DownloadsView: View {
     }
 
     #if canImport(TestFlightKit)
-    private func tfProductRow(_ item: TFProductItem) -> some View {
+    private func tfRowContent(_ item: TFProductItem, editing: Bool) -> some View {
         let isInstalled = tfModel.installedAppIDs.contains(item.appID)
         let isInstalling = tfModel.installingAppIDs.contains(item.appID)
         let record = packages.attempts(url: item.fileURL).first
@@ -679,113 +752,96 @@ struct DownloadsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button(isInstalling ? "正在处理…" : "安装") {
-                UX.tapLight()
-                installingTFItem = item
+            if !editing {
+                Button(isInstalling ? "正在处理…" : "安装") {
+                    UX.tapLight()
+                    installingTFItem = item
+                }
+                .buttonStyle(CapsuleButtonStyle(filled: !isInstalled))
+                .disabled(isInstalling)
+                .accessibilityIdentifier("download.tf.install." + item.bundleID)
             }
-            .buttonStyle(CapsuleButtonStyle(filled: !isInstalled))
-            .disabled(isInstalling)
-            .accessibilityIdentifier("download.tf.install." + item.bundleID)
         }
         .padding(.vertical, 8)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("download.tf." + item.bundleID)
-        .revealActions(
-            id: "download.tf." + item.bundleID,
-            enabled: !actionBusy && !packages.protects(url: item.fileURL),
-            [
-                .delete(fills: false) { pendingDeleteTF = item },
-                RevealAction(title: "分享", systemImage: "square.and.arrow.up", tint: .blue, role: nil) {
-                    share = SharedFile(url: item.fileURL)
-                }
-            ]
-        )
-        .contextMenu {
-            Button("安装", systemImage: "square.and.arrow.down") {
-                installingTFItem = item
-            }
-            if store.settings.proMode {
-                if let record {
-                    let style = DecryptOutcomeStyle(record)
-                    if style == .running {
-                        Button("查看解密进度", systemImage: "circle.dotted") { openPackage(.record(record.id)) }
-                    } else if style == .success && packages.currentOutput(record) != nil {
-                        Button("查看解密结果", systemImage: "lock.open") { openPackage(.record(record.id)) }
-                    } else {
-                        Button("解密 IPA", systemImage: "lock.open") {
+    }
+
+    private func tfProductRow(_ item: TFProductItem) -> some View {
+        let record = packages.attempts(url: item.fileURL).first
+        return selectableRow(
+            .tf(item.bundleID),
+            disabled: packages.protects(url: item.fileURL),
+            identifier: "download.select.tf." + item.bundleID,
+            accessibilityName: item.displayName,
+            content: { tfRowContent(item, editing: true) }
+        ) {
+            tfRowContent(item, editing: false)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("download.tf." + item.bundleID)
+                .revealActions(
+                    id: "download.tf." + item.bundleID,
+                    enabled: !actionBusy && !packages.protects(url: item.fileURL),
+                    restored: tfProducts.recentlyRestoredBundleIDs.contains(item.bundleID),
+                    [
+                        .delete(fills: true) { removeTFWithUndo(item) },
+                        RevealAction(title: "分享", systemImage: "square.and.arrow.up", tint: .blue, role: nil) {
+                            share = SharedFile(url: item.fileURL)
+                        }
+                    ]
+                )
+                .contextMenu {
+                    Button("安装", systemImage: "square.and.arrow.down") {
+                        installingTFItem = item
+                    }
+                    Button("安装包信息", systemImage: "info.circle") {
+                        inspectingPackage = PackageInspectTarget(file: item.fileURL, job: nil)
+                    }
+                    if store.settings.proMode {
+                        if let record {
+                            let style = DecryptOutcomeStyle(record)
+                            if style == .running {
+                                Button("查看解密进度", systemImage: "circle.dotted") { openPackage(.record(record.id)) }
+                            } else if style == .success && packages.currentOutput(record) != nil {
+                                Button("查看解密结果", systemImage: "lock.open") { openPackage(.record(record.id)) }
+                            } else {
+                                Button("解密 IPA", systemImage: "lock.open") {
+                                    openPackage(.file(item.fileURL))
+                                    packages.requestStart(url: item.fileURL)
+                                }
+                            }
+                        } else {
+                            Button("解密 IPA", systemImage: "lock.open") {
+                                openPackage(.file(item.fileURL))
+                                packages.requestStart(url: item.fileURL)
+                            }
+                        }
+                        Button("查看原始 IPA", systemImage: "shippingbox") {
                             openPackage(.file(item.fileURL))
-                            packages.requestStart(url: item.fileURL)
                         }
                     }
-                } else {
-                    Button("解密 IPA", systemImage: "lock.open") {
-                        openPackage(.file(item.fileURL))
-                        packages.requestStart(url: item.fileURL)
+                    Button("导出文件", systemImage: "square.and.arrow.up") {
+                        share = SharedFile(url: item.fileURL)
                     }
+                    Button("删除任务及文件", systemImage: "trash", role: .destructive) {
+                        askDelete([.tf(item.bundleID)])
+                    }
+                    .disabled(packages.protects(url: item.fileURL))
                 }
-                Button("查看原始 IPA", systemImage: "shippingbox") {
-                    openPackage(.file(item.fileURL))
-                }
-            }
-            Button("导出文件", systemImage: "square.and.arrow.up") {
-                share = SharedFile(url: item.fileURL)
-            }
-            Button("删除任务及文件", systemImage: "trash", role: .destructive) {
-                pendingDeleteTF = item
-            }
-            .disabled(packages.protects(url: item.fileURL))
+        }
+    }
+
+    private func removeTFWithUndo(_ item: TFProductItem) {
+        guard !packages.protects(url: item.fileURL) else {
+            store.errorMessage = AppText.text("安装包正在解密，请等待处理结束后再删除。")
+            return
+        }
+        do {
+            try store.removeTFProductWithUndo(item)
+        } catch {
+            store.errorMessage = error.localizedDescription
         }
     }
     #endif
 
-    /// Like a drawer: the current rows slide up and in, the list swaps while
-    /// nothing is showing, then the other layout's rows slide down and out.
-    private func toggleEditMode() {
-        guard !switchingMode else { return }
-        let entering = !editMode.isEditing
-        guard !reduceMotion else {
-            withAnimation(.easeInOut(duration: 0.2)) { editMode = entering ? .active : .inactive }
-            return
-        }
-        switchingMode = true
-        if entering { cardsShown = false } else { editRowsShown = false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            // The list itself swaps without a transition; this animation only
-            // moves the bottom bar and the toolbar title.
-            if entering { editRowsShown = false } else { cardsShown = false }
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { editMode = entering ? .active : .inactive }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { switchingMode = false }
-        }
-    }
-
-    /// A compact row for edit mode: selection mark, icon, name and state.
-    private func editRow(_ job: DownloadJob) -> some View {
-        let app = job.displayApp(packageIcon: manager.packageIconURL(job))
-        let selected = selection.contains(job.id)
-        let details = [job.conciseVersionLabel, job.status.title].filter { !$0.isEmpty }.joined(separator: " · ")
-        return Button { toggleSelection(job.id) } label: {
-            HStack(spacing: 12) {
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.title2)
-                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
-                    .compatibleSymbolReplacement()
-                AppIcon(url: app.iconURL, size: 40)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(app.name.isEmpty ? app.bundleID : app.name).font(.body).lineLimit(1)
-                    Text(details).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(selected ? AppText.text("取消选择 \(app.name)") : AppText.text("选择 \(app.name)"))
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityIdentifier("download.select." + job.id.uuidString)
-    }
-    private func toggleSelection(_ id: UUID) {
-        if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
-    }
     private func importPicked(_ files: [URL]) {
         guard !files.isEmpty else { return }
         perform {
@@ -847,9 +903,33 @@ struct DownloadsView: View {
             }
         }
     }
-    private func askDelete(_ ids: Set<UUID>) {
-        pendingDelete = Set(manager.jobs.filter { ids.contains($0.id) && !packages.protects($0.id) && $0.status != .processing && $0.status != .pausing }.map(\.id))
-        if pendingDelete.isEmpty { store.infoMessage = AppText.text("任务处理完成后才能删除") }
+    private func askDelete(_ items: Set<SelectionItem>) {
+        var requestedJobIDs = Set<UUID>()
+        #if canImport(TestFlightKit)
+        var requestedTFBundles = Set<String>()
+        #endif
+        for item in items {
+            switch item {
+            case .job(let id): requestedJobIDs.insert(id)
+            #if canImport(TestFlightKit)
+            case .tf(let bundleID): requestedTFBundles.insert(bundleID)
+            #endif
+            }
+        }
+        pendingDeleteJobs = Set(
+            manager.jobs.filter {
+                requestedJobIDs.contains($0.id)
+                    && !packages.protects($0.id)
+                    && $0.status != .processing
+                    && $0.status != .pausing
+            }.map(\.id)
+        )
+        #if canImport(TestFlightKit)
+        pendingDeleteTF = tfProducts.items.filter {
+            requestedTFBundles.contains($0.bundleID) && !packages.protects(url: $0.fileURL)
+        }
+        #endif
+        if pendingDeleteCount == 0 { store.infoMessage = AppText.text("任务处理完成后才能删除") }
         else { confirmingDelete = true }
     }
     private func perform(_ operation: @escaping () async throws -> Void) {
@@ -874,6 +954,7 @@ struct DownloadTaskRow: View {
     /// Kept at this version: no update reminders.
     var kept = false
     var decrypted = false
+    var editing = false
     var inspecting: () -> Void
     var primary: () -> Void
     var updating: () -> Void = {}
@@ -1042,7 +1123,7 @@ struct DownloadTaskRow: View {
         }
     }
     private var showsTrailingControl: Bool {
-        job.status != .completed || job.rawFormat == nil
+        !editing && (job.status != .completed || job.rawFormat == nil)
     }
     @ViewBuilder private var trailingControls: some View {
         if showsTrailingControl {
@@ -1151,29 +1232,13 @@ private struct TaskSizeRows: View {
         if current.status == .completed {
             if total > 0 { LabeledContent("大小", value: total.byteLabel) }
         } else {
+            let pct = total > 0 ? Int((Double(current.downloaded) / Double(total) * 100).rounded(.down)) : 0
             LabeledContent("已下载", value: total > 0 && current.downloaded > 0
-                           ? "\(current.downloaded.byteLabel)（\(Int((Double(current.downloaded) / Double(total) * 100).rounded(.down)))%）"
+                           ? AppText.text("\(current.downloaded.byteLabel)（\(pct)%）")
                            : current.downloaded.byteLabel)
                 .accessibilityIdentifier("download.detail.downloaded")
             if total > 0 { LabeledContent("大小", value: total.byteLabel) }
         }
-    }
-}
-
-/// A row that slides down out of the list's top edge a few hundredths of a
-/// second after the one above it, like a drawer pulled out; hidden again, all
-/// rows slide back up together.
-private struct DrawerRow: ViewModifier {
-    let shown: Bool
-    let index: Int
-    let travel: CGFloat
-    func body(content: Content) -> some View {
-        content
-            .opacity(shown ? 1 : 0)
-            .offset(y: shown ? 0 : -travel)
-            .scaleEffect(x: 1, y: shown ? 1 : 0.9, anchor: .top)
-            .animation(shown ? .spring(response: 0.32, dampingFraction: 0.84).delay(0.01 + Double(min(index, 10)) * 0.02)
-                             : .easeIn(duration: 0.12), value: shown)
     }
 }
 
@@ -1200,39 +1265,42 @@ private struct AddDownloadSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("添加下载").font(.title3.weight(.semibold)).padding(.bottom, 6)
-            Button { picker = .ipa } label: {
-                Label("导入 IPA", systemImage: "square.and.arrow.down")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("添加下载").font(.title3.weight(.semibold)).padding(.bottom, 6)
+                Button { picker = .ipa } label: {
+                    Label("导入 IPA", systemImage: "square.and.arrow.down")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("downloads.import")
+                Button(action: onLink) {
+                    Label("通过链接下载", systemImage: "link")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                if proMode {
+                Button(action: onPackages) {
+                    Label("管理与解密 IPA", systemImage: "shippingbox")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("downloads.decrypt-import")
+                }
+                if hasActiveJobs {
+                    Divider()
+                    Button("暂停全部", systemImage: "pause.circle", action: onPauseAll)
+                        .disabled(!canPause)
+                        .frame(minHeight: 44)
+                    Button("继续全部", systemImage: "play.circle", action: onResumeAll)
+                        .disabled(!canResume)
+                        .frame(minHeight: 44)
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("downloads.import")
-            Button(action: onLink) {
-                Label("通过链接下载", systemImage: "link")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            if proMode {
-            Button(action: onPackages) {
-                Label("管理与解密 IPA", systemImage: "shippingbox")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("downloads.decrypt-import")
-            }
-            if hasActiveJobs {
-                Divider()
-                Button("暂停全部", systemImage: "pause.circle", action: onPauseAll)
-                    .disabled(!canPause)
-                    .frame(minHeight: 44)
-                Button("继续全部", systemImage: "play.circle", action: onResumeAll)
-                    .disabled(!canResume)
-                    .frame(minHeight: 44)
-            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .compatibleScrollBounce()
         .presentationDetents([.height(hasActiveJobs ? 380 : 260), .large])
         .presentationDragIndicator(.visible)
         .sheet(item: $picker) { kind in

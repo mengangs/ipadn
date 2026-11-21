@@ -35,6 +35,7 @@ final class FairPlayService: ObservableObject {
     }
 
     private static let autoKey = "fairplay.autoDecrypt"
+    private static let logQueue = DispatchQueue(label: "iPadn.fairplay-log", qos: .utility)
     private var cancelFlag = CancelFlag()
     private var task: Task<Void, Never>?
     /// Paths already handled automatically, so a re-render does not restart.
@@ -54,8 +55,10 @@ final class FairPlayService: ObservableObject {
                origin: DecryptRecord.Origin = .manual) {
         guard !isRunning else { return }
         reset()
-        try? FileManager.default.removeItem(
-            at: FairPlayEnvironment.documentsDirectory.appendingPathComponent("fairplay-last.log"))
+        let logURL = FairPlayEnvironment.documentsDirectory.appendingPathComponent("fairplay-last.log")
+        Self.logQueue.async {
+            try? FileManager().removeItem(at: logURL)
+        }
         phase = .running
         sourceName = displayName
         step = "准备中"
@@ -267,13 +270,15 @@ final class FairPlayService: ObservableObject {
         let text = DiagnosticRedactor.sanitize(line.rendered) + "\n"
         guard let data = text.data(using: .utf8) else { return }
         let url = FairPlayEnvironment.documentsDirectory.appendingPathComponent("fairplay-last.log")
-        if let handle = try? FileHandle(forWritingTo: url) {
-            defer { try? handle.close() }
-            if (try? handle.seekToEnd()) != nil {
-                try? handle.write(contentsOf: data)
+        Self.logQueue.async {
+            if let handle = try? FileHandle(forWritingTo: url) {
+                defer { try? handle.close() }
+                if (try? handle.seekToEnd()) != nil {
+                    try? handle.write(contentsOf: data)
+                }
+            } else {
+                try? data.write(to: url, options: .completeFileProtectionUntilFirstUserAuthentication)
             }
-        } else {
-            try? data.write(to: url, options: .completeFileProtectionUntilFirstUserAuthentication)
         }
     }
 }

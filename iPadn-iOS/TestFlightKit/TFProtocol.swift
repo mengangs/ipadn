@@ -35,9 +35,13 @@ public enum TFConstants {
     /// Diagnostic override for the invariant self-test: `--tf-bad-ua` presents a wrong
     /// user agent on purpose so the check can be seen failing instead of being trusted.
     public static var effectiveUserAgent: String {
-        ProcessInfo.processInfo.arguments.contains("--tf-bad-ua")
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("--tf-bad-ua")
             ? "TestFlight/4.4.0 (iPhone; iOS 27.0.1)"
             : storeUserAgent
+        #else
+        return storeUserAgent
+        #endif
     }
 }
 
@@ -359,14 +363,22 @@ public enum TFRedaction {
             ("(?i)(cookie\\s*[:=]\\s*)[^;\\n]{4,}", "$1‹redacted›"),
             ("(?i)(x-session-id\\s*[:=]\\s*)[^\\s,;]{4,}", "$1‹redacted›"),
             ("(?i)(x-session-digest\\s*[:=]\\s*)[^\\s,;]{4,}", "$1‹redacted›"),
+            ("(?i)(x-apple-amd-m\\s*[:=]\\s*)\\S+", "$1‹redacted›"),
+            ("(?i)(x-token\\s*[:=]\\s*)[^\\s,;]{4,}", "$1‹redacted›"),
+            ("(?i)(authorization\\s*[:=]\\s*(?:bearer\\s+)?)\\S+", "$1‹redacted›"),
             ("(?i)(password\\s*[:=]\\s*)\\S+", "$1‹redacted›"),
+            ("(?i)(\"?dpInfo\"?\\s*[:=]\\s*\"?)[A-Za-z0-9+/=_-]{8,}", "$1‹redacted›"),
+            ("(?i)(\"?sinf\"?\\s*[:=]\\s*\"?)[A-Za-z0-9+/=<>_-]{12,}", "$1‹redacted›"),
+            ("\\beyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\b", "‹jwt›"),
+            ("(?i)([?&](?:accessKey|signature|expires|policy|token|key|sig|auth)=)[^&\\s\"']+", "$1‹redacted›"),
             ("(?i)(adsid\\s*[:=]\\s*)\\d{4,}", "$1‹redacted›"),
             ("(?i)(dsId\\s*=\\s*)\\d{5,}(\\d{4})\\b", "$1…$2"),
             ("(?i)(vendor\\s*=\\s*)[0-9a-f]{12,}", "$1‹redacted›"),
             ("(?i)(identity\\s+)\\d{5,}(\\d{4}):[0-9a-f]{16,}", "$1…$2:‹udid›"),
-            ("(/accounts/)[0-9a-fA-F-]{16,}(/)", "$1‹account›$2"),
+            ("(/accounts/)[0-9a-fA-F-]{6,}(/)", "$1‹account›$2"),
             ("(?i)(mt-tkn-|mz_at0-|mz_at_mau-|mz_at_ssl-)\\d{5,}(\\d{4})\\b", "$1…$2"),
             ("\\b\\d{5,}(\\d{4})(=\\d+B)\\b", "…$1$2"),
+            ("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "‹email›"),
         ]
         return specs.compactMap { pattern, template in
             (try? NSRegularExpression(pattern: pattern)).map { ($0, template) }

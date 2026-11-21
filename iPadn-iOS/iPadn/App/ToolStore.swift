@@ -3,6 +3,9 @@ import Combine
 import SwiftUI
 import UIKit
 import UserNotifications
+#if canImport(TestFlightKit)
+import TestFlightKit
+#endif
 
 struct SearchHistoryItem: Codable, Identifiable {
     var id: String { term }
@@ -391,7 +394,7 @@ final class ToolStore: ObservableObject {
     @Published var verificationRequest: VerificationRequest?
     /// Opens the code page for the active account, then runs `retry`.
     func requestVerification(retry: (@MainActor () -> Void)? = nil) {
-        guard let id = apple.activeID else { errorMessage = "请先在「账号」中登录 Apple 账号"; return }
+        guard let id = apple.activeID else { errorMessage = AppText.text("请先在「账号」中登录 Apple 账号"); return }
         verificationRequest = VerificationRequest(accountID: id, retry: retry)
     }
     struct DownloadTargetKey: Hashable {
@@ -416,6 +419,9 @@ final class ToolStore: ObservableObject {
     @Published var installingJob: DownloadJob?
     @Published var loginPrompt: LoginPrompt?
     private var prepareTasks: [DownloadTargetKey: Task<Void, Never>] = [:]
+    private var prepareTokens: [DownloadTargetKey: UUID] = [:]
+    private var ownedRefreshTask: Task<Void, Never>?
+    private var ownedRefreshToken = UUID()
     #if DEBUG
     private var visualPreview = false
     #endif
@@ -898,8 +904,11 @@ final class ToolStore: ObservableObject {
         guard id != lastAccountID else { return }
         accountSyncTask?.cancel()
         accountSyncTask = nil
+        ownedRefreshTask?.cancel()
+        ownedRefreshTask = nil
         for task in prepareTasks.values { task.cancel() }
         prepareTasks.removeAll()
+        prepareTokens.removeAll()
         preparingDownloads.removeAll()
         let previous = lastAccountID
         lastAccountID = id
@@ -1159,44 +1168,190 @@ final class ToolStore: ObservableObject {
         persistHistory()
     }
 
-    private var downloadUndoTokens: [UUID] = []
-    private var downloadUndoNoticeID: UUID?
-    func removeDownloadWithUndo(_ id: UUID) async throws {
-        guard let receipt = try await downloads.removeReversibly(id) else { return }
+    private struct StagedUndoItem {
+        let token: UUID
+        let count: Int
+    }
+    private var downloadUndoItems: [StagedUndoItem] = []
+    #if canImport(TestFlightKit)
+    private var tfUndoItems: [StagedUndoItem] = []
+    #endif
+    private var removalUndoNoticeID: UUID?
+
+    private func presentRemovalUndoNotice(
+        created: Date,
+        addedDownloads: [StagedUndoItem] = [],
+        addedTF: [StagedUndoItem] = []
+    ) {
         let reusingBanner = undoNotice?.id != nil
-            && undoNotice?.id == downloadUndoNoticeID
+            && undoNotice?.id == removalUndoNoticeID
             && Date().timeIntervalSince(undoNotice?.created ?? .distantPast) < UndoNotice.duration
         if !reusingBanner {
-            downloadUndoTokens.removeAll()
+            downloadUndoItems.removeAll()
+            #if canImport(TestFlightKit)
+            tfUndoItems.removeAll()
+            #endif
         }
-        downloadUndoTokens.append(receipt.token)
-        let tokens = downloadUndoTokens
-        downloads.extendRemovalUndo(tokens, until: receipt.created.addingTimeInterval(UndoNotice.duration))
+        downloadUndoItems.append(contentsOf: addedDownloads)
+        #if canImport(TestFlightKit)
+        tfUndoItems.append(contentsOf: addedTF)
+        #endif
+
+        let dlTokens = downloadUndoItems.map(\.token)
+        let deadline = created.addingTimeInterval(UndoNotice.duration)
+        if !dlTokens.isEmpty {
+            downloads.extendRemovalUndo(dlTokens, until: deadline)
+        }
+        #if canImport(TestFlightKit)
+        let tfTokens = tfUndoItems.map(\.token)
+        if !tfTokens.isEmpty {
+            TFProductIndex.shared.extendRemovalUndo(tfTokens, until: deadline)
+        }
+        let totalCount = downloadUndoItems.reduce(0) { $0 + $1.count } + tfUndoItems.reduce(0) { $0 + $1.count }
+        #else
+        let totalCount = downloadUndoItems.reduce(0) { $0 + $1.count }
+        #endif
+        guard totalCount > 0 else { return }
+
         let noticeID = reusingBanner ? (undoNotice?.id ?? UUID()) : UUID()
         let revision = reusingBanner ? (undoNotice?.revision ?? 0) + 1 : 1
-        let notice = UndoNotice(id: noticeID, revision: revision, created: receipt.created,
-            message: AppText.text("已删除 \(tokens.count) 项任务与文件")) { [weak self] notice in
+        let notice = UndoNotice(
+            id: noticeID,
+            revision: revision,
+            created: created,
+            message: AppText.text("已删除 \(totalCount) 项任务与文件")
+        ) { [weak self] notice in
             guard let self else { return }
             Task { @MainActor in
-                do { try await self.downloads.undoRemovalGroup(tokens) }
-                catch {
-                    self.errorMessage = error.localizedDescription
-                    self.rearmUndoNotice(notice, downloadNotice: true)
+                var firstError: Error?
+                if !dlTokens.isEmpty {
+                    do { try await self.downloads.undoRemovalGroup(dlTokens) }
+                    catch { firstError = firstError ?? error }
+                }
+                #if canImport(TestFlightKit)
+                if !tfTokens.isEmpty {
+                    do { try TFProductIndex.shared.undoRemovalGroup(tfTokens) }
+                    catch { firstError = firstError ?? error }
+                }
+                #endif
+                if let firstError {
+                    self.errorMessage = firstError.localizedDescription
+                    self.rearmUndoNotice(notice, removalNotice: true)
+                } else {
+                    UX.feedback()
                 }
             }
         }
         undoNotice = notice
-        downloadUndoNoticeID = notice.id
+        removalUndoNoticeID = notice.id
+    }
+
+    #if canImport(TestFlightKit)
+    func removeTFProductWithUndo(_ item: TFProductItem) throws {
+        guard let receipt = try TFProductIndex.shared.removeReversibly(item) else {
+            infoMessage = AppText.text("已删除 1 项任务与文件")
+            return
+        }
+        presentRemovalUndoNotice(created: receipt.created, addedTF: [StagedUndoItem(token: receipt.token, count: 1)])
+    }
+
+    func removeDownloadsBatchWithUndo(jobIDs: Set<UUID>, tfItems: [TFProductItem]) async throws {
+        var addedDownloads: [StagedUndoItem] = []
+        var addedTF: [StagedUndoItem] = []
+        var latestCreated = Date()
+        var firstError: Error?
+        var nonReversibleCount = 0
+
+        if !jobIDs.isEmpty {
+            do {
+                if let receipt = try await downloads.removeBatchReversibly(jobIDs) {
+                    addedDownloads.append(StagedUndoItem(token: receipt.token, count: receipt.count))
+                    latestCreated = max(latestCreated, receipt.created)
+                }
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        for item in tfItems {
+            do {
+                if let receipt = try TFProductIndex.shared.removeReversibly(item) {
+                    addedTF.append(StagedUndoItem(token: receipt.token, count: 1))
+                    latestCreated = max(latestCreated, receipt.created)
+                } else {
+                    nonReversibleCount += 1
+                }
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+
+        if !addedDownloads.isEmpty || !addedTF.isEmpty {
+            presentRemovalUndoNotice(created: latestCreated, addedDownloads: addedDownloads, addedTF: addedTF)
+        } else if nonReversibleCount > 0 {
+            infoMessage = AppText.text("已删除 \(nonReversibleCount) 项任务与文件")
+        }
+        if let firstError { throw firstError }
+    }
+
+    func removeTFProductWithUndo(for app: TFBetaApp) {
+        let model = TFHomeModel.shared
+        let bundle = (model.details[app.id]?.bundleID ?? "").isEmpty ? app.bundleID : (model.details[app.id]?.bundleID ?? app.bundleID)
+        let lower = bundle.lowercased()
+        let matched = TFProductIndex.shared.items.first {
+            $0.appID == app.id || (!lower.isEmpty && $0.bundleID.lowercased() == lower)
+        }
+        if let item = matched {
+            do {
+                try removeTFProductWithUndo(item)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            return
+        }
+        if let url = model.productURL(for: app) {
+            let resolvedBundle = !bundle.isEmpty ? bundle : url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
+            let synthetic = TFProductItem(
+                appID: app.id,
+                bundleID: resolvedBundle,
+                displayName: model.details[app.id]?.name ?? app.name,
+                shortVersion: model.details[app.id]?.shortVersion ?? app.latestVersion ?? "",
+                buildVersion: model.details[app.id]?.buildVersion ?? "",
+                fileURL: url,
+                fileSize: size,
+                modifiedAt: Date(),
+                iconURL: model.iconFiles[app.id],
+                iconColors: model.iconColors[app.id]
+            )
+            do {
+                try removeTFProductWithUndo(synthetic)
+                return
+            } catch {
+                errorMessage = error.localizedDescription
+                return
+            }
+        }
+        model.deleteLocalProduct(app)
+    }
+    #else
+    func removeDownloadsBatchWithUndo(jobIDs: Set<UUID>) async throws {
+        guard let receipt = try await downloads.removeBatchReversibly(jobIDs) else { return }
+        presentRemovalUndoNotice(created: receipt.created, addedDownloads: [StagedUndoItem(token: receipt.token, count: receipt.count)])
+    }
+    #endif
+    func removeDownloadWithUndo(_ id: UUID) async throws {
+        guard let receipt = try await downloads.removeReversibly(id) else { return }
+        presentRemovalUndoNotice(created: receipt.created, addedDownloads: [StagedUndoItem(token: receipt.token, count: 1)])
     }
     func undoLastAction() {
         let notice = undoNotice; undoNotice = nil
         guard let notice, Date().timeIntervalSince(notice.created) < UndoNotice.duration else { return }
         notice.restore(notice)
     }
-    private func rearmUndoNotice(_ notice: UndoNotice, downloadNotice: Bool = false) {
+    private func rearmUndoNotice(_ notice: UndoNotice, removalNotice: Bool = false) {
         guard undoNotice == nil, Date().timeIntervalSince(notice.created) < UndoNotice.duration else { return }
         undoNotice = notice
-        if downloadNotice { downloadUndoNoticeID = notice.id }
+        if removalNotice { removalUndoNoticeID = notice.id }
     }
     private func persistHistory() {
         if let data = try? JSONEncoder().encode(searchHistory) { LocalResources.defaults.set(data, forKey: LocalResources.searchHistory) }
@@ -1659,6 +1814,7 @@ final class ToolStore: ObservableObject {
         }
         for key in keys {
             prepareTasks.removeValue(forKey: key)?.cancel()
+            prepareTokens.removeValue(forKey: key)
             preparingDownloads.remove(key)
         }
     }
@@ -1832,11 +1988,16 @@ final class ToolStore: ObservableObject {
         operation: @escaping @MainActor () async throws -> Void
     ) {
         guard prepareTasks[key] == nil else { return }
+        let token = UUID()
+        prepareTokens[key] = token
         preparingDownloads.insert(key)
         prepareTasks[key] = Task {
             defer {
-                preparingDownloads.remove(key)
-                prepareTasks.removeValue(forKey: key)
+                if prepareTokens[key] == token {
+                    preparingDownloads.remove(key)
+                    prepareTasks.removeValue(forKey: key)
+                    prepareTokens.removeValue(forKey: key)
+                }
             }
             do {
                 try await operation()
@@ -2234,41 +2395,84 @@ final class ToolStore: ObservableObject {
         if switchToDownloadsTab { selectTab(.downloads) }
     }
 
+    func cancelOwnedRefresh() {
+        ownedRefreshTask?.cancel()
+        ownedRefreshTask = nil
+        ownedRefreshToken = UUID()
+        ownedLoading = false
+        ownedHistoryProgress = nil
+    }
+
     func refreshOwned(fullHistory: Bool = false) async {
         await cacheLoadTask?.value
         guard accountRemoving == nil else { return }
-        guard !ownedLoading, let id = apple.activeID else {
-            if apple.activeID == nil { errorMessage = AppText.text("请先在账号页登录") }
+        guard let id = apple.activeID else {
+            errorMessage = AppText.text("请先在账号页登录")
             return
         }
+        if ownedLoading {
+            if !fullHistory { return }
+            ownedRefreshTask?.cancel()
+            ownedRefreshTask = nil
+        }
+        let token = UUID()
+        ownedRefreshToken = token
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performRefreshOwned(accountID: id, fullHistory: fullHistory, token: token)
+        }
+        ownedRefreshTask = task
+        await task.value
+    }
+
+    private func performRefreshOwned(accountID id: String, fullHistory: Bool, token: UUID) async {
         // An earlier error stays until this sync settles, instead of
         // disappearing and coming back.
         ownedLoading = true
         defer {
-            ownedLoading = false
-            ownedHistoryProgress = nil
-            // The account changed mid-sync: sync the new one now.
-            if apple.activeID != id, apple.activeID != nil { Task { await self.refreshOwned() } }
+            if ownedRefreshToken == token {
+                ownedLoading = false
+                ownedHistoryProgress = nil
+                ownedRefreshTask = nil
+            }
         }
         let previousOwned = ownedByAccount[id] ?? owned
         var dmapApps: [OwnedApp] = []
         var dmapError: Error?
 
+        func mergeWithLatestIcons(_ items: [OwnedApp]) -> [OwnedApp] {
+            var merged = items
+            var iconMap: [String: URL] = [:]
+            for app in previousOwned where app.iconURL != nil { iconMap[app.id] = app.iconURL }
+            // Preserve icons concurrently fetched by `loadOwnedArtwork()` while Commerce backfill ran.
+            for app in (ownedByAccount[id] ?? []) where app.iconURL != nil { iconMap[app.id] = app.iconURL }
+            if apple.activeID == id {
+                for app in owned where app.iconURL != nil { iconMap[app.id] = app.iconURL }
+            }
+            for index in merged.indices where merged[index].iconURL == nil {
+                merged[index].iconURL = iconMap[merged[index].id]
+            }
+            return merged
+        }
+
         do {
             dmapApps = try await apple.ownedApps(useCache: settings.useSignerCache)
-            guard apple.activeID == id, accountRemoving == nil else { return }
+            try Task.checkCancellation()
+            guard ownedRefreshToken == token, apple.activeID == id, accountRemoving == nil,
+                  apple.accounts.contains(where: { $0.id == id }) else { return }
             ownedError = nil
-            let mergedInitial = CommercePurchaseHistory.merge(
+            let mergedInitial = mergeWithLatestIcons(CommercePurchaseHistory.merge(
                 dmap: dmapApps,
                 commerce: [],
                 cached: previousOwned
-            )
+            ))
             owned = mergedInitial
             if ownedStorageError == nil {
-                var next = ownedByAccount; next[id] = mergedInitial
-                try await saveCache(next, filename: LocalResources.ownedFilename)
-                guard accountRemoving == nil else { return }
-                ownedByAccount = next
+                var snapshot = ownedByAccount; snapshot[id] = mergedInitial
+                try await saveCache(snapshot, filename: LocalResources.ownedFilename)
+                guard ownedRefreshToken == token, accountRemoving == nil,
+                      apple.accounts.contains(where: { $0.id == id }) else { return }
+                ownedByAccount[id] = mergedInitial
                 updateLocalResults()
                 ownedRevision = UUID()
             }
@@ -2294,37 +2498,38 @@ final class ToolStore: ObservableObject {
             ownedHistoryProgress = (0, totalYears)
         }
         do {
-            let commerceApps = try await apple.commercePurchaseHistory(
+            let commerceResult = try await apple.commercePurchaseHistory(
                 sinceYear: sinceYear,
                 throughYear: currentYear,
                 useCache: settings.useSignerCache,
                 allowSessionRefresh: fullHistory || priorState?.completedFullSync != true
             ) { [weak self] done, total in
                 await MainActor.run {
-                    guard let self, self.apple.activeID == id else { return }
+                    guard let self, self.ownedRefreshToken == token, self.apple.activeID == id else { return }
                     if total > 1 { self.ownedHistoryProgress = (done, total) }
                 }
             }
-            guard apple.activeID == id, accountRemoving == nil else { return }
+            try Task.checkCancellation()
+            guard ownedRefreshToken == token, apple.activeID == id, accountRemoving == nil,
+                  apple.accounts.contains(where: { $0.id == id }) else { return }
             ownedError = nil
-            var merged = CommercePurchaseHistory.merge(
+            // Keep prior cached bundleID/version when DMAP failed even on fullHistory so metadata isn't stripped.
+            let cachedFallback = (fullHistory && !dmapApps.isEmpty) ? [] : previousOwned
+            let merged = mergeWithLatestIcons(CommercePurchaseHistory.merge(
                 dmap: dmapApps,
-                commerce: commerceApps,
-                cached: fullHistory ? [] : previousOwned
-            )
-            let cachedIcons = Dictionary(previousOwned.compactMap { app in app.iconURL.map { (app.id, $0) } },
-                                         uniquingKeysWith: { first, _ in first })
-            for index in merged.indices where merged[index].iconURL == nil {
-                merged[index].iconURL = cachedIcons[merged[index].id]
-            }
+                commerce: commerceResult.apps,
+                cached: cachedFallback
+            ))
             owned = merged
             guard ownedStorageError == nil else { ownedError = ownedStorageError; return }
-            var next = ownedByAccount; next[id] = merged
-            try await saveCache(next, filename: LocalResources.ownedFilename)
-            guard accountRemoving == nil else { return }
-            ownedByAccount = next
+            var snapshot = ownedByAccount; snapshot[id] = merged
+            try await saveCache(snapshot, filename: LocalResources.ownedFilename)
+            guard ownedRefreshToken == token, accountRemoving == nil,
+                  apple.accounts.contains(where: { $0.id == id }) else { return }
+            ownedByAccount[id] = merged
+            let completedAll = commerceResult.complete && (fullHistory || priorState?.completedFullSync == true || sinceYear == 2008)
             var nextState = ownedHistoryState
-            nextState[id] = OwnedHistorySyncState(completedFullSync: true, lastSyncedYear: currentYear)
+            nextState[id] = OwnedHistorySyncState(completedFullSync: completedAll, lastSyncedYear: currentYear)
             ownedHistoryState = nextState
             try? await saveCache(nextState, filename: LocalResources.ownedHistoryStateFilename)
             updateLocalResults()
@@ -2332,9 +2537,10 @@ final class ToolStore: ObservableObject {
         } catch is CancellationError {
             return
         } catch {
+            guard ownedRefreshToken == token, apple.activeID == id else { return }
             if let dmapError {
-                if apple.activeID == id { ownedError = dmapError.localizedDescription }
-            } else if fullHistory, apple.activeID == id {
+                ownedError = dmapError.localizedDescription
+            } else if fullHistory {
                 ownedError = error.localizedDescription
             }
         }
@@ -2355,6 +2561,12 @@ final class ToolStore: ObservableObject {
         let attemptKey: (String) -> String = { "\(effectiveCountry)|\($0)" }
         let ids = owned.filter { $0.iconURL == nil && !ownedArtworkAttempted.contains(attemptKey($0.id)) }.map(\.id)
         var consecutiveFailures = 0
+        var unsavedBatches = 0
+        func flushArtworkCacheIfNeeded() async {
+            guard unsavedBatches > 0, apple.activeID == account, ownedRevision == revision, accountRemoving == nil else { return }
+            unsavedBatches = 0
+            try? await saveCache(ownedByAccount, filename: LocalResources.ownedFilename)
+        }
         for offset in stride(from: 0, to: ids.count, by: 50) {
             do {
                 try Task.checkCancellation()
@@ -2370,18 +2582,30 @@ final class ToolStore: ObservableObject {
                     for index in updated.indices { if let url = urls[updated[index].id] { updated[index].iconURL = url } }
                     owned = updated
                     ownedByAccount[account] = owned
-                    try await saveCache(ownedByAccount, filename: LocalResources.ownedFilename)
+                    unsavedBatches += 1
+                    if unsavedBatches >= 4 {
+                        try await saveCache(ownedByAccount, filename: LocalResources.ownedFilename)
+                        unsavedBatches = 0
+                    }
                 }
                 // Keep the public lookup service below its documented request budget.
                 if offset + 50 < ids.count { try await Task.sleep(nanoseconds: 2_500_000_000) }
             } catch is CancellationError {
+                await flushArtworkCacheIfNeeded()
                 return
             } catch {
                 consecutiveFailures += 1
-                if consecutiveFailures >= 2 { return }
-                do { try await Task.sleep(nanoseconds: 2_000_000_000) } catch { return }
+                if consecutiveFailures >= 2 {
+                    await flushArtworkCacheIfNeeded()
+                    return
+                }
+                do { try await Task.sleep(nanoseconds: 2_000_000_000) } catch {
+                    await flushArtworkCacheIfNeeded()
+                    return
+                }
             }
         }
+        await flushArtworkCacheIfNeeded()
     }
 
     func deleteAccount(_ id: String) async throws {
@@ -2390,6 +2614,11 @@ final class ToolStore: ObservableObject {
         guard ownedStorageError == nil else { throw ToolError.message(ownedStorageError!) }
         accountRemoving = id
         defer { accountRemoving = nil }
+        if apple.activeID == id {
+            ownedRefreshTask?.cancel()
+            ownedRefreshTask = nil
+        }
+        let removingDsid = apple.accounts.first(where: { $0.id == id })?.dsid ?? ""
         var next = ownedByAccount; next.removeValue(forKey: id)
         try await saveCache(next, filename: LocalResources.ownedFilename)
         do { try apple.remove(id) }
@@ -2397,10 +2626,14 @@ final class ToolStore: ObservableObject {
             try await saveCache(ownedByAccount, filename: LocalResources.ownedFilename)
             throw error
         }
-        ownedByAccount = next
+        ownedByAccount.removeValue(forKey: id)
         if ownedHistoryState.removeValue(forKey: id) != nil {
             try? await saveCache(ownedHistoryState, filename: LocalResources.ownedHistoryStateFilename)
         }
+        #if canImport(TestFlightKit)
+        TFSessionStore.delete(dsid: removingDsid, email: id)
+        TFSessionStore.prune(keepingAccounts: apple.accounts)
+        #endif
     }
 
     func receiveExternalURL(_ url: URL) {
@@ -2570,9 +2803,9 @@ final class ToolStore: ObservableObject {
         if let storageError = favoritesStorageError {
             throw ToolError.message(storageError)
         }
-        let next = AppBackup.merged(backup.favorites, with: favorites)
         let previous = favoriteTask
         await previous?.value
+        let next = AppBackup.merged(backup.favorites, with: favorites)
         // Persist favorites on disk before mutating Keychain accounts so disk errors cannot leave half-imported state.
         try await saveCache(next, filename: "favorites.json")
 
@@ -2607,6 +2840,31 @@ final class ToolStore: ObservableObject {
         var restoredSettings = backup.settings
         if AppLock.method == .unavailable {
             restoredSettings.appLock = false
+        } else if settings.appLock {
+            // Never allow an imported backup to silently disable an active App Lock.
+            restoredSettings.appLock = true
+        }
+        let importedPlistServer = restoredSettings.plistServer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !importedPlistServer.isEmpty {
+            if let parsed = URL(string: importedPlistServer),
+               parsed.scheme?.lowercased() == "https",
+               let host = parsed.host, !host.isEmpty,
+               !DownloadManager.isLoopbackHost(host),
+               parsed.user == nil, parsed.password == nil {
+                restoredSettings.plistServer = importedPlistServer
+            } else {
+                restoredSettings.plistServer = settings.plistServer
+            }
+        }
+        restoredSettings.versionSources = restoredSettings.versionSources.filter { source in
+            guard let url = source.url(for: "1"),
+                  url.scheme?.lowercased() == "https",
+                  let host = url.host, !host.isEmpty,
+                  !DownloadManager.isLoopbackHost(host),
+                  url.user == nil, url.password == nil else {
+                return false
+            }
+            return true
         }
         settings = restoredSettings
         updateLocalResults()
@@ -2661,17 +2919,25 @@ final class ToolStore: ObservableObject {
 
     func exportDiagnostics() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("iPadn-Diagnostics.txt")
-        try diagnosticsText().write(to: url, atomically: true, encoding: .utf8)
+        let data = Data(diagnosticsText().utf8)
+        try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         return url
     }
     /// Copies the diagnostics, for when the share sheet can't open
     /// (inside LiveContainer, for example).
     func copyDiagnostics() {
-        UIPasteboard.general.string = diagnosticsText()
+        UIPasteboard.general.setItems([[UIPasteboard.typeAutomatic: diagnosticsText()]], options: [.localOnly: true])
         infoMessage = AppText.text("已复制到剪贴板")
     }
     func diagnosticsText() -> String {
-        [
+        let secrets = apple.accounts.flatMap { [$0.id, $0.dsid, $0.password, $0.passwordToken] }.filter { $0.count >= 4 }
+        func cleanLines(_ raw: String) -> String {
+            raw.components(separatedBy: .newlines)
+                .map { DiagnosticRedactor.sanitize($0, secrets: secrets) }
+                .joined(separator: "\n")
+        }
+        let installLog = InstallLog.shared.text.isEmpty ? "(empty)" : cleanLines(InstallLog.shared.text)
+        return [
             "iPadn " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""), "Platform: \(settings.store.platform.title)", "Region: \(settings.store.country)",
             "Jobs: \(downloads.jobs.count)", "Concurrent limit: \(settings.maxConcurrentDownloads)",
             "Version sources: \(settings.versionSources.filter(\.enabled).count)",
@@ -2681,10 +2947,10 @@ final class ToolStore: ObservableObject {
             "Runs inside LiveContainer: " + (InstallLog.insideLiveContainer ? "yes" : "no"),
             "Proxy or VPN on: " + (LocalHostRecord.proxyOrVPNActive ? "yes" : "no"),
             "iOS " + UIDevice.current.systemVersion,
-            "Last login (metadata only):", apple.loginDiagnostic,
-            "Last update check (metadata only):", appUpdateDiagnostic,
-            "Recent request failures (metadata only):", RequestFailureLog.text,
-            "Installation server log:", InstallLog.shared.text.isEmpty ? "(empty)" : InstallLog.shared.text,
+            "Last login (metadata only):", cleanLines(apple.loginDiagnostic),
+            "Last update check (metadata only):", cleanLines(appUpdateDiagnostic),
+            "Recent request failures (metadata only):", cleanLines(RequestFailureLog.text),
+            "Installation server log:", installLog,
             "Contains no credentials, cookies, Apple account names or download URLs."
         ].joined(separator: "\n")
     }

@@ -41,6 +41,28 @@ final class FairPlayPresentation: ObservableObject {
     private var detectionTasks: [URL: Task<Void, Never>] = [:]
     private var metadataTasks: [URL: Task<Void, Never>] = [:]
     private var cancellation = Set<UUID>()
+    private var cachedFileRevision: UUID?
+    private var cachedRecordRevision: Int = -1
+    private var currentOutputCache: [UUID: URL?] = [:]
+    private var fileSizeCache: [URL: Int] = [:]
+
+    private func ensureLookupCacheCurrent() {
+        let rev = records.cacheRevision
+        if cachedFileRevision != fileRevision || cachedRecordRevision != rev {
+            currentOutputCache.removeAll(keepingCapacity: true)
+            fileSizeCache.removeAll(keepingCapacity: true)
+            cachedFileRevision = fileRevision
+            cachedRecordRevision = rev
+        }
+    }
+
+    private func cachedFileSize(of url: URL) -> Int {
+        ensureLookupCacheCurrent()
+        if let size = fileSizeCache[url] { return size }
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        fileSizeCache[url] = size
+        return size
+    }
 
     struct StartRequest: Identifiable {
         let id = UUID()
@@ -92,7 +114,12 @@ final class FairPlayPresentation: ObservableObject {
     }
 
     func markFilesChanged() {
+        records.invalidateFileCaches()
+        currentOutputCache.removeAll(keepingCapacity: true)
+        fileSizeCache.removeAll(keepingCapacity: true)
         fileRevision = UUID()
+        cachedFileRevision = fileRevision
+        cachedRecordRevision = records.cacheRevision
     }
 
     func source(for record: DecryptRecord, manager: DownloadManager) -> URL? {
@@ -104,13 +131,13 @@ final class FairPlayPresentation: ObservableObject {
         if let id = record.sourceJobID { return manager.jobs.first { $0.id == id } }
         let matches = manager.jobs.filter { job in
             guard let url = manager.fileURL(job), url.lastPathComponent == record.sourceName else { return false }
-            return (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) == record.sourceBytes
+            return cachedFileSize(of: url) == record.sourceBytes
         }
         return matches.count == 1 ? matches.first : nil
     }
 
     func attempts(url: URL, jobID: UUID? = nil) -> [DecryptRecord] {
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        let size = cachedFileSize(of: url)
         return records.records.filter {
             if let jobID, $0.sourceJobID == jobID { return true }
             return $0.sourceJobID == nil && $0.sourceName == url.lastPathComponent && $0.sourceBytes == size
@@ -219,18 +246,19 @@ final class FairPlayPresentation: ObservableObject {
                 record.bundleID = job?.app.bundleID ?? meta?.bundleID ?? tfBundleID
                 record.version = job?.app.version ?? meta?.version ?? tfVersion
                 record.detection = detections[url]
-                if let icon = fallbackIcon, let data = try? Data(contentsOf: icon) {
-                    record.iconName = records.storeIcon(data, for: id)
-                }
             }
-            if fallbackIcon == nil {
-                Task.detached(priority: .utility) { [url, id] in
-                    guard let png = try? PackageIconService.png(from: url) else { return }
-                    await MainActor.run {
-                        DecryptRecordStore.shared.update(id: id) { record in
-                            if record.iconName == nil {
-                                record.iconName = DecryptRecordStore.shared.storeIcon(png, for: id)
-                            }
+            Task.detached(priority: .utility) { [url, id, fallbackIcon] in
+                let png: Data?
+                if let icon = fallbackIcon, icon.isFileURL, let data = try? Data(contentsOf: icon) {
+                    png = data
+                } else {
+                    png = try? PackageIconService.png(from: url)
+                }
+                guard let png else { return }
+                await MainActor.run {
+                    DecryptRecordStore.shared.update(id: id) { record in
+                        if record.iconName == nil {
+                            record.iconName = DecryptRecordStore.shared.storeIcon(png, for: id)
                         }
                     }
                 }
@@ -283,18 +311,19 @@ final class FairPlayPresentation: ObservableObject {
             record.bundleID = meta?.bundleID ?? tfBundleID
             record.version = meta?.version ?? tfVersion
             record.detection = detections[url]
-            if let icon = fallbackIcon, let data = try? Data(contentsOf: icon) {
-                record.iconName = records.storeIcon(data, for: id)
-            }
         }
-        if fallbackIcon == nil {
-            Task.detached(priority: .utility) { [url, id] in
-                guard let png = try? PackageIconService.png(from: url) else { return }
-                await MainActor.run {
-                    DecryptRecordStore.shared.update(id: id) { record in
-                        if record.iconName == nil {
-                            record.iconName = DecryptRecordStore.shared.storeIcon(png, for: id)
-                        }
+        Task.detached(priority: .utility) { [url, id, fallbackIcon] in
+            let png: Data?
+            if let icon = fallbackIcon, icon.isFileURL, let data = try? Data(contentsOf: icon) {
+                png = data
+            } else {
+                png = try? PackageIconService.png(from: url)
+            }
+            guard let png else { return }
+            await MainActor.run {
+                DecryptRecordStore.shared.update(id: id) { record in
+                    if record.iconName == nil {
+                        record.iconName = DecryptRecordStore.shared.storeIcon(png, for: id)
                     }
                 }
             }
@@ -312,13 +341,25 @@ final class FairPlayPresentation: ObservableObject {
 
     func currentOutput(_ record: DecryptRecord) -> URL? {
         guard let name = record.outputName else { return nil }
+        ensureLookupCacheCurrent()
+        if let cached = currentOutputCache[record.id] { return cached }
         // Multiple historical attempts can point at one physical output. Only
         // the newest writer's verification belongs to that file.
-        guard records.records.first(where: { $0.outputName == name })?.id == record.id else { return nil }
-        guard let url = records.outputURL(for: record) else { return nil }
-        if let identity = record.outputIdentity {
-            if !PackageOutputPolicy.matches(identity, url: url) { return nil }
+        guard records.records.first(where: { $0.outputName == name })?.id == record.id else {
+            currentOutputCache[record.id] = nil
+            return nil
         }
+        guard let url = records.outputURL(for: record) else {
+            currentOutputCache[record.id] = nil
+            return nil
+        }
+        if let identity = record.outputIdentity {
+            if !PackageOutputPolicy.matches(identity, url: url) {
+                currentOutputCache[record.id] = nil
+                return nil
+            }
+        }
+        currentOutputCache[record.id] = url
         return url
     }
 
@@ -348,7 +389,7 @@ final class FairPlayPresentation: ObservableObject {
     func protects(url: URL) -> Bool {
         guard service.isRunning, let id = service.activeRecordID,
               let record = records.records.first(where: { $0.id == id }) else { return false }
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+        let size = cachedFileSize(of: url)
         return record.sourceName == url.lastPathComponent && record.sourceBytes == size
     }
 
