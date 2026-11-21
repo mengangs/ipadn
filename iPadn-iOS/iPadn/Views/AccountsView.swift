@@ -201,8 +201,8 @@ private struct AccountSettingsRow: View {
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .foregroundStyle(.white)
-                    .background(Color.accentColor, in: Capsule())
+                    .foregroundStyle(UX.onAccent)
+                    .background(UX.tint, in: Capsule())
             }
         }
     }

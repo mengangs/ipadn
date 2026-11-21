@@ -85,3 +85,199 @@ enum DMAP {
         return apps.sorted { ($0.purchaseDate ?? .distantPast) > ($1.purchaseDate ?? .distantPast) }
     }
 }
+
+/// Parses and merges Apple's `/commerce/account/purchases` JSON:API purchase history
+/// responses so delisted, hidden, and sanctioned apps omitted from `MZPurchaseDaap`
+/// remain discoverable and downloadable alongside DMAP records.
+enum CommercePurchaseHistory {
+    struct PageResult: Sendable {
+        let apps: [OwnedApp]
+        let isComplete: Bool
+        let newInvoiceCount: Int
+    }
+
+    static func isAppKind(_ kind: String) -> Bool {
+        let normalized = kind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        if ["ios app", "ipad app", "mac app", "apple tv app", "tvos app", "universal app", "app"].contains(normalized) {
+            return true
+        }
+        return normalized.hasSuffix(" app")
+    }
+
+    static func parseDate(_ raw: String) -> Date? {
+        let text = raw
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: "\u{202F}", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        if let number = Double(text), number > 0 {
+            let seconds = number > 10_000_000_000 ? number / 1000 : number
+            return Date(timeIntervalSince1970: seconds)
+        }
+        let iso = ISO8601DateFormatter()
+        if let date = iso.date(from: text) { return date }
+        iso.formatOptions.insert(.withFractionalSeconds)
+        if let date = iso.date(from: text) { return date }
+
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(secondsFromGMT: 0)!
+
+        func makeDate(year: Int, month: Int, day: Int) -> Date? {
+            guard (2000...2100).contains(year), (1...12).contains(month), (1...31).contains(day) else { return nil }
+            return utc.date(from: DateComponents(year: year, month: month, day: day))
+        }
+
+        // Fast regex matches for ISO date prefix, CJK dates (`2026年11月19日`), and slash/dot dates.
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        if let ymd = try? NSRegularExpression(pattern: #"(\d{4})\s*[-/年.]\s*(\d{1,2})\s*[-/月.]\s*(\d{1,2})"#),
+           let match = ymd.firstMatch(in: text, range: nsRange),
+           let y = Range(match.range(at: 1), in: text).flatMap({ Int(text[$0]) }),
+           let m = Range(match.range(at: 2), in: text).flatMap({ Int(text[$0]) }),
+           let d = Range(match.range(at: 3), in: text).flatMap({ Int(text[$0]) }),
+           let date = makeDate(year: y, month: m, day: d) {
+            return date
+        }
+
+        // Flexible English month names (`Nov 19, 2026`, `Nov. 19, 2026`, `19 Nov 2026`, `5 Sept. 2024`).
+        let months: [String: Int] = [
+            "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+            "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12
+        ]
+        if let mdy = try? NSRegularExpression(pattern: #"([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{1,2})\D+?(\d{4})"#),
+           let match = mdy.firstMatch(in: text, range: nsRange),
+           let mon = Range(match.range(at: 1), in: text).map({ text[$0].lowercased() }),
+           let m = months[mon],
+           let d = Range(match.range(at: 2), in: text).flatMap({ Int(text[$0]) }),
+           let y = Range(match.range(at: 3), in: text).flatMap({ Int(text[$0]) }),
+           let date = makeDate(year: y, month: m, day: d) {
+            return date
+        }
+        if let dmy = try? NSRegularExpression(pattern: #"(\d{1,2})\D+?([A-Za-z]{3})[A-Za-z]*\.?\D*?(\d{4})"#),
+           let match = dmy.firstMatch(in: text, range: nsRange),
+           let d = Range(match.range(at: 1), in: text).flatMap({ Int(text[$0]) }),
+           let mon = Range(match.range(at: 2), in: text).map({ text[$0].lowercased() }),
+           let m = months[mon],
+           let y = Range(match.range(at: 3), in: text).flatMap({ Int(text[$0]) }),
+           let date = makeDate(year: y, month: m, day: d) {
+            return date
+        }
+
+        let formatter = DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        for localeID in ["en_US_POSIX", "ru_RU", "zh_CN", "zh_TW", "ja_JP", "ko_KR", "de_DE", "fr_FR", "es_ES", "pt_BR"] {
+            formatter.locale = Locale(identifier: localeID)
+            for format in ["d MMM yyyy 'г.'", "d MMM yyyy", "d MMMM yyyy 'г.'", "d MMMM yyyy", "MM/dd/yyyy", "dd.MM.yyyy"] {
+                formatter.dateFormat = format
+                if let date = formatter.date(from: text) { return date }
+            }
+        }
+        return nil
+    }
+
+    static func parsePage(_ data: Data, seenOrderIDs: inout Set<String>) throws -> PageResult {
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let envelope = root["data"] as? [String: Any],
+              let attributes = envelope["attributes"] as? [String: Any] else {
+            throw ToolError.message(AppText.text("购买历史响应格式异常，请稍后重试"))
+        }
+        let isComplete = (attributes["is-complete"] as? Bool) ?? true
+        let purchases = (attributes["purchases"] as? [[String: Any]]) ?? []
+        var apps: [OwnedApp] = []
+        var addedInvoices = 0
+        func rawValueString(_ value: Any?) -> String {
+            if let s = value as? String { return s.trimmingCharacters(in: .whitespacesAndNewlines) }
+            if let n = value as? NSNumber { return n.stringValue }
+            return ""
+        }
+        for invoice in purchases {
+            let orderID = rawValueString(invoice["order-id"])
+            if !orderID.isEmpty, !seenOrderIDs.insert(orderID).inserted { continue }
+            addedInvoices += 1
+            let invoiceDate = rawValueString(invoice["invoice-date"] ?? invoice["invoiceDate"])
+            let items = (invoice["items"] as? [[String: Any]]) ?? []
+            for item in items {
+                let kind = rawValueString(item["kind"])
+                guard isAppKind(kind) else { continue }
+                let rawID = rawValueString(item["item-id"] ?? item["itemId"])
+                guard !rawID.isEmpty, rawID.allSatisfy({ $0.isASCII && $0.isNumber }) else { continue }
+                let primaryName = rawValueString(item["item-name"] ?? item["itemName"])
+                let fallbackName = rawValueString(item["item-title"] ?? item["itemTitle"])
+                let name = primaryName.isEmpty ? fallbackName : primaryName
+                let rawDate = rawValueString(item["purchase-date"] ?? item["purchaseDate"])
+                let date = parseDate(rawDate.isEmpty ? invoiceDate : rawDate)
+                apps.append(OwnedApp(id: rawID, bundleID: "", name: name, version: "", purchaseDate: date))
+            }
+        }
+        return PageResult(apps: apps, isComplete: isComplete, newInvoiceCount: addedInvoices)
+    }
+
+    static func pod(fromCookie cookie: String) -> String? {
+        for part in cookie.split(separator: ";") {
+            let pair = part.trimmingCharacters(in: .whitespaces)
+            guard let eq = pair.firstIndex(of: "=") else { continue }
+            let name = pair[..<eq].trimmingCharacters(in: .whitespaces).lowercased()
+            guard name == "itspod" else { continue }
+            let value = pair[pair.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+            if !value.isEmpty, value.allSatisfy({ $0.isASCII && $0.isNumber }) { return value }
+        }
+        return nil
+    }
+
+    static func pod(fromHost host: String) -> String? {
+        let lower = host.lowercased()
+        guard lower.hasPrefix("p"), lower.hasSuffix("-buy.itunes.apple.com") else { return nil }
+        let digits = String(lower.dropFirst().dropLast("-buy.itunes.apple.com".count))
+        return (!digits.isEmpty && digits.allSatisfy({ $0.isASCII && $0.isNumber })) ? digits : nil
+    }
+
+    /// Merges DMAP active-catalog records, full Commerce Purchase History records, and any
+    /// previously cached entries by App ID without dropping delisted or historical apps.
+    static func merge(dmap: [OwnedApp], commerce: [OwnedApp], cached: [OwnedApp] = []) -> [OwnedApp] {
+        var byID: [String: OwnedApp] = [:]
+        func absorb(_ incoming: OwnedApp, preferMetadata: Bool) {
+            guard !incoming.id.isEmpty else { return }
+            guard var current = byID[incoming.id] else {
+                byID[incoming.id] = incoming
+                return
+            }
+            if preferMetadata {
+                if !incoming.name.isEmpty { current.name = incoming.name }
+                if !incoming.bundleID.isEmpty { current.bundleID = incoming.bundleID }
+                if !incoming.version.isEmpty { current.version = incoming.version }
+                if let date = incoming.purchaseDate {
+                    if let existingDate = current.purchaseDate {
+                        current.purchaseDate = max(existingDate, date)
+                    } else {
+                        current.purchaseDate = date
+                    }
+                }
+                if let icon = incoming.iconURL { current.iconURL = icon }
+            } else {
+                if current.name.isEmpty && !incoming.name.isEmpty { current.name = incoming.name }
+                if current.bundleID.isEmpty && !incoming.bundleID.isEmpty { current.bundleID = incoming.bundleID }
+                if current.version.isEmpty && !incoming.version.isEmpty { current.version = incoming.version }
+                if let date = incoming.purchaseDate {
+                    if let existingDate = current.purchaseDate {
+                        current.purchaseDate = max(existingDate, date)
+                    } else {
+                        current.purchaseDate = date
+                    }
+                }
+                if current.iconURL == nil, let icon = incoming.iconURL { current.iconURL = icon }
+            }
+            byID[incoming.id] = current
+        }
+        // Seed with cached entries first so historical commerce rows survive incremental syncs,
+        // layer commerce records on top, and apply DMAP's richer bundleID/version metadata last.
+        for item in cached { absorb(item, preferMetadata: false) }
+        for item in commerce { absorb(item, preferMetadata: false) }
+        for item in dmap { absorb(item, preferMetadata: true) }
+        return byID.values.sorted { lhs, rhs in
+            let lDate = lhs.purchaseDate ?? .distantPast
+            let rDate = rhs.purchaseDate ?? .distantPast
+            if lDate != rDate { return lDate > rDate }
+            return lhs.id < rhs.id
+        }
+    }
+}

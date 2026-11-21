@@ -40,6 +40,7 @@ final class AppleService: ObservableObject {
 
     /// Session cookies updated by store responses, by account, not yet saved.
     private var liveCookies: [String: String] = [:]
+    private var commercePods: [String: String] = [:]
     private var cookiesSavedAt = Date.distantPast
 
     func login(email: String, password: String, code: String, useCache: Bool) async throws {
@@ -823,6 +824,328 @@ final class AppleService: ObservableObject {
             try DMAP.validate(items)
             return try DMAP.ownedApps(items)
         }.value
+    }
+
+    /// Reads Apple's Commerce Purchase History (`/commerce/account/purchases`) year by year,
+    /// returning historical, delisted, and sanctioned apps omitted by `MZPurchaseDaap`.
+    func commercePurchaseHistory(
+        sinceYear: Int,
+        throughYear: Int? = nil,
+        useCache: Bool = true,
+        allowSessionRefresh: Bool = false,
+        onYearProgress: (@Sendable (_ completedYears: Int, _ totalYears: Int) async -> Void)? = nil
+    ) async throws -> [OwnedApp] {
+        var account = try requireSignedInAccount()
+        let currentYear = throughYear ?? Calendar(identifier: .gregorian).component(.year, from: Date())
+        let startYear = max(2008, min(sinceYear, currentYear))
+        let years = Array((startYear...currentYear).reversed())
+        guard !years.isEmpty else { return [] }
+
+        var initialCookie = liveCookies[account.id] ?? account.cookie
+        var initialPod = commercePods[account.dsid] ?? CommercePurchaseHistory.pod(fromCookie: initialCookie) ?? ""
+        var storeFront = account.fullStoreFront.isEmpty ? account.storeFront : account.fullStoreFront
+        var dsid = account.dsid
+        var token = account.passwordToken
+        let accountID = account.id
+
+        // Run ONLY the initial page of the most recent year first so any 302 pod/cookie
+        // handshake (`itspod` + `mzcprh=1`) or 401/403 refresh settles in ~1 round-trip
+        // before fanning out remaining pages of the current year AND all older years in parallel.
+        let firstYear = years[0]
+        let firstPageFetch: CommerceFirstPageOutcome
+        do {
+            firstPageFetch = try await Self.fetchCommerceYearFirstPage(
+                year: firstYear, pod: initialPod, cookie: initialCookie,
+                dsid: dsid, storeFront: storeFront, passwordToken: token
+            )
+        } catch let status as HTTPStatusError where (status.code == 401 || status.code == 403) && allowSessionRefresh && !account.password.isEmpty {
+            account = try await refresh(account, useCache: useCache)
+            initialCookie = liveCookies[account.id] ?? account.cookie
+            initialPod = commercePods[account.dsid] ?? CommercePurchaseHistory.pod(fromCookie: initialCookie) ?? ""
+            storeFront = account.fullStoreFront.isEmpty ? account.storeFront : account.fullStoreFront
+            dsid = account.dsid
+            token = account.passwordToken
+            firstPageFetch = try await Self.fetchCommerceYearFirstPage(
+                year: firstYear, pod: initialPod, cookie: initialCookie,
+                dsid: dsid, storeFront: storeFront, passwordToken: token
+            )
+        }
+        guard activeID == accountID else { throw ToolError.message(AppText.text("账号已切换，请重新加载购买记录")) }
+        if !firstPageFetch.pod.isEmpty { commercePods[dsid] = firstPageFetch.pod }
+        if firstPageFetch.cookie != initialCookie, !firstPageFetch.cookie.isEmpty {
+            liveCookies[accountID] = firstPageFetch.cookie
+        }
+
+        var allApps = firstPageFetch.apps
+        let firstYearNeedsMore = !firstPageFetch.isComplete && firstPageFetch.newInvoiceCount > 0
+        var completed = firstYearNeedsMore ? 0 : 1
+        if completed > 0 { await onYearProgress?(completed, years.count) }
+
+        enum YearWork: Sendable {
+            case continueYear(year: Int, seenOrderIDs: Set<String>)
+            case fullYear(Int)
+        }
+        var workQueue: [YearWork] = []
+        if firstYearNeedsMore {
+            workQueue.append(.continueYear(year: firstYear, seenOrderIDs: firstPageFetch.seenOrderIDs))
+        }
+        for year in years.dropFirst() {
+            workQueue.append(.fullYear(year))
+        }
+
+        if !workQueue.isEmpty {
+            let settledPod = firstPageFetch.pod.isEmpty ? initialPod : firstPageFetch.pod
+            let settledCookie = firstPageFetch.cookie.isEmpty ? initialCookie : firstPageFetch.cookie
+            let totalYears = years.count
+            var latestPod = settledPod
+            var latestCookie = settledCookie
+
+            try await withThrowingTaskGroup(of: CommerceYearOutcome.self) { group in
+                var nextIndex = 0
+                let concurrency = min(6, workQueue.count)
+                func enqueue(_ work: YearWork, pod: String, cookie: String) {
+                    group.addTask {
+                        switch work {
+                        case .continueYear(let year, let seen):
+                            return try await Self.fetchCommerceYearRemainingPages(
+                                year: year, seenOrderIDs: seen, pod: pod, cookie: cookie,
+                                dsid: dsid, storeFront: storeFront, passwordToken: token
+                            )
+                        case .fullYear(let year):
+                            return try await Self.fetchCommerceYear(
+                                year: year, pod: pod, cookie: cookie,
+                                dsid: dsid, storeFront: storeFront, passwordToken: token
+                            )
+                        }
+                    }
+                }
+                while nextIndex < concurrency {
+                    enqueue(workQueue[nextIndex], pod: settledPod, cookie: settledCookie)
+                    nextIndex += 1
+                }
+                while let outcome = try await group.next() {
+                    try Task.checkCancellation()
+                    allApps.append(contentsOf: outcome.apps)
+                    if !outcome.pod.isEmpty { latestPod = outcome.pod }
+                    if !outcome.cookie.isEmpty { latestCookie = outcome.cookie }
+                    completed += 1
+                    await onYearProgress?(completed, totalYears)
+                    if nextIndex < workQueue.count {
+                        enqueue(workQueue[nextIndex], pod: latestPod, cookie: latestCookie)
+                        nextIndex += 1
+                    }
+                }
+            }
+            guard activeID == accountID else { throw ToolError.message(AppText.text("账号已切换，请重新加载购买记录")) }
+            if !latestPod.isEmpty { commercePods[dsid] = latestPod }
+            if latestCookie != initialCookie, !latestCookie.isEmpty {
+                liveCookies[accountID] = latestCookie
+            }
+        }
+        saveLiveCookies()
+        return allApps
+    }
+
+    private struct CommerceFirstPageOutcome: Sendable {
+        let apps: [OwnedApp]
+        let isComplete: Bool
+        let newInvoiceCount: Int
+        let seenOrderIDs: Set<String>
+        let pod: String
+        let cookie: String
+    }
+
+    private struct CommerceYearOutcome: Sendable {
+        let apps: [OwnedApp]
+        let pod: String
+        let cookie: String
+    }
+
+    nonisolated private static func commerceURL(pod: String, page: Int?, range: String) -> URL? {
+        let host = pod.isEmpty ? "buy.itunes.apple.com" : "p\(pod)-buy.itunes.apple.com"
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = host
+        components.path = "/commerce/account/purchases"
+        var items = [
+            URLQueryItem(name: "isDeepLink", value: "false"),
+            URLQueryItem(name: "isJsonApiFormat", value: "true")
+        ]
+        if let page, page > 0 {
+            items.append(URLQueryItem(name: "page", value: String(page)))
+        }
+        items.append(URLQueryItem(name: "range", value: range))
+        components.queryItems = items
+        return components.url
+    }
+
+    nonisolated private static func commerceHeaders(cookie: String, dsid: String, storeFront: String, passwordToken: String) -> [String: String] {
+        var headers: [String: String] = [
+            "User-Agent": HTTPClient.userAgent,
+            "Accept-Language": "en-us",
+            "X-Dsid": dsid
+        ]
+        if !storeFront.isEmpty { headers["X-Apple-Store-Front"] = storeFront }
+        if !cookie.isEmpty { headers["Cookie"] = cookie }
+        if !passwordToken.isEmpty { headers["X-Token"] = passwordToken }
+        return headers
+    }
+
+    nonisolated private static func absorbResponseCookies(from response: HTTPURLResponse, into existing: String) -> String {
+        guard let url = response.url else { return existing }
+        var fields: [String: String] = [:]
+        for (key, value) in response.allHeaderFields { fields[String(describing: key)] = String(describing: value) }
+        let received = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
+        guard !received.isEmpty else { return existing }
+        return mergedCookie(existing, with: received)
+    }
+
+    nonisolated private static func capturePod(from response: HTTPURLResponse, current: String) -> String {
+        if let headerPod = response.value(forHTTPHeaderField: "pod")?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !headerPod.isEmpty, headerPod.allSatisfy({ $0.isASCII && $0.isNumber }) {
+            return headerPod
+        }
+        if let location = response.value(forHTTPHeaderField: "Location"),
+           let url = URL(string: location, relativeTo: response.url)?.absoluteURL,
+           let host = url.host,
+           let parsed = CommercePurchaseHistory.pod(fromHost: host) {
+            return parsed
+        }
+        if let host = response.url?.host, let parsed = CommercePurchaseHistory.pod(fromHost: host) {
+            return parsed
+        }
+        return current
+    }
+
+    nonisolated private static func fetchCommercePage(
+        year: Int, page: Int?, pod initialPod: String, cookie initialCookie: String,
+        dsid: String, storeFront: String, passwordToken: String
+    ) async throws -> (data: Data, pod: String, cookie: String) {
+        let range = "\(year)-all"
+        var pod = initialPod
+        var cookie = initialCookie
+
+        guard var currentURL = commerceURL(pod: pod, page: page, range: range) else {
+            throw ToolError.message(AppText.text("链接无效"))
+        }
+
+        func send(_ url: URL) async throws -> (Data, HTTPURLResponse) {
+            try await HTTPClient.shared.rawRequest(
+                url, method: "GET",
+                headers: commerceHeaders(cookie: cookie, dsid: dsid, storeFront: storeFront, passwordToken: passwordToken),
+                timeoutInterval: 30
+            )
+        }
+
+        var responsePair: (Data, HTTPURLResponse)
+        do {
+            responsePair = try await send(currentURL)
+            if !pod.isEmpty && (responsePair.1.statusCode == 404 || (500...599).contains(responsePair.1.statusCode)),
+               let fallback = commerceURL(pod: "", page: page, range: range) {
+                currentURL = fallback
+                responsePair = try await send(fallback)
+            }
+        } catch {
+            guard !pod.isEmpty, !Task.isCancelled,
+                  let fallback = commerceURL(pod: "", page: page, range: range) else { throw error }
+            currentURL = fallback
+            responsePair = try await send(fallback)
+        }
+
+        var (data, http) = responsePair
+        cookie = absorbResponseCookies(from: http, into: cookie)
+        pod = capturePod(from: http, current: pod)
+
+        // Follow up to 4 302 hops verbatim so Apple's `mzcprh=1` + `itspod` handshake succeeds.
+        for _ in 0..<4 where [301, 302, 303, 307, 308].contains(http.statusCode) {
+            try Task.checkCancellation()
+            guard let location = http.value(forHTTPHeaderField: "Location"),
+                  let next = URL(string: location, relativeTo: currentURL)?.absoluteURL,
+                  next.scheme?.lowercased() == "https",
+                  let host = next.host?.lowercased(),
+                  next.user == nil, next.password == nil,
+                  host == "itunes.apple.com" || host.hasSuffix(".itunes.apple.com") else {
+                throw ToolError.message(AppText.text("服务器响应异常，请稍后重试"))
+            }
+            currentURL = next
+            (data, http) = try await send(next)
+            cookie = absorbResponseCookies(from: http, into: cookie)
+            pod = capturePod(from: http, current: pod)
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            let cookieNames = cookie.split(separator: ";").compactMap { part -> String? in
+                let trimmed = part.trimmingCharacters(in: .whitespaces)
+                guard let eq = trimmed.firstIndex(of: "=") else { return nil }
+                return String(trimmed[..<eq])
+            }.joined(separator: ",")
+            InstallLog.shared.add("commerce-purchases HTTP \(http.statusCode) host=\(currentURL.host ?? "?") pod=\(pod.isEmpty ? "-" : pod) cookies=[\(cookieNames)] bytes=\(data.count)")
+            RequestFailureLog.record(currentURL, status: http.statusCode, stage: "commerce-purchases")
+            throw HTTPStatusError(code: http.statusCode)
+        }
+        return (data, pod, cookie)
+    }
+
+    nonisolated private static func fetchCommerceYearFirstPage(
+        year: Int, pod initialPod: String, cookie initialCookie: String,
+        dsid: String, storeFront: String, passwordToken: String
+    ) async throws -> CommerceFirstPageOutcome {
+        var seenOrderIDs = Set<String>()
+        let initial = try await fetchCommercePage(
+            year: year, page: nil, pod: initialPod, cookie: initialCookie,
+            dsid: dsid, storeFront: storeFront, passwordToken: passwordToken
+        )
+        let firstPage = try CommercePurchaseHistory.parsePage(initial.data, seenOrderIDs: &seenOrderIDs)
+        return CommerceFirstPageOutcome(
+            apps: firstPage.apps,
+            isComplete: firstPage.isComplete,
+            newInvoiceCount: firstPage.newInvoiceCount,
+            seenOrderIDs: seenOrderIDs,
+            pod: initial.pod,
+            cookie: initial.cookie
+        )
+    }
+
+    nonisolated private static func fetchCommerceYearRemainingPages(
+        year: Int, seenOrderIDs initialSeen: Set<String>,
+        pod initialPod: String, cookie initialCookie: String,
+        dsid: String, storeFront: String, passwordToken: String
+    ) async throws -> CommerceYearOutcome {
+        var pod = initialPod
+        var cookie = initialCookie
+        var apps: [OwnedApp] = []
+        var seenOrderIDs = initialSeen
+        for page in 2...1000 {
+            try Task.checkCancellation()
+            let fetched = try await fetchCommercePage(
+                year: year, page: page, pod: pod, cookie: cookie,
+                dsid: dsid, storeFront: storeFront, passwordToken: passwordToken
+            )
+            pod = fetched.pod
+            cookie = fetched.cookie
+            let parsed = try CommercePurchaseHistory.parsePage(fetched.data, seenOrderIDs: &seenOrderIDs)
+            apps.append(contentsOf: parsed.apps)
+            if parsed.isComplete || parsed.newInvoiceCount == 0 { break }
+        }
+        return CommerceYearOutcome(apps: apps, pod: pod, cookie: cookie)
+    }
+
+    nonisolated private static func fetchCommerceYear(
+        year: Int, pod initialPod: String, cookie initialCookie: String,
+        dsid: String, storeFront: String, passwordToken: String
+    ) async throws -> CommerceYearOutcome {
+        let first = try await fetchCommerceYearFirstPage(
+            year: year, pod: initialPod, cookie: initialCookie,
+            dsid: dsid, storeFront: storeFront, passwordToken: passwordToken
+        )
+        guard !first.isComplete && first.newInvoiceCount > 0 else {
+            return CommerceYearOutcome(apps: first.apps, pod: first.pod, cookie: first.cookie)
+        }
+        let rest = try await fetchCommerceYearRemainingPages(
+            year: year, seenOrderIDs: first.seenOrderIDs, pod: first.pod, cookie: first.cookie,
+            dsid: dsid, storeFront: storeFront, passwordToken: passwordToken
+        )
+        return CommerceYearOutcome(apps: first.apps + rest.apps, pod: rest.pod, cookie: rest.cookie)
     }
 
     private func storePlist(_ url: URL, body: Data, headers: [String: String], guid: String,

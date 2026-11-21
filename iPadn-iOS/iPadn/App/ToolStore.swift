@@ -346,6 +346,8 @@ final class ToolStore: ObservableObject {
     @Published private(set) var searchHistory: [SearchHistoryItem] = []
     @Published private(set) var owned: [OwnedApp] = []
     @Published private(set) var ownedLoading = false
+    @Published private(set) var ownedHistoryProgress: (done: Int, total: Int)?
+    private var ownedHistoryState: [String: OwnedHistorySyncState] = [:]
     struct ErrorAction {
         let title: String
         let perform: @MainActor () -> Void
@@ -465,6 +467,7 @@ final class ToolStore: ObservableObject {
             var favorites: [StoreApp] = []
             var watch: [String: WatchRecord] = [:]
             var owned: [String: [OwnedApp]] = [:]
+            var ownedHistoryState: [String: OwnedHistorySyncState] = [:]
             var catalog: [String: [StoreApp]] = [:]
             var names: [AppNameEntry] = []
             var favoritesError: String?
@@ -476,6 +479,7 @@ final class ToolStore: ObservableObject {
             catch { snapshot.favoritesError = AppText.text("关注列表读取失败；已保留原文件。") }
             do { snapshot.owned = try LocalResources.loadChecked([String: [OwnedApp]].self, filename: LocalResources.ownedFilename) ?? [:] }
             catch { snapshot.ownedError = AppText.text("已购缓存读取失败；已保留原文件，不能覆盖其他账号记录。") }
+            snapshot.ownedHistoryState = LocalResources.load([String: OwnedHistorySyncState].self, filename: LocalResources.ownedHistoryStateFilename) ?? [:]
             snapshot.watch = LocalResources.load([String: WatchRecord].self, filename: "watch.json") ?? [:]
             snapshot.catalog = LocalResources.load([String: [StoreApp]].self, filename: "app-catalog.json") ?? [:]
             snapshot.names = Self.mergeNameEntries((LocalResources.load([AppNameEntry].self, filename: AppNameCatalog.cacheFile) ?? []) + AppNameCatalog.bundled())
@@ -488,6 +492,7 @@ final class ToolStore: ObservableObject {
         }
         #endif
         favorites = snapshot.favorites; watch = snapshot.watch; ownedByAccount = snapshot.owned
+        ownedHistoryState = snapshot.ownedHistoryState
         appCatalog = snapshot.catalog; nameCatalog = snapshot.names
         favoritesStorageError = snapshot.favoritesError; ownedStorageError = snapshot.ownedError
         if let issue = snapshot.favoritesError ?? snapshot.ownedError { errorMessage = issue }
@@ -2229,7 +2234,7 @@ final class ToolStore: ObservableObject {
         if switchToDownloadsTab { selectTab(.downloads) }
     }
 
-    func refreshOwned() async {
+    func refreshOwned(fullHistory: Bool = false) async {
         await cacheLoadTask?.value
         guard accountRemoving == nil else { return }
         guard !ownedLoading, let id = apple.activeID else {
@@ -2241,51 +2246,124 @@ final class ToolStore: ObservableObject {
         ownedLoading = true
         defer {
             ownedLoading = false
+            ownedHistoryProgress = nil
             // The account changed mid-sync: sync the new one now.
             if apple.activeID != id, apple.activeID != nil { Task { await self.refreshOwned() } }
         }
+        let previousOwned = ownedByAccount[id] ?? owned
+        var dmapApps: [OwnedApp] = []
+        var dmapError: Error?
+
         do {
-            let apps = try await apple.ownedApps(useCache: settings.useSignerCache)
+            dmapApps = try await apple.ownedApps(useCache: settings.useSignerCache)
             guard apple.activeID == id, accountRemoving == nil else { return }
             ownedError = nil
-            let cached = Dictionary(owned.map { ($0.id, $0.iconURL) }, uniquingKeysWith: { first, _ in first })
-            owned = apps.map { app in
-                var item = app
-                if item.iconURL == nil { item.iconURL = cached[item.id] ?? nil }
-                return item
+            let mergedInitial = CommercePurchaseHistory.merge(
+                dmap: dmapApps,
+                commerce: [],
+                cached: previousOwned
+            )
+            owned = mergedInitial
+            if ownedStorageError == nil {
+                var next = ownedByAccount; next[id] = mergedInitial
+                try await saveCache(next, filename: LocalResources.ownedFilename)
+                guard accountRemoving == nil else { return }
+                ownedByAccount = next
+                updateLocalResults()
+                ownedRevision = UUID()
             }
+        } catch is CancellationError {
+            return
+        } catch {
+            dmapError = error
+        }
+
+        // Backfill or incrementally update Apple's full Commerce Purchase History
+        // (`/commerce/account/purchases`), which includes delisted, hidden, and sanctioned
+        // apps omitted from `MZPurchaseDaap`.
+        let currentYear = Calendar(identifier: .gregorian).component(.year, from: Date())
+        let priorState = ownedHistoryState[id]
+        let sinceYear: Int
+        if fullHistory || priorState?.completedFullSync != true {
+            sinceYear = 2008
+        } else {
+            sinceYear = max(2008, min(currentYear, priorState?.lastSyncedYear ?? currentYear))
+        }
+        let totalYears = max(1, currentYear - sinceYear + 1)
+        if totalYears > 1 {
+            ownedHistoryProgress = (0, totalYears)
+        }
+        do {
+            let commerceApps = try await apple.commercePurchaseHistory(
+                sinceYear: sinceYear,
+                throughYear: currentYear,
+                useCache: settings.useSignerCache,
+                allowSessionRefresh: fullHistory || priorState?.completedFullSync != true
+            ) { [weak self] done, total in
+                await MainActor.run {
+                    guard let self, self.apple.activeID == id else { return }
+                    if total > 1 { self.ownedHistoryProgress = (done, total) }
+                }
+            }
+            guard apple.activeID == id, accountRemoving == nil else { return }
+            ownedError = nil
+            var merged = CommercePurchaseHistory.merge(
+                dmap: dmapApps,
+                commerce: commerceApps,
+                cached: fullHistory ? [] : previousOwned
+            )
+            let cachedIcons = Dictionary(previousOwned.compactMap { app in app.iconURL.map { (app.id, $0) } },
+                                         uniquingKeysWith: { first, _ in first })
+            for index in merged.indices where merged[index].iconURL == nil {
+                merged[index].iconURL = cachedIcons[merged[index].id]
+            }
+            owned = merged
             guard ownedStorageError == nil else { ownedError = ownedStorageError; return }
-            var next = ownedByAccount; next[id] = owned
+            var next = ownedByAccount; next[id] = merged
             try await saveCache(next, filename: LocalResources.ownedFilename)
             guard accountRemoving == nil else { return }
             ownedByAccount = next
+            var nextState = ownedHistoryState
+            nextState[id] = OwnedHistorySyncState(completedFullSync: true, lastSyncedYear: currentYear)
+            ownedHistoryState = nextState
+            try? await saveCache(nextState, filename: LocalResources.ownedHistoryStateFilename)
             updateLocalResults()
             ownedRevision = UUID()
-        } catch is CancellationError { }
-        catch { if apple.activeID == id { ownedError = error.localizedDescription } }
+        } catch is CancellationError {
+            return
+        } catch {
+            if let dmapError {
+                if apple.activeID == id { ownedError = dmapError.localizedDescription }
+            } else if fullHistory, apple.activeID == id {
+                ownedError = error.localizedDescription
+            }
+        }
     }
     func loadOwnedArtwork() async {
         #if DEBUG
         if visualPreview { return }
         #endif
         guard let account = apple.activeID, ownedStorageError == nil, accountRemoving == nil else { return }
-        let context = settings.store
-        var artworkContext = context
-        // Purchased iPhone/iPad apps are independent of the search platform picker.
-        artworkContext.platform = .iOS
         let accountCountry = StoreService.country(forStorefront: apple.active?.storeFront ?? "")
+        let effectiveCountry = accountCountry ?? settings.store.country
+        // Purchased iPhone/iPad apps belong to the signed-in account's storefront and are
+        // independent of the search tab's platform or debounced country sync.
+        let artworkContext = StoreContext(country: effectiveCountry, platform: .iOS)
         let revision = ownedRevision
-        // Each App ID is looked up once per launch: delisted apps never resolve,
+        // Each App ID is looked up once per storefront per launch: delisted apps never resolve,
         // and repeating them on every visit would exceed the lookup rate limit.
-        let ids = owned.filter { $0.iconURL == nil && !ownedArtworkAttempted.contains($0.id) }.map(\.id)
-        for offset in stride(from: 0, to: ids.count, by: 20) {
+        let attemptKey: (String) -> String = { "\(effectiveCountry)|\($0)" }
+        let ids = owned.filter { $0.iconURL == nil && !ownedArtworkAttempted.contains(attemptKey($0.id)) }.map(\.id)
+        var consecutiveFailures = 0
+        for offset in stride(from: 0, to: ids.count, by: 50) {
             do {
                 try Task.checkCancellation()
-                let batch = Array(ids[offset..<min(offset + 20, ids.count)])
+                let batch = Array(ids[offset..<min(offset + 50, ids.count)])
                 let urls = try await StoreService.artwork(batch, store: artworkContext, accountCountry: accountCountry)
                 try Task.checkCancellation()
-                guard apple.activeID == account, settings.store == context, ownedRevision == revision, accountRemoving == nil else { return }
-                ownedArtworkAttempted.formUnion(batch)
+                guard apple.activeID == account, ownedRevision == revision, accountRemoving == nil else { return }
+                consecutiveFailures = 0
+                ownedArtworkAttempted.formUnion(batch.map(attemptKey))
                 if !urls.isEmpty {
                     // Apply the batch in one update so the list re-renders once.
                     var updated = owned
@@ -2295,8 +2373,14 @@ final class ToolStore: ObservableObject {
                     try await saveCache(ownedByAccount, filename: LocalResources.ownedFilename)
                 }
                 // Keep the public lookup service below its documented request budget.
-                if offset + 20 < ids.count { try await Task.sleep(nanoseconds: 3_100_000_000) }
-            } catch { return } // Artwork is optional; purchase records remain usable offline.
+                if offset + 50 < ids.count { try await Task.sleep(nanoseconds: 2_500_000_000) }
+            } catch is CancellationError {
+                return
+            } catch {
+                consecutiveFailures += 1
+                if consecutiveFailures >= 2 { return }
+                do { try await Task.sleep(nanoseconds: 2_000_000_000) } catch { return }
+            }
         }
     }
 
@@ -2314,6 +2398,9 @@ final class ToolStore: ObservableObject {
             throw error
         }
         ownedByAccount = next
+        if ownedHistoryState.removeValue(forKey: id) != nil {
+            try? await saveCache(ownedHistoryState, filename: LocalResources.ownedHistoryStateFilename)
+        }
     }
 
     func receiveExternalURL(_ url: URL) {

@@ -1,25 +1,21 @@
-## iPadn 2.3.1
+## iPadn 2.3.2
 
 **目录 / Contents**：[简体中文](#-核心修复与优化) · [TestFlight 说明与免责](#-testflight-实验性说明与免责声明) · [English](#english) · [TestFlight Notice](#testflight-experimental-notice--disclaimer)
 
-本次为 **v2.3.0** 的首个快速修复与性能优化版：全面恢复 **iOS / iPadOS 16** 兼容运行，彻底解决快速滑动已缓存及未缓存「历史版本」长列表时的掉帧卡顿，新增跨区下载失败（`2059` / `1010`）后的智能原因提示与一键切换账号重试，并补齐 Xcode / TestFlight CI 编译与初始化稳定性。安装包均未签名，请使用自用签名工具签名后安装。
+本次为 **v2.3.2** 修复与体验优化版：全面补全**「已购项目」历史与已下架应用**并大幅提升同步速度，解决切换账号后已购应用图标卡在灰色占位的问题，修复 **TestFlight** 登录误报「暂不支持多个受信任号码」与设备身份缓存失效，并修正深色模式下设置页「可更新」标签看不清的对比度问题。安装包均未签名，请使用自用签名工具签名后安装。
 
 ### 🔧 核心修复与优化
 
-- **恢复 iOS / iPadOS 16 完整兼容（感谢 [@tageniu](https://github.com/tageniu) 在 PR #108 的贡献）**
-  - 修复 `v2.3.0` 构建时将部署目标升至 iOS 17 导致 iOS 16 设备冷启动即因 `dyld` 缺失 `Symbols.framework` 闪退的问题：统一把 SwiftPM、`xtool` 与 Xcode 的最低部署目标恢复为 **iOS 16.0**，并对 `Symbols`、`Translation`、`ActivityKit` 保持弱链接（`LC_LOAD_WEAK_DYLIB`）与完整运行时可用性防护。
-  - 修复 iOS 16 设备本地生成安装 PKCS#12 证书时 `SecItemImport` 因默认 AES 算法不兼容导致的失败：iOS 16 上自动回退为兼容的 HMAC-SHA1 PKCS#12 MAC。
-  - 补齐 Xcode 工程文件缺失的 `SigningCapability.swift` 引用，并修复 `iPadnLiveActivity` 扩展在 iOS 16 与双构建链（Xcode / `xtool`）下的可用性标注与编译通过。
-- **显著优化「历史版本」快速滚动流畅度（已缓存与未缓存长列表均实测通过）**
-  - 引入独立无锁内存缩略图缓存 `VersionIconCache`（`NSCache` 24 MiB 配额、去重并发与后台预解码）：已缓存版本图标在回滑时首帧同步直出，无闪烁占位。
-  - 将远程 IPA Range 请求由逐字节 async 迭代改写为分块 `URLSessionDataDelegate` 传输、修复快速取消时的 `CheckedContinuation` 竞争死锁，并在 `RemoteZip` 中按条目字节前缀过滤，避免大型游戏数万条中央目录反复分配；元数据获取与磁盘落盘彻底移出主线程。
-  - 消除详情页垂直嵌套 `LazyVStack` 与滚动期状态重算（改为单层扁平 `LazyVStack` 并隔离标题栏滚动观察与 `NoticeCenter` 通知中心），解决高速滑动概率性白屏、卡死；同时修复 Range/ZIP 临时失败误将版本图标缓存标为永久缺失的问题并自动自愈旧缓存。
-  - 优化账号切换体验：隔离「账号」页列表重绘、防抖后台同步并消除点按头像闪烁；顶部「已切换到…」浮动提示改用独立 `NoticeCenter` 与硬件解析圆角阴影，在连续切号时保持 120Hz 顺滑过渡。
-- **跨区下载失败智能诊断与一键切换账号（错误码 `2059` / `1010`）**
-  - 仅在 Apple 实际返回「暂时无法下载」（`2059` / `1010`）错误后触发地区核验，**绝不预先拦截仍可跨区下载的应用**；当当前 Apple 账号商店区与搜索地区不一致或应用在账号地区不可用时，给出精简明确的地区差异提示。
-  - 若本地已登录与目标搜索地区匹配的账号，弹窗直接提供 **「切换并重试」** 按钮；否则提供 **「切换账号」** 一键直达账号页。
-- **TestFlight / CI 初始化稳定性加固**
-  - 适当放宽首次冷启动 `SAPSigner`（WebKit）初始化超时上限（45s–90s 可自适应），提升低速环境中 TestFlight 会话签名与 CI 测试稳定性。
+- **完整同步「已购项目」历史记录与已下架应用**
+  - 在原有 DMAP 活跃目录同步的基础上，接入 Apple 完整购买历史接口（`/commerce/account/purchases`，自动处理 pod/cookie 握手、401/403 会话静默刷新与多语言购买日期解析），并与 DMAP 结果智能合并，找回大量历史与已下架应用（含俄区等地区已下架应用）。
+  - 首次全量历史同步改用 **6 路并发** 拉取（并在列表顶部实时显示 `已完成/总年份` 进度），大幅缩短多年账号等待时间；同步完成后自动记录进度，日常刷新仅增量扫描当年记录，几秒即可完成；右上角菜单亦支持随时手动触发「同步完整购买历史」。
+- **修复切换账号后已购列表图标一直加载不出来**
+  - 修复切换 Apple 账号后，后台防抖更新商店地区时误中止 `loadOwnedArtwork()` 拉取任务的竞态问题；改为按账号自身地区与 `地区|AppID` 维度去重、单批拉取量由 20 提升至 50，切号进入「已购」页可稳定补齐全部上架应用图标，并保留已有缓存不闪烁。
+- **修复 TestFlight 登录误报「暂时无法完成验证」与设备槽失效**
+  - 修复过期本地 `iphone` 设备槽缓存触发 `rinfo=67437824` 导致 `no usable iphone identity` 无法继续验证的问题：检测到异常后自动清空过期设备槽并重新向 Apple 申请，仍异常时回退使用新配设备尝试 GSA 登录。
+  - 修复前端错误分类将 `"no usable iphone identity"` 中的 `"iphone"` 误匹配为 `"phone"` 而提示「暂不支持选择多个受信任号码」的 Bug。
+- **修复深色模式下「可更新」标签白底白字看不清**
+  - 修正「账号 › 设置」行右侧更新提示胶囊在深色模式下的前景色（由硬编码白色改为自适应 `UX.onAccent` 配合 `UX.tint`），浅色与深色模式下文字对比度均清晰可辨。
 
 ---
 
@@ -35,32 +31,28 @@
 
 ### 📦 安装包与签名源
 
-- `iPadn-2.3.1-unsigned.ipa`：标准版，含实时活动（灵动岛、锁屏进度）与桌面小组件扩展，签名需要 2 个 App ID。
-- `iPadn-2.3.1-lite-unsigned.ipa`：精简版，移除扩展，只需 1 个 App ID；不提供实时活动或小组件，其他功能完全一致。
+- `iPadn-2.3.2-unsigned.ipa`：标准版，含实时活动（灵动岛、锁屏进度）与桌面小组件扩展，签名需要 2 个 App ID。
+- `iPadn-2.3.2-lite-unsigned.ipa`：精简版，移除扩展，只需 1 个 App ID；不提供实时活动或小组件，其他功能完全一致。
 - SideStore、AltStore、Feather 等签名工具可添加源：`https://raw.githubusercontent.com/mengangs/ipadn/main/altstore-source.json`。
 
 ---
 
 ### English
 
-**v2.3.1** is a fast-follow stability and performance update to **v2.3.0**: it restores full **iOS / iPadOS 16** compatibility, eliminates frame drops during fast scrolling in both cached and uncached version history lists, adds post-failure cross-region download diagnosis (`2059` / `1010`) with one-tap account switching, and resolves Xcode / TestFlight CI build and cold-boot reliability issues. Both packages are unsigned—sign with your own tool before installing.
+**v2.3.2** is a targeted fix and quality-of-life update: it recovers missing historical & delisted apps in **Purchased** with fast concurrent syncing, fixes purchased app icons getting stuck on gray placeholders after switching accounts, resolves a false **TestFlight** "multiple trusted phone numbers" verification error & stale device slot deadlock, and fixes Dark Mode contrast on the Settings update badge. Both packages are unsigned—sign with your own tool before installing.
 
-#### Fixes & Improvements Since v2.3.0
+#### Fixes & Improvements Since v2.3.1
 
-- **Restored iOS / iPadOS 16 Support (thanks [@tageniu](https://github.com/tageniu) for PR #108)**
-  - Fixed the `v2.3.0` startup `dyld` crash on iOS 16 devices caused by an accidental iOS 17 minimum deployment target (`Symbols.framework` missing): lowered SwiftPM, `xtool`, and Xcode targets back to **iOS 16.0** while keeping `Symbols`, `Translation`, and `ActivityKit` weak-linked (`LC_LOAD_WEAK_DYLIB`) with proper availability guards.
-  - Fixed local PKCS#12 certificate import failure on iOS 16 by falling back to HMAC-SHA1 MAC when AES-based `SecItemImport` defaults are unsupported.
-  - Added the missing `SigningCapability.swift` reference to `iPadn.xcodeproj` and fixed `iPadnLiveActivity` availability annotations so both Xcode and `xtool` compile cleanly.
-- **Smooth Fast Scrolling in App Version History**
-  - Extracted a lock-free `VersionIconCache` (`NSCache` with a 24 MiB budget, in-flight request deduplication, and background `byPreparingThumbnail` decoding): previously loaded version icons now render synchronously on frame zero when scrolling back, eliminating flicker.
-  - Flattened `AppDetailView` into a single `LazyVStack` with isolated header scroll observation and `NoticeCenter`, rewrote remote IPA range reads onto chunked `URLSessionDataDelegate` transfers, prevented transient `RemoteZip` failures from poisoning cached version icons (with automatic self-healing), and eliminated account-switch avatar flicker and top-banner animation jank.
-- **TestFlight & CI Cold-Boot Reliability**
-  - Expanded the `SAPSigner` WebKit warm-up timeout floor/cap (45s–90s) to prevent spurious cold-boot timeouts under slow hosts or constrained CI runners.
-- **Post-Failure Cross-Region Download Diagnosis & One-Tap Account Switch (`2059` / `1010`)**
-  - Runs storefront diagnostics **only after** Apple returns a download failure (`2059` / `1010`)—never pre-blocking cross-region downloads that succeed—to display a concise reason when the signed-in Apple Account’s storefront differs from the selected search storefront or lacks the item.
-  - When another signed-in account matches the search storefront, the alert offers a crisp **Switch & Retry** button; otherwise it offers **Switch Account**.
-- **Single Flat `LazyVStack`, Deadlock Fix & Smooth Account Switching**
-  - Flattened `AppDetailView` into a single `LazyVStack`, eliminated the `HTTPClient` range cancellation race, filtered `RemoteZip` central directory scans to top-level payload metadata, isolated `AccountsView` & `NoticeCenter`, removed redundant top banners while switching inside the Accounts tab, and switched floating notices to a lightweight elevated capsule to avoid iOS 26/27 `SDFLayer` contention.
+- **Complete Purchase History & Delisted App Recovery**
+  - Complements the fast DMAP active-catalog sync with Apple's full `/commerce/account/purchases` purchase history endpoint (supporting pod/cookie handshakes, automatic 401/403 silent session refresh, and multi-locale purchase dates), merging both sources so older and delisted apps appear reliably alongside active ones.
+  - Uses **6 concurrent workers** with inline year-by-year progress for the initial full-history backfill, then persists sync state so subsequent refreshes only scan the current year incrementally in a few seconds; a **Sync Full Purchase History** option is also available in the top-right menu.
+- **Fixed Purchased List Icons Staying Gray After Account Switch**
+  - Eliminated a race condition where the debounced storefront-country sync aborted `loadOwnedArtwork()` right after switching accounts, scoped deduplication per storefront (`country|appId`), raised batch size from 20 to 50, and preserved cached icon URLs across history merges.
+- **Fixed TestFlight False "Multiple Trusted Phone Numbers" Error & Device Provisioning**
+  - Automatically wipes and re-provisions stale cached `iphone` device slots returning `rinfo=67437824` (with fallback to the freshly provisioned device instead of deadlocking locally).
+  - Tightened multi-phone error classification so `"no usable iphone identity"` no longer falsely matches `"phone"`.
+- **Fixed Dark Mode Update Badge Contrast**
+  - Updated the Settings row update pill on the Account tab from hardcoded white text to `UX.onAccent` on `UX.tint`, keeping it crisp and readable in both Light and Dark Mode.
 
 #### Official Telegram Channel & GitHub Issues Archive
 - **Official Telegram Channel**: [**https://t.me/ipadn_official**](https://t.me/ipadn_official) (new builds & source archives land here first).
@@ -71,8 +63,8 @@
 - Released under [GPL-2.0-or-later](LICENSE) for authorized personal testing, backups, and research; unaffiliated with Apple Inc., with all account or data risks assumed by the user.
 
 #### Packages
-- `iPadn-2.3.1-unsigned.ipa`: Standard build with Live Activities & Widgets (requires 2 App IDs).
-- `iPadn-2.3.1-lite-unsigned.ipa`: Lite build without extensions (requires 1 App ID; identical core features).
+- `iPadn-2.3.2-unsigned.ipa`: Standard build with Live Activities & Widgets (requires 2 App IDs).
+- `iPadn-2.3.2-lite-unsigned.ipa`: Lite build without extensions (requires 1 App ID; identical core features).
 - AltStore / SideStore / Feather repo: `https://raw.githubusercontent.com/mengangs/ipadn/main/altstore-source.json`.
 
-更早版本的更新内容（含 v2.3.0 TestFlight 完整说明）见 [Releases](https://github.com/mengangs/ipadn/releases)。
+更早版本的更新内容见 [Releases](https://github.com/mengangs/ipadn/releases)。

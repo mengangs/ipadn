@@ -87,6 +87,10 @@ struct PurchasedView: View {
             Section {
                 PageHeader(title: "已购项目") {
                     Menu {
+                        Button("同步完整购买历史", systemImage: "clock.arrow.circlepath") {
+                            Task { await store.refreshOwned(fullHistory: true) }
+                        }
+                        .disabled(store.ownedLoading)
                         Button("找出已下架的应用", systemImage: "archivebox") { findDelisted() }
                             .disabled(store.owned.isEmpty || store.checkingListings)
                         Button("导出为表格", systemImage: "tablecells") { export() }
@@ -118,6 +122,16 @@ struct PurchasedView: View {
                 .listRowBackground(Color.clear).listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 if let error = store.ownedError { Section { InlineIssue(message: error) { Task { await store.refreshOwned() } } } }
+                if let progress = store.ownedHistoryProgress, !store.owned.isEmpty {
+                    Section {
+                        HStack(spacing: 10) {
+                            ProgressView().controlSize(.small)
+                            Text("正在补全历史购买记录（\(progress.done)/\(progress.total)）…")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 if delistedOnly {
                     Section {
                         HStack(spacing: 12) {

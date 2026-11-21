@@ -15017,7 +15017,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Switch account"
+            "value": "Switch Account"
           }
         },
         "zh-Hans": {
@@ -15035,7 +15035,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "アカウントを切り替え"
+            "value": "アカウント切替"
           }
         },
         "ko": {
@@ -15047,13 +15047,13 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Сменить учетную запись"
+            "value": "Сменить аккаунт"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cambiar de cuenta"
+            "value": "Cambiar cuenta"
           }
         },
         "fr": {
@@ -15071,7 +15071,7 @@
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mudar de conta"
+            "value": "Trocar conta"
           }
         },
         "ar": {
@@ -122151,107 +122151,632 @@
     },
     "账号地区（%@）与搜索地区（%@）不一致，请切换账号或搜索地区后再试。": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Account region (%@) doesn’t match search region (%@). Switch accounts or search regions and retry." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "账号地区（%@）与搜索地区（%@）不一致，请切换账号或搜索地区后再试。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "帳號地區（%@）與搜尋地區（%@）不一致，請切換帳號或搜尋地區後再試。" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "アカウント地域（%@）と検索地域（%@）が異なります。アカウントまたは検索地域を切り替えて再試行してください。" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "계정 지역(%@)과 검색 지역(%@)이 다릅니다. 계정이나 검색 지역을 전환한 후 다시 시도하세요." } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Регион аккаунта (%@) отличается от региона поиска (%@). Смените аккаунт или регион поиска и повторите." } },
-        "es": { "stringUnit": { "state": "translated", "value": "La región de la cuenta (%@) no coincide con la de búsqueda (%@). Cambia de cuenta o región y reintenta." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Région du compte (%@) différente de la recherche (%@). Changez de compte ou de région et réessayez." } },
-        "de": { "stringUnit": { "state": "translated", "value": "Kontoregion (%@) stimmt nicht mit der Suchregion (%@) überein. Konto oder Region wechseln und erneut versuchen." } },
-        "pt-BR": { "stringUnit": { "state": "translated", "value": "A região da conta (%@) não corresponde à de busca (%@). Troque a conta ou a região e tente novamente." } },
-        "ar": { "stringUnit": { "state": "translated", "value": "منطقة الحساب (%@) لا تطابق منطقة البحث (%@). بدّل الحساب أو المنطقة وحاول مجدداً." } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account region (%@) doesn’t match search region (%@). Switch accounts or search regions and retry."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号地区（%@）与搜索地区（%@）不一致，请切换账号或搜索地区后再试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帳號地區（%@）與搜尋地區（%@）不一致，請切換帳號或搜尋地區後再試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アカウント地域（%@）と検索地域（%@）が異なります。アカウントまたは検索地域を切り替えて再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "계정 지역(%@)과 검색 지역(%@)이 다릅니다. 계정이나 검색 지역을 전환한 후 다시 시도하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Регион аккаунта (%@) отличается от региона поиска (%@). Смените аккаунт или регион поиска и повторите."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La región de la cuenta (%@) no coincide con la de búsqueda (%@). Cambia de cuenta o región y reintenta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Région du compte (%@) différente de la recherche (%@). Changez de compte ou de région et réessayez."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kontoregion (%@) stimmt nicht mit der Suchregion (%@) überein. Konto oder Region wechseln und erneut versuchen."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A região da conta (%@) não corresponde à de busca (%@). Troque a conta ou a região e tente novamente."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "منطقة الحساب (%@) لا تطابق منطقة البحث (%@). بدّل الحساب أو المنطقة وحاول مجدداً."
+          }
+        }
       }
     },
     "账号地区（%@）与搜索地区（%@）不一致，将切换至 %@。": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Account region (%@) differs from search region (%@). Switch to %@ to retry." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "账号地区（%@）与搜索地区（%@）不一致，将切换至 %@。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "帳號地區（%@）與搜尋地區（%@）不一致，將切換至 %@。" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "アカウント地域（%@）が検索地域（%@）と異なります。%@ に切り替えて再試行します。" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "계정 지역(%@)이 검색 지역(%@)과 다릅니다. %@ 계정으로 전환하여 다시 시도합니다." } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Регион аккаунта (%@) отличается от региона поиска (%@). Переключиться на %@ и повторить." } },
-        "es": { "stringUnit": { "state": "translated", "value": "La región de cuenta (%@) difiere de la búsqueda (%@). Cambiar a %@ para reintentar." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Région du compte (%@) différente de %@. Passer à %@ pour réessayer." } },
-        "de": { "stringUnit": { "state": "translated", "value": "Kontoregion (%@) weicht von Suchregion (%@) ab. Zu %@ wechseln und erneut versuchen." } },
-        "pt-BR": { "stringUnit": { "state": "translated", "value": "A região da conta (%@) difere da busca (%@). Trocar para %@ e tentar novamente." } },
-        "ar": { "stringUnit": { "state": "translated", "value": "منطقة الحساب (%@) تختلف عن البحث (%@). التبديل إلى %@ للمحاولة مجدداً." } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account region (%@) differs from search region (%@). Switch to %@ to retry."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号地区（%@）与搜索地区（%@）不一致，将切换至 %@。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "帳號地區（%@）與搜尋地區（%@）不一致，將切換至 %@。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アカウント地域（%@）が検索地域（%@）と異なります。%@ に切り替えて再試行します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "계정 지역(%@)이 검색 지역(%@)과 다릅니다. %@ 계정으로 전환하여 다시 시도합니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Регион аккаунта (%@) отличается от региона поиска (%@). Переключиться на %@ и повторить."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La región de cuenta (%@) difiere de la búsqueda (%@). Cambiar a %@ para reintentar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Région du compte (%@) différente de %@. Passer à %@ pour réessayer."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kontoregion (%@) weicht von Suchregion (%@) ab. Zu %@ wechseln und erneut versuchen."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A região da conta (%@) difere da busca (%@). Trocar para %@ e tentar novamente."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "منطقة الحساب (%@) تختلف عن البحث (%@). التبديل إلى %@ للمحاولة مجدداً."
+          }
+        }
       }
     },
     "此应用在账号地区（%@）不可用，请更换对应地区账号后再试。": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Unavailable in your account region (%@). Switch to a matching regional account and retry." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "此应用在账号地区（%@）不可用，请更换对应地区账号后再试。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "此 App 在帳號地區（%@）無法使用，請更換對應地區帳號後再試。" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "現在のアカウント地域（%@）では利用できません。対応地域のアカウントに切り替えてお試しください。" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "계정 지역(%@)에서는 사용할 수 없는 앱입니다. 해당 지역 계정으로 전환 후 다시 시도하세요." } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Недоступно в регионе аккаунта (%@). Выберите аккаунт подходящего региона и повторите." } },
-        "es": { "stringUnit": { "state": "translated", "value": "No disponible en tu región de cuenta (%@). Cambia a una cuenta de esa región y reintenta." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Indisponible dans la région du compte (%@). Utilisez un compte de la bonne région et réessayez." } },
-        "de": { "stringUnit": { "state": "translated", "value": "In deiner Kontoregion (%@) nicht verfügbar. Zu passendem Konto wechseln und erneut versuchen." } },
-        "pt-BR": { "stringUnit": { "state": "translated", "value": "Indisponível na região da conta (%@). Troque para uma conta dessa região e reintente." } },
-        "ar": { "stringUnit": { "state": "translated", "value": "غير متوفر في منطقة حسابك (%@). بدّل إلى حساب من المنطقة المناسبة وحاول مجدداً." } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unavailable in your account region (%@). Switch to a matching regional account and retry."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此应用在账号地区（%@）不可用，请更换对应地区账号后再试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 App 在帳號地區（%@）無法使用，請更換對應地區帳號後再試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在のアカウント地域（%@）では利用できません。対応地域のアカウントに切り替えてお試しください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "계정 지역(%@)에서는 사용할 수 없는 앱입니다. 해당 지역 계정으로 전환 후 다시 시도하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Недоступно в регионе аккаунта (%@). Выберите аккаунт подходящего региона и повторите."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No disponible en tu región de cuenta (%@). Cambia a una cuenta de esa región y reintenta."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indisponible dans la région du compte (%@). Utilisez un compte de la bonne région et réessayez."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In deiner Kontoregion (%@) nicht verfügbar. Zu passendem Konto wechseln und erneut versuchen."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indisponível na região da conta (%@). Troque para uma conta dessa região e reintente."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "غير متوفر في منطقة حسابك (%@). بدّل إلى حساب من المنطقة المناسبة وحاول مجدداً."
+          }
+        }
       }
     },
     "该应用暂时无法下载，请稍后再试或切换对应地区账号。": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "This app is temporarily unavailable. Try again later or switch to a matching regional account." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "该应用暂时无法下载，请稍后再试或切换对应地区账号。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "此 App 暫時無法下載，請稍後再試或切換對應地區帳號。" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "現在ダウンロードできません。しばらく待つか、対応地域のアカウントに切り替えてください。" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "일시적으로 다운로드할 수 없습니다. 잠시 후 다시 시도하거나 해당 지역 계정으로 전환하세요." } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Временно недоступно для загрузки. Повторите позже или смените регион аккаунта." } },
-        "es": { "stringUnit": { "state": "translated", "value": "No se puede descargar ahora. Inténtalo más tarde o cambia a una cuenta de esa región." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Téléchargement temporairement impossible. Réessayez plus tard ou changez de compte." } },
-        "de": { "stringUnit": { "state": "translated", "value": "Vorübergehend nicht ladbar. Später erneut versuchen oder Kontoregion wechseln." } },
-        "pt-BR": { "stringUnit": { "state": "translated", "value": "Indisponível no momento. Tente mais tarde ou troque para uma conta dessa região." } },
-        "ar": { "stringUnit": { "state": "translated", "value": "يتعذر التنزيل مؤقتاً. حاول لاحقاً أو بدّل إلى حساب من المنطقة المناسبة." } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app is temporarily unavailable. Try again later or switch to a matching regional account."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该应用暂时无法下载，请稍后再试或切换对应地区账号。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 App 暫時無法下載，請稍後再試或切換對應地區帳號。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在ダウンロードできません。しばらく待つか、対応地域のアカウントに切り替えてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시적으로 다운로드할 수 없습니다. 잠시 후 다시 시도하거나 해당 지역 계정으로 전환하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Временно недоступно для загрузки. Повторите позже или смените регион аккаунта."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se puede descargar ahora. Inténtalo más tarde o cambia a una cuenta de esa región."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Téléchargement temporairement impossible. Réessayez plus tard ou changez de compte."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorübergehend nicht ladbar. Später erneut versuchen oder Kontoregion wechseln."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indisponível no momento. Tente mais tarde ou troque para uma conta dessa região."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتعذر التنزيل مؤقتاً. حاول لاحقاً أو بدّل إلى حساب من المنطقة المناسبة."
+          }
+        }
       }
     },
     "可切换至 %@ 账号（%@）。": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Switch to %@ account (%@)." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "可切换至 %@ 账号（%@）。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "可切換至 %@ 帳號（%@）。" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "%@ アカウント（%@）に切り替えられます。" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "%@ 계정(%@)으로 전환할 수 있습니다." } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Можно переключиться на аккаунт %@ (%@)." } },
-        "es": { "stringUnit": { "state": "translated", "value": "Puedes cambiar a la cuenta de %@ (%@)." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Passez au compte %@ (%@)." } },
-        "de": { "stringUnit": { "state": "translated", "value": "Wechsel zu %@-Konto (%@) möglich." } },
-        "pt-BR": { "stringUnit": { "state": "translated", "value": "Troque para a conta %@ (%@)." } },
-        "ar": { "stringUnit": { "state": "translated", "value": "يمكن التبديل إلى حساب %@ (%@)." } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to %@ account (%@)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可切换至 %@ 账号（%@）。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可切換至 %@ 帳號（%@）。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ アカウント（%@）に切り替えられます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 계정(%@)으로 전환할 수 있습니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Можно переключиться на аккаунт %@ (%@)."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puedes cambiar a la cuenta de %@ (%@)."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passez au compte %@ (%@)."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wechsel zu %@-Konto (%@) möglich."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Troque para a conta %@ (%@)."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يمكن التبديل إلى حساب %@ (%@)."
+          }
+        }
       }
     },
     "切换并重试": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Switch & Retry" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "切换并重试" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "切換並重試" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "切り替えて再試行" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "전환 후 재시도" } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Сменить и повторить" } },
-        "es": { "stringUnit": { "state": "translated", "value": "Cambiar y reintentar" } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Changer et réessayer" } },
-        "de": { "stringUnit": { "state": "translated", "value": "Wechseln & wiederholen" } },
-        "pt-BR": { "stringUnit": { "state": "translated", "value": "Trocar e tentar" } },
-        "ar": { "stringUnit": { "state": "translated", "value": "تبديل وإعادة" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch & Retry"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换并重试"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切換並重試"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切り替えて再試行"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전환 후 재시도"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сменить и повторить"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambiar y reintentar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changer et réessayer"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wechseln & wiederholen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trocar e tentar"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تبديل وإعادة"
+          }
+        }
       }
     },
-    "切换账号": {
+    "购买历史响应格式异常，请稍后重试": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Switch Account" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "切换账号" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "切換帳號" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "アカウント切替" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "계정 전환" } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Сменить аккаунт" } },
-        "es": { "stringUnit": { "state": "translated", "value": "Cambiar cuenta" } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Changer de compte" } },
-        "de": { "stringUnit": { "state": "translated", "value": "Account wechseln" } },
-        "pt-BR": { "stringUnit": { "state": "translated", "value": "Trocar conta" } },
-        "ar": { "stringUnit": { "state": "translated", "value": "تبديل الحساب" } }
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购买历史响应格式异常，请稍后重试"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unexpected purchase history response. Please try again later."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "購買記錄回應格式異常，請稍後再試"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "購入履歴の応答形式が不正です。しばらくしてから再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "구입 내역 응답 형식이 올바르지 않습니다. 잠시 후 다시 시도하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Неожиданный формат ответа истории покупок. Повторите попытку позже."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Formato inesperado en el historial de compras. Inténtalo más tarde."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réponse inattendue de l’historique des achats. Réessayez plus tard."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unerwartetes Format der Einkaufsstatistik. Bitte später erneut versuchen."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Formato inesperado no histórico de compras. Tente novamente mais tarde."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تنسيق غير متوقع لسجل المشتريات. يرجى المحاولة لاحقًا."
+          }
+        }
+      }
+    },
+    "同步完整购买历史": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步完整购买历史"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync Full Purchase History"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步完整購買記錄"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "購入履歴をすべて同期"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체 구입 내역 동기화"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Синхронизировать всю историю покупок"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sincronizar historial completo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchroniser tout l’historique"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesamten Einkaufsverlauf synchronisieren"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sincronizar histórico completo"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "مزامنة سجل المشتريات الكامل"
+          }
+        }
+      }
+    },
+    "正在补全历史购买记录（%lld/%lld）…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在补全历史购买记录（%lld/%lld）…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading full purchase history (%lld/%lld)…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在補全歷史購買記錄（%lld/%lld）…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "購入履歴を取得中（%lld/%lld）…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체 구입 내역 불러오는 중(%lld/%lld)…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загрузка полной истории покупок (%lld/%lld)…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cargando historial completo (%lld/%lld)…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chargement de l’historique complet (%lld/%lld)…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vollständiger Verlauf wird geladen (%lld/%lld)…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Carregando histórico completo (%lld/%lld)…"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ تحميل سجل المشتريات الكامل (%lld/%lld)…"
+          }
+        }
       }
     }
   },

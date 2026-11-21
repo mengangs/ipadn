@@ -211,28 +211,47 @@ public enum TFLogin {
     private static func makeIPhoneDevice(root: URL, userAgent: String?,
                                          log: @escaping @Sendable (String) -> Void) async throws -> Device {
         var lastError: Error?
+        var fallbackDevice: Device?
+        func createDevice(in directory: URL) throws -> Device {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            return try Device(directory: directory,
+                              platform: .iphone,
+                              transport: transport(log: log),
+                              userAgent: userAgent,
+                              clientInfo: TFConstants.authClientInfo,
+                              headers: ["X-Apple-Locale": "en_US",
+                                        "Accept-Language": "en-US",
+                                        "X-Apple-I-TimeZone": "UTC"])
+        }
         for index in 1...4 {
             let directory = root.appendingPathComponent("iphone-" + String(index), isDirectory: true)
-            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let hadCachedState = ((try? FileManager.default.contentsOfDirectory(atPath: directory.path))?.isEmpty == false)
             do {
-                let device = try Device(directory: directory,
-                                        platform: .iphone,
-                                        transport: transport(log: log),
-                                        userAgent: userAgent,
-                                        clientInfo: TFConstants.authClientInfo,
-                                        headers: ["X-Apple-Locale": "en_US",
-                                                  "Accept-Language": "en-US",
-                                                  "X-Apple-I-TimeZone": "UTC"])
+                var device = try createDevice(in: directory)
                 try await device.provision()
-                let headers = try await device.headers()
-                let rinfo = headers["X-Apple-I-MD-RINFO"] ?? "?"
+                var headers = try await device.headers()
+                var rinfo = headers["X-Apple-I-MD-RINFO"] ?? "?"
                 log("sign-in: iphone identity attempt " + String(index) + ", rinfo " + rinfo)
-                if rinfo == "67437824" { continue }
-                return device
+                if rinfo == "67437824", hadCachedState {
+                    // Cached provisioning state on disk already has the throttled rinfo; wipe the
+                    // slot and re-provision once so retries actually obtain fresh state from Apple.
+                    try? FileManager.default.removeItem(at: directory)
+                    device = try createDevice(in: directory)
+                    try await device.provision()
+                    headers = try await device.headers()
+                    rinfo = headers["X-Apple-I-MD-RINFO"] ?? "?"
+                    log("sign-in: iphone identity attempt " + String(index) + " refreshed, rinfo " + rinfo)
+                }
+                if rinfo != "67437824" { return device }
+                fallbackDevice = device
             } catch {
                 lastError = error
                 log("sign-in: iphone identity " + String(index) + " unusable, " + shortDescription(error))
             }
+        }
+        if let fallbackDevice {
+            log("sign-in: all iphone slots returned rinfo 67437824, proceeding with fallback identity")
+            return fallbackDevice
         }
         throw lastError ?? TFError.malformed("no usable iphone identity")
     }

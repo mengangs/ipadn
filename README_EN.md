@@ -7,7 +7,7 @@
 **Search, download and install the apps you own, on iPhone and iPad.**
 Works with iPhone, iPad, Apple TV and Mac apps, including older versions and apps removed from sale.
 
-✨ **New in v2.3.1: Restored iOS 16 support & smoother version-history scrolling · [TestFlight Support (Experimental)](#testflight-experimental)** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
+✨ **New in v2.3.2: Full purchase history & delisted app sync · TestFlight sign-in & Dark Mode update badge fixes** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
 
 [![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
 [![Telegram Channel](https://img.shields.io/badge/Telegram-%40ipadn__official-26A5E4?logo=telegram&logoColor=white)](https://t.me/ipadn_official)
@@ -40,12 +40,19 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 ---
 
+## What’s new in 2.3.2
+
+- **Full Purchase History & Delisted App Recovery**: Adds Apple's `/commerce/account/purchases` history endpoint alongside DMAP so older and delisted apps (with multi-locale purchase dates) are no longer missing; runs initial full-history sync with **6 concurrent workers** and live year progress, persists state so subsequent refreshes only scan the current year incrementally in seconds, and adds a **Sync Full Purchase History** menu action.
+- **Fixed Purchased List Icons Staying Gray After Account Switch**: Removes the storefront-sync race that aborted `loadOwnedArtwork()` on account switch, scopes deduplication per storefront (`country|appId`), increases batch size to 50, and preserves cached icon URLs across merges.
+- **Fixed TestFlight Sign-In Error Classification & Stale Device Slots**: Automatically wipes and re-provisions stale cached `iphone` slots returning `rinfo=67437824` (with GSA fallback), and stops matching `"iphone"` as a multi-phone verification error.
+- **Fixed Dark Mode Update Badge Contrast**: Switches the Account › Settings update pill text from hardcoded white to `UX.onAccent` on `UX.tint`. See the [release notes](RELEASE_NOTES.md).
+
 ## What’s new in 2.3.1
 
 - **Restored iOS / iPadOS 16 Compatibility (thanks [@tageniu](https://github.com/tageniu) for PR #108)**: Restores the **iOS 16.0** deployment target with weak-linked iOS 17+ frameworks (`Symbols`, `Translation`, `ActivityKit`), falls back to HMAC-SHA1 PKCS#12 MAC on iOS 16, registers `SigningCapability.swift` in `iPadn.xcodeproj`, and aligns `iPadnLiveActivity` availability checks across Xcode and `xtool`.
 - **Smooth Version History Scrolling & Instant Account Switching**: Extracts `VersionIconCache`, uses race-free chunked `URLSessionDataDelegate` range reads with prefix-filtered `RemoteZip` parsing off the main actor, flattens `AppDetailView` into a single `LazyVStack` to prevent fast-scroll stalls/blanking, isolates `AccountsView` & `NoticeCenter`, switches accounts cleanly in place on the Accounts tab, and replaces heavy material toast animations with a lightweight elevated capsule.
 - **Post-Failure Cross-Region Diagnosis & Account Switch (`2059` / `1010`)**: Only after an actual `2059`/`1010` failure (never pre-blocking working cross-region downloads), shows a concise region mismatch alert with **Switch & Retry** (when a matching signed-in account exists) or **Switch Account**.
-- **TestFlight / CI Reliability**: Expands `SAPSigner` cold-boot WebKit warm-up bounds; see [release notes](RELEASE_NOTES.md) for details.
+- **TestFlight / CI Reliability**: Expands `SAPSigner` cold-boot WebKit warm-up bounds.
 
 ## What’s new in 2.3.0
 
@@ -55,52 +62,10 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 - **⬆️ In-App Update Variant Picker (`AppUpdateView`)**: Surface timely release alerts and pick **Standard** or **Lite** builds directly inside the update sheet with size and changelog preview.
 - **🌏 Localized Names & Polish**: Prefer localized app names across TestFlight, Store, Downloads, and Pro mode Packages, plus quick Bundle ID copy and responsive UI refinements.
 - **📢 Official Telegram Channel (All 11 Languages)**: Adds direct links to [https://t.me/ipadn_official](https://t.me/ipadn_official) in Account › Settings › Support iPadn and SupportView. iPadn stays free and open source, publishes new releases to Telegram first, and archives GitHub Issues as read-only.
-- ⚠️ **Experimental Notice & Disclaimer**: TestFlight is newly developed and subject to Apple server behavior, active invite eligibility, and network rules—treat it as experimental and test with a secondary account first. See the [TestFlight Experimental](#testflight-experimental) guide and [release notes](RELEASE_NOTES.md).
+- ⚠️ **Experimental Notice & Disclaimer**: TestFlight is newly developed and subject to Apple server behavior, active invite eligibility, and network rules—treat it as experimental and test with a secondary account first. See the [TestFlight Experimental](#testflight-experimental) guide.
 - Standard and lite packages remain available for iOS / iPadOS 16 and later.
 
-## What’s new in 2.2.1
-
-- **Fix Pro mode white screen & deep navigation**: Binds root tabs to semantic `TabID` values and upgrades Account and Packages stacks to heterogeneous `NavigationPath`, resolving white screens and Settings lockouts when toggling Pro mode and keeping Installed Apps, Version Source Editor, Package Info, and Package Contents sub-routes reliable.
-- **Fix duplicate search results & 30s Wi‑Fi transfer cutoff**: Deduplicates search results by `trackId` and `bundleID` without letting stale cached flags override live listings, and scopes the 30-second Wi‑Fi transfer timeout strictly to HTTP header parsing so large IPA downloads never drop mid-stream.
-- **Streaming FairPlay decryption, storage cleanup & security hardening**: Uses 4 MB page-aligned streaming windows in `FairPlayCore` (`8 MB` peak heap), hardens 64-bit Mach-O / `///..` archive containment, requires user confirmation for external `ipadn://` download URLs, sweeps `tmp/Share` hard links, and updates all 11 interface languages.
-- Standard and lite packages remain available for iOS / iPadOS 16 and later. See the [release notes](RELEASE_NOTES.md).
-
-## What’s new in 2.2.0
-
-- **On-device FairPlay IPA decryption (Pro mode › Packages)**: Integrates the zero-dependency C `FairPlayCore` module to decrypt and verify legally acquired IPAs locally (supporting nested `.appex` extensions, frameworks, and 64-bit FAT slices) with strictly redacted logs.
-- **Full encrypted backup & restore (AES-256-GCM)**: Export plaintext or password-encrypted backups (settings, version sources, followed apps, recent searches, Apple session credentials and StoreProof) under Account › Settings › Backup & Maintenance, with selective unlock preview before restoring.
-- **App Detail & appearance controls**: Independently toggle App Screenshots and Customer Reviews under Account › Settings › Appearance & Icon to hide those sections and stop extra requests, and group Show Version History Icons under Appearance & Icon as well.
-- Standard and lite packages remain available for iOS / iPadOS 16 and later, with all 11 interface languages and bundled third-party notices updated. See the [release notes](RELEASE_NOTES.md).
-
-## What’s new in 2.1.3
-
-- **Fix keyword-search crash & concurrency race**: Replace nested concurrent pre-search task-group probes with sequential post-search verification of candidate delisted apps and explicit task cancellation.
-- **Isolate notice animations & smoother account switching**: Move the top notice/undo overlay into its own view to avoid re-evaluating the tab hierarchy, and start rendering the switch notice before kicking off sync and search.
-- **Polish on-device pairing & Live Activity handoff**: Trigger a Step 1 Dynamic Island alert banner when opening Settings, refine pairing instructions across all 11 languages, and cancel superseded Live Activity waits promptly.
-- Standard and lite packages remain available for iOS / iPadOS 16 and later. See the [release notes](RELEASE_NOTES.md).
-
-## What’s new in 2.1.2
-
-- **Prioritize delisted apps in search**: Keyword search combines the alias directory with local purchased, favorite and download records for tiered matching, verifies candidate delisted status, and places confirmed matching delisted apps first (toggleable under Account › Settings › Downloads › Prioritize Delisted Apps in Search).
-- **Centered action morph & equalized rings**: Action pills, cloud buttons and monochrome progress rings align on one centered column, morph smoothly around their center, and share an equal track/progress stroke width.
-- **Swipe animations & 5-second Undo**: Revealed swipe icons play native Core Animation sequences (respecting Reduce Motion). Swipe-deleting downloads shows a 5-second Undo countdown (including consecutive deletions); search-history deletion removes the countdown.
-- **Vector tab bar, synced shimmer & in-place translation**: Adaptive vector tab animations with balanced Search/Account strokes and window-synchronized skeleton shimmer, plus opt-in Translate in place on iOS 18+ with Show original under Account › Settings › Appearance & icon › Translation.
-- **Live Activity pairing, native install & version matching**: Delivers background pairing Live Activity progress/codes (with notification fallback only when inactive), fixes dark-mode pairing badge contrast, runs blocking native install/lookup FFI on a 4 MiB stack thread with cancellation, prevents `external_identifier` values from replacing real version numbers, and adds a Show Version History Icons toggle in Download settings.
-- Standard and lite packages remain available for iOS / iPadOS 16 and later. See the [release notes](RELEASE_NOTES.md).
-
-## What’s new in 2.1.1
-
-- **Fix an Installation settings crash on iOS 16**: encode the installation-help URL correctly and safely handle invalid App Store links.
-- **Improve date-range filter layout**: group start/end dates, query actions and progress in one panel, align controls and adapt to accessibility text sizes.
-- Standard and lite packages remain available for iOS / iPadOS 16 and later. See the [release notes](RELEASE_NOTES.md).
-
-## 2.1.0 highlights
-
-- **Clearer version history**: each row shows its own package icon, IPA size and version details, making activity badges easy to compare without downloading the full package. Asset-catalog-only icons are not yet supported; unavailable icons use placeholders.
-- **Find versions by date**: select inclusive start/end dates, with progress, cancellation and explicit unknown-date counts. Histories load in batches, with on-demand icons and a bounded decoded-image cache. Package dates can differ from store release dates.
-- **More complete download controls**: swipe to delete/share, outside-tap dismissal, a five-second Undo countdown, completion transitions, and sequential automatic installation with the native method.
-- **Inspectable installed apps**: view local version and Bundle ID even without store details, distinguish missing regional listings from lookup failures, and retry store details independently.
-- Fixes clipped swipe edges, slow closing animations after dropped frames, duplicate installation queuing and wrapped search-chip corners. Both standard and lite packages remain available. See the [release notes](RELEASE_NOTES.md).
+> For earlier releases, see [GitHub Releases](https://github.com/mengangs/ipadn/releases) and [release notes](RELEASE_NOTES.md).
 
 ## What it does
 

@@ -211,6 +211,11 @@ struct OwnedApp: Codable, Identifiable {
     }
 }
 
+struct OwnedHistorySyncState: Codable, Equatable {
+    var completedFullSync: Bool
+    var lastSyncedYear: Int
+}
+
 enum DownloadStatus: String, Codable {
     case queued, running, pausing, paused, processing, completed, failed
     var title: String {
@@ -571,6 +576,7 @@ enum LocalResources {
     static let jobsFilename = "download-jobs.json"
     static let versionsFilename = "versions.json"
     static let ownedFilename = "owned-apps.json"
+    static let ownedHistoryStateFilename = "owned-history-state.json"
 
     // Resolved and created once per launch: these are read from list rows
     // many times a second, so they must not touch the file system each time.

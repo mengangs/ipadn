@@ -1680,8 +1680,7 @@ final class TFHomeModel: ObservableObject {
         }
 
         let lower = raw.lowercased()
-        if lower.contains("phone") || lower.contains("sms") || lower.contains("trusted number")
-            || lower.contains("phoneid") || (lower.contains("select") && lower.contains("number")) {
+        if Self.isMultiPhoneVerificationError(raw) {
             pageState = .authFailed(
                 AppText.text("当前暂不支持选择多个受信任号码验证。请在已登录该 Apple 账号的设备上前往「设置 › Apple 账户 › 登录与安全 › 获取验证码」，然后重试。"),
                 .standard
@@ -1739,6 +1738,19 @@ final class TFHomeModel: ObservableObject {
         }
         let text = TFLogin.shortDescription(error)
         return text.contains("[401 ") || text.contains("[403 ")
+    }
+
+    /// Distinguishes genuine multi-trusted-phone/SMS 2FA challenges from unrelated errors
+    /// whose text happens to contain `"iphone"` (such as `"no usable iphone identity"`).
+    nonisolated static func isMultiPhoneVerificationError(_ raw: String) -> Bool {
+        let lower = raw.lowercased()
+        return lower.contains("trusted phone")
+            || lower.contains("phone number")
+            || lower.contains("trusted number")
+            || lower.contains("sms")
+            || lower.contains("phoneid")
+            || lower.contains("phone_id")
+            || (lower.contains("select") && lower.contains("number"))
     }
 
     // MARK: - Unattended Automation Hooks (Preserved Verbatim)

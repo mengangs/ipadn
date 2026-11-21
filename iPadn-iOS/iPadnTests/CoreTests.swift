@@ -3163,6 +3163,95 @@ final class CoreTests: XCTestCase {
             XCTAssertFalse((arranged.results + arranged.localResults).contains { $0.id == "999999999" })
         }
     }
+
+    func testCommercePurchaseHistoryParsesAppsAndMergesWithDMAP() throws {
+        let payload = """
+        {
+          "data": {
+            "attributes": {
+              "is-complete": false,
+              "purchases": [
+                {
+                  "order-id": "ORD-100",
+                  "invoice-date": "Nov 19, 2026",
+                  "items": [
+                    { "item-id": "564177498", "item-name": "VKontakte", "kind": "iOS App", "purchase-date": "Nov 19, 2026" },
+                    { "item-id": "398465290", "item-title": "Odnoklassniki", "kind": "iOS App" },
+                    { "item-id": "999999991", "item-name": "Coins Pack", "kind": "In-App Purchase", "purchase-date": "Nov 19, 2026" },
+                    { "item-id": "999999992", "item-name": "Novel", "kind": "Book", "purchase-date": "Nov 19, 2026" }
+                  ]
+                },
+                {
+                  "order-id": "ORD-101",
+                  "invoice-date": "18 Oct 2024",
+                  "items": [
+                    { "item-id": 1166343427, "item-name": "RUTUBE", "kind": "iOS App", "purchase-date": "18 Oct 2024" },
+                    { "item-id": "414478124", "item-name": "WeChat Commerce", "kind": "Mac App", "purchase-date": "2024-10-18" }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+        """
+        var seen = Set<String>()
+        let first = try CommercePurchaseHistory.parsePage(Data(payload.utf8), seenOrderIDs: &seen)
+        XCTAssertFalse(first.isComplete)
+        XCTAssertEqual(first.newInvoiceCount, 2)
+        XCTAssertEqual(first.apps.map(\.id), ["564177498", "398465290", "1166343427", "414478124"])
+        XCTAssertEqual(first.apps.first { $0.id == "398465290" }?.name, "Odnoklassniki")
+        XCTAssertNotNil(first.apps.first { $0.id == "564177498" }?.purchaseDate)
+        XCTAssertNotNil(first.apps.first { $0.id == "1166343427" }?.purchaseDate)
+
+        // Replayed page with the same order IDs must contribute zero new invoices.
+        let replay = try CommercePurchaseHistory.parsePage(Data(payload.utf8), seenOrderIDs: &seen)
+        XCTAssertEqual(replay.newInvoiceCount, 0)
+        XCTAssertTrue(replay.apps.isEmpty)
+
+        let iconURL = URL(string: "https://example.com/wechat.png")!
+        let dmapWeChat = OwnedApp(
+            id: "414478124",
+            bundleID: "com.tencent.xin",
+            name: "WeChat",
+            version: "8.0.50",
+            purchaseDate: Date(timeIntervalSince1970: 1_700_000_000),
+            iconURL: nil
+        )
+        let cachedWeChat = OwnedApp(
+            id: "414478124",
+            bundleID: "",
+            name: "WeChat",
+            version: "",
+            purchaseDate: nil,
+            iconURL: iconURL
+        )
+        let merged = CommercePurchaseHistory.merge(dmap: [dmapWeChat], commerce: first.apps, cached: [cachedWeChat])
+        XCTAssertEqual(merged.count, 4, "Sanctioned/delisted commerce apps must survive merge alongside DMAP records")
+        let wechat = try XCTUnwrap(merged.first { $0.id == "414478124" })
+        XCTAssertEqual(wechat.bundleID, "com.tencent.xin")
+        XCTAssertEqual(wechat.version, "8.0.50")
+        XCTAssertEqual(wechat.iconURL, iconURL)
+        XCTAssertTrue(merged.contains { $0.id == "564177498" && $0.name == "VKontakte" })
+        XCTAssertTrue(merged.contains { $0.id == "1166343427" && $0.name == "RUTUBE" })
+
+        XCTAssertEqual(CommercePurchaseHistory.pod(fromCookie: "foo=1; itspod=52; bar=2"), "52")
+        XCTAssertEqual(CommercePurchaseHistory.pod(fromHost: "p52-buy.itunes.apple.com"), "52")
+        XCTAssertNil(CommercePurchaseHistory.pod(fromHost: "buy.itunes.apple.com"))
+        XCTAssertNotNil(CommercePurchaseHistory.parseDate("2026年11月19日"))
+        XCTAssertNotNil(CommercePurchaseHistory.parseDate("Nov. 19, 2026"))
+        XCTAssertNotNil(CommercePurchaseHistory.parseDate("2026-11-19 04:12:33 Etc/GMT"))
+        XCTAssertNotNil(CommercePurchaseHistory.parseDate("19 нояб. 2026 г."))
+    }
+
+    #if canImport(TestFlightKit)
+    func testMultiPhoneVerificationClassifierIgnoresIPhoneIdentityError() {
+        XCTAssertFalse(TFHomeModel.isMultiPhoneVerificationError("返回内容无法解析：no usable iphone identity"))
+        XCTAssertFalse(TFHomeModel.isMultiPhoneVerificationError("no usable iphone identity"))
+        XCTAssertTrue(TFHomeModel.isMultiPhoneVerificationError("Multiple trusted phone numbers require SMS selection"))
+        XCTAssertTrue(TFHomeModel.isMultiPhoneVerificationError("select a trusted number for verification"))
+        XCTAssertTrue(TFHomeModel.isMultiPhoneVerificationError("missing phoneId in challenge"))
+    }
+    #endif
 }
 
 private final class LockedCount: @unchecked Sendable {

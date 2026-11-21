@@ -299,6 +299,27 @@ final class HTTPClient: Sendable {
         throw ToolError.message(AppText.text("服务器响应异常，请稍后重试"))
     }
 
+    /// Executes a single HTTPS request without automatic redirect following or status-code
+    /// throwing, so callers that need `Location`, `pod`, or `Set-Cookie` on 302 hops
+    /// (such as Apple's commerce purchase history endpoint) can drive redirects directly.
+    func rawRequest(_ url: URL, method: String = "GET",
+                    headers: [String: String] = [:],
+                    timeoutInterval: TimeInterval? = nil) async throws -> (Data, HTTPURLResponse) {
+        guard url.scheme?.lowercased() == "https", url.host != nil, url.user == nil, url.password == nil else {
+            throw ToolError.message(AppText.text("链接无效"))
+        }
+        var request = URLRequest(url: url)
+        if let timeoutInterval { request.timeoutInterval = timeoutInterval }
+        request.httpMethod = method
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw ToolError.message(AppText.text("服务器响应异常，请稍后重试"))
+        }
+        return (data, http)
+    }
+
     /// One byte range (`"0-99"` or `"-100"`) and its Content-Range. The body
     /// is streamed in chunks via `URLSessionDataDelegate` so a server that
     /// ignores Range or exceeds `limit` is aborted without byte-by-byte overhead.
