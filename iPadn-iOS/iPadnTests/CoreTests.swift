@@ -419,9 +419,16 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(unchanged.iconURL, phone.iconURL)
         XCTAssertEqual(unchanged.size, phone.size)
 
+        let prevLocale = AppText.locale
+        defer { AppText.locale = prevLocale }
+        AppText.locale = Locale(identifier: "zh-Hans")
         XCTAssertEqual(PackageService.describePlatforms(families: [3], platforms: ["AppleTVOS"]), "Apple TV")
-        XCTAssertEqual(PackageService.describePlatforms(families: [2, 1], platforms: ["iPhoneOS"]), "iPhone、iPad")
+        let dualZh = PackageService.describePlatforms(families: [2, 1], platforms: ["iPhoneOS"])
+        XCTAssertTrue(dualZh.contains("iPhone") && dualZh.contains("iPad"))
         XCTAssertEqual(PackageService.describePlatforms(families: [], platforms: []), "未知")
+        AppText.locale = Locale(identifier: "en")
+        XCTAssertEqual(PackageService.describePlatforms(families: [2, 1], platforms: ["iPhoneOS"]), "iPhone and iPad")
+        XCTAssertEqual(PackageService.describePlatforms(families: [], platforms: []), "Unknown")
     }
 
     @MainActor
