@@ -10,7 +10,7 @@ output="$project_root/build/native"
 target="aarch64-apple-ios"
 # Rust's standard library for this target is built for a newer iOS than the
 # app supports unless the deployment target is stated.
-export IPHONEOS_DEPLOYMENT_TARGET="17.0"
+export IPHONEOS_DEPLOYMENT_TARGET="16.0"
 # Kept out of the source tree; override to reuse a cache.
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$project_root/build/native-work}"
 

@@ -1079,6 +1079,16 @@
 			isa = PBXBuildFile;
 			fileRef = 3A47D75DC1A27D9B3FD97B04;
 		};
+		7353FA7C4AD68B3D602432BC = {
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			path = "../TestFlightKit/SigningCapability.swift";
+			sourceTree = "<group>";
+		};
+		602C803087A12AEA20D12013 = {
+			isa = PBXBuildFile;
+			fileRef = 7353FA7C4AD68B3D602432BC;
+		};
 		D05E572A50390E96676EFEC2 = {
 			isa = PBXFileReference;
 			lastKnownFileType = folder;
@@ -1801,6 +1811,7 @@
 				8FFC3DA4E441E51F10BB4BDD,
 				8A4DEA75A35CD9D1C0FF762C,
 				3A47D75DC1A27D9B3FD97B04,
+				7353FA7C4AD68B3D602432BC,
 				D05E572A50390E96676EFEC2,
 				BDA25E943027C6B038C43D07,
 				8FEB83A29956DE0B59952846,
@@ -2004,6 +2015,7 @@
 				6A154E22B7CCF6928D3D30BF,
 				5B8632E80D35F5043533FD9E,
 				048737C92F69EE7792D86FB8,
+				602C803087A12AEA20D12013,
 				A1F4EF592471EABF4786BF74,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2642,7 +2654,6 @@
 		4162F030F80DA64AC10BE48A = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.local.iPadn.LiveActivity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				CODE_SIGN_STYLE = Automatic;
@@ -2671,7 +2682,6 @@
 		602C8E4536EEF68969E0EA47 = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.local.iPadn.LiveActivity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				CODE_SIGN_STYLE = Automatic;

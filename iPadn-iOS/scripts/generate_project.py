@@ -42,11 +42,17 @@ test_id = uid("TestTarget")
 app_product = add("AppProduct", "PBXFileReference", explicitFileType="wrapper.application", includeInIndex="0", path="iPadn.app", sourceTree="BUILT_PRODUCTS_DIR")
 test_product = add("TestProduct", "PBXFileReference", explicitFileType="wrapper.cfbundle", includeInIndex="0", path="iPadnTests.xctest", sourceTree="BUILT_PRODUCTS_DIR")
 app_files, sources = [], []
-for path in sorted((ROOT / "iPadn").rglob("*.swift")):
+for path in sorted((ROOT / "iPadn").rglob("*.swift"), key=lambda path: tuple(part.casefold() for part in path.parts)):
     relative = path.relative_to(ROOT / "iPadn").as_posix()
     reference = add("File/" + relative, "PBXFileReference", lastKnownFileType="sourcecode.swift", path=relative, sourceTree="<group>")
     app_files.append(reference)
     sources.append(add("Build/" + relative, "PBXBuildFile", fileRef=reference))
+# Xcode builds use the same entitlement resolver as the xtool package.
+signing_capability = "../TestFlightKit/SigningCapability.swift"
+reference = add("File/" + signing_capability, "PBXFileReference", lastKnownFileType="sourcecode.swift",
+                path=signing_capability, sourceTree="<group>")
+app_files.append(reference)
+sources.append(add("Build/" + signing_capability, "PBXBuildFile", fileRef=reference))
 resources = []
 # String catalogs hold every user-facing string. The source language stays
 # Chinese (the keys are the Chinese text); English is translated in the catalog.
@@ -191,7 +197,7 @@ extension_resources = add("ExtensionResources", "PBXResourcesBuildPhase", buildA
                           files=[add("ExtensionBuild/Localizable.xcstrings", "PBXBuildFile", fileRef=extension_catalog)], runOnlyForDeploymentPostprocessing="0")
 objects[root_group]["children"].append(add("ExtensionGroup", "PBXGroup", children=extension_files, path="iPadnLiveActivity", sourceTree="<group>"))
 extension_phase = add("ExtensionSources", "PBXSourcesBuildPhase", buildActionMask="2147483647", files=extension_sources, runOnlyForDeploymentPostprocessing="0")
-extension_settings = {"IPHONEOS_DEPLOYMENT_TARGET": "17.0", "PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn.LiveActivity", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
+extension_settings = {"PRODUCT_BUNDLE_IDENTIFIER": "app.local.iPadn.LiveActivity", "PRODUCT_NAME": "$(TARGET_NAME)", "CODE_SIGN_STYLE": "Automatic",
                       "DEVELOPMENT_TEAM": "", "TARGETED_DEVICE_FAMILY": "1,2", "INFOPLIST_FILE": "iPadnLiveActivity/Info.plist",
                       "GENERATE_INFOPLIST_FILE": "NO", "MARKETING_VERSION": app_settings["MARKETING_VERSION"],
                       "CURRENT_PROJECT_VERSION": app_settings["CURRENT_PROJECT_VERSION"], "SKIP_INSTALL": "YES",

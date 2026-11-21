@@ -4,6 +4,7 @@ import Foundation
 /// On-device pairing shown on the Lock Screen and in the Dynamic Island while
 /// the user is in Settings. The app and this extension each compile a copy of
 /// this type; ActivityKit matches them by name, so the fields must stay equal.
+@available(iOSApplicationExtension 16.1, *)
 struct PairingActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         /// 1: open Settings, 2: device connected, 3: enter the code, 4: done, 0: failed.

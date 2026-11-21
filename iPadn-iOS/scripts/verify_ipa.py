@@ -99,6 +99,9 @@ with zipfile.ZipFile(ipa) as archive:
         raise ValueError('Corrupt IPA entry: ' + corrupt)
     namelist = archive.namelist()
     info = plistlib.loads(archive.read(prefix + 'Info.plist'))
+    assert parse_version_tuple(info['MinimumOSVersion']) <= (16, 0, 0), (
+        f"Main app requires iOS {info['MinimumOSVersion']}, expected iOS 16.0 support"
+    )
     assert info['CFBundleDisplayName'] == 'iPadn', 'Unexpected application name'
     assert info['CFBundleIdentifier'] in allowed_bundle_ids, f"Unexpected bundle identifier: {info['CFBundleIdentifier']}"
     assert set(info['UIDeviceFamily']) == {1, 2}, 'Both iPhone and iPad must be supported'
@@ -181,11 +184,18 @@ with zipfile.ZipFile(ipa) as archive:
     for entry in sorted(archive.namelist()):
         if entry.startswith(prefix + 'PlugIns/') and entry.endswith('.appex/Info.plist'):
             ext_info = plistlib.loads(archive.read(entry))
+            assert parse_version_tuple(ext_info['MinimumOSVersion']) <= (16, 0, 0), (
+                f"{entry} requires iOS {ext_info['MinimumOSVersion']}, expected iOS 16.0 support"
+            )
             executable_paths.append(entry[:-len('Info.plist')] + ext_info['CFBundleExecutable'])
     macho_build_versions = {}
     for exec_path in executable_paths:
         versions = inspect_macho_ios_versions(archive.read(exec_path))
         assert versions, 'Missing iOS LC_BUILD_VERSION in executable: ' + exec_path
+        for item in versions:
+            assert parse_version_tuple(item['minos']) <= (16, 0, 0), (
+                f"{exec_path} was linked for iOS {item['minos']}, expected iOS 16.0 support"
+            )
         macho_build_versions[exec_path] = versions
         if args.min_sdk:
             required = parse_version_tuple(args.min_sdk)

@@ -75,9 +75,19 @@ enum LocalInstallationIdentityFactory {
         }
         let safe = DER.sequence([contentInfo(DER.sequence(bags))])
         let salt = try random(32), iterations = 10_000
-        let macKey = pkcs12KDF(sha256: true, id: 3, password: password, salt: salt, iterations: iterations, length: 32)
-        let mac = Data(HMAC<SHA256>.authenticationCode(for: safe, using: SymmetricKey(data: macKey)))
-        let digestInfo = DER.sequence([DER.sequence([DER.oid("2.16.840.1.101.3.4.2.1"), DER.value(0x05, Data())]), DER.value(0x04, mac)])
+        let mac: Data
+        let digestOID: String
+        if #available(iOS 17, *) {
+            digestOID = "2.16.840.1.101.3.4.2.1"
+            let key = pkcs12KDF(sha256: true, id: 3, password: password, salt: salt, iterations: iterations, length: 32)
+            mac = Data(HMAC<SHA256>.authenticationCode(for: safe, using: SymmetricKey(data: key)))
+        } else {
+            // iOS 16 SecPKCS12Import accepts only HMAC-SHA1 in the PFX MacData.
+            digestOID = "1.3.14.3.2.26"
+            let key = pkcs12KDF(sha256: false, id: 3, password: password, salt: salt, iterations: iterations, length: 20)
+            mac = Data(HMAC<Insecure.SHA1>.authenticationCode(for: safe, using: SymmetricKey(data: key)))
+        }
+        let digestInfo = DER.sequence([DER.sequence([DER.oid(digestOID), DER.value(0x05, Data())]), DER.value(0x04, mac)])
         let macData = DER.sequence([digestInfo, DER.value(0x04, salt), DER.integer(Data([0x27, 0x10]))])
         return DER.sequence([DER.integer(Data([3])), contentInfo(safe), macData])
     }

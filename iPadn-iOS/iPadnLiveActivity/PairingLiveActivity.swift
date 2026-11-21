@@ -5,12 +5,17 @@ import WidgetKit
 @main
 struct iPadnLiveActivityBundle: WidgetBundle {
     var body: some Widget {
-        PairingLiveActivity()
-        DownloadLiveActivity()
+        if #available(iOSApplicationExtension 16.1, *) {
+            PairingLiveActivity()
+        }
+        if #available(iOSApplicationExtension 16.2, *) {
+            DownloadLiveActivity()
+        }
         ShortcutsWidget()
     }
 }
 
+@available(iOSApplicationExtension 16.1, *)
 private extension PairingActivityAttributes.ContentState {
     var title: String {
         switch step {
@@ -80,6 +85,7 @@ private struct StepDots: View {
     }
 }
 
+@available(iOSApplicationExtension 16.1, *)
 struct PairingLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PairingActivityAttributes.self) { context in

@@ -4,6 +4,7 @@ import Foundation
 /// Download progress on the Lock Screen and in the Dynamic Island. The app and
 /// this extension each compile a copy of this type; ActivityKit matches them
 /// by name, so the fields must stay equal.
+@available(iOSApplicationExtension 16.1, *)
 struct DownloadActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         /// 0 downloading, 1 preparing the package, 2 finished, 3 waiting,
