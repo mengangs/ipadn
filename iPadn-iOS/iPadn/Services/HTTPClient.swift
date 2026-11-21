@@ -27,6 +27,7 @@ final class HTTPClient: Sendable {
     static let shared = HTTPClient()
     static let userAgent = "Configurator/2.21 (Macintosh; OS X 15.2; 24C5089c) AppleWebKit/0620.1.16.11.6"
     private let session: URLSession
+    private let sessionDelegate: SessionDelegate
 
     init(protocolClasses: [AnyClass]? = nil) {
         let config = URLSessionConfiguration.ephemeral
@@ -35,14 +36,160 @@ final class HTTPClient: Sendable {
         config.httpCookieStorage = nil
         config.httpShouldSetCookies = false
         if let protocolClasses { config.protocolClasses = protocolClasses }
-        self.session = URLSession(configuration: config, delegate: RedirectPolicy(), delegateQueue: nil)
+        let delegate = SessionDelegate()
+        self.sessionDelegate = delegate
+        self.session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }
 
-    private final class RedirectPolicy: NSObject, URLSessionTaskDelegate {
+    private final class RangeTransfer: @unchecked Sendable {
+        let limit: Int
+        let lock = NSLock()
+        var data = Data()
+        var httpResponse: HTTPURLResponse?
+        var failure: Error?
+        var completed = false
+        var cancelled = false
+        var continuation: CheckedContinuation<Void, Never>?
+
+        init(limit: Int) {
+            self.limit = limit
+        }
+
+        func snapshot() -> (response: HTTPURLResponse?, failure: Error?, data: Data) {
+            lock.lock()
+            defer { lock.unlock() }
+            return (httpResponse, failure, data)
+        }
+    }
+
+    private final class SessionDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+        private let lock = NSLock()
+        private var transfers: [Int: RangeTransfer] = [:]
+
+        func attach(_ transfer: RangeTransfer, to task: URLSessionDataTask,
+                    continuation: CheckedContinuation<Void, Never>) {
+            let alreadyDone: Bool
+            lock.lock()
+            transfer.lock.lock()
+            alreadyDone = transfer.completed || transfer.cancelled
+            if alreadyDone {
+                transfer.completed = true
+            } else {
+                transfers[task.taskIdentifier] = transfer
+                transfer.continuation = continuation
+            }
+            transfer.lock.unlock()
+            lock.unlock()
+            if alreadyDone {
+                continuation.resume()
+            } else {
+                task.resume()
+            }
+        }
+
+        func cancel(_ transfer: RangeTransfer, task: URLSessionDataTask) {
+            let continuation: CheckedContinuation<Void, Never>?
+            lock.lock()
+            transfers.removeValue(forKey: task.taskIdentifier)
+            transfer.lock.lock()
+            transfer.cancelled = true
+            if transfer.completed {
+                continuation = nil
+            } else {
+                transfer.completed = true
+                continuation = transfer.continuation
+                transfer.continuation = nil
+            }
+            transfer.lock.unlock()
+            lock.unlock()
+            task.cancel()
+            continuation?.resume()
+        }
+
+        private func transfer(for taskIdentifier: Int) -> RangeTransfer? {
+            lock.lock()
+            defer { lock.unlock() }
+            return transfers[taskIdentifier]
+        }
+
+        private func popTransfer(for taskIdentifier: Int) -> RangeTransfer? {
+            lock.lock()
+            defer { lock.unlock() }
+            return transfers.removeValue(forKey: taskIdentifier)
+        }
+
         func urlSession(_ session: URLSession, task: URLSessionTask,
-                    willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+                        willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
             completionHandler(nil)
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
+                        didReceive response: URLResponse,
+                        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+            guard let transfer = transfer(for: dataTask.taskIdentifier) else {
+                completionHandler(.allow)
+                return
+            }
+            guard let http = response as? HTTPURLResponse else {
+                transfer.lock.lock()
+                transfer.failure = ToolError.message(AppText.text("服务器响应异常，请稍后重试"))
+                transfer.lock.unlock()
+                completionHandler(.cancel)
+                return
+            }
+            transfer.lock.lock()
+            transfer.httpResponse = http
+            let status = http.statusCode
+            if [301, 302, 303, 307, 308].contains(status) {
+                transfer.lock.unlock()
+                completionHandler(.cancel)
+                return
+            }
+            guard status == 206, http.value(forHTTPHeaderField: "Content-Range") != nil else {
+                transfer.failure = HTTPStatusError(code: status)
+                transfer.lock.unlock()
+                RequestFailureLog.record(http.url, status: status, stage: "range")
+                completionHandler(.cancel)
+                return
+            }
+            if http.expectedContentLength > Int64(transfer.limit) {
+                transfer.failure = ToolError.message(AppText.text("服务器响应异常，请稍后重试"))
+                transfer.lock.unlock()
+                completionHandler(.cancel)
+                return
+            }
+            if http.expectedContentLength > 0 {
+                transfer.data.reserveCapacity(min(transfer.limit, Int(http.expectedContentLength)))
+            }
+            transfer.lock.unlock()
+            completionHandler(.allow)
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive chunk: Data) {
+            guard let transfer = transfer(for: dataTask.taskIdentifier) else { return }
+            transfer.lock.lock()
+            if transfer.data.count + chunk.count > transfer.limit {
+                transfer.failure = ToolError.message(AppText.text("服务器响应异常，请稍后重试"))
+                transfer.lock.unlock()
+                dataTask.cancel()
+                return
+            }
+            transfer.data.append(chunk)
+            transfer.lock.unlock()
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            guard let transfer = popTransfer(for: task.taskIdentifier) else { return }
+            transfer.lock.lock()
+            if transfer.failure == nil, let error {
+                transfer.failure = error
+            }
+            transfer.completed = true
+            let continuation = transfer.continuation
+            transfer.continuation = nil
+            transfer.lock.unlock()
+            continuation?.resume()
         }
     }
 
@@ -153,22 +300,29 @@ final class HTTPClient: Sendable {
     }
 
     /// One byte range (`"0-99"` or `"-100"`) and its Content-Range. The body
-    /// is streamed so a server that ignores Range is dropped before the whole
-    /// package is read.
-    func range(_ url: URL, _ value: String, limit: Int) async throws -> (Data, String) {
+    /// is streamed in chunks via `URLSessionDataDelegate` so a server that
+    /// ignores Range or exceeds `limit` is aborted without byte-by-byte overhead.
+    func range(_ url: URL, _ value: String, limit: Int, timeoutInterval: TimeInterval = 15) async throws -> (Data, String) {
         guard url.scheme == "https", url.host != nil, url.user == nil, url.password == nil else { throw ToolError.message(AppText.text("链接无效")) }
         var current = url
         for _ in 0..<5 {
             try Task.checkCancellation()
             var request = URLRequest(url: current)
+            request.timeoutInterval = timeoutInterval
             request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
             request.setValue("bytes=" + value, forHTTPHeaderField: "Range")
-            let (bytes, response) = try await session.bytes(for: request)
-            guard let response = response as? HTTPURLResponse else {
-                bytes.task.cancel(); throw ToolError.message(AppText.text("服务器响应异常，请稍后重试"))
+            let transfer = RangeTransfer(limit: limit)
+            let task = session.dataTask(with: request)
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    sessionDelegate.attach(transfer, to: task, continuation: continuation)
+                }
+            } onCancel: {
+                sessionDelegate.cancel(transfer, task: task)
             }
-            if [301, 302, 303, 307, 308].contains(response.statusCode) {
-                bytes.task.cancel()
+            try Task.checkCancellation()
+            let (response, failure, body) = transfer.snapshot()
+            if let response, [301, 302, 303, 307, 308].contains(response.statusCode) {
                 // Package downloads may hop between Apple's own CDN hosts.
                 guard let location = response.value(forHTTPHeaderField: "Location"),
                       let next = URL(string: location, relativeTo: current)?.absoluteURL,
@@ -179,17 +333,11 @@ final class HTTPClient: Sendable {
                 current = next
                 continue
             }
-            guard response.statusCode == 206, let contentRange = response.value(forHTTPHeaderField: "Content-Range") else {
-                RequestFailureLog.record(current, status: response.statusCode, stage: "range")
-                bytes.task.cancel(); throw HTTPStatusError(code: response.statusCode)
+            if let failure { throw failure }
+            guard let response, response.statusCode == 206, let contentRange = response.value(forHTTPHeaderField: "Content-Range") else {
+                throw ToolError.message(AppText.text("服务器响应异常，请稍后重试"))
             }
-            var data = Data()
-            data.reserveCapacity(min(limit, max(0, Int(response.expectedContentLength))))
-            for try await byte in bytes {
-                data.append(byte)
-                if data.count > limit { bytes.task.cancel(); throw ToolError.message(AppText.text("服务器响应异常，请稍后重试")) }
-            }
-            return (data, contentRange)
+            return (body, contentRange)
         }
         throw ToolError.message(AppText.text("服务器响应异常，请稍后重试"))
     }

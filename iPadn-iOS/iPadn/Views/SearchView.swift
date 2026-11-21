@@ -72,7 +72,7 @@ struct SearchView: View {
         .compatibleNavigationDestination(item: $viewingFavorite) { app in AppDetailView(app: app) }
         .task { await store.loadNameCatalog() }
         .task { await store.checkWatched() }
-        .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
+        .task { await store.ensureOwnedLoaded() }
     }
 
     /// Distinct section-scoped row identity prevents UICollectionView diffing
@@ -261,12 +261,16 @@ struct AccountAvatar: View {
     }
     var body: some View {
         ZStack {
-            Circle().fill(account == nil ? AnyShapeStyle(Color(.tertiarySystemFill))
-                          : AnyShapeStyle(LinearGradient(colors: [Color(.systemGray2), Color(.systemGray)], startPoint: .top, endPoint: .bottom)))
             if account == nil {
+                Circle().fill(Color(.tertiarySystemFill))
                 Image(systemName: "person.fill").font(.system(size: size * 0.5)).foregroundStyle(.secondary)
             } else {
-                Text(initials).font(.system(size: size * 0.45, weight: .semibold, design: .rounded)).foregroundStyle(.white)
+                Circle().fill(LinearGradient(colors: [Color(.systemGray2), Color(.systemGray)],
+                                             startPoint: .top, endPoint: .bottom))
+                Text(initials)
+                    .font(.system(size: size * 0.45, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .contentTransition(.opacity)
             }
         }
         .frame(width: size, height: size)

@@ -531,10 +531,17 @@ struct RootView: View {
         // Isolating the overlay view keeps notice spring animations from
         // re-evaluating RootView's entire TabView / split hierarchy.
         .overlay(alignment: .top) {
-            RootNoticeOverlay(store: store)
+            RootNoticeOverlay(notices: store.notices, onUndo: { store.undoLastAction() })
         }
-        .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
-            Button("知道了", role: .cancel) { store.errorMessage = nil }
+        .alert("操作未完成", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.clearError() } })) {
+            if let action = store.errorAction {
+                Button(action.title) {
+                    let perform = action.perform
+                    store.clearError()
+                    perform()
+                }
+            }
+            Button("知道了", role: .cancel) { store.clearError() }
         } message: { Text(store.errorMessage ?? "") }
         .dismissRevealsWhenTabChanges(tabs.id)
         .transaction { transaction in
@@ -741,16 +748,19 @@ extension View {
 }
 
 private struct RootNoticeOverlay: View {
-    @ObservedObject var store: ToolStore
+    @ObservedObject var notices: NoticeCenter
+    let onUndo: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     var body: some View {
+        let message = notices.undoNotice?.message ?? notices.infoMessage
+        let isUndo = notices.undoNotice != nil
         ZStack(alignment: .top) {
-            if let message = store.undoNotice?.message ?? store.infoMessage {
+            if let message {
                 Group {
-                    if let notice = store.undoNotice {
+                    if let notice = notices.undoNotice {
                         HStack(spacing: 8) {
                             UndoCountdown(start: notice.created, duration: UndoNotice.duration)
                             Text(message).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
@@ -758,7 +768,7 @@ private struct RootNoticeOverlay: View {
                                 .compatibleNumericTransition()
                             Button("撤销") {
                                 UX.tapLight()
-                                withAnimation(UX.motion(reduceMotion)) { store.undoLastAction() }
+                                withAnimation(UX.motion(reduceMotion)) { onUndo() }
                             }
                             .font(.subheadline.weight(.semibold)).frame(minWidth: 44, minHeight: 44)
                             .compatibleInteractionShape(Rectangle())
@@ -766,52 +776,61 @@ private struct RootNoticeOverlay: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 6)
-                        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.88), value: notice.revision)
+                        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.90), value: notice.revision)
                     } else {
                         // Match 1.8.0: the whole compact notice dismisses on tap.
-                        Button { store.infoMessage = nil } label: {
+                        Button { notices.infoMessage = nil } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                                 Text(message).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
                                     .fixedSize(horizontal: false, vertical: true)
-                            }.padding(.horizontal, 18).padding(.vertical, 11).frame(minHeight: 44)
+                                    .contentTransition(.opacity)
+                            }
+                            .padding(.horizontal, 18).padding(.vertical, 11).frame(minHeight: 44)
                         }
                         .compatibleInteractionShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                         .accessibilityLabel(message).accessibilityHint("点按关闭提示")
                         .accessibilityIdentifier("notice.banner")
                     }
                 }
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+                // Solid elevated capsule avoids animated `.regularMaterial` SDFLayer backdrop
+                // recomputation (120fps on all devices and avoids iOS 26/27 AsyncRenderer lock contention).
+                .background(Color(.secondarySystemGroupedBackground).opacity(0.97),
+                            in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
                 .buttonStyle(.plain)
                 .frame(maxWidth: 320)
                 .padding(.horizontal, 24)
                 // The top of the root tab container includes the navigation bar.
                 // On compact-height devices show the banner nearer the top.
                 .padding(.top, sizeClass == .regular ? 16 : verticalSizeClass == .compact ? 8 : 52)
-                .id(store.undoNotice != nil ? "undo" : "info")
-                .transition(reduceMotion
-                    ? .opacity
-                    : .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: .top)))
+                .id(isUndo ? "undo" : "info")
+                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                 .zIndex(1)
             }
         }
-        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.88), value: store.infoMessage)
-        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.88), value: store.undoNotice?.id)
-        .task(id: store.undoNotice.map { "\($0.id.uuidString)-\($0.revision)" }) {
-            guard let notice = store.undoNotice else { return }
-            UIAccessibility.post(notification: .announcement, argument: AppText.text("\(notice.message)，可以撤销"))
+        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.90), value: notices.infoMessage)
+        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.90), value: notices.undoNotice?.id)
+        .task(id: notices.undoNotice.map { "\($0.id.uuidString)-\($0.revision)" }) {
+            guard let notice = notices.undoNotice else { return }
+            if UIAccessibility.isVoiceOverRunning || UIAccessibility.isSwitchControlRunning {
+                UIAccessibility.post(notification: .announcement, argument: AppText.text("\(notice.message)，可以撤销"))
+            }
             let remaining = notice.created.addingTimeInterval(UndoNotice.duration).timeIntervalSinceNow
             if remaining > 0 {
                 do { try await Task.sleep(for: .seconds(remaining)) } catch { return }
             }
-            if store.undoNotice?.id == notice.id && store.undoNotice?.revision == notice.revision {
-                store.undoNotice = nil
+            if notices.undoNotice?.id == notice.id && notices.undoNotice?.revision == notice.revision {
+                notices.undoNotice = nil
             }
         }
-        .task(id: store.infoMessage) {
-            guard let message = store.infoMessage else { return }
-            UIAccessibility.post(notification: .announcement, argument: message)
+        .task(id: notices.infoMessage) {
+            guard let message = notices.infoMessage else { return }
+            if UIAccessibility.isVoiceOverRunning || UIAccessibility.isSwitchControlRunning {
+                UIAccessibility.post(notification: .announcement, argument: message)
+            }
             #if DEBUG
             // Deterministic geometry checks without changing real notice timing.
             if LocalResources.isPreview && ProcessInfo.processInfo.arguments.contains("--notice-preview") { return }
@@ -819,7 +838,7 @@ private struct RootNoticeOverlay: View {
             // Longer notices (setup steps, other languages) stay up longer.
             let seconds = min(8, max(3.5, Double(message.count) / 14))
             do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
-            if store.infoMessage == message { store.infoMessage = nil }
+            if notices.infoMessage == message { notices.infoMessage = nil }
         }
     }
 }
@@ -1360,27 +1379,41 @@ struct TabReselectScroll: UIViewRepresentable {
 /// root still times the notice out and announces it; this only shows it.
 private struct SheetNotice: ViewModifier {
     @EnvironmentObject private var store: ToolStore
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func body(content: Content) -> some View {
         content.overlay(alignment: .top) {
-            if let message = store.infoMessage {
-                Button { store.infoMessage = nil } label: {
+            SheetNoticeOverlay(notices: store.notices)
+        }
+    }
+}
+
+private struct SheetNoticeOverlay: View {
+    @ObservedObject var notices: NoticeCenter
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        ZStack(alignment: .top) {
+            if let message = notices.infoMessage {
+                Button { notices.infoMessage = nil } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                         Text(message).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
-                    }.padding(.horizontal, 18).padding(.vertical, 11).frame(minHeight: 44)
+                            .contentTransition(.opacity)
+                    }
+                    .padding(.horizontal, 18).padding(.vertical, 11).frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+                .background(Color(.secondarySystemGroupedBackground).opacity(0.97),
+                            in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
                 .frame(maxWidth: 320)
                 .padding(.horizontal, 24).padding(.top, 8)
                 .accessibilityLabel(message).accessibilityHint("点按关闭提示")
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: store.infoMessage)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: notices.infoMessage)
     }
 }
 

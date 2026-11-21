@@ -43,7 +43,8 @@
 ## 2.3.1 更新
 
 - **修复 iOS 16 闪退并恢复完整兼容（感谢 [@tageniu](https://github.com/tageniu) 在 PR #108 的贡献）**：将最低部署目标恢复为 **iOS 16.0**，对 `Symbols` / `Translation` / `ActivityKit` 保持弱链接与可用性防护，修复 iOS 16 PKCS#12 证书导入兼容性、Xcode `SigningCapability.swift` 工程引用与 `iPadnLiveActivity` 扩展双端编译问题。
-- **优化历史版本快速滚动流畅度**：抽取独立无锁内存缩略图缓存 `VersionIconCache`（已加载图标首帧同步直出）、75 ms 未缓存行读取防抖、后台串行队列写入元数据快照，解决长版本列表快速滑动掉帧卡顿。
+- **优化历史版本快速滚动与账号切换流畅度（已缓存与未缓存长列表）**：抽取独立无锁缩略图缓存 `VersionIconCache`，将 IPA Range 请求改写为无锁竞争的分块 `URLSessionDataDelegate` 传输、`RemoteZip` 解析移出主线程并按字节前缀过滤，扁平化详情页单层 `LazyVStack` 并隔离 `AccountsView` 与 `NoticeCenter`（账号页内切换就地即时反馈、全局提示改轻量化胶囊），消除快速滑动卡死白屏与切号卡顿。
+- **跨区下载失败诊断与一键切换账号（`2059` / `1010`）**：仅在下载实际失败后核验账号地区与搜索商店区差异（绝不预拦截可下载应用），在弹窗中提示精简地区原因，并提供 **「切换并重试」** 或 **「切换账号」** 快捷按钮。
 - **TestFlight / CI 稳定性提升**：自适应放宽冷启动 `SAPSigner` 初始化超时上限，详见 [更新说明](RELEASE_NOTES.md)。
 
 ## 2.3.0 更新

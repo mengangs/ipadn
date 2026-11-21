@@ -363,6 +363,19 @@ final class CoreTests: XCTestCase {
         let searchError = AppErrorMessage.forSearch(ToolError.message("Your password has changed.(2002)"))
         XCTAssertTrue(searchError.contains("重新登录"))
         XCTAssertFalse(searchError.contains("2002"))
+        let mismatch = AppleStorefrontDownloadError(
+            reason: .accountRegionMismatch(accountRegion: "US", storeRegion: "CN"),
+            targetCountry: "CN"
+        )
+        let prevLocale = AppText.locale
+        defer { AppText.locale = prevLocale }
+        AppText.locale = Locale(identifier: "zh-Hans")
+        let mismatchZh = mismatch.localizedDescription
+        XCTAssertTrue(mismatchZh.contains("美国") || mismatchZh.contains("US"))
+        XCTAssertTrue(mismatchZh.contains("中国") || mismatchZh.contains("CN"))
+        AppText.locale = Locale(identifier: "en")
+        let mismatchEn = mismatch.localizedDescription
+        XCTAssertTrue(mismatchEn.lowercased().contains("region"))
     }
 
     func testTvOSDownloadPreservesAndRestoresArtwork() {

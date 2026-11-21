@@ -244,6 +244,12 @@ final class TabState: ObservableObject {
 }
 
 @MainActor
+final class NoticeCenter: ObservableObject {
+    @Published var infoMessage: String?
+    @Published var undoNotice: UndoNotice?
+}
+
+@MainActor
 final class ToolStore: ObservableObject {
     let signer = SAPSigner()
     let versions = VersionService()
@@ -253,8 +259,10 @@ final class ToolStore: ObservableObject {
     lazy var apple = AppleService(signer: signer)
     @Published var settings: ToolSettings {
         didSet {
-            do { LocalResources.defaults.set(try JSONEncoder().encode(settings), forKey: LocalResources.settings) }
-            catch { errorMessage = AppText.text("设置保存失败：\(error.localizedDescription)") }
+            do {
+                let encoded = try JSONEncoder().encode(settings)
+                cacheWrites.async { LocalResources.defaults.set(encoded, forKey: LocalResources.settings) }
+            } catch { errorMessage = AppText.text("设置保存失败：\(error.localizedDescription)") }
             downloads.configure(settings)
             if oldValue.proMode != settings.proMode {
                 tabs.reconcile(with: tabOrder)
@@ -309,7 +317,11 @@ final class ToolStore: ObservableObject {
     private var appCatalog: [String: [StoreApp]] = [:]
     private var nameCatalog: [AppNameEntry] = []
     @Published private(set) var cacheLoading = true
-    @Published var undoNotice: UndoNotice?
+    let notices = NoticeCenter()
+    var undoNotice: UndoNotice? {
+        get { notices.undoNotice }
+        set { notices.undoNotice = newValue }
+    }
     private var cacheLoadTask: Task<Void, Never>?
     private let cacheWrites = DispatchQueue(label: "iPadn.catalog-writes", qos: .utility)
     private var resultsContext: StoreContext?
@@ -334,7 +346,22 @@ final class ToolStore: ObservableObject {
     @Published private(set) var searchHistory: [SearchHistoryItem] = []
     @Published private(set) var owned: [OwnedApp] = []
     @Published private(set) var ownedLoading = false
-    @Published var errorMessage: String?
+    struct ErrorAction {
+        let title: String
+        let perform: @MainActor () -> Void
+    }
+
+    @Published var errorMessage: String? {
+        didSet {
+            if errorMessage == nil { errorAction = nil }
+        }
+    }
+    @Published var errorAction: ErrorAction?
+
+    func clearError() {
+        errorAction = nil
+        errorMessage = nil
+    }
     /// Newer store versions of downloaded apps, by `DownloadJob.updateKey`.
     @Published private(set) var availableUpdates: [String: StoreApp] = [:]
     private var updatesChecked: (date: Date, keys: Set<String>)?
@@ -348,7 +375,10 @@ final class ToolStore: ObservableObject {
     private var watchChecked: (date: Date, keys: Set<String>)?
     private var watchRecheck = false
     private var officialVersionCache: [String: (date: Date, versions: [AppVersion])] = [:]
-    @Published var infoMessage: String?
+    var infoMessage: String? {
+        get { notices.infoMessage }
+        set { notices.infoMessage = newValue }
+    }
     /// Apple wants the active account verified before an action can go on.
     /// RootView shows the code page; `retry` runs once it is verified.
     struct VerificationRequest: Identifiable {
@@ -399,6 +429,7 @@ final class ToolStore: ObservableObject {
     private var ownedByAccount: [String: [OwnedApp]] = [:]
     private var subscriptions = Set<AnyCancellable>()
     private var lastAccountID: String?
+    private var accountSyncTask: Task<Void, Never>?
     private var ownedArtworkAttempted = Set<String>()
 
     init(downloadManager: DownloadManager? = nil) {
@@ -415,19 +446,17 @@ final class ToolStore: ObservableObject {
         // the last launch are re-labelled "interrupted" there.
         DecryptRecordStore.shared.load()
         FairPlayDecryptor.cleanupStaleStaging()
-        apple.$activeID.sink { [weak self] id in
-            guard let self = self else { return }
+        apple.$activeID.dropFirst().removeDuplicates().sink { [weak self] id in
+            guard let self else { return }
             self.ownedRevision = UUID()
             self.ownedError = nil
             self.owned = id.flatMap { self.ownedByAccount[$0] } ?? []
             self.ownedListed = [:]
             self.updateLocalResults()
+            Task { @MainActor in self.accountChanged(to: id) }
         }.store(in: &subscriptions)
         // A switch, sign-in or sign-out (not the restored account at launch).
         lastAccountID = apple.activeID
-        apple.$activeID.dropFirst().removeDuplicates().sink { [weak self] id in
-            Task { @MainActor in self?.accountChanged(to: id) }
-        }.store(in: &subscriptions)
         cacheLoadTask = Task { await loadCachedState() }
     }
 
@@ -862,6 +891,8 @@ final class ToolStore: ObservableObject {
     private func accountChanged(to id: String?) {
         // Re-login and token refresh select the same account again: not a switch.
         guard id != lastAccountID else { return }
+        accountSyncTask?.cancel()
+        accountSyncTask = nil
         for task in prepareTasks.values { task.cancel() }
         prepareTasks.removeAll()
         preparingDownloads.removeAll()
@@ -876,13 +907,23 @@ final class ToolStore: ObservableObject {
             if let previous, apple.accounts.contains(where: { $0.id == previous }) { infoMessage = AppText.text("已退出登录") }
             return
         }
-        infoMessage = AppText.text("已切换到 \(account.name.isEmpty ? account.id : account.name)")
+        // On the Accounts tab, the active profile card, checkmark, and haptic already confirm
+        // the switch in place; only show the floating top notice when switching from elsewhere.
+        if tabs.id != .accounts {
+            infoMessage = AppText.text("已切换到 \(account.name.isEmpty ? account.id : account.name)")
+        }
         let switchedID = id
         let storefrontCountry = StoreService.country(forStorefront: account.storeFront)
-        // Let the notice banner begin rendering before encoding settings / firing search & purchase sync.
-        Task { @MainActor [weak self] in
-            await Task.yield()
-            guard let self, self.lastAccountID == switchedID else { return }
+        let debounce = tabs.id == .accounts
+        // Debounce rapid account taps on the Accounts page so switching through several accounts
+        // does not fire redundant search and owned-list network requests.
+        accountSyncTask = Task { @MainActor [weak self] in
+            if debounce {
+                do { try await Task.sleep(for: .milliseconds(220)) } catch { return }
+            } else {
+                await Task.yield()
+            }
+            guard !Task.isCancelled, let self, self.lastAccountID == switchedID else { return }
             if let country = storefrontCountry, self.settings.store.country != country {
                 // Changing the region re-runs the search (see settings).
                 self.settings.store.country = country
@@ -1427,71 +1468,106 @@ final class ToolStore: ObservableObject {
             requiringIcon: includingIcon && platform.supportsIPA,
             knownVersion: baselineKnown == AppVersion.unknown ? nil : baselineKnown,
             allowCached: allowCachedMeta
-        ) { @MainActor [apple] in
-            if platform == .macOS {
-                // A Mac package cannot be read in part; Apple's ticket names the version.
-                let offer = try await apple.macPackageOffer(app, versionID: versionID, useCache: useCache,
-                                                            allowLicenseAcquisition: false)
-                guard !offer.displayVersion.isEmpty else { throw RemoteZip.Failure.notFound }
-                return VersionMetadata(version: VersionService.preferredVersion(offer.displayVersion, over: baselineKnown, rejectingID: versionID),
-                                       released: nil, ticketChecked: true, metadataSchema: VersionMetadata.currentSchema)
-            }
-            let ticket = try await apple.versionTicketDetails(appID: app.id, versionID: versionID, useCache: useCache)
-            var ticketVersion = ticket.displayVersion
-            if VersionService.isLikelyStaleLatestFallback(
-                   ticketVersion, versionID: versionID, appVersion: appVersionSnapshot, versions: effectiveVersions
-               ) {
-                let buildCandidate = VersionService.sanitizedVersion(ticket.buildVersion, rejectingID: versionID)
-                if buildCandidate != AppVersion.unknown,
-                   !VersionService.isLikelyStaleLatestFallback(
-                       buildCandidate, versionID: versionID, appVersion: appVersionSnapshot, versions: effectiveVersions
-                   ) {
-                    ticketVersion = buildCandidate
-                } else {
-                    ticketVersion = ""
-                }
-            }
-            let baselinePref = VersionService.versionPreference(baselineKnown, rejectingID: versionID)
-            let ticketPref = VersionService.versionPreference(ticketVersion, rejectingID: versionID)
-            let trustedMarketing = baselinePref >= 2 ? baselineKnown : nil
-            let preferredForRemoteZip = trustedMarketing ?? ((ticketPref >= baselinePref && !ticketVersion.isEmpty && baselinePref == 0) ? nil : (baselineKnown == AppVersion.unknown ? nil : baselineKnown))
-            let previewVersion = trustedMarketing ?? ((ticketPref >= baselinePref && !ticketVersion.isEmpty) ? ticketVersion : baselineKnown)
-            if previewVersion != AppVersion.unknown || ticket.fileSize != nil {
-                onMetadata?(VersionMetadata(version: previewVersion, released: nil,
-                                            packageSize: ticket.fileSize, ticketChecked: true,
-                                            metadataSchema: VersionMetadata.currentSchema))
-            }
-            do {
-                let resources = try await RemoteZip.versionResources(
-                    HTTPRangeReader(url: ticket.url),
-                    includingIcon: includingIcon,
-                    preferredVersion: preferredForRemoteZip,
-                    onMetadata: { value in await onMetadata?(value) }
-                )
-                var metadata = resources.metadata
-                if let trustedMarketing {
-                    metadata.version = trustedMarketing
-                } else if metadata.version == AppVersion.unknown && !ticketVersion.isEmpty {
-                    metadata.version = ticketVersion
-                }
-                metadata.ticketChecked = true
-                metadata.metadataSchema = VersionMetadata.currentSchema
-                if metadata.packageSize == nil { metadata.packageSize = ticket.fileSize }
-                if let icon = resources.icon {
-                    do { try await metadataStore.saveIcon(icon, key: key) }
-                    catch { metadata.iconAvailable = nil }
-                }
-                return metadata
-            } catch RemoteZip.Failure.notFound where previewVersion != AppVersion.unknown || ticket.fileSize != nil,
-                    RemoteZip.Failure.unreadable where previewVersion != AppVersion.unknown || ticket.fileSize != nil {
-                return VersionMetadata(version: previewVersion, released: nil,
-                                       packageSize: ticket.fileSize, iconAvailable: includingIcon ? false : nil,
-                                       ticketChecked: true, metadataSchema: VersionMetadata.currentSchema)
-            }
+        ) { [apple] in
+            try await Self.fetchVersionMetadata(
+                apple: apple,
+                app: app,
+                platform: platform,
+                versionID: versionID,
+                useCache: useCache,
+                includingIcon: includingIcon,
+                baselineKnown: baselineKnown,
+                appVersionSnapshot: appVersionSnapshot,
+                effectiveVersions: effectiveVersions,
+                key: key,
+                metadataStore: metadataStore,
+                onMetadata: onMetadata
+            )
         }
         await reconcileVersionNumber(platform: platform, appID: app.id, versionID: versionID,
                                      version: loaded.version, replaceStaleDotless: previousWasStale || knownWasStaleFallback)
         return loaded
+    }
+
+    /// Runs remote ZIP inspection and PNG normalization off `@MainActor` so scrolling never
+    /// competes with main-thread layout or rendering.
+    private nonisolated static func fetchVersionMetadata(
+        apple: AppleService,
+        app: StoreApp,
+        platform: AppPlatform,
+        versionID: String,
+        useCache: Bool,
+        includingIcon: Bool,
+        baselineKnown: String,
+        appVersionSnapshot: String,
+        effectiveVersions: [AppVersion],
+        key: String,
+        metadataStore: VersionMetadataStore,
+        onMetadata: (@MainActor @Sendable (VersionMetadata) -> Void)?
+    ) async throws -> VersionMetadata {
+        if platform == .macOS {
+            // A Mac package cannot be read in part; Apple's ticket names the version.
+            let offer = try await apple.macPackageOffer(app, versionID: versionID, useCache: useCache,
+                                                        allowLicenseAcquisition: false)
+            guard !offer.displayVersion.isEmpty else { throw RemoteZip.Failure.notFound }
+            return VersionMetadata(version: VersionService.preferredVersion(offer.displayVersion, over: baselineKnown, rejectingID: versionID),
+                                   released: nil, ticketChecked: true, metadataSchema: VersionMetadata.currentSchema)
+        }
+        let ticket = try await apple.versionTicketDetails(appID: app.id, versionID: versionID, useCache: useCache)
+        var ticketVersion = ticket.displayVersion
+        if VersionService.isLikelyStaleLatestFallback(
+               ticketVersion, versionID: versionID, appVersion: appVersionSnapshot, versions: effectiveVersions
+           ) {
+            let buildCandidate = VersionService.sanitizedVersion(ticket.buildVersion, rejectingID: versionID)
+            if buildCandidate != AppVersion.unknown,
+               !VersionService.isLikelyStaleLatestFallback(
+                   buildCandidate, versionID: versionID, appVersion: appVersionSnapshot, versions: effectiveVersions
+               ) {
+                ticketVersion = buildCandidate
+            } else {
+                ticketVersion = ""
+            }
+        }
+        let baselinePref = VersionService.versionPreference(baselineKnown, rejectingID: versionID)
+        let ticketPref = VersionService.versionPreference(ticketVersion, rejectingID: versionID)
+        let trustedMarketing = baselinePref >= 2 ? baselineKnown : nil
+        let preferredForRemoteZip = trustedMarketing ?? ((ticketPref >= baselinePref && !ticketVersion.isEmpty && baselinePref == 0) ? nil : (baselineKnown == AppVersion.unknown ? nil : baselineKnown))
+        let previewVersion = trustedMarketing ?? ((ticketPref >= baselinePref && !ticketVersion.isEmpty) ? ticketVersion : baselineKnown)
+        if previewVersion != AppVersion.unknown || ticket.fileSize != nil {
+            await onMetadata?(VersionMetadata(version: previewVersion, released: nil,
+                                              packageSize: ticket.fileSize, ticketChecked: true,
+                                              metadataSchema: VersionMetadata.currentSchema))
+        }
+        do {
+            let forwardMetadata: (@Sendable (VersionMetadata) async -> Void)? = onMetadata.map { handler in
+                { @Sendable value in await handler(value) }
+            }
+            let resources = try await RemoteZip.versionResources(
+                HTTPRangeReader(url: ticket.url),
+                includingIcon: includingIcon,
+                preferredVersion: preferredForRemoteZip,
+                onMetadata: forwardMetadata
+            )
+            var metadata = resources.metadata
+            if let trustedMarketing {
+                metadata.version = trustedMarketing
+            } else if metadata.version == AppVersion.unknown && !ticketVersion.isEmpty {
+                metadata.version = ticketVersion
+            }
+            metadata.ticketChecked = true
+            metadata.metadataSchema = VersionMetadata.currentSchema
+            if metadata.packageSize == nil { metadata.packageSize = ticket.fileSize }
+            if let icon = resources.icon {
+                do { try await metadataStore.saveIcon(icon, key: key) }
+                catch { metadata.iconAvailable = nil }
+            }
+            return metadata
+        } catch RemoteZip.Failure.notFound where previewVersion != AppVersion.unknown || ticket.fileSize != nil,
+                RemoteZip.Failure.unreadable where previewVersion != AppVersion.unknown || ticket.fileSize != nil {
+            return VersionMetadata(version: previewVersion, released: nil,
+                                   packageSize: ticket.fileSize, iconAvailable: includingIcon ? false : nil,
+                                   ticketChecked: true, metadataSchema: VersionMetadata.currentSchema)
+        }
     }
 
     func versionMetadataKey(app: StoreApp, versionID: String) -> String {
@@ -1734,7 +1810,8 @@ final class ToolStore: ObservableObject {
                                                  switchToDownloadsTab: false)
                 } else {
                     let offer = try await SAPSigner.$userInitiated.withValue(true) {
-                        try await self.apple.macPackageOffer(app, versionID: targetVersionID, useCache: self.settings.useSignerCache)
+                        try await self.apple.macPackageOffer(app, versionID: targetVersionID, useCache: self.settings.useSignerCache,
+                                                             selectedCountry: self.settings.store.country)
                     }
                     try Task.checkCancellation()
                     try self.downloads.enqueueOfficialMacPackage(offer, for: app)
@@ -1767,8 +1844,42 @@ final class ToolStore: ObservableObject {
                 if let onRequireReauthentication { onRequireReauthentication(apple.activeID) }
                 else { loginPrompt = LoginPrompt(accountID: apple.activeID, retry: retry) }
             } catch is CancellationError { }
-            catch { errorMessage = error.localizedDescription }
+            catch let regionError as AppleStorefrontDownloadError {
+                presentStorefrontDownloadError(regionError, retry: retry)
+            }
+            catch {
+                errorAction = nil
+                errorMessage = error.localizedDescription
+            }
         }
+    }
+
+    private func presentStorefrontDownloadError(_ error: AppleStorefrontDownloadError, retry: @escaping @MainActor () -> Void) {
+        if let targetCountry = error.targetCountry?.uppercased(),
+           let matching = apple.accounts.first(where: {
+               $0.id != apple.activeID && $0.hasValidSession &&
+               StoreService.country(forStorefront: $0.storeFront)?.uppercased() == targetCountry
+           }) {
+            let storeLabel = StoreRegions.name(targetCountry)
+            errorAction = ErrorAction(title: AppText.text("切换并重试")) {
+                self.apple.select(matching.id)
+                Task { @MainActor in
+                    await Task.yield()
+                    retry()
+                }
+            }
+            if case .accountRegionMismatch(let accountRegion, _) = error.reason {
+                let accountLabel = StoreRegions.name(accountRegion)
+                errorMessage = AppText.text("账号地区（\(accountLabel)）与搜索地区（\(storeLabel)）不一致，将切换至 \(matching.id)。")
+            } else {
+                errorMessage = error.localizedDescription + "\n" + AppText.text("可切换至 \(storeLabel) 账号（\(matching.id)）。")
+            }
+            return
+        }
+        errorAction = ErrorAction(title: AppText.text("切换账号")) {
+            self.selectTab(.accounts)
+        }
+        errorMessage = error.localizedDescription
     }
 
     func startDownload(app: StoreApp, versionID: String?, marketingVersion: String? = nil, switchToDownloadsTab: Bool = false) async throws {

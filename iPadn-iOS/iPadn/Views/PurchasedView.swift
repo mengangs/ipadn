@@ -229,7 +229,7 @@ struct PurchasedView: View {
         }
         .navigationDestination(isPresented: $showLogin) { LoginView() }
         .sheet(item: $share) { file in ShareSheet(items: [file.url]) }
-        .task(id: apple.activeID) { await store.ensureOwnedLoaded() }
+        .task { await store.ensureOwnedLoaded() }
         .toolPage()
         .rootTabBar("已购项目", headerScrolledAway: headerAway)
         .task(id: "\(apple.activeID ?? "")|\(store.ownedRevision)") { await store.loadOwnedArtwork() }

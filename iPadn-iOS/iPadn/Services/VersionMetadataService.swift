@@ -82,7 +82,7 @@ enum RemoteZip {
                                  preferredVersion: String? = nil,
                                  onMetadata: (@Sendable (VersionMetadata) async -> Void)? = nil) async throws
         -> (metadata: VersionMetadata, icon: Data?) {
-        let (entries, size) = try await centralDirectory(reader)
+        let (entries, size) = try await centralDirectory(reader, filterForVersionResources: true)
         guard let entry = entries.first(where: { isMainInfoPlist($0.name) }) else { throw Failure.notFound }
         let data = try await contents(of: entry, fileSize: size, reader: reader)
         guard let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
@@ -182,7 +182,7 @@ enum RemoteZip {
         return nil
     }
 
-    static func centralDirectory(_ reader: RangeReader) async throws -> (entries: [Entry], size: Int64) {
+    static func centralDirectory(_ reader: RangeReader, filterForVersionResources: Bool = false) async throws -> (entries: [Entry], size: Int64) {
         // End record (22 bytes) plus the longest possible comment.
         let (fetched, size) = try await reader.tail(22 + 65_535)
         let tail = Data(fetched)
@@ -217,12 +217,45 @@ enum RemoteZip {
         } else {
             directory = try await reader.read(offset: directoryOffset, count: Int(directorySize))
         }
-        return (try entries(directory, count: count), size)
+        return (try entries(directory, count: count, filterForVersionResources: filterForVersionResources), size)
     }
 
-    static func entries(_ data: Data, count: Int64) throws -> [Entry] {
+    private static let payloadPrefixBytes: [UInt8] = Array("Payload/".utf8)
+    private static let infoPlistSuffixBytes: [UInt8] = Array("info.plist".utf8)
+    private static let pngSuffixBytes: [UInt8] = Array(".png".utf8)
+    private static let utcCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }()
+
+    private static func isVersionResourceCandidateName(_ slice: Data) -> Bool {
+        guard slice.count > payloadPrefixBytes.count,
+              slice.starts(with: payloadPrefixBytes) else { return false }
+        var slashCount = 0
+        for byte in slice where byte == 0x2F {
+            slashCount += 1
+            if slashCount > 2 { return false }
+        }
+        guard slashCount == 2 else { return false }
+        return hasASCIICaseInsensitiveSuffix(slice, suffix: infoPlistSuffixBytes)
+            || hasASCIICaseInsensitiveSuffix(slice, suffix: pngSuffixBytes)
+    }
+
+    private static func hasASCIICaseInsensitiveSuffix(_ slice: Data, suffix: [UInt8]) -> Bool {
+        guard slice.count >= suffix.count else { return false }
+        let start = slice.index(slice.endIndex, offsetBy: -suffix.count)
+        for (offset, expected) in suffix.enumerated() {
+            let actual = slice[slice.index(start, offsetBy: offset)]
+            let lower = (actual >= 0x41 && actual <= 0x5A) ? (actual + 32) : actual
+            if lower != expected { return false }
+        }
+        return true
+    }
+
+    static func entries(_ data: Data, count: Int64, filterForVersionResources: Bool = false) throws -> [Entry] {
         var result: [Entry] = []
-        result.reserveCapacity(Int(min(count, 200_000)))
+        result.reserveCapacity(filterForVersionResources ? 24 : Int(min(count, 200_000)))
         var position = 0
         while position + 46 <= data.count, data.le32(position) == 0x0201_4b50 {
             let method = data.le16(position + 10)
@@ -237,9 +270,13 @@ enum RemoteZip {
             let extraStart = nameStart + nameLength
             let next = extraStart + extraLength + commentLength
             guard next <= data.count else { throw Failure.unreadable }
-            let nameBytes = data.subdata(in: nameStart..<extraStart)
-            let name = String(data: nameBytes, encoding: .utf8) ?? String(data: nameBytes, encoding: .isoLatin1) ?? ""
-            var modified = dosDateTime(date: dosDate, time: dosTime)
+            let nameSlice = data[nameStart..<extraStart]
+            if filterForVersionResources && !isVersionResourceCandidateName(nameSlice) {
+                position = next
+                continue
+            }
+            let name = String(data: nameSlice, encoding: .utf8) ?? String(data: nameSlice, encoding: .isoLatin1) ?? ""
+            var modified = (!filterForVersionResources || isMainInfoPlist(name)) ? dosDateTime(date: dosDate, time: dosTime) : nil
             var extra = extraStart
             while extra + 4 <= extraStart + extraLength {
                 let id = data.le16(extra), length = Int(data.le16(extra + 2))
@@ -251,7 +288,8 @@ enum RemoteZip {
                     if size == 0xFFFF_FFFF, field + 8 <= body + length { size = Int64(data.le64(field)); field += 8 }
                     if compressed == 0xFFFF_FFFF, field + 8 <= body + length { compressed = Int64(data.le64(field)); field += 8 }
                     if offset == 0xFFFF_FFFF, field + 8 <= body + length { offset = Int64(data.le64(field)) }
-                } else if id == 0x5455, length >= 5, data[data.startIndex + body] & 1 != 0 {
+                } else if id == 0x5455, length >= 5, data[data.startIndex + body] & 1 != 0,
+                          !filterForVersionResources || isMainInfoPlist(name) {
                     modified = Date(timeIntervalSince1970: TimeInterval(Int32(bitPattern: data.le32(body + 1))))
                 }
                 extra = body + length
@@ -306,9 +344,7 @@ enum RemoteZip {
         var parts = DateComponents()
         parts.year = 1980 + Int(date >> 9); parts.month = Int((date >> 5) & 0xF); parts.day = Int(date & 0x1F)
         parts.hour = Int(time >> 11); parts.minute = Int((time >> 5) & 0x3F); parts.second = Int(time & 0x1F) * 2
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        return calendar.date(from: parts)
+        return utcCalendar.date(from: parts)
     }
 }
 
@@ -393,10 +429,12 @@ enum VersionIconCache {
 /// run one at a time: each one asks Apple for a download ticket.
 actor VersionMetadataStore {
     static let filename = "version-metadata.json"
+    private static let maxConcurrentFetches = 3
     private var cache = LocalResources.load([String: VersionMetadata].self, filename: VersionMetadataStore.filename) ?? [:]
-    private var busy = false
+    private var inFlight = 0
     private var waiters: [(UUID, CheckedContinuation<Void, Error>)] = []
     private let diskQueue = DispatchQueue(label: "ipadn.version-metadata.disk", qos: .utility)
+    private var persistTask: Task<Void, Never>?
 
     static func key(platform: AppPlatform, appID: String, versionID: String) -> String {
         "\(platform.rawValue)|\(appID)|\(versionID)"
@@ -429,17 +467,44 @@ actor VersionMetadataStore {
 
     func saveIcon(_ data: Data, key: String) async throws {
         let url = Self.iconURL(key)
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try data.write(to: url, options: .atomic)
+        let queue = diskQueue
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            queue.async {
+                do {
+                    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try data.write(to: url, options: .atomic)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
         VersionIconCache.remove(key)
-        if let prepared = await Task.detached(priority: .utility, operation: {
-            await VersionIconCache.prepareThumbnail(from: data)
+        if let prepared = await Task.detached(priority: .utility, operation: { () -> UIImage? in
+            guard let image = UIImage(data: data) else { return nil }
+            let maxPixel = max(image.size.width * image.scale, image.size.height * image.scale)
+            if maxPixel <= 144 {
+                return await image.byPreparingForDisplay() ?? image
+            }
+            return await VersionIconCache.prepareThumbnail(from: data)
         }).value {
             VersionIconCache.store(prepared, for: key)
         }
     }
 
+    /// Coalesces snapshot writes across bursts so scrolling does not clone and encode
+    /// the full 5,000-entry metadata map after every individual row.
     private func persistSnapshot() {
+        persistTask?.cancel()
+        persistTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 600_000_000) } catch { return }
+            await self?.flushSnapshot()
+        }
+    }
+
+    func flushSnapshot() {
+        persistTask?.cancel()
+        persistTask = nil
         let snapshot = cache
         diskQueue.async {
             try? LocalResources.save(snapshot, filename: Self.filename)
@@ -488,6 +553,8 @@ actor VersionMetadataStore {
     }
 
     func clearCache() throws {
+        persistTask?.cancel()
+        persistTask = nil
         cache.removeAll()
         VersionIconCache.removeAll()
         try diskQueue.sync {
@@ -588,10 +655,17 @@ actor VersionMetadataStore {
 
     private func acquire() async throws {
         try Task.checkCancellation()
-        guard busy else { busy = true; return }
+        if inFlight < Self.maxConcurrentFetches {
+            inFlight += 1
+            return
+        }
         let id = UUID()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
                 waiters.append((id, continuation))
             }
         } onCancel: {
@@ -603,6 +677,10 @@ actor VersionMetadataStore {
         waiters.remove(at: index).1.resume(throwing: CancellationError())
     }
     private func release() {
-        if waiters.isEmpty { busy = false } else { waiters.removeFirst().1.resume() }
+        if !waiters.isEmpty {
+            waiters.removeFirst().1.resume()
+        } else {
+            inFlight = max(0, inFlight - 1)
+        }
     }
 }

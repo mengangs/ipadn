@@ -374,6 +374,8 @@ final class AppleService: ObservableObject {
         var asset: DownloadAsset
         do {
             asset = try await fetchAsset(appID: appID, versionID: targetVersion, account: account,
+                                         platform: store.platform,
+                                         selectedCountry: allowLicenseAcquisition ? store.country : nil,
                                          useCache: useCache, fallback: false, refreshed: false, purchased: false,
                                          allowLicenseAcquisition: allowLicenseAcquisition)
         } catch let error as ToolError where targetVersion == nil && store.platform.usesIOSStore
@@ -383,6 +385,8 @@ final class AppleService: ObservableObject {
                   let latest = await StoreService.latestIOSVersionID(appID, bundleID: "", country: country, platform: store.platform)
             else { throw error }
             asset = try await fetchAsset(appID: appID, versionID: latest, account: account,
+                                         platform: store.platform,
+                                         selectedCountry: allowLicenseAcquisition ? store.country : nil,
                                          useCache: useCache, fallback: false, refreshed: false, purchased: false,
                                          allowLicenseAcquisition: allowLicenseAcquisition)
         }
@@ -394,7 +398,9 @@ final class AppleService: ObservableObject {
                 // iPhone build. Try Apple's alternate version-aware endpoint once
                 // before reporting that no verified tvOS file is available.
                 if let alternate = try? await fetchAsset(appID: appID, versionID: targetVersion,
-                    account: account, useCache: useCache, fallback: true,
+                    account: account, platform: store.platform,
+                    selectedCountry: allowLicenseAcquisition ? store.country : nil,
+                    useCache: useCache, fallback: true,
                     refreshed: false, purchased: false,
                     allowLicenseAcquisition: allowLicenseAcquisition),
                    alternate.platform.isEmpty || tvPlatforms.contains(alternate.platform.lowercased()) {
@@ -419,8 +425,9 @@ final class AppleService: ObservableObject {
     }
 
     private func fetchAsset(appID: String, versionID: String?, account: AppleAccount,
+                            platform: AppPlatform, selectedCountry: String?,
                             useCache: Bool, fallback: Bool, refreshed: Bool, purchased: Bool,
-                             allowLicenseAcquisition: Bool) async throws -> DownloadAsset {
+                            allowLicenseAcquisition: Bool) async throws -> DownloadAsset {
         guard activeID == account.id else { throw ToolError.message(AppText.text("账号已切换，请重新执行下载")) }
         let root = fallback ? "https://downloaddispatch.itunes.apple.com/up/backgroundUpdateProduct" :
             "https://downloaddispatch.itunes.apple.com/WebObjects/DownloadDispatch.woa/wa/ent/download"
@@ -450,6 +457,7 @@ final class AppleService: ObservableObject {
                 throw AppleAuthError.reauthenticationRequired
             }
             return try await fetchAsset(appID: appID, versionID: versionID, account: refreshedAccount,
+                platform: platform, selectedCountry: selectedCountry,
                 useCache: useCache, fallback: fallback, refreshed: true, purchased: purchased,
                 allowLicenseAcquisition: allowLicenseAcquisition)
         }
@@ -459,17 +467,25 @@ final class AppleService: ObservableObject {
             // here always calls authenticate and can trigger an invisible 2FA prompt.
             // Acquire the free license using the current valid account first.
             guard activeID == account.id else { throw ToolError.message(AppText.text("账号已切换，请重新执行下载")) }
-            try await acquireFreeApp(appID, account: account, useCache: useCache)
+            try await acquireFreeApp(appID, account: account, platform: platform,
+                                     selectedCountry: selectedCountry, useCache: useCache)
             return try await fetchAsset(appID: appID, versionID: versionID, account: account,
+                platform: platform, selectedCountry: selectedCountry,
                 useCache: useCache, fallback: fallback, refreshed: refreshed, purchased: true,
                 allowLicenseAcquisition: allowLicenseAcquisition)
         }
         // Viewing a version list never claims a license; say what is missing.
         if failure == "9610" && !allowLicenseAcquisition { throw AppleLicenseError.notOwned }
+        if allowLicenseAcquisition,
+           let regionalError = await diagnoseStorefrontFailure(failure, appID: appID, platform: platform,
+                                                               account: account, selectedCountry: selectedCountry) {
+            throw regionalError
+        }
         if let error = HTTPClient.appleFailure(raw) { throw error }
         guard let song = (raw["songList"] as? [[String: Any]])?.first else {
             if !fallback {
                 return try await fetchAsset(appID: appID, versionID: versionID, account: account,
+                    platform: platform, selectedCountry: selectedCountry,
                     useCache: useCache, fallback: true, refreshed: refreshed, purchased: purchased,
                     allowLicenseAcquisition: allowLicenseAcquisition)
             }
@@ -630,6 +646,7 @@ final class AppleService: ObservableObject {
     /// `arcade` false first; an iOS app that Apple reports unavailable (2059)
     /// is retried as an Apple Arcade game, as ipatool does.
     private func acquireFreeApp(_ id: String, account: AppleAccount, mac: Bool = false, arcade: Bool = false,
+                                platform: AppPlatform = .iOS, selectedCountry: String? = nil,
                                 useCache: Bool = true) async throws {
         let deviceID = guid
         let payload: [String: Any] = ["appExtVrsId": "0", "buyWithoutAuthorization": "true", "guid": deviceID,
@@ -643,17 +660,24 @@ final class AppleService: ObservableObject {
         // A license acquisition can independently require a new trusted-device
         // approval, even when the previous download token was accepted.
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
+        let failure = plistString(raw["failureType"])
         // The account already holds the license (ipatool): nothing to claim.
-        if plistString(raw["failureType"]) == "5002" { return }
+        if failure == "5002" { return }
         if plistString(raw["customerMessage"]) == "Subscription Required" {
             throw ToolError.message(AppText.text("此应用属于 Apple Arcade，需要此账号订阅 Apple Arcade 后才能下载。"))
         }
-        if plistString(raw["failureType"]) == "2059" && !mac && !arcade {
-            return try await acquireFreeApp(id, account: account, mac: mac, arcade: true, useCache: useCache)
+        if failure == "2059" && !mac && !arcade {
+            return try await acquireFreeApp(id, account: account, mac: mac, arcade: true,
+                                            platform: platform, selectedCountry: selectedCountry,
+                                            useCache: useCache)
         }
-        if ["2034", "2042"].contains(plistString(raw["failureType"])) ||
+        if ["2034", "2042"].contains(failure) ||
            plistString(raw["customerMessage"]) == "MZFinance.BadLogin.Configurator_message" {
             throw AppleLoginError.verificationRequired
+        }
+        if let regionalError = await diagnoseStorefrontFailure(failure, appID: id, platform: mac ? .macOS : platform,
+                                                               account: account, selectedCountry: selectedCountry) {
+            throw regionalError
         }
         if let error = HTTPClient.appleFailure(raw) { throw error }
         guard raw["jingleDocType"] != nil else { throw ToolError.message(AppText.text("未能获取免费应用许可，请先在 App Store 获取后重试")) }
@@ -667,7 +691,8 @@ final class AppleService: ObservableObject {
     /// A free app the account has never got is claimed first, as for iOS,
     /// unless `allowLicenseAcquisition` is false (version lists).
     func macPackageOffer(_ app: StoreApp, versionID requested: String? = nil, useCache: Bool,
-                         allowLicenseAcquisition: Bool = true, licenseAcquired: Bool = false) async throws -> MacPackageOffer {
+                         allowLicenseAcquisition: Bool = true, licenseAcquired: Bool = false,
+                         selectedCountry: String? = nil) async throws -> MacPackageOffer {
         let account = try requireSignedInAccount()
         guard let appNumber = UInt64(app.id), appNumber > 0 else {
             throw ToolError.message(AppText.text("请输入有效的 Mac 应用 ID"))
@@ -711,13 +736,21 @@ final class AppleService: ObservableObject {
         try Task.checkCancellation()
         guard activeID == initialID else { throw ToolError.message(AppText.text("账号已切换，请重新获取 Mac 下载信息")) }
         if AppleAuthError.requiresReauthentication(raw) { throw AppleAuthError.reauthenticationRequired }
-        if plistString(raw["failureType"]) == "9610" && !licenseAcquired {
+        let macFailure = plistString(raw["failureType"])
+        if macFailure == "9610" && !licenseAcquired {
             guard allowLicenseAcquisition else { throw AppleLicenseError.notOwned }
-            try await acquireFreeApp(app.id, account: account, mac: true, useCache: useCache)
+            try await acquireFreeApp(app.id, account: account, mac: true,
+                                     platform: .macOS, selectedCountry: selectedCountry, useCache: useCache)
             try Task.checkCancellation()
             guard activeID == initialID else { throw ToolError.message(AppText.text("账号已切换，请重新获取 Mac 下载信息")) }
             return try await macPackageOffer(app, versionID: versionID, useCache: useCache,
-                                             allowLicenseAcquisition: false, licenseAcquired: true)
+                                             allowLicenseAcquisition: false, licenseAcquired: true,
+                                             selectedCountry: selectedCountry)
+        }
+        if allowLicenseAcquisition,
+           let regionalError = await diagnoseStorefrontFailure(macFailure, appID: app.id, platform: .macOS,
+                                                               account: account, selectedCountry: selectedCountry) {
+            throw regionalError
         }
         if let error = HTTPClient.appleFailure(raw) { throw error }
         var offer: MacPackageOffer
@@ -729,6 +762,36 @@ final class AppleService: ObservableObject {
         }
         offer.hardwareID = deviceID
         return offer
+    }
+
+    private func diagnoseStorefrontFailure(_ code: String, appID: String, platform: AppPlatform,
+                                           account: AppleAccount, selectedCountry: String?) async -> Error? {
+        guard code == "2059" || code == "1010" else { return nil }
+        let accountCountry = StoreService.country(forStorefront: account.storeFront)?.uppercased()
+        let storeCountry = selectedCountry?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if let accountCountry, let storeCountry, !storeCountry.isEmpty, accountCountry != storeCountry {
+            return AppleStorefrontDownloadError(
+                reason: .accountRegionMismatch(accountRegion: accountCountry, storeRegion: storeCountry),
+                targetCountry: storeCountry
+            )
+        }
+        if let accountCountry,
+           (try? await StoreService.platformApp(appID, store: StoreContext(country: accountCountry, platform: platform))) == nil {
+            return AppleStorefrontDownloadError(
+                reason: .appUnavailableInAccountRegion(accountRegion: accountCountry),
+                targetCountry: nil
+            )
+        }
+        if code == "1010", let accountCountry {
+            return AppleStorefrontDownloadError(
+                reason: .appUnavailableInAccountRegion(accountRegion: accountCountry),
+                targetCountry: nil
+            )
+        }
+        return AppleStorefrontDownloadError(
+            reason: .temporarilyUnavailable(accountRegion: accountCountry),
+            targetCountry: storeCountry
+        )
     }
 
     func ownedApps(useCache: Bool) async throws -> [OwnedApp] {
@@ -955,6 +1018,31 @@ struct MacPackageOffer {
                                protectedByApple: !dpInfos.isEmpty,
                                externalVersionIDs: (metadata["softwareVersionExternalIdentifiers"] as? [Any] ?? []).map { plistString($0) },
                                dpInfo: dpInfos.first)
+    }
+}
+
+struct AppleStorefrontDownloadError: LocalizedError, Equatable {
+    enum Reason: Equatable {
+        case accountRegionMismatch(accountRegion: String, storeRegion: String)
+        case appUnavailableInAccountRegion(accountRegion: String)
+        case temporarilyUnavailable(accountRegion: String?)
+    }
+
+    let reason: Reason
+    let targetCountry: String?
+
+    var errorDescription: String? {
+        switch reason {
+        case .accountRegionMismatch(let accountRegion, let storeRegion):
+            let accountLabel = StoreRegions.name(accountRegion)
+            let storeLabel = StoreRegions.name(storeRegion)
+            return AppText.text("账号地区（\(accountLabel)）与搜索地区（\(storeLabel)）不一致，请切换账号或搜索地区后再试。")
+        case .appUnavailableInAccountRegion(let accountRegion):
+            let accountLabel = StoreRegions.name(accountRegion)
+            return AppText.text("此应用在账号地区（\(accountLabel)）不可用，请更换对应地区账号后再试。")
+        case .temporarilyUnavailable:
+            return AppText.text("该应用暂时无法下载，请稍后再试或切换对应地区账号。")
+        }
     }
 }
 

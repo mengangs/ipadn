@@ -43,7 +43,8 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 ## What’s new in 2.3.1
 
 - **Restored iOS / iPadOS 16 Compatibility (thanks [@tageniu](https://github.com/tageniu) for PR #108)**: Restores the **iOS 16.0** deployment target with weak-linked iOS 17+ frameworks (`Symbols`, `Translation`, `ActivityKit`), falls back to HMAC-SHA1 PKCS#12 MAC on iOS 16, registers `SigningCapability.swift` in `iPadn.xcodeproj`, and aligns `iPadnLiveActivity` availability checks across Xcode and `xtool`.
-- **Smooth Version History Scrolling**: Introduces a lock-free `VersionIconCache` (`NSCache` + background thumbnail decoding) so cached icons render synchronously on frame zero, debounces uncached row disk reads during fast flings, and moves metadata snapshot writes off the main actor.
+- **Smooth Version History Scrolling & Instant Account Switching**: Extracts `VersionIconCache`, uses race-free chunked `URLSessionDataDelegate` range reads with prefix-filtered `RemoteZip` parsing off the main actor, flattens `AppDetailView` into a single `LazyVStack` to prevent fast-scroll stalls/blanking, isolates `AccountsView` & `NoticeCenter`, switches accounts cleanly in place on the Accounts tab, and replaces heavy material toast animations with a lightweight elevated capsule.
+- **Post-Failure Cross-Region Diagnosis & Account Switch (`2059` / `1010`)**: Only after an actual `2059`/`1010` failure (never pre-blocking working cross-region downloads), shows a concise region mismatch alert with **Switch & Retry** (when a matching signed-in account exists) or **Switch Account**.
 - **TestFlight / CI Reliability**: Expands `SAPSigner` cold-boot WebKit warm-up bounds; see [release notes](RELEASE_NOTES.md) for details.
 
 ## What’s new in 2.3.0

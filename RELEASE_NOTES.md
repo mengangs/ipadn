@@ -2,7 +2,7 @@
 
 **目录 / Contents**：[简体中文](#-核心修复与优化) · [TestFlight 说明与免责](#-testflight-实验性说明与免责声明) · [English](#english) · [TestFlight Notice](#testflight-experimental-notice--disclaimer)
 
-本次为 **v2.3.0** 的首个快速修复与性能优化版：全面恢复 **iOS / iPadOS 16** 兼容运行，解决高速滑动大量历史版本时因图标加载与持久化引起的掉帧卡顿，并补齐 Xcode / TestFlight CI 编译与初始化稳定性。安装包均未签名，请使用自用签名工具签名后安装。
+本次为 **v2.3.0** 的首个快速修复与性能优化版：全面恢复 **iOS / iPadOS 16** 兼容运行，彻底解决快速滑动已缓存及未缓存「历史版本」长列表时的掉帧卡顿，新增跨区下载失败（`2059` / `1010`）后的智能原因提示与一键切换账号重试，并补齐 Xcode / TestFlight CI 编译与初始化稳定性。安装包均未签名，请使用自用签名工具签名后安装。
 
 ### 🔧 核心修复与优化
 
@@ -10,9 +10,13 @@
   - 修复 `v2.3.0` 构建时将部署目标升至 iOS 17 导致 iOS 16 设备冷启动即因 `dyld` 缺失 `Symbols.framework` 闪退的问题：统一把 SwiftPM、`xtool` 与 Xcode 的最低部署目标恢复为 **iOS 16.0**，并对 `Symbols`、`Translation`、`ActivityKit` 保持弱链接（`LC_LOAD_WEAK_DYLIB`）与完整运行时可用性防护。
   - 修复 iOS 16 设备本地生成安装 PKCS#12 证书时 `SecItemImport` 因默认 AES 算法不兼容导致的失败：iOS 16 上自动回退为兼容的 HMAC-SHA1 PKCS#12 MAC。
   - 补齐 Xcode 工程文件缺失的 `SigningCapability.swift` 引用，并修复 `iPadnLiveActivity` 扩展在 iOS 16 与双构建链（Xcode / `xtool`）下的可用性标注与编译通过。
-- **显著优化「历史版本」快速滚动流畅度（400+ 版本长列表实测通过）**
-  - 引入独立无锁内存缩略图缓存 `VersionIconCache`（`NSCache` 24 MiB 配额、去重并发与后台预解码至展示分辨率）：已缓存版本图标在回滑时首帧同步直出，无闪烁占位。
-  - 未缓存行先进行轻量防抖（75 ms），快速飞掠时跳过无效磁盘解码；同时将版本元数据 JSON 持久化下沉到后台串行队列、跳过已完整加载条目与无变化状态写回，消除掉帧卡顿。
+- **显著优化「历史版本」快速滚动流畅度（已缓存与未缓存长列表均实测通过）**
+  - 引入独立无锁内存缩略图缓存 `VersionIconCache`（`NSCache` 24 MiB 配额、去重并发与后台预解码）：已缓存版本图标在回滑时首帧同步直出，无闪烁占位。
+  - 将远程 IPA Range 请求由逐字节 async 迭代改写为分块 `URLSessionDataDelegate` 传输、修复快速取消时的 `CheckedContinuation` 竞争死锁，并在 `RemoteZip` 中按条目字节前缀过滤，避免大型游戏数万条中央目录反复分配；元数据获取与磁盘落盘彻底移出主线程。
+  - 消除详情页垂直嵌套 `LazyVStack` 与滚动期状态重算（改为单层扁平 `LazyVStack` 并隔离标题栏滚动观察与 `NoticeCenter` 通知中心），解决高速滑动概率性白屏、卡死；同时隔离「账号」页列表重绘与隐藏页抢跑，账号页内切号改为卡片/对勾就地即时反馈，并轻量化全局顶部提示条动画。
+- **跨区下载失败智能诊断与一键切换账号（错误码 `2059` / `1010`）**
+  - 仅在 Apple 实际返回「暂时无法下载」（`2059` / `1010`）错误后触发地区核验，**绝不预先拦截仍可跨区下载的应用**；当当前 Apple 账号商店区与搜索地区不一致或应用在账号地区不可用时，给出精简明确的地区差异提示。
+  - 若本地已登录与目标搜索地区匹配的账号，弹窗直接提供 **「切换并重试」** 按钮；否则提供 **「切换账号」** 一键直达账号页。
 - **TestFlight / CI 初始化稳定性加固**
   - 适当放宽首次冷启动 `SAPSigner`（WebKit）初始化超时上限（45s–90s 可自适应），提升低速环境中 TestFlight 会话签名与 CI 测试稳定性。
 
@@ -38,7 +42,7 @@
 
 ### English
 
-**v2.3.1** is a fast-follow stability and performance update to **v2.3.0**: it restores full **iOS / iPadOS 16** compatibility, eliminates frame drops during fast scrolling in long version history lists, and resolves Xcode / TestFlight CI build and cold-boot reliability issues. Both packages are unsigned—sign with your own tool before installing.
+**v2.3.1** is a fast-follow stability and performance update to **v2.3.0**: it restores full **iOS / iPadOS 16** compatibility, eliminates frame drops during fast scrolling in both cached and uncached version history lists, adds post-failure cross-region download diagnosis (`2059` / `1010`) with one-tap account switching, and resolves Xcode / TestFlight CI build and cold-boot reliability issues. Both packages are unsigned—sign with your own tool before installing.
 
 #### Fixes & Improvements Since v2.3.0
 
@@ -51,6 +55,11 @@
   - Debounced uncached row disk reads (75 ms) to skip fast-flung rows, moved version metadata snapshot writes off the main actor onto a dedicated background queue, and skipped redundant metadata reloads and no-op UI writes.
 - **TestFlight & CI Cold-Boot Reliability**
   - Expanded the `SAPSigner` WebKit warm-up timeout floor/cap (45s–90s) to prevent spurious cold-boot timeouts under slow hosts or constrained CI runners.
+- **Post-Failure Cross-Region Download Diagnosis & One-Tap Account Switch (`2059` / `1010`)**
+  - Runs storefront diagnostics **only after** Apple returns a download failure (`2059` / `1010`)—never pre-blocking cross-region downloads that succeed—to display a concise reason when the signed-in Apple Account’s storefront differs from the selected search storefront or lacks the item.
+  - When another signed-in account matches the search storefront, the alert offers a crisp **Switch & Retry** button; otherwise it offers **Switch Account**.
+- **Single Flat `LazyVStack`, Deadlock Fix & Smooth Account Switching**
+  - Flattened `AppDetailView` into a single `LazyVStack`, eliminated the `HTTPClient` range cancellation race, filtered `RemoteZip` central directory scans to top-level payload metadata, isolated `AccountsView` & `NoticeCenter`, removed redundant top banners while switching inside the Accounts tab, and switched floating notices to a lightweight elevated capsule to avoid iOS 26/27 `SDFLayer` contention.
 
 #### Official Telegram Channel & GitHub Issues Archive
 - **Official Telegram Channel**: [**https://t.me/ipadn_official**](https://t.me/ipadn_official) (new builds & source archives land here first).
