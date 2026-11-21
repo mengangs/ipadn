@@ -7,7 +7,7 @@
 **在 iPhone 和 iPad 上搜索、下载、安装你拥有的 App。**
 支持 iPhone、iPad、Apple TV 与 Mac 应用，包括历史版本与已下架应用。
 
-✨ **v2.3.0 重磅新增 [TestFlight 下载与安装（实验性）](#testflight-实验性新功能)** · 📢 **反馈与新版优先前往 [官方 Telegram 频道](https://t.me/ipadn_official)**
+✨ **v2.3.1 已恢复 iOS 16 支持 & 列表滚动流畅度优化 · 新增 [TestFlight 下载与安装（实验性）](#testflight-实验性新功能)** · 📢 **反馈与新版优先前往 [官方 Telegram 频道](https://t.me/ipadn_official)**
 
 [![最新版本](https://img.shields.io/github/v/release/mengangs/ipadn?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
 [![Telegram 频道](https://img.shields.io/badge/Telegram-%40ipadn__official-26A5E4?logo=telegram&logoColor=white)](https://t.me/ipadn_official)
@@ -39,6 +39,12 @@
 </p>
 
 ---
+
+## 2.3.1 更新
+
+- **修复 iOS 16 闪退并恢复完整兼容（感谢 [@tageniu](https://github.com/tageniu) 在 PR #108 的贡献）**：将最低部署目标恢复为 **iOS 16.0**，对 `Symbols` / `Translation` / `ActivityKit` 保持弱链接与可用性防护，修复 iOS 16 PKCS#12 证书导入兼容性、Xcode `SigningCapability.swift` 工程引用与 `iPadnLiveActivity` 扩展双端编译问题。
+- **优化历史版本快速滚动流畅度**：抽取独立无锁内存缩略图缓存 `VersionIconCache`（已加载图标首帧同步直出）、75 ms 未缓存行读取防抖、后台串行队列写入元数据快照，解决长版本列表快速滑动掉帧卡顿。
+- **TestFlight / CI 稳定性提升**：自适应放宽冷启动 `SAPSigner` 初始化超时上限，详见 [更新说明](RELEASE_NOTES.md)。
 
 ## 2.3.0 更新
 

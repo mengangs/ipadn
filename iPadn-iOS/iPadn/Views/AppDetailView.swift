@@ -183,15 +183,18 @@ struct AppDetailView: View {
             }
         }
         updated.version = resolvedVersion != AppVersion.unknown ? resolvedVersion : (incomingStale ? AppVersion.unknown : incoming.version)
-        metadata[versionID] = updated
+        if metadata[versionID] != updated {
+            metadata[versionID] = updated
+        }
         guard let rowIndex else { return }
         if resolvedVersion != AppVersion.unknown {
             let currentScore = VersionService.versionPreference(versions[rowIndex].version, rejectingID: versionID)
             let resolvedScore = VersionService.versionPreference(resolvedVersion, rejectingID: versionID)
-            if resolvedScore > currentScore || rowVersion == AppVersion.unknown {
+            if (resolvedScore > currentScore || rowVersion == AppVersion.unknown),
+               versions[rowIndex].version != resolvedVersion {
                 versions[rowIndex].version = resolvedVersion
             }
-        } else if rowStale {
+        } else if rowStale, versions[rowIndex].version != AppVersion.unknown {
             versions[rowIndex].version = AppVersion.unknown
         }
     }
@@ -477,6 +480,7 @@ struct AppDetailView: View {
     }
     /// Versions shown before “Show all”.
     static let collapsedVersions = 5
+    private static let releaseDateFormat = Date.FormatStyle.dateTime.year().month().day()
     private func sectionTitle(_ text: LocalizedStringKey) -> some View {
         Text(text).font(.title3.weight(.bold)).foregroundStyle(.primary).textCase(nil)
     }
@@ -827,7 +831,7 @@ struct AppDetailView: View {
         let reading = !known && metadataLoading[version.id] != nil
         let note = known ? releaseNotes[name] : nil
         let info = versionInfo(version.id)
-        let date = (info?.released ?? note?.date)?.formatted(.dateTime.year().month().day())
+        let date = (info?.released ?? note?.date)?.formatted(Self.releaseDateFormat)
         let estimatedDate = info?.released != nil && info?.releaseDateIsEstimated != false
         let expanded = expandedNotes.contains(version.id)
         let size = info?.packageSize.map { $0.byteLabel }
@@ -937,11 +941,37 @@ struct AppDetailView: View {
         }
     }
 
+    private func rowNeedsMetadataLoad(_ version: AppVersion) -> Bool {
+        guard readsMetadata else { return false }
+        guard let info = versionInfo(version.id) else { return true }
+        let supportsIPA = store.settings.store.platform.supportsIPA
+        if supportsIPA {
+            if info.packageSize == nil { return true }
+            if store.settings.showHistoryIcons {
+                if info.iconAvailable == nil { return true }
+                if info.iconAvailable == true,
+                   store.cachedMemoryVersionImage(app: app, versionID: version.id) == nil {
+                    return true
+                }
+            }
+        }
+        let pref = VersionService.versionPreference(info.version, rejectingID: version.id)
+        return pref < 2 && info.ticketChecked != true
+    }
+
     private func loadMetadata(_ version: AppVersion) async {
-        // The store itself validates size/icon completeness and file eviction.
-        // Even a cached row may need its independently stored icon restored.
-        guard readsMetadata, metadataLoading[version.id] == nil else { return }
+        // Skip rows whose metadata and thumbnail are already live in memory so scrolling
+        // never mutates parent @State or flashes progress indicators.
+        guard rowNeedsMetadataLoad(version), metadataLoading[version.id] == nil else { return }
         let context = versionsKey
+        if let satisfied = await store.cachedSatisfiedVersionMetadata(
+            app: app, versionID: version.id, requiringIcon: store.settings.showHistoryIcons
+        ) {
+            guard !Task.isCancelled, context == versionsKey else { return }
+            reconcileVersionDisplay(satisfied, for: version.id)
+            return
+        }
+        guard !Task.isCancelled, context == versionsKey, metadataLoading[version.id] == nil else { return }
         let requestID = UUID()
         metadataLoading[version.id] = requestID
         defer { if metadataLoading[version.id] == requestID { metadataLoading[version.id] = nil } }
@@ -1515,7 +1545,8 @@ private extension View {
     }
 }
 
-/// Row-local decoded images are released offscreen; disk cache is version-keyed.
+/// Renders cached thumbnails synchronously from `VersionIconCache` on frame 0 and debounces
+/// disk reads/decodes so high-speed scrolling never drops frames.
 private struct VersionHistoryIcon: View {
     @EnvironmentObject private var store: ToolStore
     let app: StoreApp
@@ -1527,28 +1558,49 @@ private struct VersionHistoryIcon: View {
     @State private var loadedImageKey: String?
 
     var body: some View {
+        let cacheKey = store.versionMetadataKey(app: app, versionID: versionID)
+        let memoryImage = store.cachedMemoryVersionImage(app: app, versionID: versionID)
+        let displayedImage = memoryImage ?? (loadedImageKey == cacheKey ? image : nil)
+
         ZStack {
-            if let image { Image(uiImage: image).resizable().scaledToFit() }
-            else {
-                RoundedRectangle(cornerRadius: 11).fill(Color.secondary.opacity(0.10))
+            if let displayedImage {
+                Image(uiImage: displayedImage).resizable().scaledToFit()
+            } else {
+                RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color.secondary.opacity(0.10))
                 if loading { ProgressView().controlSize(.small) }
                 else { Image(systemName: "app.dashed").font(.title2).foregroundStyle(.secondary) }
             }
         }
         .frame(width: 48, height: 48)
-        .clipShape(RoundedRectangle(cornerRadius: 11))
+        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(image == nil ? Text("未获取该版本图标") : Text("该版本应用图标"))
-        .accessibilityIdentifier((image == nil ? "detail.version.icon-missing." : "detail.version.icon.") + versionID)
+        .accessibilityLabel(displayedImage == nil ? Text("未获取该版本图标") : Text("该版本应用图标"))
+        .accessibilityIdentifier((displayedImage == nil ? "detail.version.icon-missing." : "detail.version.icon.") + versionID)
         .task(id: "\(context)-\(versionID)-\(available == true)") {
-            let key = "\(context)-\(versionID)"
-            if loadedImageKey != key { image = nil }
-            guard available == true else { image = nil; loadedImageKey = nil; return }
+            if memoryImage != nil {
+                if image != nil { image = nil }
+                if loadedImageKey != nil { loadedImageKey = nil }
+                return
+            }
+            if loadedImageKey != cacheKey, image != nil { image = nil }
+            guard available == true else {
+                if image != nil { image = nil }
+                loadedImageKey = nil
+                return
+            }
+            if !store.isVisualPreview {
+                // Skip disk reads and PNG decoding while rows fly past during fast scroll.
+                do { try await Task.sleep(nanoseconds: 75_000_000) } catch { return }
+                guard !Task.isCancelled else { return }
+            }
             let decoded = await store.cachedVersionImage(app: app, versionID: versionID)
             guard !Task.isCancelled else { return }
             image = decoded
-            loadedImageKey = key
+            loadedImageKey = cacheKey
         }
-        .onDisappear { image = nil; loadedImageKey = nil }
+        .onDisappear {
+            if image != nil { image = nil }
+            loadedImageKey = nil
+        }
     }
 }

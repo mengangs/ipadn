@@ -1,6 +1,6 @@
 # 自行编译 iPadn
 
-iPadn 是一个 SwiftUI 应用，最低支持 iOS / iPadOS 16（原生安装需 17.4+，实时活动需 16.1+，本机配对需 27+），适用于 iPhone 和 iPad。当前版本号为 2.3.0（build 36）。GitHub Issues 已关闭，新版安装包与源码优先在官方 Telegram 频道 https://t.me/ipadn_official 发布，问题反馈请前往频道对应版本贴文下方。
+iPadn 是一个 SwiftUI 应用，最低支持 iOS / iPadOS 16（原生安装需 17.4+，实时活动需 16.1+，本机配对需 27+），适用于 iPhone 和 iPad。当前版本号为 2.3.1（build 37）。GitHub Issues 已关闭，新版安装包与源码优先在官方 Telegram 频道 https://t.me/ipadn_official 发布，问题反馈请前往频道对应版本贴文下方。
 
 ## GitHub 云编译（无需本地 Mac）
 

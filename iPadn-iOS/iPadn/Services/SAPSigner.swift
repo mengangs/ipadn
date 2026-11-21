@@ -270,7 +270,8 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
             web.navigationDelegate = self
             webView = web; isPresented = true
             if !warm {
-                armTimeout(id: id, seconds: 45, message: AppText.text("本地验证环境加载超时，请重试。"))
+                let loadTimeout = max(45, min(timeoutSeconds, 90))
+                armTimeout(id: id, seconds: loadTimeout, message: AppText.text("本地验证环境加载超时，请重试。"))
                 try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                     navigation = continuation
                     web.load(URLRequest(url: base.appendingPathComponent("runtime/index.html")))

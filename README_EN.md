@@ -7,7 +7,7 @@
 **Search, download and install the apps you own, on iPhone and iPad.**
 Works with iPhone, iPad, Apple TV and Mac apps, including older versions and apps removed from sale.
 
-✨ **New in v2.3.0: [TestFlight Support (Experimental)](#testflight-experimental)** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
+✨ **New in v2.3.1: Restored iOS 16 support & smoother version-history scrolling · [TestFlight Support (Experimental)](#testflight-experimental)** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
 
 [![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
 [![Telegram Channel](https://img.shields.io/badge/Telegram-%40ipadn__official-26A5E4?logo=telegram&logoColor=white)](https://t.me/ipadn_official)
@@ -39,6 +39,12 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 </p>
 
 ---
+
+## What’s new in 2.3.1
+
+- **Restored iOS / iPadOS 16 Compatibility (thanks [@tageniu](https://github.com/tageniu) for PR #108)**: Restores the **iOS 16.0** deployment target with weak-linked iOS 17+ frameworks (`Symbols`, `Translation`, `ActivityKit`), falls back to HMAC-SHA1 PKCS#12 MAC on iOS 16, registers `SigningCapability.swift` in `iPadn.xcodeproj`, and aligns `iPadnLiveActivity` availability checks across Xcode and `xtool`.
+- **Smooth Version History Scrolling**: Introduces a lock-free `VersionIconCache` (`NSCache` + background thumbnail decoding) so cached icons render synchronously on frame zero, debounces uncached row disk reads during fast flings, and moves metadata snapshot writes off the main actor.
+- **TestFlight / CI Reliability**: Expands `SAPSigner` cold-boot WebKit warm-up bounds; see [release notes](RELEASE_NOTES.md) for details.
 
 ## What’s new in 2.3.0
 

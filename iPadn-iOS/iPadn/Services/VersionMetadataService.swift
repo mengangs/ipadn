@@ -325,6 +325,70 @@ private extension Data {
     }
 }
 
+/// Lock-free memory + concurrent background PNG decode cache for version icons,
+/// kept outside `VersionMetadataStore` so disk metadata saves and network fetches
+/// never block icon scrolling on the main thread.
+enum VersionIconCache {
+    private actor Requests {
+        var pending: [String: Task<UIImage?, Never>] = [:]
+        func load(_ key: String) async -> UIImage? {
+            if let hit = VersionIconCache.cached(key) { return hit }
+            if let task = pending[key] { return await task.value }
+            let task = Task.detached(priority: .utility) { () -> UIImage? in
+                let url = VersionMetadataStore.iconURL(key)
+                guard let data = try? Data(contentsOf: url) else { return nil }
+                return await VersionIconCache.prepareThumbnail(from: data)
+            }
+            pending[key] = task
+            let image = await task.value
+            if let image { VersionIconCache.store(image, for: key) }
+            pending.removeValue(forKey: key)
+            return image
+        }
+    }
+
+    private static let requests = Requests()
+    /// 24 MiB fits ~300 decoded 144x144px icons while bounding memory cleanly.
+    private static let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.totalCostLimit = 24 * 1024 * 1024
+        return cache
+    }()
+
+    static func cost(of image: UIImage) -> Int {
+        Int(image.size.width * image.scale * image.size.height * image.scale * 4)
+    }
+
+    static func cached(_ key: String) -> UIImage? {
+        cache.object(forKey: key as NSString)
+    }
+
+    static func load(_ key: String) async -> UIImage? {
+        if let hit = cached(key) { return hit }
+        return await requests.load(key)
+    }
+
+    static func store(_ image: UIImage, for key: String) {
+        cache.setObject(image, forKey: key as NSString, cost: cost(of: image))
+    }
+
+    static func remove(_ key: String) {
+        cache.removeObject(forKey: key as NSString)
+    }
+
+    static func removeAll() {
+        cache.removeAllObjects()
+    }
+
+    static func prepareThumbnail(from data: Data) async -> UIImage? {
+        guard let image = UIImage(data: data) else { return nil }
+        if let thumbnail = await image.byPreparingThumbnail(ofSize: CGSize(width: 144, height: 144)) {
+            return thumbnail
+        }
+        return await image.byPreparingForDisplay() ?? image
+    }
+}
+
 /// Version metadata never changes, so lookups are kept on disk. Lookups
 /// run one at a time: each one asks Apple for a download ticket.
 actor VersionMetadataStore {
@@ -332,12 +396,7 @@ actor VersionMetadataStore {
     private var cache = LocalResources.load([String: VersionMetadata].self, filename: VersionMetadataStore.filename) ?? [:]
     private var busy = false
     private var waiters: [(UUID, CheckedContinuation<Void, Error>)] = []
-    private let decodedIcons: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>()
-        cache.countLimit = 80
-        cache.totalCostLimit = 8 * 1024 * 1024
-        return cache
-    }()
+    private let diskQueue = DispatchQueue(label: "ipadn.version-metadata.disk", qos: .utility)
 
     static func key(platform: AppPlatform, appID: String, versionID: String) -> String {
         "\(platform.rawValue)|\(appID)|\(versionID)"
@@ -350,26 +409,41 @@ actor VersionMetadataStore {
         return found
     }
 
+    func satisfiedCached(_ key: String, requiringPackageSize: Bool = false, requiringIcon: Bool = false) -> VersionMetadata? {
+        guard let value = cache[key],
+              satisfies(value, key: key, size: requiringPackageSize, icon: requiringIcon) else { return nil }
+        return value
+    }
+
     static func iconURL(_ key: String) -> URL {
         let name = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
         return LocalResources.support.appendingPathComponent("VersionIcons", isDirectory: true)
             .appendingPathComponent(name + ".png")
     }
     func icon(_ key: String) -> Data? { try? Data(contentsOf: Self.iconURL(key)) }
-    /// File IO and PNG decoding stay on this actor, not the UI executor.
-    func image(_ key: String) -> UIImage? {
-        if let image = decodedIcons.object(forKey: key as NSString) { return image }
-        guard let data = icon(key), let image = UIImage(data: data)?.preparingForDisplay() else { return nil }
-        decodedIcons.setObject(image, forKey: key as NSString,
-                               cost: Int(image.size.width * image.scale * image.size.height * image.scale * 4))
-        return image
+
+    /// Nonisolated so icon decoding never blocks behind metadata JSON writes or network lookups.
+    nonisolated func image(_ key: String) async -> UIImage? {
+        await VersionIconCache.load(key)
     }
 
-    func saveIcon(_ data: Data, key: String) throws {
+    func saveIcon(_ data: Data, key: String) async throws {
         let url = Self.iconURL(key)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: url, options: .atomic)
-        decodedIcons.removeObject(forKey: key as NSString)
+        VersionIconCache.remove(key)
+        if let prepared = await Task.detached(priority: .utility, operation: {
+            await VersionIconCache.prepareThumbnail(from: data)
+        }).value {
+            VersionIconCache.store(prepared, for: key)
+        }
+    }
+
+    private func persistSnapshot() {
+        let snapshot = cache
+        diskQueue.async {
+            try? LocalResources.save(snapshot, filename: Self.filename)
+        }
     }
     private func satisfies(_ value: VersionMetadata, key: String, size: Bool, icon: Bool) -> Bool {
         let pref = VersionService.versionPreference(value.version)
@@ -390,7 +464,7 @@ actor VersionMetadataStore {
         let existingScore = VersionService.versionPreference(existing.version, rejectingID: rejectingID)
         if replaceDotless && incoming == AppVersion.unknown && existingScore <= 1 {
             cache.removeValue(forKey: key)
-            try? LocalResources.save(cache, filename: Self.filename)
+            persistSnapshot()
             return
         }
         let better: String
@@ -410,16 +484,18 @@ actor VersionMetadataStore {
             existing.metadataSchema = VersionMetadata.currentSchema
         }
         cache[key] = existing
-        try? LocalResources.save(cache, filename: Self.filename)
+        persistSnapshot()
     }
 
     func clearCache() throws {
-        try LocalResources.save([String: VersionMetadata](), filename: Self.filename)
         cache.removeAll()
-        decodedIcons.removeAllObjects()
-        let iconsDir = LocalResources.support.appendingPathComponent("VersionIcons", isDirectory: true)
-        if FileManager.default.fileExists(atPath: iconsDir.path) {
-            try? FileManager.default.removeItem(at: iconsDir)
+        VersionIconCache.removeAll()
+        try diskQueue.sync {
+            try LocalResources.save([String: VersionMetadata](), filename: Self.filename)
+            let iconsDir = LocalResources.support.appendingPathComponent("VersionIcons", isDirectory: true)
+            if FileManager.default.fileExists(atPath: iconsDir.path) {
+                try? FileManager.default.removeItem(at: iconsDir)
+            }
         }
     }
 
@@ -443,7 +519,7 @@ actor VersionMetadataStore {
                 value.version = cleanKnown
                 value.metadataSchema = VersionMetadata.currentSchema
                 cache[key] = value
-                try? LocalResources.save(cache, filename: Self.filename)
+                persistSnapshot()
                 return value
             }
             let better = VersionService.preferredVersion(knownVersion, over: value.version, rejectingID: rejectingID)
@@ -453,7 +529,7 @@ actor VersionMetadataStore {
                 }
                 value.version = better
                 cache[key] = value
-                try? LocalResources.save(cache, filename: Self.filename)
+                persistSnapshot()
             }
         }
         return value
@@ -506,7 +582,7 @@ actor VersionMetadataStore {
         }
         cache[key] = value
         if cache.count > 5_000 { cache.removeAll(); cache[key] = value }
-        try? LocalResources.save(cache, filename: Self.filename)
+        persistSnapshot()
         return value
     }
 

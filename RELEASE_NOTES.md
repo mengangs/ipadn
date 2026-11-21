@@ -1,81 +1,68 @@
-## iPadn 2.3.0
+## iPadn 2.3.1
 
-**目录 / Contents**：[简体中文](#-官方频道与反馈迁移公告) · [TestFlight 安全与免责](#-testflight-实验性说明安全提示与免责声明) · [English](#english) · [TestFlight Disclaimer](#testflight-experimental-notice-security--disclaimer)
+**目录 / Contents**：[简体中文](#-核心修复与优化) · [TestFlight 说明与免责](#-testflight-实验性说明与免责声明) · [English](#english) · [TestFlight Notice](#testflight-experimental-notice--disclaimer)
 
-> **版本跨度说明**：自上一版 GitHub Release（**v2.2.1**）以来，项目在本地完成了 **20+ 次连续功能与稳定性迭代**，现统一合并发布为 **v2.3.0**。本次最大的变化是从零构建并集成了全新的 **TestFlight 模块（实验性）**，同时完善了应用内更新版本选择、本地化名称显示与官方 Telegram 社区体系。
+本次为 **v2.3.0** 的首个快速修复与性能优化版：全面恢复 **iOS / iPadOS 16** 兼容运行，解决高速滑动大量历史版本时因图标加载与持久化引起的掉帧卡顿，并补齐 Xcode / TestFlight CI 编译与初始化稳定性。安装包均未签名，请使用自用签名工具签名后安装。
 
-安装包均未签名，请使用自用签名工具签名后安装。
+### 🔧 核心修复与优化
 
-### 📢 官方频道与反馈迁移公告
-
-- **官方 Telegram 频道**：👉 [**https://t.me/ipadn_official**](https://t.me/ipadn_official)（点击加入获取首发布与讨论）
-- **发布节奏说明**：iPadn 继续保持**免费开源**，GitHub 仍会同步更新与发布源码；自 **v2.3.0** 起，新版本安装包与源码归档会**优先在官方 Telegram 频道发布**（GitHub 发布略慢一步）。
-- **GitHub Issues 停止受理（历史 Issues 保留只读归档）**：由于个人维护精力有限，为提升排查与沟通效率，**GitHub Issues 已停止接受新反馈，原有历史 Issues 仅作只读归档保留**。所有新版本使用交流、TestFlight 问题排查与 BUG 反馈，请统一前往官方 Telegram 频道**对应版本贴文评论区**提交。
-
----
-
-### 🆚 相比 v2.2.1 的核心新增与累积改进
-
-#### 1. 全新 TestFlight 商店与安装体系（实验性新功能）
-- **独立 TestFlight 主页（「账号 › TestFlight」）**：采用原生 Store 风格与动态环境背景，按「测试中 / 平台不兼容 / 以往测试」三栏分类展示，支持搜索、本地化中文名及多账号切换。
-- **高速下载、SINF 注入与统一安装协调（`InstallCoordinator`）**：支持实时下载速度与 ETA 进度卡片；自带与账号绑定的 SINF，通过 **原生安装** 可免解密免重签直接运行（亦支持 OTA 或导出保存，安装前自动检测 App Group 权限）。
-- **与「下载」「应用包」及本机解密打通**：TestFlight 已下载项目支持自动投影到「下载」列表与专业模式「应用包」页，支持按单个构建区分目录并接入 `FairPlayCore` 解密定位与产物标记。
-- **TestFlight 专属网络与诊断（`TFNet`）**：内置「跟随系统 / 强制直连 / 强制代理」三种模式；系统代理异常时自动尝试一次直连旁路；提供 DoH 路径检测、Fake-IP 命中判定、脱敏日志自动轮转与一键复制诊断功能。
-- **架构隔离与稳定性加固**：TestFlight（Mac/akd 作用域）与主站 iOS 解密会话严格按 DSID 分离存储，互不串号；全链路通过 `TFInvariants` 与 `StoreContextBuilder` 强校验请求不变量与同源 Cookie。
-
-#### 2. 应用内更新与全局体验优化
-- **应用更新弹窗新增版本选择（`AppUpdateView`）**：发现新版本时可直接切换选择 **标准版 / 精简版**、查看对应体积与变更日志并及时弹窗提醒。
-- **中文名称显示与界面细节打磨**：商店列表、TestFlight 详情页、下载管理与专业模式「应用包」列表全面接入本地化名称优先显示，补充包体元数据展示与快捷复制 `Bundle ID` 等细节优化。
-- **官方频道直达入口（11 种语言同步）**：在「账号 › 设置 › 支持 iPadn」下方及支持详情页新增官方 Telegram 频道入口（`https://t.me/ipadn_official`），同步更新全部 11 种界面语言说明。
+- **恢复 iOS / iPadOS 16 完整兼容（感谢 [@tageniu](https://github.com/tageniu) 在 PR #108 的贡献）**
+  - 修复 `v2.3.0` 构建时将部署目标升至 iOS 17 导致 iOS 16 设备冷启动即因 `dyld` 缺失 `Symbols.framework` 闪退的问题：统一把 SwiftPM、`xtool` 与 Xcode 的最低部署目标恢复为 **iOS 16.0**，并对 `Symbols`、`Translation`、`ActivityKit` 保持弱链接（`LC_LOAD_WEAK_DYLIB`）与完整运行时可用性防护。
+  - 修复 iOS 16 设备本地生成安装 PKCS#12 证书时 `SecItemImport` 因默认 AES 算法不兼容导致的失败：iOS 16 上自动回退为兼容的 HMAC-SHA1 PKCS#12 MAC。
+  - 补齐 Xcode 工程文件缺失的 `SigningCapability.swift` 引用，并修复 `iPadnLiveActivity` 扩展在 iOS 16 与双构建链（Xcode / `xtool`）下的可用性标注与编译通过。
+- **显著优化「历史版本」快速滚动流畅度（400+ 版本长列表实测通过）**
+  - 引入独立无锁内存缩略图缓存 `VersionIconCache`（`NSCache` 24 MiB 配额、去重并发与后台预解码至展示分辨率）：已缓存版本图标在回滑时首帧同步直出，无闪烁占位。
+  - 未缓存行先进行轻量防抖（75 ms），快速飞掠时跳过无效磁盘解码；同时将版本元数据 JSON 持久化下沉到后台串行队列、跳过已完整加载条目与无变化状态写回，消除掉帧卡顿。
+- **TestFlight / CI 初始化稳定性加固**
+  - 适当放宽首次冷启动 `SAPSigner`（WebKit）初始化超时上限（45s–90s 可自适应），提升低速环境中 TestFlight 会话签名与 CI 测试稳定性。
 
 ---
 
-### ⚠️ TestFlight 实验性说明、安全提示与免责声明
+### 📢 官方频道与反馈说明
 
-- **实验性与不稳定性提示**：TestFlight 为本次大跨度重构后推出的**全新实验性功能**。其高度依赖 Apple 服务端接口策略、账号当前测试资格、本地代理/DNS 规则以及设备原生安装配对状态，可能存在登录过期、风控二次验证、个别应用详情解析异常或下载中断等不稳定情况。
-- **可见范围与历史构建限制**：受 Apple TestFlight 服务端策略限制，目前仅可下载当前账号拥有测试资格且尚未过期/未移除的活跃 iOS/iPadOS 构建；已过期/已下架的「以往测试」或仅限其他平台（Mac / tvOS / visionOS 等）的构建仅作列表展示，不支持回溯历史 TF 旧版本。
-- **安全性与账号使用建议**：
-  - 建议优先使用**备用 / 测试 Apple 账号**体验 TestFlight 与第三方接口功能，勿在公共网络分享账号令牌、设备配对文件或未加密备份；
-  - 所有账号凭证、Cookie 快照与安装包均**仅保存在用户本地设备**，App 内诊断日志已对密码、Cookie、会话 ID 与代理凭据做严格脱敏处理。
-- **免责声明**：iPadn 以 [GPL-2.0-or-later](LICENSE) 开源，仅用于个人技术研究、合法自购应用备份及个人名下获批测试版管理，与 Apple Inc. 无任何关联。用户须自行遵守所在地区法规与 Apple 服务条款；因使用本工具（包括实验性 TestFlight 功能）产生的账号风控、锁定、数据损坏或其它间接损失，开发者不承担任何责任。
+- **官方 Telegram 频道**：👉 [**https://t.me/ipadn_official**](https://t.me/ipadn_official)
+- **GitHub Issues 仅保留只读归档**：新版安装包与源码优先在官方 Telegram 频道发布；使用问题、排障与 Bug 反馈请直接前往频道**对应版本贴文评论区**提交。
 
----
+### ⚠️ TestFlight 实验性说明与免责声明
+
+- **实验性功能提醒**：TestFlight 下载与原生安装为 `v2.3.x` 系列推出的**实验性功能**，受 Apple 服务端策略、账号当前有效 Beta 资格、本地网络/代理与本机配对影响，建议先使用备用 Apple 账号体验，勿分享配对文件、令牌或完整备份；详细用法与排障指南见 [README — TestFlight 实验性新功能](README.md#testflight-实验性新功能)。
+- **免责声明**：iPadn 基于 [GPL-2.0-or-later](LICENSE) 开源，仅限个人合法备份、授权测试与技术研究，与 Apple Inc. 无关；因使用本工具带来的账号风控或数据风险由使用者自行承担。
 
 ### 📦 安装包与签名源
 
-- `iPadn-2.3.0-unsigned.ipa`：标准版，含实时活动（灵动岛、锁屏进度）与桌面小组件扩展，签名需要 2 个 App ID。
-- `iPadn-2.3.0-lite-unsigned.ipa`：精简版，移除扩展，只需 1 个 App ID；不提供实时活动或小组件，其他功能完全一致。
+- `iPadn-2.3.1-unsigned.ipa`：标准版，含实时活动（灵动岛、锁屏进度）与桌面小组件扩展，签名需要 2 个 App ID。
+- `iPadn-2.3.1-lite-unsigned.ipa`：精简版，移除扩展，只需 1 个 App ID；不提供实时活动或小组件，其他功能完全一致。
 - SideStore、AltStore、Feather 等签名工具可添加源：`https://raw.githubusercontent.com/mengangs/ipadn/main/altstore-source.json`。
 
 ---
 
 ### English
 
-> **Milestone Summary**: Between **v2.2.1** and **v2.3.0**, iPadn went through **20+ accumulated iterations** locally without bumping the public version tag. **v2.3.0** consolidates all of those improvements—led by a brand-new, built-from-scratch **TestFlight hub (Experimental)**, in-app update variant selection, localized app titles, and official Telegram community integration.
+**v2.3.1** is a fast-follow stability and performance update to **v2.3.0**: it restores full **iOS / iPadOS 16** compatibility, eliminates frame drops during fast scrolling in long version history lists, and resolves Xcode / TestFlight CI build and cold-boot reliability issues. Both packages are unsigned—sign with your own tool before installing.
 
-Both packages are unsigned—please sign with your own tool before installing.
+#### Fixes & Improvements Since v2.3.0
 
-#### Official Telegram Channel & GitHub Issues Archive Notice
-- **Official Telegram Channel**: [**https://t.me/ipadn_official**](https://t.me/ipadn_official)
-- **Open-Source & Release Cadence**: iPadn remains **free and open source**, and GitHub continues to publish source code and releases. Starting from **v2.3.0**, new binaries and source archives are posted to the official Telegram channel first (GitHub follows slightly behind).
-- **GitHub Issues Archived (Read-Only)**: Due to limited maintainer bandwidth, **GitHub Issues are now closed to new submissions** while historical issues remain visible as a read-only archive. Please post questions, TestFlight troubleshooting, and bug reports **under the matching version post** in our Telegram channel.
+- **Restored iOS / iPadOS 16 Support (thanks [@tageniu](https://github.com/tageniu) for PR #108)**
+  - Fixed the `v2.3.0` startup `dyld` crash on iOS 16 devices caused by an accidental iOS 17 minimum deployment target (`Symbols.framework` missing): lowered SwiftPM, `xtool`, and Xcode targets back to **iOS 16.0** while keeping `Symbols`, `Translation`, and `ActivityKit` weak-linked (`LC_LOAD_WEAK_DYLIB`) with proper availability guards.
+  - Fixed local PKCS#12 certificate import failure on iOS 16 by falling back to HMAC-SHA1 MAC when AES-based `SecItemImport` defaults are unsupported.
+  - Added the missing `SigningCapability.swift` reference to `iPadn.xcodeproj` and fixed `iPadnLiveActivity` availability annotations so both Xcode and `xtool` compile cleanly.
+- **Smooth Fast Scrolling in App Version History**
+  - Extracted a lock-free `VersionIconCache` (`NSCache` with a 24 MiB budget, in-flight request deduplication, and background `byPreparingThumbnail` decoding): previously loaded version icons now render synchronously on frame zero when scrolling back, eliminating flicker.
+  - Debounced uncached row disk reads (75 ms) to skip fast-flung rows, moved version metadata snapshot writes off the main actor onto a dedicated background queue, and skipped redundant metadata reloads and no-op UI writes.
+- **TestFlight & CI Cold-Boot Reliability**
+  - Expanded the `SAPSigner` WebKit warm-up timeout floor/cap (45s–90s) to prevent spurious cold-boot timeouts under slow hosts or constrained CI runners.
 
-#### Key Additions Since v2.2.1
-- **New TestFlight Storefront (Experimental, Account › TestFlight)**:
-  - Native Store-style browser separating builds into **Testing**, **Incompatible**, and **Previously Tested** buckets, with search, localized app titles, and multi-account avatar switching.
-  - Real-time download cards with speed/ETA, embedded Apple SINF injection for one-step **Native Install** via `InstallCoordinator` (no decryption/re-signing needed when installed natively with device pairing), plus read-only projection into **Downloads** and Pro mode **Packages** (with `FairPlayCore` decryption support when App Group access is available).
-  - Dedicated `TFNet` networking controls (**Follow System / Force Direct / Force Proxy**), automatic single-retry proxy bypass on system proxy failure, DoH/fake-IP preflight diagnostics, rotating redacted logs, and strictly isolated DSID session storage separate from main App Store sessions.
-- **In-App Update Variant Picker (`AppUpdateView`)**: Choose between Standard and Lite builds directly inside the update sheet, view size/changelog, download in-app, and receive timely reminders.
-- **UI/UX Polish & 11-Language Localization**: Localized display names across TestFlight/Store/Downloads/Packages, quick Bundle ID copy, ambient UI refinements, and direct links to `https://t.me/ipadn_official` in Settings & Support across all 11 languages.
+#### Official Telegram Channel & GitHub Issues Archive
+- **Official Telegram Channel**: [**https://t.me/ipadn_official**](https://t.me/ipadn_official) (new builds & source archives land here first).
+- **GitHub Issues Read-Only**: Please post support questions, TestFlight diagnostics, and bug reports under the matching release post in our Telegram channel.
 
-#### TestFlight Experimental Notice, Security & Disclaimer
-- **Experimental / Stability Warning**: The TestFlight subsystem is a **newly introduced experimental feature**. Because it interacts with Apple's TestFlight APIs, per-account beta invitations, proxy/DNS rules, and local pairing services, you may encounter expired sessions, re-authentication prompts, rate/risk checks, or interrupted downloads. Only active iOS/iPadOS builds your account is invited to test can be downloaded; expired/removed historical TF builds cannot be fetched.
-- **Security Best Practices**: Testing with a secondary Apple Account is recommended. Credentials, session snapshots, and downloaded IPAs remain strictly on your device, and exported TF diagnostic logs are redacted—never share raw tokens, backups, or pairing files.
-- **Disclaimer**: Released under [GPL-2.0-or-later](LICENSE) for personal research, legitimate backups, and authorized testing; not affiliated with Apple Inc. You assume full responsibility for compliance and any account, security, or data risks arising from using experimental features.
+#### TestFlight Experimental Notice & Disclaimer
+- TestFlight download and native installation in `v2.3.x` are **experimental** and depend on Apple server behavior, active per-account invitations, proxy/DNS setup, and device pairing state. Testing with a secondary Apple Account first is recommended, and never share pairing files, tokens, or unencrypted backups (see [README_EN — TestFlight Experimental](README_EN.md#testflight-experimental)).
+- Released under [GPL-2.0-or-later](LICENSE) for authorized personal testing, backups, and research; unaffiliated with Apple Inc., with all account or data risks assumed by the user.
 
 #### Packages
-- `iPadn-2.3.0-unsigned.ipa`: Standard build with Live Activities & Widgets (requires 2 App IDs).
-- `iPadn-2.3.0-lite-unsigned.ipa`: Lite build without extensions (requires 1 App ID; identical core features).
+- `iPadn-2.3.1-unsigned.ipa`: Standard build with Live Activities & Widgets (requires 2 App IDs).
+- `iPadn-2.3.1-lite-unsigned.ipa`: Lite build without extensions (requires 1 App ID; identical core features).
 - AltStore / SideStore / Feather repo: `https://raw.githubusercontent.com/mengangs/ipadn/main/altstore-source.json`.
 
-更早版本的更新内容见 [Releases](https://github.com/mengangs/ipadn/releases)。
+更早版本的更新内容（含 v2.3.0 TestFlight 完整说明）见 [Releases](https://github.com/mengangs/ipadn/releases)。

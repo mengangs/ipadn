@@ -1494,6 +1494,37 @@ final class ToolStore: ObservableObject {
         return loaded
     }
 
+    func versionMetadataKey(app: StoreApp, versionID: String) -> String {
+        VersionMetadataStore.key(platform: settings.store.platform, appID: app.id, versionID: versionID)
+    }
+
+    var isVisualPreview: Bool {
+        #if DEBUG
+        return visualPreview
+        #else
+        return false
+        #endif
+    }
+
+    func cachedMemoryVersionImage(app: StoreApp, versionID: String) -> UIImage? {
+        #if DEBUG
+        if visualPreview { return nil }
+        #endif
+        return VersionIconCache.cached(versionMetadataKey(app: app, versionID: versionID))
+    }
+
+    func cachedSatisfiedVersionMetadata(app: StoreApp, versionID: String, requiringIcon: Bool) async -> VersionMetadata? {
+        #if DEBUG
+        if visualPreview { return nil }
+        #endif
+        let platform = settings.store.platform
+        return await metadataStore.satisfiedCached(
+            VersionMetadataStore.key(platform: platform, appID: app.id, versionID: versionID),
+            requiringPackageSize: platform.supportsIPA,
+            requiringIcon: requiringIcon && platform.supportsIPA
+        )
+    }
+
     func cachedVersionImage(app: StoreApp, versionID: String) async -> UIImage? {
         #if DEBUG
         if visualPreview {
@@ -1501,8 +1532,7 @@ final class ToolStore: ObservableObject {
             return data.flatMap(UIImage.init(data:))
         }
         #endif
-        return await metadataStore.image(VersionMetadataStore.key(
-            platform: settings.store.platform, appID: app.id, versionID: versionID))
+        return await VersionIconCache.load(versionMetadataKey(app: app, versionID: versionID))
     }
 
     func cachedVersionIcon(app: StoreApp, versionID: String) async -> Data? {

@@ -106,7 +106,7 @@ struct ShortcutsWidgetView: View {
 private extension View {
     @ViewBuilder
     func shortcutBackground(_ color: Color) -> some View {
-        if #available(iOSApplicationExtension 17.0, *) {
+        if #available(iOS 17.0, *) {
             containerBackground(for: .widget) { color }
         } else {
             background(color)
