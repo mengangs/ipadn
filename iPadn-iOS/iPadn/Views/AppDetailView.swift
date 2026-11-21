@@ -1673,7 +1673,7 @@ private struct VersionRowView: View {
                     versionID: version.id,
                     cacheKey: cacheKey,
                     isVisualPreview: isVisualPreview,
-                    available: info?.iconAvailable,
+                    available: info?.hasUnverifiedMissingIcon == true ? nil : info?.iconAvailable,
                     loading: isLoading,
                     context: versionsKey,
                     loadImage: { await store.cachedVersionImage(app: app, versionID: version.id) }
@@ -1800,7 +1800,7 @@ private struct VersionRowView: View {
         if supportsIPA {
             if info.packageSize == nil { return true }
             if showIcons {
-                if info.iconAvailable == nil { return true }
+                if info.iconAvailable == nil || info.hasUnverifiedMissingIcon { return true }
                 if info.iconAvailable == true, !isVisualPreview, VersionIconCache.cached(cacheKey) == nil {
                     return true
                 }

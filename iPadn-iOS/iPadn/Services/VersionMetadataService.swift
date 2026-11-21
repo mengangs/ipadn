@@ -26,6 +26,12 @@ struct VersionMetadata: Codable, Hashable, Sendable {
     var bundleShortVersion: String? = nil
     /// Raw `Info.plist` `CFBundleVersion` build number (e.g. `80`, `48000`).
     var buildVersion: String? = nil
+
+    /// True when an older build cached `iconAvailable == false` after `RemoteZip` failed
+    /// before reading `Info.plist` (leaving both `released` and `buildVersion` nil).
+    var hasUnverifiedMissingIcon: Bool {
+        iconAvailable == false && released == nil && buildVersion == nil && ticketChecked == true
+    }
 }
 
 /// Reads byte ranges of a remote file.
@@ -513,7 +519,7 @@ actor VersionMetadataStore {
     private func satisfies(_ value: VersionMetadata, key: String, size: Bool, icon: Bool) -> Bool {
         let pref = VersionService.versionPreference(value.version)
         let versionSettled = pref >= 2 || (value.ticketChecked == true && (pref >= 1 || (value.metadataSchema ?? 0) >= VersionMetadata.currentSchema))
-        return versionSettled && (!size || value.packageSize != nil) && (!icon || (value.iconAvailable != nil &&
+        return versionSettled && (!size || value.packageSize != nil) && (!icon || (value.iconAvailable != nil && !value.hasUnverifiedMissingIcon &&
             (value.iconAvailable != true || FileManager.default.fileExists(atPath: Self.iconURL(key).path))))
     }
 

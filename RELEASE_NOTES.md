@@ -13,7 +13,8 @@
 - **显著优化「历史版本」快速滚动流畅度（已缓存与未缓存长列表均实测通过）**
   - 引入独立无锁内存缩略图缓存 `VersionIconCache`（`NSCache` 24 MiB 配额、去重并发与后台预解码）：已缓存版本图标在回滑时首帧同步直出，无闪烁占位。
   - 将远程 IPA Range 请求由逐字节 async 迭代改写为分块 `URLSessionDataDelegate` 传输、修复快速取消时的 `CheckedContinuation` 竞争死锁，并在 `RemoteZip` 中按条目字节前缀过滤，避免大型游戏数万条中央目录反复分配；元数据获取与磁盘落盘彻底移出主线程。
-  - 消除详情页垂直嵌套 `LazyVStack` 与滚动期状态重算（改为单层扁平 `LazyVStack` 并隔离标题栏滚动观察与 `NoticeCenter` 通知中心），解决高速滑动概率性白屏、卡死；同时隔离「账号」页列表重绘与隐藏页抢跑，账号页内切号改为卡片/对勾就地即时反馈，并轻量化全局顶部提示条动画。
+  - 消除详情页垂直嵌套 `LazyVStack` 与滚动期状态重算（改为单层扁平 `LazyVStack` 并隔离标题栏滚动观察与 `NoticeCenter` 通知中心），解决高速滑动概率性白屏、卡死；同时修复 Range/ZIP 临时失败误将版本图标缓存标为永久缺失的问题并自动自愈旧缓存。
+  - 优化账号切换体验：隔离「账号」页列表重绘、防抖后台同步并消除点按头像闪烁；顶部「已切换到…」浮动提示改用独立 `NoticeCenter` 与硬件解析圆角阴影，在连续切号时保持 120Hz 顺滑过渡。
 - **跨区下载失败智能诊断与一键切换账号（错误码 `2059` / `1010`）**
   - 仅在 Apple 实际返回「暂时无法下载」（`2059` / `1010`）错误后触发地区核验，**绝不预先拦截仍可跨区下载的应用**；当当前 Apple 账号商店区与搜索地区不一致或应用在账号地区不可用时，给出精简明确的地区差异提示。
   - 若本地已登录与目标搜索地区匹配的账号，弹窗直接提供 **「切换并重试」** 按钮；否则提供 **「切换账号」** 一键直达账号页。
@@ -52,7 +53,7 @@
   - Added the missing `SigningCapability.swift` reference to `iPadn.xcodeproj` and fixed `iPadnLiveActivity` availability annotations so both Xcode and `xtool` compile cleanly.
 - **Smooth Fast Scrolling in App Version History**
   - Extracted a lock-free `VersionIconCache` (`NSCache` with a 24 MiB budget, in-flight request deduplication, and background `byPreparingThumbnail` decoding): previously loaded version icons now render synchronously on frame zero when scrolling back, eliminating flicker.
-  - Debounced uncached row disk reads (75 ms) to skip fast-flung rows, moved version metadata snapshot writes off the main actor onto a dedicated background queue, and skipped redundant metadata reloads and no-op UI writes.
+  - Flattened `AppDetailView` into a single `LazyVStack` with isolated header scroll observation and `NoticeCenter`, rewrote remote IPA range reads onto chunked `URLSessionDataDelegate` transfers, prevented transient `RemoteZip` failures from poisoning cached version icons (with automatic self-healing), and eliminated account-switch avatar flicker and top-banner animation jank.
 - **TestFlight & CI Cold-Boot Reliability**
   - Expanded the `SAPSigner` WebKit warm-up timeout floor/cap (45s–90s) to prevent spurious cold-boot timeouts under slow hosts or constrained CI runners.
 - **Post-Failure Cross-Region Download Diagnosis & One-Tap Account Switch (`2059` / `1010`)**

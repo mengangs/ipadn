@@ -122253,21 +122253,6 @@
         "pt-BR": { "stringUnit": { "state": "translated", "value": "Trocar conta" } },
         "ar": { "stringUnit": { "state": "translated", "value": "تبديل الحساب" } }
       }
-    },
-    "已切换": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Switched" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已切换" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "已切換" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "切替済み" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "전환됨" } },
-        "ru": { "stringUnit": { "state": "translated", "value": "Переключено" } },
-        "es": { "stringUnit": { "state": "translated", "value": "Cambiado" } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Changé" } },
-        "de": { "stringUnit": { "state": "translated", "value": "Gewechselt" } },
-        "pt-BR": { "stringUnit": { "state": "translated", "value": "Trocado" } },
-        "ar": { "stringUnit": { "state": "translated", "value": "تم التبديل" } }
-      }
     }
   },
   "version": "1.0"

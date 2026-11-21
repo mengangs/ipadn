@@ -793,13 +793,16 @@ private struct RootNoticeOverlay: View {
                         .accessibilityIdentifier("notice.banner")
                     }
                 }
-                // Solid elevated capsule avoids animated `.regularMaterial` SDFLayer backdrop
-                // recomputation (120fps on all devices and avoids iOS 26/27 AsyncRenderer lock contention).
-                .background(Color(.secondarySystemGroupedBackground).opacity(0.97),
-                            in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                // Solid elevated capsule with an analytic rounded-rect shadow avoids both
+                // `.regularMaterial` SDFLayer backdrop recomputation and offscreen shadow passes,
+                // keeping rapid toast transitions locked at 120Hz.
+                .background {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(Color(.secondarySystemGroupedBackground).opacity(0.97))
+                        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+                }
                 .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
                 .buttonStyle(.plain)
                 .frame(maxWidth: 320)
                 .padding(.horizontal, 24)
@@ -807,12 +810,14 @@ private struct RootNoticeOverlay: View {
                 // On compact-height devices show the banner nearer the top.
                 .padding(.top, sizeClass == .regular ? 16 : verticalSizeClass == .compact ? 8 : 52)
                 .id(isUndo ? "undo" : "info")
-                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+                .transition(reduceMotion
+                            ? .opacity
+                            : .offset(y: -14).combined(with: .opacity).combined(with: .scale(scale: 0.96, anchor: .top)))
                 .zIndex(1)
             }
         }
-        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.90), value: notices.infoMessage)
-        .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.90), value: notices.undoNotice?.id)
+        .animation(reduceMotion ? nil : .spring(response: 0.26, dampingFraction: 0.92), value: notices.infoMessage)
+        .animation(reduceMotion ? nil : .spring(response: 0.26, dampingFraction: 0.92), value: notices.undoNotice?.id)
         .task(id: notices.undoNotice.map { "\($0.id.uuidString)-\($0.revision)" }) {
             guard let notice = notices.undoNotice else { return }
             if UIAccessibility.isVoiceOverRunning || UIAccessibility.isSwitchControlRunning {

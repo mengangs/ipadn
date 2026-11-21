@@ -2064,6 +2064,30 @@ final class CoreTests: XCTestCase {
         try FileManager.default.removeItem(at: fileURL)
         let evicted = try await store.load(fileKey, requiringIcon: true) { missing }
         XCTAssertEqual(evicted.iconAvailable, false, "Evicted files must be rechecked, not shown as available")
+
+        // Unverified missing-icon entries (failed before reading Info.plist, leaving both
+        // released and buildVersion nil) must self-heal when an icon is requested.
+        let poisonedKey = key + "-poisoned"
+        let poisoned = VersionMetadata(version: "21.45.4", released: nil, packageSize: 275_263_421,
+                                       iconAvailable: false, ticketChecked: true,
+                                       metadataSchema: VersionMetadata.currentSchema,
+                                       bundleShortVersion: "21.45.4", buildVersion: nil)
+        _ = try await store.load(poisonedKey, requiringPackageSize: true, requiringIcon: false) { poisoned }
+        let healedCalls = LockedCount()
+        let healedMeta = VersionMetadata(version: "21.45.4", released: Date(timeIntervalSince1970: 1_714_694_400),
+                                         packageSize: 275_263_421, iconAvailable: false, ticketChecked: true,
+                                         metadataSchema: VersionMetadata.currentSchema,
+                                         bundleShortVersion: "21.45.4", buildVersion: "21.45.4")
+        let healed = try await store.load(poisonedKey, requiringPackageSize: true, requiringIcon: true) {
+            healedCalls.increment()
+            return healedMeta
+        }
+        XCTAssertEqual(healedCalls.value, 1, "Unverified missing-icon cache entries must retry once")
+        XCTAssertEqual(healed.buildVersion, "21.45.4")
+        let settledHit = try await store.load(poisonedKey, requiringPackageSize: true, requiringIcon: true) {
+            throw RemoteZip.Failure.unreadable
+        }
+        XCTAssertEqual(settledHit.buildVersion, "21.45.4", "Verified missing-icon entries with Info.plist metadata stay cached")
     }
 
     func testVersionMetadataSizeCacheMigration() async throws {

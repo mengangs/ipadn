@@ -19,26 +19,6 @@ private struct AccountsListContent: View {
     @State private var deleting: AppleAccount?
     @State private var signingOut = false
     @State private var headerAway = false
-    @State private var switchedFeedback = false
-    @State private var switchedFeedbackTask: Task<Void, Never>?
-
-    private func triggerSwitchFeedback() {
-        switchedFeedbackTask?.cancel()
-        if reduceMotion {
-            switchedFeedback = true
-        } else {
-            withAnimation(.easeOut(duration: 0.18)) { switchedFeedback = true }
-        }
-        switchedFeedbackTask = Task { @MainActor in
-            do { try await Task.sleep(for: .milliseconds(1250)) } catch { return }
-            guard !Task.isCancelled else { return }
-            if reduceMotion {
-                switchedFeedback = false
-            } else {
-                withAnimation(.easeOut(duration: 0.25)) { switchedFeedback = false }
-            }
-        }
-    }
 
     var body: some View {
         List {
@@ -51,51 +31,8 @@ private struct AccountsListContent: View {
             if let error = apple.accountStorageError { Section { InlineIssue(message: error) } }
             Section {
                 if let account = apple.active {
-                    HStack(spacing: 14) {
-                        AccountAvatar(account: account, size: 60)
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text(account.name.isEmpty ? account.id : account.name)
-                                    .font(.title3.weight(.semibold))
-                                    .lineLimit(1)
-                                    .contentTransition(.opacity)
-                                Spacer(minLength: 4)
-                                if switchedFeedback || apple.accounts.count > 1 {
-                                    HStack(spacing: 4) {
-                                        if switchedFeedback {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .imageScale(.small)
-                                                .transition(.scale(scale: 0.72).combined(with: .opacity))
-                                        }
-                                        Text(switchedFeedback ? LocalizedStringKey("已切换") : LocalizedStringKey("当前账号"))
-                                            .contentTransition(.opacity)
-                                    }
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(switchedFeedback ? Color.green : Color.secondary)
-                                    .padding(.horizontal, 9)
-                                    .padding(.vertical, 4)
-                                    .background(
-                                        switchedFeedback ? Color.green.opacity(0.14) : Color(.tertiarySystemFill),
-                                        in: Capsule()
-                                    )
-                                    .fixedSize()
-                                }
-                            }
-                            Text(account.id)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .contentTransition(.opacity)
-                            if let country = StoreService.country(forStorefront: account.storeFront) {
-                                Text("商店地区：\(country)")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                                    .contentTransition(.opacity)
-                            }
-                        }
-                    }
-                    .padding(.vertical, 6)
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: apple.activeID)
+                    ActiveAccountHeaderRow(account: account)
+                        .padding(.vertical, 6)
                 } else {
                     NavigationLink(value: AccountRoute.login) {
                         HStack(spacing: 14) {
@@ -111,6 +48,7 @@ private struct AccountsListContent: View {
             if !apple.accounts.isEmpty {
                 Section {
                     ForEach(apple.accounts) { account in
+                        let isActive = !account.needsReauthentication && account.id == apple.activeID
                         Button {
                             if account.needsReauthentication {
                                 store.accountNav.push(.reauthenticate(account.id))
@@ -119,13 +57,14 @@ private struct AccountsListContent: View {
                                 guard apple.activeID != account.id else { return }
                                 apple.select(account.id)
                                 UX.feedback()
-                                triggerSwitchFeedback()
                             }
                         } label: {
                             HStack(spacing: 12) {
                                 AccountAvatar(account: account, size: 36)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(account.name.isEmpty ? account.id : account.name).foregroundStyle(.primary).lineLimit(1)
+                                    Text(account.name.isEmpty ? account.id : account.name)
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
                                     if !account.name.isEmpty { Text(account.id).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                                     if account.needsReauthentication {
                                         Text("需重新登录以恢复下载凭据").font(.caption2).foregroundStyle(.orange).lineLimit(1)
@@ -135,25 +74,18 @@ private struct AccountsListContent: View {
                                 if account.needsReauthentication {
                                     TagBadge(text: "重新登录", tint: .orange)
                                     Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
-                                } else {
-                                    ZStack {
-                                        if account.id == apple.activeID {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .font(.title3)
-                                                .foregroundStyle(.tint)
-                                                .transition(.scale(scale: 0.76).combined(with: .opacity))
-                                                .accessibilityLabel("当前账号")
-                                        }
-                                    }
-                                    .frame(width: 24, height: 24)
-                                    .animation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.8), value: apple.activeID)
+                                } else if isActive {
+                                    Image(systemName: "checkmark")
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.tint)
+                                        .accessibilityLabel("当前账号")
                                 }
                             }.contentShape(Rectangle())
                         }
                         .buttonStyle(AccountRowButtonStyle())
                         .accessibilityHint(account.needsReauthentication
                                            ? AppText.text("点按输入密码重新登录此账号")
-                                           : (account.id == apple.activeID ? AppText.text("当前下载账号") : AppText.text("切换到此账号")))
+                                           : (isActive ? AppText.text("当前下载账号") : AppText.text("切换到此账号")))
                         .accessibilityIdentifier("account." + account.id)
                         .revealDelete(id: "account." + account.id, enabled: true,
                                       grouping: account.id == apple.accounts.first?.id ? .first : .middle,
@@ -197,11 +129,6 @@ private struct AccountsListContent: View {
             }
         }
         .animation(UX.motion(reduceMotion), value: apple.accounts.map(\.id))
-        .onDisappear {
-            switchedFeedbackTask?.cancel()
-            switchedFeedbackTask = nil
-            switchedFeedback = false
-        }
         .toolPage().rootTabBar("账号", headerScrolledAway: headerAway)
         .actionConfirmation(isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), title: "移除账号？", message: removalMessage, confirmTitle: "移除账号") {
             guard let id = deleting?.id else { return }
@@ -221,6 +148,30 @@ private struct AccountsListContent: View {
     }
 }
 
+private struct ActiveAccountHeaderRow: View {
+    let account: AppleAccount
+
+    var body: some View {
+        HStack(spacing: 14) {
+            AccountAvatar(account: account, size: 60)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(account.name.isEmpty ? account.id : account.name)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(1)
+                Text(account.id)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                if let country = StoreService.country(forStorefront: account.storeFront) {
+                    Text("商店地区：\(country)")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+}
+
 /// Keeps the row avatar and text crisp on tap instead of dimming the whole row,
 /// preventing the circular avatar from flashing during account switches.
 private struct AccountRowButtonStyle: ButtonStyle {
@@ -233,7 +184,7 @@ private struct AccountRowButtonStyle: ButtonStyle {
         configuration.label
             .environment(\.isEnabled, enabled || suppressesPress)
             .opacity(enabled || suppressesPress ? 1 : 0.4)
-            .scaleEffect(pressed && !reduceMotion ? 0.992 : 1)
+            .scaleEffect(pressed && !reduceMotion ? 0.988 : 1)
             .animation(reduceMotion ? nil : .easeOut(duration: pressed ? 0.08 : 0.16), value: pressed)
     }
 }

@@ -907,19 +907,15 @@ final class ToolStore: ObservableObject {
             if let previous, apple.accounts.contains(where: { $0.id == previous }) { infoMessage = AppText.text("已退出登录") }
             return
         }
-        // On the Accounts tab, the active profile card, checkmark, and haptic already confirm
-        // the switch in place; only show the floating top notice when switching from elsewhere.
-        if tabs.id != .accounts {
-            infoMessage = AppText.text("已切换到 \(account.name.isEmpty ? account.id : account.name)")
-        }
+        infoMessage = AppText.text("已切换到 \(account.name.isEmpty ? account.id : account.name)")
         let switchedID = id
         let storefrontCountry = StoreService.country(forStorefront: account.storeFront)
         let debounce = tabs.id == .accounts
         // Debounce rapid account taps on the Accounts page so switching through several accounts
-        // does not fire redundant search and owned-list network requests.
+        // does not contend with the floating notice animation or fire redundant network requests.
         accountSyncTask = Task { @MainActor [weak self] in
             if debounce {
-                do { try await Task.sleep(for: .milliseconds(220)) } catch { return }
+                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
             } else {
                 await Task.yield()
             }
@@ -1564,8 +1560,10 @@ final class ToolStore: ObservableObject {
             return metadata
         } catch RemoteZip.Failure.notFound where previewVersion != AppVersion.unknown || ticket.fileSize != nil,
                 RemoteZip.Failure.unreadable where previewVersion != AppVersion.unknown || ticket.fileSize != nil {
+            // Never permanently mark iconAvailable = false when Info.plist itself could not be read;
+            // transient range/ZIP failures stay retryable instead of poisoning the icon cache.
             return VersionMetadata(version: previewVersion, released: nil,
-                                   packageSize: ticket.fileSize, iconAvailable: includingIcon ? false : nil,
+                                   packageSize: ticket.fileSize, iconAvailable: nil,
                                    ticketChecked: true, metadataSchema: VersionMetadata.currentSchema)
         }
     }
