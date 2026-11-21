@@ -131,41 +131,50 @@ final class VersionDateQueryTests: XCTestCase {
     func testCancelledMetadataWaiterDoesNotWaitForUnrelatedNetworkRequest() async throws {
         let store = VersionMetadataStore()
         let gate = VersionQueryTestGate()
-        let started = expectation(description: "first metadata request holds the queue")
-        let first = Task {
-            try await store.load(UUID().uuidString) {
-                started.fulfill()
-                await gate.wait()
-                return VersionMetadata(version: "1", released: nil)
+        let slots = VersionMetadataStore.maxConcurrentFetches
+        let started = expectation(description: "in-flight metadata requests fill all concurrent slots")
+        started.expectedFulfillmentCount = slots
+        let inFlight = (0..<slots).map { index in
+            Task {
+                try await store.load(UUID().uuidString) {
+                    started.fulfill()
+                    await gate.wait()
+                    return VersionMetadata(version: "\(index + 1)", released: nil)
+                }
             }
         }
         await fulfillment(of: [started], timeout: 3)
-        let cancelled = expectation(description: "cancelled queued request returns before the first finishes")
-        let second = Task {
+        let cancelled = expectation(description: "cancelled queued request returns before in-flight requests finish")
+        let queued = Task {
             do {
                 _ = try await store.load(UUID().uuidString) {
                     XCTFail("Cancelled offscreen row must not fetch")
-                    return VersionMetadata(version: "2", released: nil)
+                    return VersionMetadata(version: "queued", released: nil)
                 }
                 XCTFail("Cancelled request must throw")
             } catch is CancellationError { cancelled.fulfill() }
             catch { XCTFail("Unexpected error: \(error)") }
         }
         try await Task.sleep(nanoseconds: 30_000_000)
-        second.cancel()
+        queued.cancel()
         await fulfillment(of: [cancelled], timeout: 3)
         await gate.open()
-        _ = try await first.value
-        await second.value
+        for task in inFlight { _ = try await task.value }
+        await queued.value
     }
 }
 
 private actor VersionQueryTestGate {
     private var isOpen = false
-    private var continuation: CheckedContinuation<Void, Never>?
+    private var continuations: [CheckedContinuation<Void, Never>] = []
     func wait() async {
         guard !isOpen else { return }
-        await withCheckedContinuation { continuation = $0 }
+        await withCheckedContinuation { continuations.append($0) }
     }
-    func open() { isOpen = true; continuation?.resume(); continuation = nil }
+    func open() {
+        isOpen = true
+        let pending = continuations
+        continuations.removeAll()
+        for continuation in pending { continuation.resume() }
+    }
 }

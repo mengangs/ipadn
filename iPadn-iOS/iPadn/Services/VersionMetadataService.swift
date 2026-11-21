@@ -435,7 +435,7 @@ enum VersionIconCache {
 /// run one at a time: each one asks Apple for a download ticket.
 actor VersionMetadataStore {
     static let filename = "version-metadata.json"
-    private static let maxConcurrentFetches = 3
+    static let maxConcurrentFetches = 3
     private var cache = LocalResources.load([String: VersionMetadata].self, filename: VersionMetadataStore.filename) ?? [:]
     private var inFlight = 0
     private var waiters: [(UUID, CheckedContinuation<Void, Error>)] = []
