@@ -9,15 +9,20 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 ✨ **New in v2.3.2: Full purchase history & delisted app sync · TestFlight sign-in & Dark Mode update badge fixes** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
 
-[![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&logo=github&logoColor=white&color=007AFF)](https://github.com/mengangs/ipadn/releases/latest)
 [![Telegram Channel](https://img.shields.io/badge/Telegram-%40ipadn__official-26A5E4?logo=telegram&logoColor=white)](https://t.me/ipadn_official)
-[![Downloads](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=downloads&color=111111)](https://github.com/mengangs/ipadn/releases)
-![Requires](https://img.shields.io/badge/iOS%20%2F%20iPadOS-16%2B-111111)
-[![License](https://img.shields.io/github/license/mengangs/ipadn?label=license&color=111111)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=downloads&logo=icloud&logoColor=white&color=34C759)](https://github.com/mengangs/ipadn/releases)
+![Requires](https://img.shields.io/badge/iOS%20%2F%20iPadOS-16%2B-5856D6?logo=apple&logoColor=white)
+[![License](https://img.shields.io/github/license/mengangs/ipadn?label=license&logo=opensourceinitiative&logoColor=white&color=FF9500)](LICENSE)
+
+<p>
+  <a href="#support-ipadn"><img src="https://img.shields.io/badge/Support%20iPadn-Free%20%26%20Open%20Source%20%C2%B7%20Buy%20a%20Coffee-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Support iPadn"></a>
+  <a href="https://afdian.com/a/mengangs"><img src="https://img.shields.io/badge/Afdian-Sponsor-946CE6?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="Afdian"></a>
+</p>
 
 [简体中文](README.md) · **English**
 
-[Download](https://github.com/mengangs/ipadn/releases/latest) · [Official Telegram](https://t.me/ipadn_official) · [TestFlight Guide](#testflight-experimental) · [Install a download](#installing-a-downloaded-app) · [FAQ](#frequently-asked-questions) · [Support iPadn](#support-ipadn)
+[Download](https://github.com/mengangs/ipadn/releases/latest) · [Official Telegram](https://t.me/ipadn_official) · ❤️ [**Support iPadn**](#support-ipadn) · [TestFlight Guide](#testflight-experimental) · [Install a download](#installing-a-downloaded-app) · [FAQ](#frequently-asked-questions)
 
 </div>
 

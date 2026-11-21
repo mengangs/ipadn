@@ -9,15 +9,20 @@
 
 ✨ **v2.3.2 完整已购历史与下架应用补全 · TestFlight 登录与深色模式更新标签修复** · 📢 **反馈与新版优先前往 [官方 Telegram 频道](https://t.me/ipadn_official)**
 
-[![最新版本](https://img.shields.io/github/v/release/mengangs/ipadn?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&color=111111)](https://github.com/mengangs/ipadn/releases/latest)
+[![最新版本](https://img.shields.io/github/v/release/mengangs/ipadn?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&logo=github&logoColor=white&color=007AFF)](https://github.com/mengangs/ipadn/releases/latest)
 [![Telegram 频道](https://img.shields.io/badge/Telegram-%40ipadn__official-26A5E4?logo=telegram&logoColor=white)](https://t.me/ipadn_official)
-[![下载量](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F&color=111111)](https://github.com/mengangs/ipadn/releases)
-![系统要求](https://img.shields.io/badge/iOS%20%2F%20iPadOS-16%2B-111111)
-[![许可证](https://img.shields.io/github/license/mengangs/ipadn?label=%E8%AE%B8%E5%8F%AF%E8%AF%81&color=111111)](LICENSE)
+[![下载量](https://img.shields.io/github/downloads/mengangs/ipadn/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F&logo=icloud&logoColor=white&color=34C759)](https://github.com/mengangs/ipadn/releases)
+![系统要求](https://img.shields.io/badge/iOS%20%2F%20iPadOS-16%2B-5856D6?logo=apple&logoColor=white)
+[![许可证](https://img.shields.io/github/license/mengangs/ipadn?label=%E8%AE%B8%E5%8F%AF%E8%AF%81&logo=opensourceinitiative&logoColor=white&color=FF9500)](LICENSE)
+
+<p>
+  <a href="#支持-ipadn"><img src="https://img.shields.io/badge/%E6%94%AF%E6%8C%81%20iPadn-%E5%85%8D%E8%B4%B9%E5%BC%80%E6%BA%90%20%C2%B7%20%E8%AF%B7%E4%BD%9C%E8%80%85%E5%96%9D%E6%9D%AF%E5%92%96%E5%95%A1-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="支持 iPadn"></a>
+  <a href="https://afdian.com/a/mengangs"><img src="https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E8%B5%9E%E5%8A%A9%E6%94%AF%E6%8C%81-946CE6?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="爱发电赞助"></a>
+</p>
 
 **简体中文** · [English](README_EN.md)
 
-[下载](https://github.com/mengangs/ipadn/releases/latest) · [Telegram 官方频道](https://t.me/ipadn_official) · [TestFlight 说明](#testflight-实验性新功能) · [安装下载的应用](#安装下载的应用) · [常见问题](#常见问题) · [支持 iPadn](#支持-ipadn)
+[下载](https://github.com/mengangs/ipadn/releases/latest) · [Telegram 官方频道](https://t.me/ipadn_official) · ❤️ [**支持 iPadn**](#支持-ipadn) · [TestFlight 说明](#testflight-实验性新功能) · [安装下载的应用](#安装下载的应用) · [常见问题](#常见问题)
 
 </div>
 
