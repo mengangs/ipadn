@@ -29,7 +29,6 @@ struct TestFlightDetailView: View {
 
     private var detail: TFAppDetail? { model.details[app.id] }
     private var rowState: TFRowState { model.rowState(app) }
-    private var isInstalled: Bool { model.installedAppIDs.contains(app.id) }
     private var isInstalling: Bool { model.installingAppIDs.contains(app.id) }
     private var iconColors: TFIconColors? { model.iconColors[app.id] ?? detail?.iconAsset?.colors }
 
@@ -197,10 +196,7 @@ struct TestFlightDetailView: View {
                     job: model.makeInstallJob(for: app, packageURL: packageURL),
                     packageFileURL: packageURL,
                     packageIconURL: model.iconFiles[app.id],
-                    isTestFlight: true,
-                    onInstalled: {
-                        model.markInstalled(app.id)
-                    }
+                    isTestFlight: true
                 )
                 .sheetNotice()
                 .environmentObject(store)
@@ -300,7 +296,6 @@ struct TestFlightDetailView: View {
             return AppText.text("已暂停")
         case .done:
             if isInstalling, let note = model.installNotes[app.id] { return note }
-            if isInstalled { return AppText.text("已安装") }
             let size = cachedPackageBytes > 0 ? cachedPackageBytes : (detail?.fileSizeBytes ?? 0)
             if size > 0 {
                 return "\(byteText(size)) · \(AppText.text("已下载"))"
@@ -323,7 +318,12 @@ struct TestFlightDetailView: View {
                 model.cancel(app)
             }
         case .downloading:
-            heroPillButton(title: AppText.text("暂停"), busy: true, enabled: true) {
+            heroPillButton(
+                title: AppText.text("暂停"),
+                busy: rowState.total <= 0,
+                progress: rowState.total > 0 ? rowState.fraction : nil,
+                enabled: true
+            ) {
                 model.pause(app)
             }
         case .paused:
@@ -347,14 +347,28 @@ struct TestFlightDetailView: View {
         }
     }
 
-    private func heroPillButton(title: String, busy: Bool, enabled: Bool, action: @escaping () -> Void) -> some View {
-        let prominent = enabled && !busy
+    private func heroPillButton(title: String, busy: Bool, progress: Double? = nil, enabled: Bool, action: @escaping () -> Void) -> some View {
+        let prominent = enabled && !busy && progress == nil
         return Button {
             UX.tapLight()
             action()
         } label: {
             HStack(spacing: 8) {
-                if busy {
+                if let progress {
+                    ZStack {
+                        Circle()
+                            .stroke(.white.opacity(0.28), lineWidth: 2.4)
+                        Circle()
+                            .trim(from: 0, to: max(0.02, min(1, progress)))
+                            .stroke(.white, style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                            .animation(.linear(duration: 0.25), value: progress)
+                        RoundedRectangle(cornerRadius: 1.8, style: .continuous)
+                            .fill(.white)
+                            .frame(width: 7, height: 7)
+                    }
+                    .frame(width: 22, height: 22)
+                } else if busy {
                     ProgressView()
                         .tint(.white)
                 }
@@ -364,15 +378,27 @@ struct TestFlightDetailView: View {
             }
             .frame(maxWidth: .infinity)
             .frame(minHeight: 46)
-            .background(
-                prominent ? Color.white.opacity(0.94) : Color.white.opacity(enabled ? 0.22 : 0.12),
-                in: Capsule()
-            )
+            .background {
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(prominent ? Color.white.opacity(0.94) : Color.white.opacity(enabled ? 0.22 : 0.12))
+                    if let progress {
+                        GeometryReader { geo in
+                            Capsule()
+                                .fill(.white.opacity(0.18))
+                                .frame(width: max(0, geo.size.width * min(1, max(0, progress))))
+                                .animation(.linear(duration: 0.25), value: progress)
+                        }
+                        .clipShape(Capsule())
+                    }
+                }
+            }
             .overlay(Capsule().stroke(.white.opacity(prominent ? 0.35 : 0.24), lineWidth: 0.5))
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
         .accessibilityLabel(Text(verbatim: title))
+        .accessibilityValue(progress.map { "\(Int(($0 * 100).rounded()))%" } ?? "")
     }
 
     // MARK: - 3-Column Info Strip

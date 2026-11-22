@@ -21,9 +21,18 @@ final class DownloadActivity {
     private var timer: Timer?
     private var lastSent: Any?
     private var lastSentAt = Date.distantPast
+    private var lastBgLogAt = Date.distantPast
     private var refreshScheduled = false
     /// The downloads (regular + TestFlight) the activity was showing at the last refresh.
     private var shownKeys = Set<String>()
+
+    var hasActiveActivity: Bool {
+        guard #available(iOS 16.2, *), enabled else { return false }
+        if let current = activity as? Activity<DownloadActivityAttributes>, current.activityState == .active {
+            return true
+        }
+        return false
+    }
 
     struct ActivityTaskSnapshot: Equatable {
         enum Phase: Equatable { case running, processing, queued, pausing, paused, completed, failed }
@@ -182,14 +191,21 @@ final class DownloadActivity {
         if !enabled {
             stopTimer()
             endFinishingImmediately()
-            lastSent = nil; shownKeys = []
+            lastSent = nil; shownKeys = []; pendingUpdate = nil
             if let current = activity as? Activity<DownloadActivityAttributes> {
                 activity = nil
+                manager.syncLiveActivityKeepAlive()
                 Task { await current.end(nil, dismissalPolicy: .immediate) }
             }
             return
         }
         if !active.isEmpty || manager.autoInstalling != nil { adoptFinishingActivity() }
+        if let existing = activity as? Activity<DownloadActivityAttributes>, existing.activityState != .active {
+            activity = nil
+            lastSent = nil
+            pendingUpdate = nil
+            manager.syncLiveActivityKeepAlive()
+        }
         let current = activity as? Activity<DownloadActivityAttributes>
 
         // Installing automatically after the download: the same activity follows it.
@@ -200,6 +216,7 @@ final class DownloadActivity {
                 activity = try? Activity.request(attributes: DownloadActivityAttributes(),
                                                  content: ActivityContent(state: state, staleDate: Self.staleDate(state)))
                 lastSent = state; lastSentAt = now
+                manager.syncLiveActivityKeepAlive()
             }
             startTimer()
             return
@@ -207,7 +224,8 @@ final class DownloadActivity {
         if active.isEmpty, let current, manager.autoInstallCancelled != nil,
            (lastSent as? DownloadActivityAttributes.ContentState)?.phase == 4 || current.content.state.phase == 4 {
             stopTimer()
-            activity = nil; lastSent = nil; shownKeys = []
+            activity = nil; lastSent = nil; shownKeys = []; pendingUpdate = nil
+            manager.syncLiveActivityKeepAlive()
             Task { await current.end(nil, dismissalPolicy: .immediate) }
             return
         }
@@ -215,7 +233,8 @@ final class DownloadActivity {
         if active.isEmpty, let current, let failed = manager.autoInstallFailed,
            (lastSent as? DownloadActivityAttributes.ContentState)?.phase == 4 || current.content.state.phase == 4 {
             stopTimer()
-            activity = nil; lastSent = nil; shownKeys = []
+            activity = nil; lastSent = nil; shownKeys = []; pendingUpdate = nil
+            manager.syncLiveActivityKeepAlive()
             finish(current, with: DownloadActivityAttributes.ContentState(phase: 6, name: failed, count: 0, written: 0, expected: 0,
                                                                           updated: now, estimatedEnd: nil, speed: 0))
             return
@@ -225,7 +244,8 @@ final class DownloadActivity {
            ((lastSent as? DownloadActivityAttributes.ContentState)?.phase == 4 || current.content.state.phase == 4
             || shownSnapshots.contains(where: \.waitsForSilentInstall)) {
             stopTimer()
-            activity = nil; lastSent = nil; shownKeys = []
+            activity = nil; lastSent = nil; shownKeys = []; pendingUpdate = nil
+            manager.syncLiveActivityKeepAlive()
             let done = DownloadActivityAttributes.ContentState(phase: 5, name: installed, count: 0, written: 1000, expected: 1000,
                                                                updated: now, estimatedEnd: nil, speed: 0)
             finish(current, with: done)
@@ -235,7 +255,8 @@ final class DownloadActivity {
             if let current, current.content.state.phase == 4 {
                 // Clean up an orphaned phase-4 crash/termination leftover immediately on relaunch.
                 stopTimer()
-                activity = nil; lastSent = nil; shownKeys = []
+                activity = nil; lastSent = nil; shownKeys = []; pendingUpdate = nil
+                manager.syncLiveActivityKeepAlive()
                 Task { await current.end(nil, dismissalPolicy: .immediate) }
             }
             return
@@ -253,11 +274,14 @@ final class DownloadActivity {
                 // Keep the activity alive in paused phase so resuming (even in background) updates smoothly.
                 let pausedState = Self.computePausedSnapshotState(paused: paused, now: now)
                 send(pausedState, to: current)
+                manager.syncLiveActivityKeepAlive()
                 return
             }
             activity = nil
             lastSent = nil
             shownKeys = []
+            pendingUpdate = nil
+            manager.syncLiveActivityKeepAlive()
             let finished = !shownSnapshots.isEmpty && shownSnapshots.allSatisfy { $0.phase == .completed }
             if finished {
                 var done = current.content.state
@@ -285,6 +309,7 @@ final class DownloadActivity {
             activity = try? Activity.request(attributes: DownloadActivityAttributes(),
                                              content: ActivityContent(state: state, staleDate: Self.staleDate(state)))
             lastSent = state; lastSentAt = now
+            manager.syncLiveActivityKeepAlive()
         }
         if state.phase == 7 { stopTimer() } else { startTimer() }
     }
@@ -412,7 +437,8 @@ final class DownloadActivity {
     nonisolated static func shouldSend(
         _ state: DownloadActivityAttributes.ContentState,
         after last: DownloadActivityAttributes.ContentState?,
-        elapsed: TimeInterval
+        elapsed: TimeInterval,
+        inBackground: Bool = false
     ) -> Bool {
         guard let last else { return true }
         let changed = last.phase != state.phase
@@ -421,6 +447,27 @@ final class DownloadActivity {
             || (last.estimatedEnd == nil) != (state.estimatedEnd == nil)
             || (state.phase == 4 && (last.speed != state.speed || (last.expected > 0) != (state.expected > 0)))
         if changed { return true }
+        if inBackground {
+            let lastPercent = last.expected > 0
+                ? Int((min(1, max(0, Double(last.written) / Double(last.expected))) * 100).rounded())
+                : -1
+            let nextPercent = state.expected > 0
+                ? Int((min(1, max(0, Double(state.written) / Double(state.expected))) * 100).rounded())
+                : -1
+            if nextPercent != lastPercent {
+                let minGap: TimeInterval = abs(nextPercent - lastPercent) >= 3 ? 1.0 : 2.0
+                return elapsed >= minGap
+            }
+            if state.phase == 4 && elapsed >= 60 { return true }
+            if (last.written != state.written || last.expected != state.expected) && elapsed >= 5.0 {
+                return true
+            }
+            if let prevEnd = last.estimatedEnd, let nextEnd = state.estimatedEnd,
+               abs(nextEnd.timeIntervalSince(prevEnd)) >= 5, elapsed >= 5.0 {
+                return true
+            }
+            return false
+        }
         guard elapsed >= 1 else { return false }
         let moved = last.written != state.written || last.expected != state.expected
         if moved { return true }
@@ -435,23 +482,52 @@ final class DownloadActivity {
         return false
     }
 
-    private var updateTask: Task<Void, Never>?
+    @available(iOS 16.2, *)
+    private struct PendingUpdate {
+        let activity: Activity<DownloadActivityAttributes>
+        let state: DownloadActivityAttributes.ContentState
+        let alert: AlertConfiguration?
+    }
 
-    /// Changes of phase, app, count or ETA availability go out at once; progress once a second.
+    private var updatePumpTask: Task<Void, Never>?
+    private var pendingUpdate: Any?
+
+    /// Changes of phase, app, count or ETA availability go out at once; progress coalesces cleanly.
     @available(iOS 16.2, *)
     private func send(_ state: DownloadActivityAttributes.ContentState, to activity: Activity<DownloadActivityAttributes>) {
         let last = lastSent as? DownloadActivityAttributes.ContentState
         let now = Date()
-        guard Self.shouldSend(state, after: last, elapsed: now.timeIntervalSince(lastSentAt)) else { return }
+        let inBackground = UIApplication.shared.applicationState != .active
+        guard Self.shouldSend(state, after: last, elapsed: now.timeIntervalSince(lastSentAt), inBackground: inBackground) else { return }
         let phaseChanged = last == nil || last!.phase != state.phase || last!.name != state.name || last!.count != state.count
         lastSent = state; lastSentAt = now
-        if phaseChanged { activityLog.notice("LA update phase \(state.phase) \(state.name, privacy: .public) bg=\(UIApplication.shared.applicationState != .active)") }
+        if phaseChanged {
+            activityLog.notice("LA update phase \(state.phase) \(state.name, privacy: .public) bg=\(inBackground)")
+        } else if inBackground, now.timeIntervalSince(lastBgLogAt) >= 10 {
+            lastBgLogAt = now
+            let pct = state.expected > 0 ? Int((min(1, max(0, Double(state.written) / Double(state.expected))) * 100).rounded()) : 0
+            activityLog.notice("LA bg progress phase=\(state.phase) pct=\(pct)% state=\(String(describing: activity.activityState), privacy: .public)")
+        }
         // Starting to install: the Dynamic Island opens briefly to say so.
         let alert = phaseChanged && state.phase == 4 && last?.phase != 4 ? Self.alert(state) : nil
-        let previous = updateTask
-        updateTask = Task {
-            await previous?.value
-            await activity.update(ActivityContent(state: state, staleDate: Self.staleDate(state)), alertConfiguration: alert)
+        let priorAlert = (pendingUpdate as? PendingUpdate)?.alert
+        pendingUpdate = PendingUpdate(activity: activity, state: state, alert: alert ?? priorAlert)
+        startUpdatePumpIfNeeded()
+    }
+
+    @available(iOS 16.2, *)
+    private func startUpdatePumpIfNeeded() {
+        guard updatePumpTask == nil else { return }
+        updatePumpTask = Task { @MainActor [weak self] in
+            defer { self?.updatePumpTask = nil }
+            while let self, let next = self.pendingUpdate as? PendingUpdate {
+                self.pendingUpdate = nil
+                guard next.activity.activityState == .active else { continue }
+                await next.activity.update(
+                    ActivityContent(state: next.state, staleDate: Self.staleDate(next.state)),
+                    alertConfiguration: next.alert
+                )
+            }
         }
     }
 
@@ -460,14 +536,14 @@ final class DownloadActivity {
     @available(iOS 16.2, *)
     private func finish(_ activity: Activity<DownloadActivityAttributes>, with state: DownloadActivityAttributes.ContentState) {
         finishingTask?.cancel()
-        let priorUpdate = updateTask
-        updateTask = nil
+        pendingUpdate = nil
+        let priorPump = updatePumpTask
         finishingActivity = activity
         let task = BackgroundTime()
         activityLog.notice("LA finish phase \(state.phase) bg=\(UIApplication.shared.applicationState != .active)")
         finishingTask = Task { [weak self] in
             defer { task.end() }
-            await priorUpdate?.value
+            await priorPump?.value
             await activity.update(ActivityContent(state: state, staleDate: nil))
             do { try await Task.sleep(nanoseconds: 2_000_000_000) }
             catch { return }

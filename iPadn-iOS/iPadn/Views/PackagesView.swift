@@ -167,10 +167,7 @@ struct PackagesView: View {
                     job: item.makeInstallJob(),
                     packageFileURL: item.fileURL,
                     packageIconURL: item.iconURL,
-                    isTestFlight: true,
-                    onInstalled: {
-                        tfModel.markInstalled(item.appID)
-                    }
+                    isTestFlight: true
                 )
                 .sheetNotice()
                 .environmentObject(store)

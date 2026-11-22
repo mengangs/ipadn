@@ -24,7 +24,9 @@ struct PackageLibraryRow: View {
                                 Text(verbatim: name)
                                     .font(.body.weight(.medium))
                                     .fixedSize(horizontal: false, vertical: true)
-                                if let badge, !badge.isEmpty {
+                                if badge == "TF" {
+                                    TestFlightBadge()
+                                } else if let badge, !badge.isEmpty {
                                     TagBadge(text: LocalizedStringKey(badge), tint: badgeTint)
                                 }
                             }
@@ -42,12 +44,14 @@ struct PackageLibraryRow: View {
                 HStack(alignment: .center, spacing: 12) {
                     AppIcon(url: icon, size: iconSize).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        HStack(alignment: .center, spacing: 6) {
                             Text(verbatim: name)
                                 .font(.body.weight(.medium))
                                 .lineLimit(2)
                                 .fixedSize(horizontal: false, vertical: true)
-                            if let badge, !badge.isEmpty {
+                            if badge == "TF" {
+                                TestFlightBadge()
+                            } else if let badge, !badge.isEmpty {
                                 TagBadge(text: LocalizedStringKey(badge), tint: badgeTint)
                             }
                             if let trailingNote, !trailingNote.isEmpty {

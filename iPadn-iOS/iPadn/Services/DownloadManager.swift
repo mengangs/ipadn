@@ -104,6 +104,7 @@ final class DownloadManager: NSObject, ObservableObject {
     /// Install When Downloaded with native installation: no prompt is needed,
     /// so finished downloads install by themselves, also in the background.
     private var silentInstall = false
+    private var downloadLiveActivityEnabled = false
     private var silentQueue: [UUID] = []
     private var externalSilentTargets: [UUID: ExternalAutoInstallTarget] = [:]
     private var silentInstallTask: Task<Void, Never>?
@@ -111,23 +112,33 @@ final class DownloadManager: NSObject, ObservableObject {
     private var silentCancelledIDs = Set<UUID>()
     private var silentRunning = false { didSet { updateInstallKeepAlive() } }
     @Published private(set) var isLoaded = false
-    /// iOS suspends iPadn soon after it leaves the screen, which would stop the
-    /// install (and the Live Activity) until iPadn is opened again. From the
-    /// download to the end of its silent installation, iPadn keeps running.
+    /// iOS suspends iPadn soon after it leaves the screen, which would stop
+    /// silent installs and freeze the Dynamic Island percentage until iPadn
+    /// is opened again. Keep running while a Live Activity download or silent
+    /// auto-install is actively in progress.
     private let installKeepAlive = BackgroundKeepAlive(name: "iPadn auto install")
     private var keepingAlive = false
     func syncTestFlightKeepAlive() {
         updateInstallKeepAlive()
     }
+    func syncLiveActivityKeepAlive() {
+        updateInstallKeepAlive()
+    }
     private func updateInstallKeepAlive() {
         #if canImport(TestFlightKit)
-        let tfAutoInstallBusy = silentInstall && TFHomeModel.shared.hasBusyDownloads
+        let tfBusy = TFHomeModel.shared.hasBusyDownloads
+        let tfAutoInstallBusy = silentInstall && tfBusy
         let tfForegroundBusy = TFHomeModel.shared.needsForegroundBackgroundKeepAlive
         #else
+        let tfBusy = false
         let tfAutoInstallBusy = false
         let tfForegroundBusy = false
         #endif
-        let busy = tfAutoInstallBusy || tfForegroundBusy || (silentInstall && (silentRunning || !silentQueue.isEmpty || !externalSilentTargets.isEmpty || jobs.contains { job in
+        let hasActiveRegularDownload = jobs.contains { [.running, .processing].contains($0.status) }
+        let liveActivityBusy = downloadLiveActivityEnabled
+            && DownloadActivity.shared.hasActiveActivity
+            && (hasActiveRegularDownload || tfBusy)
+        let busy = liveActivityBusy || tfAutoInstallBusy || tfForegroundBusy || (silentInstall && (silentRunning || !silentQueue.isEmpty || !externalSilentTargets.isEmpty || jobs.contains { job in
             [.running, .queued, .processing].contains(job.status)
                 && job.rawFormat == nil && job.protectedMacPackage != true && job.asset != nil
         }))
@@ -425,6 +436,7 @@ final class DownloadManager: NSObject, ObservableObject {
         #endif
         autoInstall = settings.autoInstall
         silentInstall = settings.autoInstall && settings.usesNativeInstallation
+        downloadLiveActivityEnabled = settings.downloadLiveActivity
         if !autoInstall {
             pendingAutoInstalls.removeAll()
             pendingExternalAutoInstalls.removeAll()
@@ -439,13 +451,13 @@ final class DownloadManager: NSObject, ObservableObject {
             waitingInstalls = []
             _ = cancelAutoInstall(nil)
         }
-        updateInstallKeepAlive()
         wifiOnly = settings.wifiOnlyDownloads
         if wifiOnly { startPathMonitor() }
         applyNetworkRule()
         updateBackgroundTask()
         schedule()
         DownloadActivity.shared.attach(self, enabled: settings.downloadLiveActivity)
+        updateInstallKeepAlive()
     }
 
     private func startPathMonitor() {

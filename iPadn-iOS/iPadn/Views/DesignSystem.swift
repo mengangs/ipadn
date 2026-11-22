@@ -865,6 +865,38 @@ struct TagBadge: View {
     }
 }
 
+/// Refined beta-origin micro-badge inspired by iOS's iconic TestFlight amber dot,
+/// pairing a neutral frosted capsule and hairline border with a subtle warm indicator.
+struct TestFlightBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [Color(red: 1.0, green: 0.67, blue: 0.14), Color(red: 1.0, green: 0.48, blue: 0.0)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 5.5, height: 5.5)
+                .shadow(color: Color.orange.opacity(0.35), radius: 1.5, y: 0.5)
+            Text(verbatim: "TF")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .tracking(0.5)
+                .foregroundStyle(.primary.opacity(0.72))
+        }
+        .padding(.horizontal, 6.5)
+        .padding(.vertical, 2.5)
+        .background(Color(.tertiarySystemFill), in: Capsule())
+        .overlay(
+            Capsule()
+                .strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.5)
+        )
+        .fixedSize()
+        .accessibilityLabel("TestFlight")
+    }
+}
+
 /// Pure-Swift coordinate & phase math for window-synchronized skeleton shimmer.
 enum ShimmerLayoutMath {
     static let period: CFTimeInterval = 1.45

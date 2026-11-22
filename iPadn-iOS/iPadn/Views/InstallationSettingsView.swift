@@ -432,17 +432,19 @@ private struct PairingGuideView: View {
                 // Nothing to show once pairing is cancelled; an empty card would remain.
                 if pairing.phase != .idle {
                     Section { PairingStatusRow(phase: pairing.phase) }
-                    if pairing.phase.isActive {
-                        Section {
-                            Button("取消配对", role: .destructive) { pairing.cancel() }
-                                .frame(maxWidth: .infinity)
-                                .accessibilityIdentifier("installation.pairing-cancel")
-                        }
-                    }
                 }
             }
             .navigationTitle("在本机配对").navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                if pairing.phase.isActive {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消配对", role: .destructive) {
+                            pairing.cancel()
+                            dismiss()
+                        }
+                        .accessibilityIdentifier("installation.pairing-cancel")
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     if pairing.phase.isActive {
                         Button("打开设置") { openSettings() }.accessibilityIdentifier("installation.pairing-open-settings")
