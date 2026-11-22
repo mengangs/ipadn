@@ -51,7 +51,7 @@
 
 #### Fixes & Improvements Since v2.3.3
 
-- **TestFlight Sync, Background Resume, Auto-Install & Live Island**
+- **TestFlight Sync, Background Resume, Auto-Install & Island**
   - Active TestFlight downloads appear at the top of **Downloads** once transfer starts (never prematurely during metadata lookup) with live tab badges, background transfer + foreground fallback keep-alive, true `resumeData` pause/resume, automatic CDN link refresh, EWMA speed/ETA, and Pause All / Resume All integration.
   - Extends **Auto-Install** and unified install sheets to TestFlight packages, removing session-only "Installed" badges so install behavior matches standard IPAs.
   - Unifies TestFlight and standard downloads on **Dynamic Island & Lock Screen Live Activities**, enabling frequent Live Activity updates and background keep-alive sync to fix stalled background percentages.
@@ -62,7 +62,7 @@
 - **Fixed Repeated 2FA Prompts, Multi-Phone 2FA & 0-App Stalls**
   - Stops background purchase-history sync from triggering silent codeless sign-in retries on account switches; TestFlight launch and account switching silently restore local sessions & 10-cookie jars without pushing unexpected GSA 2FA prompts.
   - Adds a trusted phone picker for multi-phone SMS 2FA, fixes 2FA sheet dismissal races and transient post-2FA `503` retries, caches 0-app catalogs for instant 0ms switching, and caps `TFDoh` probes to 2 seconds in parallel.
-- **Packages Undo, Centered Alerts, Pairing UX & iOS 17.4+ Guards**
+- **Packages Undo, Centered Alerts, Pairing & iOS 17.4+ Guards**
   - Adds **5-second atomic swipe-to-delete Undo** across all five row types in Pro mode **Packages** (restoring both files and decryption records), while long-press and bulk deletions use centered native alerts and delete immediately; migrates all app confirmation dialogs (Sign Out, Clear Recent Searches, Clear Version Cache, etc.) to centered native `.alert` and removes redundant tabs from the Account list.
   - Moves **Cancel Pairing** to the top-left toolbar mirroring **Open Settings** and fixes the 6-digit pairing PIN notification and text wrapping layout.
   - Detects additional App Store `buyProductFailure` billing/terms codes (`3038`, `5111`, `2022`, `3002`, `5062`, `5304`), enforces an explicit **iOS 17.4+ guard** and Settings notice for Native Install, isolates local Bonjour `_remotepairing._tcp` discovery from peer LAN devices, and logs `lookup` / `installedApps` failure stages to diagnostics.
