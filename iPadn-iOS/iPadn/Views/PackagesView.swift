@@ -102,8 +102,19 @@ struct PackagesView: View {
     }
 
     private var outputs: [DecryptRecord] {
-        allOutputs.filter {
-            matches([$0.appName, $0.version ?? "", $0.bundleID ?? "", $0.outputName ?? ""])
+        allOutputs.filter { record in
+            #if canImport(TestFlightKit)
+            let source = ui.source(for: record, manager: manager)
+            let tfItem = source.flatMap { tfProducts.item(forFile: $0) }
+            let isTF = record.isTestFlight == true || tfItem != nil || source?.path.contains("/TestFlight/") == true
+            var fields = [record.appName, tfItem?.displayName ?? "", record.version ?? "", record.bundleID ?? "", record.outputName ?? ""]
+            if isTF { fields.append(contentsOf: ["TestFlight", "TF"]) }
+            return matches(fields)
+            #else
+            var fields = [record.appName, record.version ?? "", record.bundleID ?? "", record.outputName ?? ""]
+            if record.isTestFlight == true { fields.append(contentsOf: ["TestFlight", "TF"]) }
+            return matches(fields)
+            #endif
         }.sorted {
             sort == 1 ? $0.appName.localizedStandardCompare($1.appName) == .orderedAscending
                 : sort == 2 ? ($0.outputBytes ?? 0) > ($1.outputBytes ?? 0)
@@ -848,11 +859,11 @@ struct PackagesView: View {
         #if canImport(TestFlightKit)
         let tfItem = source.flatMap { tfProducts.item(forFile: $0) }
         let resolvedName = job?.app.name ?? tfItem?.displayName ?? record.appName
-        let tfBadge: String? = tfItem != nil ? "TF" : nil
+        let isTF = record.isTestFlight == true || tfItem != nil || source?.path.contains("/TestFlight/") == true
         let tfVersionLabel = tfItem?.versionBuildLabel ?? ""
         #else
         let resolvedName = job?.app.name ?? record.appName
-        let tfBadge: String? = nil
+        let isTF = record.isTestFlight == true
         let tfVersionLabel = ""
         #endif
         let cleanName = PackageStage.displayName(resolvedName)
@@ -871,7 +882,7 @@ struct PackagesView: View {
             symbol: style.symbol,
             color: style.color,
             trailingNote: record.finishedAt?.formatted(date: .omitted, time: .shortened),
-            badge: tfBadge
+            isTestFlight: isTF
         )
 
         return selectableRow(.output(record.id), disabled: service.isRunning, content: { row }) {

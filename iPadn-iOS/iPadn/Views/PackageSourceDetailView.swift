@@ -164,10 +164,24 @@ struct PackageSourceDetailView: View {
                     Text(verbatim: name)
                         .font(.title3.weight(.semibold))
                         .multilineTextAlignment(.center)
-                    if !subtitleText.isEmpty {
-                        Text(verbatim: subtitleText)
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                    let isTF: Bool = {
+                        #if canImport(TestFlightKit)
+                        return tfItem != nil || url?.path.contains("/TestFlight/") == true
+                        #else
+                        return false
+                        #endif
+                    }()
+                    if isTF || !subtitleText.isEmpty {
+                        HStack(spacing: 5) {
+                            if isTF {
+                                TestFlightIcon(size: 14)
+                            }
+                            if !subtitleText.isEmpty {
+                                Text(verbatim: subtitleText)
+                                    .font(.subheadline.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
                 if exists, let url {

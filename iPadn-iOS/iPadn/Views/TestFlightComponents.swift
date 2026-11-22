@@ -538,6 +538,7 @@ struct TFInstallSheet: View {
                                 .font(.headline)
                                 .lineLimit(2)
                             HStack(spacing: 6) {
+                                TestFlightIcon(size: 13)
                                 if let version = app.latestVersion, !version.isEmpty {
                                     Text(verbatim: "v\(version)")
                                 }
@@ -545,12 +546,6 @@ struct TFInstallSheet: View {
                             }
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            HStack(spacing: 6) {
-                                TagBadge(text: "TestFlight", tint: .secondary)
-                                if isInstalled {
-                                    TagBadge(text: "已安装", tint: .green)
-                                }
-                            }
                         }
                     }
                     .padding(.vertical, 4)

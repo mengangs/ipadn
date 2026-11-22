@@ -7,6 +7,9 @@ import UIKit
 /// the same address, so an address sent from another app keeps working.
 struct WiFiTransferView: View {
     @EnvironmentObject private var manager: DownloadManager
+    #if canImport(TestFlightKit)
+    @ObservedObject private var tfProducts = TFProductIndex.shared
+    #endif
     @Environment(\.scenePhase) private var scenePhase
     @State private var server: WiFiTransferServer?
     @State private var address: URL?
@@ -24,11 +27,43 @@ struct WiFiTransferView: View {
     @State private var resumeOnReturn = false
     private static let idleLimit: TimeInterval = 600
 
-    private var completedJobFiles: [(job: DownloadJob, file: URL)] {
-        manager.jobs.compactMap { job in
+    private struct TransferEntry: Sendable {
+        let id: String
+        let name: String
+        let version: String
+        let filename: String
+        let file: URL
+        let fallbackSize: Int64
+    }
+
+    private var transferEntries: [TransferEntry] {
+        var result: [TransferEntry] = manager.jobs.compactMap { job in
             guard job.status == .completed, let file = manager.fileURL(job) else { return nil }
-            return (job, file)
+            let name = job.app.name.isEmpty ? file.deletingPathExtension().lastPathComponent : job.app.name
+            return TransferEntry(
+                id: job.id.uuidString,
+                name: name,
+                version: job.app.version,
+                filename: Self.publicName(file.lastPathComponent, id: job.id),
+                file: file,
+                fallbackSize: job.app.size
+            )
         }
+        #if canImport(TestFlightKit)
+        for item in tfProducts.items {
+            guard FileManager.default.fileExists(atPath: item.fileURL.path) else { continue }
+            let version = item.shortVersion.isEmpty ? item.buildVersion : item.shortVersion
+            result.append(TransferEntry(
+                id: "tf-" + item.bundleID,
+                name: item.displayName,
+                version: version,
+                filename: item.fileURL.lastPathComponent,
+                file: item.fileURL,
+                fallbackSize: item.fileSize
+            ))
+        }
+        #endif
+        return result
     }
 
     /// Stored packages start with the task's ID; the computer gets the readable rest.
@@ -67,7 +102,7 @@ struct WiFiTransferView: View {
                         .accessibilityIdentifier("transfer.start")
                 }
             } footer: {
-                Text("在同一 Wi‑Fi 下的电脑浏览器中打开这个地址，即可下载已完成的安装包（\(completedJobFiles.count) 个）。")
+                Text("在同一 Wi‑Fi 下的电脑浏览器中打开这个地址，即可下载已完成的安装包（\(transferEntries.count) 个）。")
             }
             if !accesses.isEmpty {
                 Section("访问记录") {
@@ -89,7 +124,12 @@ struct WiFiTransferView: View {
             .font(.footnote).foregroundStyle(.secondary)
         }
         .toolPage().navigationTitle("Wi‑Fi 传输").navigationBarTitleDisplayMode(.inline)
-        .task { await start() }
+        .task {
+            #if canImport(TestFlightKit)
+            tfProducts.refresh()
+            #endif
+            await start()
+        }
         .onDisappear { stop(nil, forget: true) }
         .compatibleOnChange(of: scenePhase) { phase in
             switch phase {
@@ -107,9 +147,9 @@ struct WiFiTransferView: View {
             default: break
             }
         }
-        .compatibleOnChange(of: completedJobFiles.map { $0.job.id }) { _ in
+        .compatibleOnChange(of: transferEntries.map(\.id)) { _ in
             guard let running = server else { return }
-            let entries = completedJobFiles
+            let entries = transferEntries
             Task {
                 let snapshot = await Task.detached(priority: .utility) { Self.items(for: entries) }.value
                 running.update(items: snapshot)
@@ -137,7 +177,7 @@ struct WiFiTransferView: View {
             issue = AppText.text("请先连接 Wi‑Fi，电脑也需要在同一网络中。")
             return
         }
-        let entries = completedJobFiles
+        let entries = transferEntries
         let items = await Task.detached(priority: .userInitiated) {
             Self.items(for: entries)
         }.value
@@ -173,11 +213,11 @@ struct WiFiTransferView: View {
         }
     }
 
-    nonisolated private static func items(for entries: [(job: DownloadJob, file: URL)]) -> [WiFiTransferServer.Item] {
-        entries.map { job, file in
-            .init(id: job.id.uuidString, name: job.app.name.isEmpty ? file.deletingPathExtension().lastPathComponent : job.app.name,
-                  version: job.app.version, filename: Self.publicName(file.lastPathComponent, id: job.id), file: file,
-                  size: ((try? FileManager.default.attributesOfItem(atPath: file.path)[.size]) as? NSNumber)?.int64Value ?? job.app.size)
+    nonisolated private static func items(for entries: [TransferEntry]) -> [WiFiTransferServer.Item] {
+        entries.map { entry in
+            .init(id: entry.id, name: entry.name,
+                  version: entry.version, filename: entry.filename, file: entry.file,
+                  size: ((try? FileManager.default.attributesOfItem(atPath: entry.file.path)[.size]) as? NSNumber)?.int64Value ?? entry.fallbackSize)
         }
     }
 

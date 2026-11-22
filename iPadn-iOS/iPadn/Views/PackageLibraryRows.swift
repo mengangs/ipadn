@@ -117,9 +117,14 @@ struct DecryptLiveSummary: View {
                                 Text(verbatim: PackageStage.displayName(service.sourceName))
                                     .font(.body.weight(.medium))
                                     .lineLimit(1)
-                                Text(verbatim: PackageStage.title(service.step))
-                                    .font(.footnote)
-                                    .foregroundStyle(UX.tint)
+                                HStack(spacing: 5) {
+                                    if record?.isTestFlight == true || service.detail.contains("/TestFlight/") {
+                                        TestFlightIcon(size: 13)
+                                    }
+                                    Text(verbatim: PackageStage.title(service.step))
+                                        .font(.footnote)
+                                        .foregroundStyle(UX.tint)
+                                }
                             }
                             Spacer(minLength: 8)
                             Text("约 \(Int(service.fraction * 100))%")

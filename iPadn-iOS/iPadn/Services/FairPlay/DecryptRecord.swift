@@ -104,6 +104,10 @@ struct DecryptRecord: Codable, Identifiable, Sendable {
     /// UI provenance only: prevents an old attempt claiming a subsequently
     /// replaced file. Optional for checkpoint-era record compatibility.
     var outputIdentity: String?
+    /// True when the source IPA came from a TestFlight download so decrypted
+    /// outputs and history retain the TestFlight indicator even after removing
+    /// the original IPA.
+    var isTestFlight: Bool? = nil
     var state: DecryptRecordState = .running
     var counts = DecryptCounts()
     var verification: DecryptVerificationResult = .none

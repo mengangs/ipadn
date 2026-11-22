@@ -54,9 +54,19 @@ struct PackageInstallationView: View {
                         AppIcon(url: resolvedIconURL, size: 96)
                         VStack(spacing: 4) {
                             Text(job.app.name).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
-                            Text([job.userFacingVersion.isEmpty ? "" : AppText.text("版本 \(job.userFacingVersion)"), job.app.size > 0 ? job.app.size.byteLabel : ""]
-                                .filter { !$0.isEmpty }.joined(separator: " · "))
-                                .font(.subheadline).foregroundStyle(.secondary)
+                            let subtitle = [job.userFacingVersion.isEmpty ? "" : AppText.text("版本 \(job.userFacingVersion)"), job.app.size > 0 ? job.app.size.byteLabel : ""]
+                                .filter { !$0.isEmpty }.joined(separator: " · ")
+                            if isTestFlight || !subtitle.isEmpty {
+                                HStack(spacing: 5) {
+                                    if isTestFlight {
+                                        TestFlightIcon(size: 14)
+                                    }
+                                    if !subtitle.isEmpty {
+                                        Text(subtitle)
+                                            .font(.subheadline).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
                         }
                         Button {
                             requestInstallation()

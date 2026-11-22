@@ -165,7 +165,16 @@ struct DecryptHistoryView: View {
 
     private func row(_ record: DecryptRecord) -> some View {
         let style = DecryptOutcomeStyle(record)
-        let name = PackageStage.displayName(record.appName)
+        let source = ui.source(for: record, manager: manager)
+        #if canImport(TestFlightKit)
+        let tfItem = source.flatMap { TFProductIndex.shared.item(forFile: $0) }
+        let isTF = record.isTestFlight == true || tfItem != nil || source?.path.contains("/TestFlight/") == true
+        let resolvedName = tfItem?.displayName ?? record.appName
+        #else
+        let isTF = record.isTestFlight == true
+        let resolvedName = record.appName
+        #endif
+        let name = PackageStage.displayName(resolvedName)
         let time = record.startedAt.formatted(date: .abbreviated, time: .shortened)
         let version = (record.version ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let metadata = [version.isEmpty ? "" : "v\(version)", time].filter { !$0.isEmpty }.joined(separator: " · ")
@@ -176,7 +185,8 @@ struct DecryptHistoryView: View {
             status: style.title,
             symbol: style.symbol,
             color: style.color,
-            iconSize: 48
+            iconSize: 48,
+            isTestFlight: isTF
         )
     }
 }

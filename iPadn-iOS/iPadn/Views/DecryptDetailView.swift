@@ -112,11 +112,22 @@ struct DecryptDetailView: View {
     private func heroSection(_ record: DecryptRecord) -> some View {
         let style = DecryptOutcomeStyle(record)
         let job = sourceJob(record)
+        let source = ui.source(for: record, manager: manager)
+        #if canImport(TestFlightKit)
+        let tfItem = source.flatMap { TFProductIndex.shared.item(forFile: $0) }
+        let isTF = record.isTestFlight == true || tfItem != nil || source?.path.contains("/TestFlight/") == true
+        let title = PackageStage.displayName(job?.app.name ?? tfItem?.displayName ?? record.appName)
+        let tfVersion = tfItem?.versionBuildLabel ?? ""
+        #else
+        let isTF = record.isTestFlight == true
         let title = PackageStage.displayName(job?.app.name ?? record.appName)
+        let tfVersion = ""
+        #endif
         let version = (record.version ?? job?.app.version ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let versionText = !tfVersion.isEmpty ? tfVersion : (version.isEmpty ? "" : "v\(version)")
         let sizeText = (ui.currentOutput(record) != nil ? record.outputBytes : record.sourceBytes)
             .flatMap { $0 > 0 ? Int64($0).byteLabel : nil } ?? ""
-        let subtitle = [version.isEmpty ? "" : "v\(version)", sizeText].filter { !$0.isEmpty }.joined(separator: " · ")
+        let subtitle = [versionText, sizeText].filter { !$0.isEmpty }.joined(separator: " · ")
 
         return Section {
             VStack(spacing: 14) {
@@ -125,10 +136,17 @@ struct DecryptDetailView: View {
                     Text(verbatim: title)
                         .font(.title3.weight(.semibold))
                         .multilineTextAlignment(.center)
-                    if !subtitle.isEmpty {
-                        Text(verbatim: subtitle)
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                    if isTF || !subtitle.isEmpty {
+                        HStack(spacing: 5) {
+                            if isTF {
+                                TestFlightIcon(size: 14)
+                            }
+                            if !subtitle.isEmpty {
+                                Text(verbatim: subtitle)
+                                    .font(.subheadline.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
                 Label {

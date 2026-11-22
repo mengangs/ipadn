@@ -71,6 +71,7 @@ final class FairPlayService: ObservableObject {
                                    sourceName: source.lastPathComponent,
                                    sourceBytes: bytes,
                                    appName: appName ?? displayName,
+                                   isTestFlight: source.path.contains("/TestFlight/") ? true : nil,
                                    state: .running,
                                    origin: origin)
         DecryptRecordStore.shared.upsert(record)
