@@ -813,6 +813,8 @@ struct DownloadsView: View {
                         }
                     }
                     tfActiveStatusLine(item: item, state: state)
+                        .id(state.stage)
+                        .transition(.statusSwap(reduceMotion: reduceMotion))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -825,6 +827,8 @@ struct DownloadsView: View {
                 ProgressView(value: state.fraction)
                     .tint(isDownloading ? UX.tint : .secondary)
                     .animation(reduceMotion ? nil : .linear(duration: 0.25), value: state.fraction)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: isDownloading)
+                    .transition(.opacity)
                     .accessibilityLabel("下载进度")
                     .accessibilityValue("\(Int(state.fraction * 100))%")
             }
@@ -835,9 +839,13 @@ struct DownloadsView: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.red)
+                .transition(.opacity)
             }
         }
         .padding(.vertical, 8)
+        .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.86), value: state.stage)
+        .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.86), value: state.total > 0)
+        .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.86), value: state.message)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("download.tf.active." + item.id)
         .revealActions(
@@ -938,41 +946,57 @@ struct DownloadsView: View {
 
     @ViewBuilder
     private func tfActiveTrailingControl(item: TFActiveDownloadItem, state: TFRowState) -> some View {
-        switch state.stage {
-        case .resolving, .installing:
-            Button {
-                UX.tapLight()
-                tfModel.pause(item.app)
-            } label: {
-                ProgressRing(progress: nil)
+        let phase: AppStoreActionPhase? = {
+            switch state.stage {
+            case .resolving, .installing:
+                return .loading
+            case .downloading:
+                return state.total > 0 ? .downloading(state.fraction) : .loading
+            case .paused:
+                return .capsule(title: "继续", filled: false, enabled: true)
+            case .verifying:
+                return .processing
+            case .failed:
+                return .capsule(title: "重试", filled: false, enabled: true)
+            case .idle, .done:
+                return nil
             }
-            .buttonStyle(RevealRowButtonStyle())
-            .accessibilityLabel("等待下载，点按暂停")
-        case .downloading:
-            Button {
-                UX.tapLight()
-                tfModel.pause(item.app)
-            } label: {
-                ProgressRing(progress: state.total > 0 ? state.fraction : nil, symbol: "pause.fill")
+        }()
+        if let phase {
+            let label: String = {
+                switch state.stage {
+                case .resolving, .installing: return AppText.text("等待下载，点按暂停")
+                case .downloading: return AppText.text("暂停")
+                case .paused: return AppText.text("继续")
+                case .verifying: return AppText.text("正在校验 \(item.displayName)")
+                case .failed: return AppText.text("重试")
+                case .idle, .done: return ""
+                }
+            }()
+            let valueText: String? = state.stage == .downloading && state.total > 0
+                ? "\(Int(state.fraction * 100))%"
+                : nil
+            AppStoreActionButton(
+                phase: phase,
+                alignment: .center,
+                insideNavigationLink: false,
+                showsStopSquare: false,
+                ringSymbol: "pause.fill",
+                usesSpinningProcessingRing: true,
+                accessibilityLabelText: label,
+                accessibilityValueText: valueText
+            ) {
+                switch state.stage {
+                case .resolving, .installing, .downloading:
+                    tfModel.pause(item.app)
+                case .paused:
+                    tfModel.resume(item.app)
+                case .failed:
+                    tfModel.start(item.app)
+                case .verifying, .idle, .done:
+                    break
+                }
             }
-            .buttonStyle(RevealRowButtonStyle())
-            .accessibilityLabel("暂停")
-            .accessibilityValue("\(Int(state.fraction * 100))%")
-        case .paused:
-            RowCapsule(title: "继续", haptic: false) {
-                UX.tapLight()
-                tfModel.resume(item.app)
-            }
-        case .verifying:
-            SpinningRing()
-                .accessibilityLabel(AppText.text("正在校验 \(item.displayName)"))
-        case .failed:
-            RowCapsule(title: "重试", haptic: false) {
-                UX.tapLight()
-                tfModel.start(item.app)
-            }
-        case .idle, .done:
-            EmptyView()
         }
     }
 
@@ -1132,7 +1156,6 @@ struct DownloadsView: View {
         return app
     }
     private func primary(_ job: DownloadJob) {
-        UX.tapLight()
         #if DEBUG
         if LocalResources.isPreview, ProcessInfo.processInfo.arguments.contains("--completion-preview"), job.status == .running {
             manager.completePreviewDownload(job.id)
@@ -1356,49 +1379,83 @@ struct DownloadTaskRow: View {
             : seconds < 3600 ? AppText.text("剩余 \(Int(ceil(seconds / 60))) 分钟")
             : AppText.text("剩余 \(Int(ceil(min(seconds / 3600, 999)))) 小时")
     }
-    @ViewBuilder private var trailingControl: some View {
+    private var trailingPhase: AppStoreActionPhase? {
         switch job.status {
         case .running:
-            Button(action: primary) { ProgressRing(progress: job.expected > 0 ? job.progress : nil, symbol: "pause.fill") }
-                .buttonStyle(RevealRowButtonStyle())
-                .accessibilityLabel("暂停").accessibilityValue("\(Int(job.progress * 100))%")
+            return job.expected > 0 ? .downloading(job.progress) : .loading
         case .queued:
-            Button(action: primary) { ProgressRing(progress: nil) }
-                .buttonStyle(RevealRowButtonStyle()).accessibilityLabel("等待下载，点按暂停")
+            return .loading
         case .processing where manager.cancelling.contains(job.id):
-            ProgressView().frame(width: 44, height: 44)
-                .accessibilityLabel("正在取消")
+            return .processing
         case .processing where job.protectedMacPackage == true:
-            // Mac packages can take minutes to process; let the user stop it.
-            RowCapsule(title: "取消") { manager.cancelProcessing(job.id) }
-                .accessibilityLabel("取消处理")
-        case .pausing, .processing:
-            SpinningRing()
-                .accessibilityLabel(job.status == .pausing ? job.status.title : AppText.text("正在处理"))
+            return .capsule(title: "取消", filled: false, enabled: true)
+        case .pausing:
+            return .loading
+        case .processing:
+            return .processing
         case .paused:
-            RowCapsule(title: "继续", haptic: false, action: primary)
+            return .capsule(title: "继续", filled: false, enabled: true)
         case .failed:
-            RowCapsule(title: "重试", haptic: false, action: primary)
+            return .capsule(title: "重试", filled: false, enabled: true)
         case .completed where celebrating:
-            CompletionRing()
+            return .completedCheck
         case .completed:
-            // Share moved into the row's swipe actions.
-            if job.rawFormat == nil {
-                Button("安装", action: primary)
-                    .buttonStyle(CapsuleButtonStyle(filled: true))
-                    .accessibilityIdentifier("download.install." + job.app.id)
-            }
+            return job.rawFormat == nil ? .capsule(title: "安装", filled: true, enabled: true) : nil
+        }
+    }
+    private var trailingAccessibilityLabel: String {
+        switch job.status {
+        case .running: return AppText.text("暂停")
+        case .queued: return AppText.text("等待下载，点按暂停")
+        case .processing where manager.cancelling.contains(job.id): return AppText.text("正在取消")
+        case .processing where job.protectedMacPackage == true: return AppText.text("取消处理")
+        case .pausing: return job.status.title
+        case .processing: return AppText.text("正在处理")
+        case .paused: return AppText.text("继续")
+        case .failed: return AppText.text("重试")
+        case .completed where celebrating: return AppText.text("下载完成")
+        case .completed: return AppText.text("安装")
+        }
+    }
+    private var trailingAccessibilityValue: String? {
+        job.status == .running && job.expected > 0 ? "\(Int(job.progress * 100))%" : nil
+    }
+    private func handleTrailingTap() {
+        switch job.status {
+        case .processing where manager.cancelling.contains(job.id):
+            break
+        case .processing where job.protectedMacPackage == true:
+            manager.cancelProcessing(job.id)
+        case .pausing, .processing:
+            break
+        case .completed where celebrating:
+            break
+        case .running, .queued, .paused, .failed, .completed:
+            primary()
         }
     }
     private var showsTrailingControl: Bool {
-        !editing && (job.status != .completed || job.rawFormat == nil)
+        !editing && trailingPhase != nil
     }
     @ViewBuilder private var trailingControls: some View {
-        if showsTrailingControl {
-            trailingControl
-                .id(controlKey + (celebrating ? "-done" : ""))
-                .transition(.statusSwap(reduceMotion: reduceMotion))
-                .frame(minWidth: dynamicTypeSize.isAccessibilitySize ? nil : 74, minHeight: 44, alignment: .center)
+        if showsTrailingControl, let phase = trailingPhase {
+            AppStoreActionButton(
+                phase: phase,
+                alignment: .center,
+                insideNavigationLink: false,
+                showsStopSquare: false,
+                ringSymbol: "pause.fill",
+                usesSpinningProcessingRing: true,
+                accessibilityLabelText: trailingAccessibilityLabel,
+                accessibilityValueText: trailingAccessibilityValue,
+                action: handleTrailingTap
+            )
+            .accessibilityIdentifier(
+                job.status == .completed && !celebrating && job.rawFormat == nil
+                    ? "download.install." + job.app.id
+                    : "download.action." + job.app.id
+            )
+            .frame(minWidth: dynamicTypeSize.isAccessibilitySize ? nil : 74, minHeight: 44, alignment: .center)
         }
     }
     var body: some View {
@@ -1418,6 +1475,7 @@ struct DownloadTaskRow: View {
             if [.running, .pausing, .paused].contains(job.status), job.expected > 0 {
                 ProgressView(value: job.progress).tint(job.status == .running ? UX.tint : .secondary)
                     .animation(reduceMotion ? nil : .linear(duration: 0.25), value: job.progress)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: job.status == .running)
                     .transition(.opacity)
                     .accessibilityLabel("下载进度").accessibilityValue("\(Int(job.progress * 100))%")
             }

@@ -15,6 +15,7 @@ struct TestFlightDetailView: View {
     let app: TFBetaApp
     @ObservedObject var model: TFHomeModel
     @EnvironmentObject private var store: ToolStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var expandWhatsNew = false
     @State private var expandDescription = false
@@ -243,9 +244,12 @@ struct TestFlightDetailView: View {
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.white.opacity(0.82))
                             .multilineTextAlignment(.center)
+                            .id(statusLine)
+                            .transition(.statusSwap(reduceMotion: reduceMotion))
                     }
                 }
                 .padding(.horizontal, 24)
+                .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.86), value: heroStatusLine)
 
                 if availability == .testing {
                     heroPrimaryAction
@@ -308,47 +312,55 @@ struct TestFlightDetailView: View {
 
     @ViewBuilder
     private var heroPrimaryAction: some View {
-        switch rowState.stage {
-        case .idle:
-            heroPillButton(title: AppText.text("获取"), busy: false, enabled: model.isSignedIn) {
-                model.start(app)
+        let config: (title: String, busy: Bool, progress: Double?, enabled: Bool) = {
+            switch rowState.stage {
+            case .idle:
+                return (AppText.text("获取"), false, nil, model.isSignedIn)
+            case .resolving, .installing:
+                return (AppText.text("取消"), true, nil, true)
+            case .downloading:
+                return (
+                    AppText.text("暂停"),
+                    rowState.total <= 0,
+                    rowState.total > 0 ? rowState.fraction : nil,
+                    true
+                )
+            case .paused:
+                return (AppText.text("继续"), false, nil, true)
+            case .verifying:
+                return (AppText.text("校验安装包…"), true, nil, false)
+            case .done:
+                return (isInstalling ? AppText.text("正在处理…") : AppText.text("安装"), isInstalling, nil, true)
+            case .failed:
+                return (AppText.text("重试"), false, nil, model.isSignedIn)
             }
-        case .resolving, .installing:
-            heroPillButton(title: AppText.text("取消"), busy: true, enabled: true) {
+        }()
+        heroPillButton(
+            title: config.title,
+            busy: config.busy,
+            progress: config.progress,
+            enabled: config.enabled
+        ) {
+            switch rowState.stage {
+            case .idle, .failed:
+                model.start(app)
+            case .resolving, .installing:
                 model.cancel(app)
-            }
-        case .downloading:
-            heroPillButton(
-                title: AppText.text("暂停"),
-                busy: rowState.total <= 0,
-                progress: rowState.total > 0 ? rowState.fraction : nil,
-                enabled: true
-            ) {
+            case .downloading:
                 model.pause(app)
-            }
-        case .paused:
-            heroPillButton(title: AppText.text("继续"), busy: false, enabled: true) {
+            case .paused:
                 model.resume(app)
-            }
-        case .verifying:
-            heroPillButton(title: AppText.text("校验安装包…"), busy: true, enabled: false) {}
-        case .done:
-            heroPillButton(
-                title: isInstalling ? AppText.text("正在处理…") : AppText.text("安装"),
-                busy: isInstalling,
-                enabled: true
-            ) {
+            case .verifying:
+                break
+            case .done:
                 showingInstallSheet = true
-            }
-        case .failed:
-            heroPillButton(title: AppText.text("重试"), busy: false, enabled: model.isSignedIn) {
-                model.start(app)
             }
         }
     }
 
     private func heroPillButton(title: String, busy: Bool, progress: Double? = nil, enabled: Bool, action: @escaping () -> Void) -> some View {
         let prominent = enabled && !busy && progress == nil
+        let hasProgress = progress != nil
         return Button {
             UX.tapLight()
             action()
@@ -362,19 +374,22 @@ struct TestFlightDetailView: View {
                             .trim(from: 0, to: max(0.02, min(1, progress)))
                             .stroke(.white, style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
                             .rotationEffect(.degrees(-90))
-                            .animation(.linear(duration: 0.25), value: progress)
+                            .animation(reduceMotion ? nil : .linear(duration: 0.25), value: progress)
                         RoundedRectangle(cornerRadius: 1.8, style: .continuous)
                             .fill(.white)
                             .frame(width: 7, height: 7)
                     }
                     .frame(width: 22, height: 22)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.72).combined(with: .opacity))
                 } else if busy {
                     ProgressView()
                         .tint(.white)
+                        .transition(reduceMotion ? .opacity : .scale(scale: 0.72).combined(with: .opacity))
                 }
                 Text(verbatim: title)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(prominent ? Color.black : Color.white)
+                    .contentTransition(.opacity)
             }
             .frame(maxWidth: .infinity)
             .frame(minHeight: 46)
@@ -387,15 +402,20 @@ struct TestFlightDetailView: View {
                             Capsule()
                                 .fill(.white.opacity(0.18))
                                 .frame(width: max(0, geo.size.width * min(1, max(0, progress))))
-                                .animation(.linear(duration: 0.25), value: progress)
+                                .animation(reduceMotion ? nil : .linear(duration: 0.25), value: progress)
                         }
                         .clipShape(Capsule())
+                        .transition(.opacity)
                     }
                 }
             }
             .overlay(Capsule().stroke(.white.opacity(prominent ? 0.35 : 0.24), lineWidth: 0.5))
+            .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.86), value: prominent)
+            .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.86), value: busy)
+            .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.86), value: hasProgress)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: title)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PillButtonPressStyle(scale: 0.96, opacity: 0.86))
         .disabled(!enabled)
         .accessibilityLabel(Text(verbatim: title))
         .accessibilityValue(progress.map { "\(Int(($0 * 100).rounded()))%" } ?? "")

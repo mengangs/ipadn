@@ -305,10 +305,11 @@ enum AppStoreActionPhase: Equatable {
     case loading
     case downloading(Double)
     case processing
+    case completedCheck
 
     var isCircular: Bool {
         switch self {
-        case .loading, .downloading, .processing: return true
+        case .loading, .downloading, .processing, .completedCheck: return true
         case .capsule, .cloud: return false
         }
     }
@@ -318,25 +319,37 @@ enum AppStoreActionPhase: Equatable {
         return false
     }
 
+    var isProcessing: Bool {
+        if case .processing = self { return true }
+        return false
+    }
+
+    var isCompletedCheck: Bool {
+        if case .completedCheck = self { return true }
+        return false
+    }
+
     var isEnabled: Bool {
         switch self {
         case .capsule(_, _, let enabled), .cloud(let enabled): return enabled
-        case .loading, .downloading, .processing: return true
+        case .loading, .downloading, .processing, .completedCheck: return true
         }
     }
 }
 
-private struct PillButtonPressStyle: ButtonStyle {
+struct PillButtonPressStyle: ButtonStyle {
     let scale: CGFloat
     let opacity: Double
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.revealSuppressesPress) private var suppressesPress
     func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed && !suppressesPress
         configuration.label
-            .opacity(configuration.isPressed ? opacity : (enabled ? 1 : 0.4))
-            .scaleEffect(configuration.isPressed && !reduceMotion ? scale : 1)
-            .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.14), value: configuration.isPressed)
-            .compatibleOnChange(of: configuration.isPressed) { down in if down { UX.prepare() } }
+            .opacity(pressed ? opacity : (enabled || suppressesPress ? 1 : 0.4))
+            .scaleEffect(pressed && !reduceMotion ? scale : 1)
+            .animation(reduceMotion ? nil : .compatibleSnappy(duration: 0.14), value: pressed)
+            .compatibleOnChange(of: pressed) { down in if down { UX.prepare() } }
     }
 }
 
@@ -346,6 +359,9 @@ struct AppStoreActionButton: View {
     let phase: AppStoreActionPhase
     var alignment: Alignment = .center
     var insideNavigationLink = false
+    var showsStopSquare = true
+    var ringSymbol = "pause.fill"
+    var usesSpinningProcessingRing = false
     var accessibilityLabelText: String? = nil
     var accessibilityValueText: String? = nil
     let action: () -> Void
@@ -360,7 +376,7 @@ struct AppStoreActionButton: View {
     @State private var pillHeight: CGFloat = 30
 
     private var morphAnimation: Animation? {
-        reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.88)
+        reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.84)
     }
 
     private var isCircular: Bool { phase.isCircular }
@@ -377,7 +393,7 @@ struct AppStoreActionButton: View {
     private var ringProgress: Double? {
         switch phase {
         case .downloading(let fraction): return fraction
-        case .loading, .processing: return nil
+        case .loading, .processing, .completedCheck: return nil
         case .capsule, .cloud: return nil
         }
     }
@@ -395,6 +411,8 @@ struct AppStoreActionButton: View {
     @ViewBuilder private var morphBody: some View {
         let circular = isCircular
         let cloud = phase.isCloud
+        let completedCheck = phase.isCompletedCheck
+        let processingRing = usesSpinningProcessingRing && phase.isProcessing
         let showPill = !circular && !cloud
         ZStack {
             ZStack {
@@ -404,10 +422,10 @@ struct AppStoreActionButton: View {
                     .animation(
                         reduceMotion
                             ? nil
-                            : (showPill ? .easeOut(duration: 0.16).delay(0.05) : .easeOut(duration: 0.13)),
+                            : (showPill ? .easeOut(duration: 0.18).delay(0.05) : .easeOut(duration: 0.12)),
                         value: showPill
                     )
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: activeFilled)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: activeFilled)
 
                 Text(LocalizedStringKey(activeTitle))
                     .font(.subheadline.weight(.bold))
@@ -421,10 +439,10 @@ struct AppStoreActionButton: View {
                     .animation(
                         reduceMotion
                             ? nil
-                            : (showPill ? .easeOut(duration: 0.16).delay(0.08) : .easeOut(duration: 0.10)),
+                            : (showPill ? .easeOut(duration: 0.18).delay(0.08) : .easeOut(duration: 0.10)),
                         value: showPill
                     )
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: activeTitle)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: activeTitle)
             }
             .frame(width: targetWidth, height: targetHeight)
             .clipShape(Capsule())
@@ -444,27 +462,40 @@ struct AppStoreActionButton: View {
                 )
 
             if circular {
-                ProgressRing(
-                    progress: ringProgress,
-                    showsStopSquare: true,
-                    size: ringSize,
-                    outerPadding: 0
-                )
+                Group {
+                    if completedCheck {
+                        CompletionRing(outerPadding: 0)
+                    } else if processingRing {
+                        SpinningRing(outerPadding: 0)
+                    } else {
+                        ProgressRing(
+                            progress: ringProgress,
+                            symbol: ringSymbol,
+                            showsStopSquare: showsStopSquare,
+                            size: ringSize,
+                            outerPadding: 0
+                        )
+                    }
+                }
                 .transition(
                     reduceMotion
                         ? .opacity
                         : .asymmetric(
                             insertion: .opacity
-                                .combined(with: .scale(scale: 0.80))
-                                .animation(.easeOut(duration: 0.18).delay(0.06)),
-                            removal: .opacity
                                 .combined(with: .scale(scale: 0.76))
-                                .animation(.easeIn(duration: 0.09))
+                                .animation(.spring(response: 0.30, dampingFraction: 0.82).delay(0.05)),
+                            removal: .opacity
+                                .combined(with: .scale(scale: 0.74))
+                                .animation(.easeIn(duration: 0.10))
                         )
                 )
             }
         }
         .frame(width: targetWidth, height: targetHeight)
+        .animation(morphAnimation, value: circular)
+        .animation(morphAnimation, value: cloud)
+        .animation(morphAnimation, value: completedCheck)
+        .animation(morphAnimation, value: processingRing)
         .background {
             Text(LocalizedStringKey(activeTitle))
                 .font(.subheadline.weight(.bold))
@@ -589,7 +620,7 @@ struct ProgressRing: View {
                 .transition(.opacity)
             }
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: progress == nil)
+        .animation(reduceMotion ? nil : .spring(response: 0.30, dampingFraction: 0.86), value: progress == nil)
         .frame(width: size, height: size)
         .padding(outerPadding)
         .contentShape(Circle())
@@ -599,6 +630,7 @@ struct ProgressRing: View {
 /// The ring while a finished download is checked and prepared: an arc that
 /// keeps turning on the same track, so the ring never disappears mid-task.
 struct SpinningRing: View {
+    var outerPadding: CGFloat = 7
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var turning = false
     var body: some View {
@@ -610,13 +642,14 @@ struct SpinningRing: View {
                 .animation(reduceMotion ? nil : .linear(duration: 0.9).repeatForever(autoreverses: false), value: turning)
         }
         .frame(width: 30, height: 30)
-        .padding(7)
+        .padding(outerPadding)
         .onAppear { turning = true }
     }
 }
 
 /// Telegram's finished state: the ring closes and a check draws inside it.
 struct CompletionRing: View {
+    var outerPadding: CGFloat = 7
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var ring: CGFloat = 0.28
     @State private var check: CGFloat = 0
@@ -633,7 +666,7 @@ struct CompletionRing: View {
         }
         .frame(width: 30, height: 30)
         .scaleEffect(pop)
-        .padding(7)
+        .padding(outerPadding)
         .onAppear {
             guard !reduceMotion else { ring = 1; check = 1; return }
             withAnimation(.easeOut(duration: 0.25)) { ring = 1 }
@@ -1272,9 +1305,10 @@ extension AnyTransition {
     /// the new one fades and scales in.
     static var statusSwap: AnyTransition {
         .asymmetric(
-            insertion: .opacity.combined(with: .scale(scale: 0.92))
-                .animation(.easeOut(duration: 0.16).delay(0.08)),
-            removal: .opacity.animation(.easeIn(duration: 0.08)))
+            insertion: .opacity.combined(with: .offset(y: 4))
+                .animation(.easeOut(duration: 0.18).delay(0.06)),
+            removal: .opacity.combined(with: .offset(y: -3))
+                .animation(.easeIn(duration: 0.10)))
     }
 
     static func statusSwap(reduceMotion: Bool) -> AnyTransition {

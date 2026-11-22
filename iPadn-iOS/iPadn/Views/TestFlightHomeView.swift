@@ -790,71 +790,62 @@ struct TestFlightHomeView: View {
     @ViewBuilder
     private func rowAccessory(app: TFBetaApp, state: TFRowState, isInstalling: Bool) -> some View {
         let _ = capabilityRefreshTick
-        switch state.stage {
-        case .idle:
-            AppStoreActionButton(
-                phase: .capsule(title: AppText.text("获取"), filled: false, enabled: model.isSignedIn),
-                insideNavigationLink: true,
-                accessibilityLabelText: AppText.text("下载 \(app.name)")
-            ) {
-                model.start(app)
+        let phase: AppStoreActionPhase = {
+            switch state.stage {
+            case .idle:
+                return .capsule(title: "获取", filled: false, enabled: model.isSignedIn)
+            case .resolving, .installing:
+                return .loading
+            case .downloading:
+                return state.total > 0 ? .downloading(state.fraction) : .loading
+            case .paused:
+                return .capsule(title: "继续", filled: false, enabled: true)
+            case .verifying:
+                return .processing
+            case .done:
+                return isInstalling
+                    ? .processing
+                    : .capsule(title: "安装", filled: true, enabled: true)
+            case .failed:
+                return .capsule(title: "重试", filled: false, enabled: model.isSignedIn)
             }
-        case .resolving, .installing:
-            AppStoreActionButton(
-                phase: .loading,
-                insideNavigationLink: true,
-                accessibilityLabelText: AppText.text("取消下载 \(app.name)")
-            ) {
+        }()
+        let label: String = {
+            switch state.stage {
+            case .idle: return AppText.text("下载 \(app.name)")
+            case .resolving, .installing: return AppText.text("取消下载 \(app.name)")
+            case .downloading: return AppText.text("暂停")
+            case .paused: return AppText.text("继续")
+            case .verifying: return AppText.text("正在校验 \(app.name)")
+            case .done: return isInstalling ? AppText.text("正在安装 \(app.name)") : AppText.text("安装 \(app.name)")
+            case .failed: return AppText.text("重试下载 \(app.name)")
+            }
+        }()
+        let valueText: String? = {
+            if state.stage == .downloading, state.total > 0 {
+                return "\(Int((state.fraction * 100).rounded()))%"
+            }
+            return nil
+        }()
+        AppStoreActionButton(
+            phase: phase,
+            insideNavigationLink: true,
+            accessibilityLabelText: label,
+            accessibilityValueText: valueText
+        ) {
+            switch state.stage {
+            case .idle, .failed:
+                model.start(app)
+            case .resolving, .installing:
                 model.cancel(app)
-            }
-        case .downloading:
-            AppStoreActionButton(
-                phase: state.total > 0 ? .downloading(state.fraction) : .loading,
-                insideNavigationLink: true,
-                accessibilityLabelText: AppText.text("暂停"),
-                accessibilityValueText: state.total > 0 ? "\(Int((state.fraction * 100).rounded()))%" : nil
-            ) {
+            case .downloading:
                 model.pause(app)
-            }
-        case .paused:
-            AppStoreActionButton(
-                phase: .capsule(title: AppText.text("继续"), filled: false, enabled: true),
-                insideNavigationLink: true,
-                accessibilityLabelText: AppText.text("继续")
-            ) {
+            case .paused:
                 model.resume(app)
-            }
-        case .verifying:
-            AppStoreActionButton(
-                phase: .processing,
-                insideNavigationLink: true,
-                accessibilityLabelText: AppText.text("正在校验 \(app.name)")
-            ) {}
-        case .done:
-            if isInstalling {
-                AppStoreActionButton(
-                    phase: .processing,
-                    insideNavigationLink: true,
-                    accessibilityLabelText: AppText.text("正在安装 \(app.name)")
-                ) {
-                    installingApp = app
-                }
-            } else {
-                AppStoreActionButton(
-                    phase: .capsule(title: AppText.text("安装"), filled: true, enabled: true),
-                    insideNavigationLink: true,
-                    accessibilityLabelText: AppText.text("安装 \(app.name)")
-                ) {
-                    installingApp = app
-                }
-            }
-        case .failed:
-            AppStoreActionButton(
-                phase: .capsule(title: AppText.text("重试"), filled: false, enabled: model.isSignedIn),
-                insideNavigationLink: true,
-                accessibilityLabelText: AppText.text("重试下载 \(app.name)")
-            ) {
-                model.start(app)
+            case .verifying:
+                break
+            case .done:
+                installingApp = app
             }
         }
     }
