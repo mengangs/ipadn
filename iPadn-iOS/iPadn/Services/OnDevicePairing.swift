@@ -69,9 +69,13 @@ final class OnDevicePairing: ObservableObject {
             }
         }
     }
+    private var backgroundObserver: NSObjectProtocol?
     private let cleanup = DeinitCleanup()
 
     deinit {
+        if let backgroundObserver {
+            NotificationCenter.default.removeObserver(backgroundObserver)
+        }
         cleanup.triggerIfArmed()
     }
 
@@ -82,6 +86,22 @@ final class OnDevicePairing: ObservableObject {
         // iPadn must keep answering while Settings is in front; a background
         // task alone ends within seconds, which stops the pairing.
         keepAlive.start()
+        if let existingObserver = backgroundObserver {
+            NotificationCenter.default.removeObserver(existingObserver)
+        }
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.running, self.phase == .waiting else { return }
+                // Pause silent audio right as iPadn leaves the screen (whether via "Open Settings"
+                // or manually switching apps) so audiomxd's 5.4s media assertion finishes clearing
+                // while the user navigates to Developer Mode, letting the PIN Live Activity pop up immediately.
+                self.keepAlive.pauseForHandoff(resumeAfter: 22)
+            }
+        }
         startActivity()
         let keepAliveRef = keepAlive
         cleanup.arm { [weak self] in
@@ -142,12 +162,18 @@ final class OnDevicePairing: ObservableObject {
     /// shows an immediate banner with the Privacy & Security path once backgrounded.
     func notifyHandoffIfWaiting() {
         guard running, phase == .waiting else { return }
-        keepAlive.pauseForHandoff(resumeAfter: 10)
+        keepAlive.pauseForHandoff(resumeAfter: 22)
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 350_000_000)
             guard let self, self.running, self.phase == .waiting else { return }
             self.update(step: 1)
         }
+    }
+
+    /// Step 2 (connected, waiting for passcode) updates the Live Activity silently so
+    /// ActivityKit's Dynamic Island alert budget stays reserved for Step 3 (the 6-digit PIN).
+    nonisolated static func shouldAlertLiveActivity(forStep step: Int) -> Bool {
+        step != 2
     }
 
     static func formattedCode(_ code: String) -> String {
@@ -249,6 +275,10 @@ final class OnDevicePairing: ObservableObject {
     private func finish(_ phase: Phase) {
         guard running else { return }
         cleanup.disarm()
+        if let backgroundObserver {
+            NotificationCenter.default.removeObserver(backgroundObserver)
+            self.backgroundObserver = nil
+        }
         pairTask = nil
         service?.stop(); service = nil
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["ipadn-pairing-code"])
@@ -308,20 +338,31 @@ final class OnDevicePairing: ObservableObject {
         let startedAt = activityStartedAt
         let state = PairingActivityAttributes.ContentState(step: step, code: code)
         let content = ActivityContent(state: state, staleDate: Self.activityStaleDate(forStep: step))
-        let alert = Self.alertConfiguration(step: step, code: code)
+        let alert = Self.shouldAlertLiveActivity(forStep: step) ? Self.alertConfiguration(step: step, code: code) : nil
         let bg = UIApplication.shared.applicationState != .active ? PairingBackgroundTime(name: "iPadn pairing activity update") : nil
         enqueueActivityWork { [weak self] in
             defer { bg?.end() }
             guard let self,
                   self.activityGeneration == generation,
                   self.stateGeneration == targetStateGeneration else { return }
-            await self.keepAlive.waitUntilActivityUpdatePermitted(activityStartedAt: startedAt) { [weak self] in
+            await self.keepAlive.waitUntilActivityUpdatePermitted(
+                activityStartedAt: startedAt,
+                allowLaunchGrantBypass: step == 1
+            ) { [weak self] in
                 guard let self else { return false }
                 return self.activityGeneration == generation && self.stateGeneration == targetStateGeneration
             }
             guard self.activityGeneration == generation,
                   self.stateGeneration == targetStateGeneration else { return }
             await current.update(content, alertConfiguration: alert)
+            if step == 3, let code {
+                let liveState = current.activityState
+                InstallLog.shared.add("pairing code live activity updated (state: \(liveState), bg: \(UIApplication.shared.applicationState != .active))")
+                if liveState != .active {
+                    let display = Self.formattedCode(code)
+                    self.notify(AppText.text("iPadn 配对码：\(display)"), body: AppText.text("在「设置」中输入这个配对码。"))
+                }
+            }
         }
     }
 
@@ -398,6 +439,7 @@ final class BackgroundKeepAlive {
     private var player: AVAudioPlayer?
     private var background = UIBackgroundTaskIdentifier.invalid
     private var releasedAt: Date?
+    private var resumedInBackground = false
     private var activeSession = false
     private var safetyResumeTask: Task<Void, Never>?
 
@@ -406,6 +448,7 @@ final class BackgroundKeepAlive {
     func start() {
         safetyResumeTask?.cancel(); safetyResumeTask = nil
         releasedAt = nil
+        resumedInBackground = false
         activeSession = true
         beginBackgroundTask()
         do {
@@ -446,6 +489,7 @@ final class BackgroundKeepAlive {
 
     func stop() {
         activeSession = false
+        resumedInBackground = false
         safetyResumeTask?.cancel(); safetyResumeTask = nil
         let wasPlaying = player?.isPlaying == true
         player?.stop(); player = nil
@@ -458,20 +502,38 @@ final class BackgroundKeepAlive {
         endBackgroundTask()
     }
 
+    nonisolated static func mediaAssertionWaitSeconds(
+        releasedAt: Date?,
+        activityStartedAt: Date,
+        allowLaunchGrantBypass: Bool,
+        resumedInBackground: Bool,
+        now: Date = Date()
+    ) -> TimeInterval {
+        guard let releasedAt else { return 0 }
+        if allowLaunchGrantBypass, !resumedInBackground,
+           now.timeIntervalSince(activityStartedAt) < deliveryWindowSeconds {
+            return 0
+        }
+        return max(0, mediaAssertionGraceSeconds - now.timeIntervalSince(releasedAt))
+    }
+
     func waitUntilActivityUpdatePermitted(
         activityStartedAt: Date,
+        allowLaunchGrantBypass: Bool = false,
         shouldContinue: () -> Bool = { true }
     ) async {
         guard UIApplication.shared.applicationState != .active else { return }
-        if Date().timeIntervalSince(activityStartedAt) < Self.deliveryWindowSeconds {
-            return
-        }
         if player?.isPlaying == true {
             pauseForHandoff()
         }
         guard let releasedAt else { return }
         while shouldContinue() {
-            let remaining = Self.mediaAssertionGraceSeconds - Date().timeIntervalSince(releasedAt)
+            let remaining = Self.mediaAssertionWaitSeconds(
+                releasedAt: releasedAt,
+                activityStartedAt: activityStartedAt,
+                allowLaunchGrantBypass: allowLaunchGrantBypass,
+                resumedInBackground: resumedInBackground
+            )
             if remaining <= 0 { break }
             let slice = min(0.1, remaining)
             try? await Task.sleep(nanoseconds: UInt64((slice * 1_000_000_000).rounded(.up)))
@@ -486,6 +548,9 @@ final class BackgroundKeepAlive {
             try session.setActive(true)
             player.play()
             releasedAt = nil
+            if UIApplication.shared.applicationState != .active {
+                resumedInBackground = true
+            }
         } catch {
             InstallLog.shared.add("pairing keep-alive resume failed: \(error.localizedDescription)")
         }

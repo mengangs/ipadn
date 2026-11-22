@@ -127,6 +127,34 @@ final class NativeInstallerTests: XCTestCase {
             XCTAssertNotNil(OnDevicePairing.alertConfiguration(step: 4))
             XCTAssertNotNil(OnDevicePairing.alertConfiguration(step: 0, message: "timeout"))
         }
+        // Step 2 updates quietly so ActivityKit's Dynamic Island alert budget stays reserved for Step 3 (PIN).
+        XCTAssertTrue(OnDevicePairing.shouldAlertLiveActivity(forStep: 1))
+        XCTAssertFalse(OnDevicePairing.shouldAlertLiveActivity(forStep: 2))
+        XCTAssertTrue(OnDevicePairing.shouldAlertLiveActivity(forStep: 3))
+        XCTAssertTrue(OnDevicePairing.shouldAlertLiveActivity(forStep: 4))
+
+        // Step 3 must wait out audiomxd's cooldown when audio was recently paused,
+        // even inside the initial 24s window, so the PIN banner is never dropped.
+        let started = Date(timeIntervalSince1970: 1_700_000_000)
+        let pausedAt = started.addingTimeInterval(15)
+        let step3Wait = BackgroundKeepAlive.mediaAssertionWaitSeconds(
+            releasedAt: pausedAt,
+            activityStartedAt: started,
+            allowLaunchGrantBypass: false,
+            resumedInBackground: false,
+            now: started.addingTimeInterval(16)
+        )
+        XCTAssertGreaterThan(step3Wait, 4.0)
+
+        // Once 5.4s have elapsed since pausing audio at handoff, Step 3 waits 0s.
+        let clearedWait = BackgroundKeepAlive.mediaAssertionWaitSeconds(
+            releasedAt: started.addingTimeInterval(2),
+            activityStartedAt: started,
+            allowLaunchGrantBypass: false,
+            resumedInBackground: false,
+            now: started.addingTimeInterval(10)
+        )
+        XCTAssertEqual(clearedWait, 0, accuracy: 0.001)
     }
 
     func testPhaseIsCancellableDistinguishesTransferFromSystemInstall() {

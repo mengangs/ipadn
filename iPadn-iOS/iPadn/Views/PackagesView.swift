@@ -163,36 +163,18 @@ struct PackagesView: View {
             .packageFilePresenter($presentation)
             #if canImport(TestFlightKit)
             .sheet(item: $installingTFItem) { item in
-                let beta = item.betaApp
-                TFInstallSheet(
-                    app: beta,
-                    packageURL: item.fileURL,
-                    iconURL: item.iconURL,
-                    iconColors: item.iconColors,
-                    iconRevision: tfModel.iconRevisions[item.appID] ?? 0,
-                    installation: store.installation,
-                    isInstalling: tfModel.installingAppIDs.contains(item.appID),
-                    isInstalled: tfModel.installedAppIDs.contains(item.appID),
-                    installNote: tfModel.installNotes[item.appID],
-                    installFailed: tfModel.installFailedAppIDs.contains(item.appID),
-                    needsChannelGuide: tfModel.installNeedsChannelAppIDs.contains(item.appID),
-                    onInstall: { method in
-                        tfModel.install(beta, method: method, installation: store.installation)
-                    },
-                    onDelete: {
-                        installingTFItem = nil
-                        do {
-                            try store.removeTFProductWithUndo(item)
-                        } catch {
-                            store.errorMessage = error.localizedDescription
-                        }
-                    },
-                    onOpenSettings: {
-                        installingTFItem = nil
-                        store.selectTab(.accounts)
-                        store.accountNav.push(.installation)
+                PackageInstallationView(
+                    job: item.makeInstallJob(),
+                    packageFileURL: item.fileURL,
+                    packageIconURL: item.iconURL,
+                    isTestFlight: true,
+                    onInstalled: {
+                        tfModel.markInstalled(item.appID)
                     }
                 )
+                .sheetNotice()
+                .environmentObject(store)
+                .environmentObject(store.downloads)
             }
             #endif
             .sheet(isPresented: $picking, onDismiss: {

@@ -193,29 +193,18 @@ struct TestFlightDetailView: View {
         }
         .sheet(isPresented: $showingInstallSheet) {
             if let packageURL = model.productURL(for: app) {
-                TFInstallSheet(
-                    app: app,
-                    packageURL: packageURL,
-                    iconURL: model.iconFiles[app.id],
-                    iconColors: iconColors,
-                    iconRevision: model.iconRevisions[app.id] ?? 0,
-                    installation: store.installation,
-                    isInstalling: isInstalling,
-                    isInstalled: isInstalled,
-                    installNote: model.installNotes[app.id],
-                    installFailed: model.installFailedAppIDs.contains(app.id),
-                    needsChannelGuide: model.installNeedsChannelAppIDs.contains(app.id),
-                    onInstall: { method in
-                        model.install(app, method: method, installation: store.installation)
-                    },
-                    onDelete: {
-                        store.removeTFProductWithUndo(for: app)
-                        showingInstallSheet = false
-                    },
-                    onOpenSettings: {
-                        store.accountNav.push(.installation)
+                PackageInstallationView(
+                    job: model.makeInstallJob(for: app, packageURL: packageURL),
+                    packageFileURL: packageURL,
+                    packageIconURL: model.iconFiles[app.id],
+                    isTestFlight: true,
+                    onInstalled: {
+                        model.markInstalled(app.id)
                     }
                 )
+                .sheetNotice()
+                .environmentObject(store)
+                .environmentObject(store.downloads)
             }
         }
         .sheet(item: $sharedFile) { item in
@@ -266,12 +255,6 @@ struct TestFlightDetailView: View {
                     heroPrimaryAction
                         .padding(.horizontal, 36)
                         .padding(.top, 4)
-
-                    if rowState.stage == .downloading || rowState.stage == .paused {
-                        ProgressView(value: rowState.fraction)
-                            .tint(rowState.stage == .paused ? .white.opacity(0.45) : .white)
-                            .padding(.horizontal, 48)
-                    }
                 }
             }
             .padding(.top, 112)
@@ -311,21 +294,10 @@ struct TestFlightDetailView: View {
 
     private var heroStatusLine: String? {
         switch rowState.stage {
-        case .idle:
+        case .idle, .resolving, .installing, .downloading, .verifying:
             return nil
-        case .resolving:
-            return AppText.text("读取构建信息…")
-        case .installing:
-            return AppText.text("准备下载…")
-        case .downloading:
-            return "\(byteText(rowState.received)) / \(byteText(rowState.total)) · \(Int(rowState.fraction * 100))%"
         case .paused:
-            let progress = rowState.total > 0
-                ? "\(byteText(rowState.received)) / \(byteText(rowState.total))"
-                : (rowState.received > 0 ? byteText(rowState.received) : "")
-            return [AppText.text("已暂停"), progress].filter { !$0.isEmpty }.joined(separator: " · ")
-        case .verifying:
-            return AppText.text("校验安装包…")
+            return AppText.text("已暂停")
         case .done:
             if isInstalling, let note = model.installNotes[app.id] { return note }
             if isInstalled { return AppText.text("已安装") }

@@ -679,14 +679,9 @@ struct TFInstallSheet: View {
             } message: {
                 Text(verbatim: decryptError ?? "")
             }
-            .confirmationDialog("删除本地安装包？", isPresented: $confirmingDelete, titleVisibility: .visible) {
-                Button("删除本地安装包", role: .destructive) {
-                    onDelete()
-                    dismiss()
-                }
-                Button("取消", role: .cancel) {}
-            } message: {
-                Text("仅删除本机缓存的安装包文件，之后可随时重新下载。")
+            .actionConfirmation(isPresented: $confirmingDelete, title: "删除本地安装包？", message: "仅删除本机缓存的安装包文件，之后可随时重新下载。", confirmTitle: "删除本地安装包") {
+                onDelete()
+                dismiss()
             }
         }
         .presentationDetents([.medium, .large])
@@ -954,14 +949,9 @@ struct TFAccountSheet: View {
                     Button("完成") { dismiss() }
                 }
             }
-            .confirmationDialog("清除当前 TestFlight 会话？", isPresented: $confirmingSignOut, titleVisibility: .visible) {
-                Button("清除会话", role: .destructive) {
-                    model.clearPersistedSession(storeAccountDsid: selectedAppleAccount?.dsid ?? "")
-                    dismiss()
-                }
-                Button("取消", role: .cancel) {}
-            } message: {
-                Text("下次使用此账号访问 TestFlight 时需要重新验证；已下载的安装包会保留。")
+            .actionConfirmation(isPresented: $confirmingSignOut, title: "清除当前 TestFlight 会话？", message: "下次使用此账号访问 TestFlight 时需要重新验证；已下载的安装包会保留。", confirmTitle: "清除会话") {
+                model.clearPersistedSession(storeAccountDsid: selectedAppleAccount?.dsid ?? "")
+                dismiss()
             }
         }
         .presentationDetents([.large])

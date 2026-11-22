@@ -3,6 +3,9 @@ import Combine
 import Network
 import UserNotifications
 import UIKit
+#if canImport(TestFlightKit)
+import TestFlightKit
+#endif
 
 /// Progress has its own publisher: a byte counter must not invalidate every list.
 @MainActor
@@ -83,12 +86,26 @@ final class DownloadManager: NSObject, ObservableObject {
     private var cellularAllowed = false
     /// Downloads wait for Wi-Fi: the setting is on and only cellular is available.
     @Published private(set) var waitingForWiFi = false
+    /// External completed package (such as a TestFlight build) handed into the same
+    /// automatic-install pipeline (silent native install or install sheet).
+    struct ExternalAutoInstallTarget: Identifiable {
+        let id: UUID
+        let job: DownloadJob
+        let fileURL: URL
+        let iconURL: URL?
+        let isTestFlight: Bool
+        let onInstalled: (@MainActor () -> Void)?
+    }
+
     /// Finished downloads waiting for the install sheet to open.
     @Published var pendingAutoInstalls: [UUID] = []
+    /// Finished external downloads (e.g. TestFlight) waiting for the install sheet to open.
+    @Published var pendingExternalAutoInstalls: [ExternalAutoInstallTarget] = []
     /// Install When Downloaded with native installation: no prompt is needed,
     /// so finished downloads install by themselves, also in the background.
     private var silentInstall = false
     private var silentQueue: [UUID] = []
+    private var externalSilentTargets: [UUID: ExternalAutoInstallTarget] = [:]
     private var silentInstallTask: Task<Void, Never>?
     private var activeSilentAttemptTask: Task<NativeInstaller.Outcome, Error>?
     private var silentCancelledIDs = Set<UUID>()
@@ -99,14 +116,24 @@ final class DownloadManager: NSObject, ObservableObject {
     /// download to the end of its silent installation, iPadn keeps running.
     private let installKeepAlive = BackgroundKeepAlive(name: "iPadn auto install")
     private var keepingAlive = false
+    func syncTestFlightKeepAlive() {
+        updateInstallKeepAlive()
+    }
     private func updateInstallKeepAlive() {
-        let busy = silentInstall && (silentRunning || !silentQueue.isEmpty || jobs.contains { job in
+        #if canImport(TestFlightKit)
+        let tfAutoInstallBusy = silentInstall && TFHomeModel.shared.hasBusyDownloads
+        let tfForegroundBusy = TFHomeModel.shared.needsForegroundBackgroundKeepAlive
+        #else
+        let tfAutoInstallBusy = false
+        let tfForegroundBusy = false
+        #endif
+        let busy = tfAutoInstallBusy || tfForegroundBusy || (silentInstall && (silentRunning || !silentQueue.isEmpty || !externalSilentTargets.isEmpty || jobs.contains { job in
             [.running, .queued, .processing].contains(job.status)
                 && job.rawFormat == nil && job.protectedMacPackage != true && job.asset != nil
-        })
+        }))
         guard busy != keepingAlive else { return }
         keepingAlive = busy
-        InstallLog.shared.add(busy ? "keeping iPadn running for the automatic install" : "automatic install keep-alive ended")
+        InstallLog.shared.add(busy ? "keeping iPadn running for background download/install" : "background download/install keep-alive ended")
         if busy { installKeepAlive.start() } else { installKeepAlive.stop() }
     }
     /// A line for iPadn's top notice while it is open (notifications only
@@ -199,12 +226,18 @@ final class DownloadManager: NSObject, ObservableObject {
         UserDefaults.standard.removeObject(forKey: Self.backgroundUnavailableKey)
         UserDefaults.standard.removeObject(forKey: Self.backgroundProbedKey)
         backgroundDownloadsUnavailable = false
+        #if canImport(TestFlightKit)
+        TFTransfer.preferForegroundSession = compatibleDownloadMode
+        #endif
         startBackgroundProbeIfNeeded()
     }
     private func markBackgroundUnavailable() {
         guard !backgroundDownloadsUnavailable else { return }
         backgroundDownloadsUnavailable = true
         UserDefaults.standard.set(Self.currentBuild, forKey: Self.backgroundUnavailableKey)
+        #if canImport(TestFlightKit)
+        TFTransfer.preferForegroundSession = true
+        #endif
     }
 
     // A tiny download through the system download service, once per install:
@@ -387,15 +420,21 @@ final class DownloadManager: NSObject, ObservableObject {
         notifications = settings.notifications
         artworkCountry = settings.store.country
         compatibleDownloadMode = settings.compatibleDownloadMode
+        #if canImport(TestFlightKit)
+        TFTransfer.preferForegroundSession = compatibleDownloadMode || backgroundDownloadsUnavailable
+        #endif
         autoInstall = settings.autoInstall
         silentInstall = settings.autoInstall && settings.usesNativeInstallation
         if !autoInstall {
             pendingAutoInstalls.removeAll()
+            pendingExternalAutoInstalls.removeAll()
             silentQueue.removeAll()
+            externalSilentTargets.removeAll()
             waitingInstalls = []
             _ = cancelAutoInstall(nil)
         } else if !silentInstall {
             silentQueue.removeAll()
+            externalSilentTargets.removeAll()
             for id in pendingAutoInstalls where waitsForSilentInstall(id) { markWaiting(id, false) }
             waitingInstalls = []
             _ = cancelAutoInstall(nil)
@@ -1535,12 +1574,16 @@ final class DownloadManager: NSObject, ObservableObject {
         var removedAny = false
         if let id {
             if pendingAutoInstalls.contains(id) { pendingAutoInstalls.removeAll { $0 == id }; removedAny = true }
+            if pendingExternalAutoInstalls.contains(where: { $0.id == id }) { pendingExternalAutoInstalls.removeAll { $0.id == id }; removedAny = true }
             if silentQueue.contains(id) { silentQueue.removeAll { $0 == id }; removedAny = true }
+            if externalSilentTargets.removeValue(forKey: id) != nil { removedAny = true }
             if waitsForSilentInstall(id) { markWaiting(id, false); removedAny = true }
         } else {
-            if !pendingAutoInstalls.isEmpty || !silentQueue.isEmpty || !waitingInstalls.isEmpty { removedAny = true }
+            if !pendingAutoInstalls.isEmpty || !pendingExternalAutoInstalls.isEmpty || !silentQueue.isEmpty || !externalSilentTargets.isEmpty || !waitingInstalls.isEmpty { removedAny = true }
             pendingAutoInstalls.removeAll()
+            pendingExternalAutoInstalls.removeAll()
             silentQueue.removeAll()
+            externalSilentTargets.removeAll()
             waitingInstalls = []
         }
         guard let active = autoInstalling, id == nil || active.id == id else {
@@ -1582,6 +1625,36 @@ final class DownloadManager: NSObject, ObservableObject {
         }
     }
 
+    /// Hands a completed external IPA (e.g. TestFlight) into the same automatic-install
+    /// and notification pipeline used by App Store downloads.
+    func enqueueExternalAutoInstall(_ target: ExternalAutoInstallTarget) {
+        let name = target.job.userFacingTitle
+        let version = target.job.userFacingVersion
+        guard autoInstall else {
+            notify(title: AppText.text("安装包已准备好"), body: version.isEmpty ? name : (name + " " + version))
+            return
+        }
+        if silentInstall {
+            externalSilentTargets[target.id] = target
+            installSilently(target.id)
+        } else {
+            notify(title: AppText.text("安装包已准备好"), body: version.isEmpty ? name : (name + " " + version))
+            if !pendingExternalAutoInstalls.contains(where: { $0.fileURL == target.fileURL }) {
+                pendingExternalAutoInstalls.append(target)
+            }
+        }
+    }
+
+    func notifyExternalDownloadFailed(name: String, message: String) {
+        notify(title: AppText.text("下载任务失败"), body: AppText.text("\(name)：\(message)"))
+    }
+
+    func isExternalSilentInstallPending(fileURL: URL) -> Bool {
+        guard silentInstall else { return false }
+        let path = fileURL.standardizedFileURL.path
+        return externalSilentTargets.values.contains { $0.fileURL.standardizedFileURL.path == path }
+    }
+
     /// Installs finished downloads one at a time through native installation,
     /// without the install sheet. One that can't finish (no connection, iOS
     /// ended the background time) gets the sheet when iPadn is open again.
@@ -1602,9 +1675,20 @@ final class DownloadManager: NSObject, ObservableObject {
             }
             while !self.silentQueue.isEmpty {
                 let id = self.silentQueue.removeFirst()
+                let externalTarget = self.externalSilentTargets[id]
+                let resolved: (job: DownloadJob, file: URL)? = {
+                    if let externalTarget, FileManager.default.fileExists(atPath: externalTarget.fileURL.path) {
+                        return (externalTarget.job, externalTarget.fileURL)
+                    }
+                    if let job = self.jobs.first(where: { $0.id == id && $0.status == .completed }),
+                       let file = self.fileURL(job) {
+                        return (job, file)
+                    }
+                    return nil
+                }()
                 guard self.autoInstall, self.silentInstall, !self.silentCancelledIDs.contains(id),
-                      let job = self.jobs.first(where: { $0.id == id && $0.status == .completed }),
-                      let file = self.fileURL(job) else {
+                      let (job, file) = resolved else {
+                    self.externalSilentTargets.removeValue(forKey: id)
                     self.markWaiting(id, false); continue
                 }
                 let name = job.userFacingTitle
@@ -1613,7 +1697,9 @@ final class DownloadManager: NSObject, ObservableObject {
                 self.autoInstallFailed = nil
                 self.autoInstallCancelled = nil
                 self.autoInstalling = AutoInstallProgress(id: id, name: name, fraction: 0, canCancel: true, stage: .connecting)
-                self.inFlightAutoInstallID = id.uuidString
+                if externalTarget == nil {
+                    self.inFlightAutoInstallID = id.uuidString
+                }
                 defer {
                     if self.inFlightAutoInstallID == id.uuidString { self.inFlightAutoInstallID = nil }
                     if self.autoInstalling?.id == id { self.autoInstalling = nil }
@@ -1653,20 +1739,25 @@ final class DownloadManager: NSObject, ObservableObject {
                     }
                     self.activeSilentAttemptTask = attemptTask
                     _ = try await attemptTask.value
+                    self.externalSilentTargets.removeValue(forKey: id)
                     self.markWaiting(id, false)
                     self.silentCancelledIDs.remove(id)
+                    externalTarget?.onInstalled?()
                     self.autoInstalled = name
                     self.autoInstallNotice = AppText.text("已自动安装 \(name)")
                     self.notify(title: AppText.text("已自动安装"), body: name)
                 } catch is CancellationError {
+                    self.externalSilentTargets.removeValue(forKey: id)
                     self.markWaiting(id, false)
                     self.silentCancelledIDs.remove(id)
                     self.pendingAutoInstalls.removeAll { $0 == id }
+                    self.pendingExternalAutoInstalls.removeAll { $0.id == id }
                     self.autoInstallFailed = nil
                     self.autoInstallCancelled = name
                     self.autoInstallNotice = AppText.text("已取消自动安装 \(name)")
                     InstallLog.shared.add("silent install cancelled: \(name)")
                 } catch {
+                    self.externalSilentTargets.removeValue(forKey: id)
                     self.silentCancelledIDs.remove(id)
                     self.autoInstallNotice = nil
                     self.autoInstallFailed = name
@@ -1674,9 +1765,20 @@ final class DownloadManager: NSObject, ObservableObject {
                     if UIApplication.shared.applicationState == .active, self.autoInstall {
                         // In front and still failing (e.g. LocalDevVPN not connected): the sheet explains.
                         self.markWaiting(id, false)
-                        if !self.pendingAutoInstalls.contains(id) { self.pendingAutoInstalls.append(id) }
+                        if let externalTarget {
+                            if !self.pendingExternalAutoInstalls.contains(where: { $0.id == externalTarget.id }) {
+                                self.pendingExternalAutoInstalls.append(externalTarget)
+                            }
+                        } else if !self.pendingAutoInstalls.contains(id) {
+                            self.pendingAutoInstalls.append(id)
+                        }
                     } else {
                         // In the background iOS may simply have run out of time: retried when iPadn is back.
+                        if let externalTarget {
+                            if !self.pendingExternalAutoInstalls.contains(where: { $0.id == externalTarget.id }) {
+                                self.pendingExternalAutoInstalls.append(externalTarget)
+                            }
+                        }
                         self.notify(title: AppText.text("自动安装未完成"), body: AppText.text("打开 iPadn 继续安装 \(name)"))
                     }
                 }

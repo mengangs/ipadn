@@ -87,7 +87,14 @@ struct InstallationSettingsView: View {
                     }
                 }
                 if pairing.phase != .idle, !showingPairingGuide {
-                    Section { PairingStatusRow(phase: pairing.phase) { pairing.cancel() } }
+                    Section {
+                        PairingStatusRow(phase: pairing.phase)
+                        if pairing.phase.isActive {
+                            Button("取消配对", role: .destructive) { pairing.cancel() }
+                                .frame(maxWidth: .infinity)
+                                .accessibilityIdentifier("installation.pairing-cancel")
+                        }
+                    }
                 }
             } else if store.settings.automaticInstallation {
                 Section {
@@ -368,14 +375,15 @@ extension OnDevicePairing.Phase {
 /// Where on-device pairing is, with the code to type once there is one.
 private struct PairingStatusRow: View {
     let phase: OnDevicePairing.Phase
-    let cancel: () -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             switch phase {
             case .waiting:
                 Label("请打开「设置 › 隐私与安全性 › 开发者模式」，点按「与 iPadn 配对」。", systemImage: "gear")
+                    .fixedSize(horizontal: false, vertical: true)
             case .connected:
                 Label("设备已连接，正在开始配对…", systemImage: "iphone.radiowaves.left.and.right")
+                    .fixedSize(horizontal: false, vertical: true)
             case .code(let code):
                 Text("在「设置」中输入配对码").font(.subheadline).foregroundStyle(.secondary)
                 Text(code).font(.system(size: 40, weight: .bold, design: .rounded)).monospacedDigit().tracking(6)
@@ -385,14 +393,13 @@ private struct PairingStatusRow: View {
                 Label("配对完成", systemImage: "checkmark.circle.fill")
             case .failed(let message):
                 Label(message, systemImage: "exclamationmark.triangle")
+                    .fixedSize(horizontal: false, vertical: true)
             case .idle:
                 EmptyView()
             }
-            if phase.isActive {
-                Button("取消配对", role: .cancel, action: cancel).frame(maxWidth: .infinity)
-            }
         }
         .font(.subheadline)
+        .padding(.vertical, 4)
         .accessibilityIdentifier("installation.pairing-status")
     }
 }
@@ -424,7 +431,14 @@ private struct PairingGuideView: View {
                 }
                 // Nothing to show once pairing is cancelled; an empty card would remain.
                 if pairing.phase != .idle {
-                    Section { PairingStatusRow(phase: pairing.phase) { pairing.cancel() } }
+                    Section { PairingStatusRow(phase: pairing.phase) }
+                    if pairing.phase.isActive {
+                        Section {
+                            Button("取消配对", role: .destructive) { pairing.cancel() }
+                                .frame(maxWidth: .infinity)
+                                .accessibilityIdentifier("installation.pairing-cancel")
+                        }
+                    }
                 }
             }
             .navigationTitle("在本机配对").navigationBarTitleDisplayMode(.inline)

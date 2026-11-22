@@ -144,9 +144,8 @@ struct SearchView: View {
                             .font(.body)
                             .textCase(nil)
                             .fixedSize()
-                            .confirmationDialog("清除最近搜索？", isPresented: $confirmClear, titleVisibility: .visible) {
-                                Button("清除", role: .destructive) { withAnimation(UX.motion(reduceMotion)) { store.clearHistory() } }
-                                Button("取消", role: .cancel) {}
+                            .actionConfirmation(isPresented: $confirmClear, title: "清除最近搜索？", confirmTitle: "清除") {
+                                withAnimation(UX.motion(reduceMotion)) { store.clearHistory() }
                             }
                     }
                     .padding(.horizontal, -recentHeaderOutset)

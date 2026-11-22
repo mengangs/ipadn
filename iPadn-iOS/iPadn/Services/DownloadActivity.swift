@@ -22,8 +22,19 @@ final class DownloadActivity {
     private var lastSent: Any?
     private var lastSentAt = Date.distantPast
     private var refreshScheduled = false
-    /// The downloads the activity was showing at the last refresh.
-    private var shownIDs = Set<UUID>()
+    /// The downloads (regular + TestFlight) the activity was showing at the last refresh.
+    private var shownKeys = Set<String>()
+
+    struct ActivityTaskSnapshot: Equatable {
+        enum Phase: Equatable { case running, processing, queued, pausing, paused, completed, failed }
+        let key: String
+        let name: String
+        let phase: Phase
+        let written: Int64
+        let expected: Int64
+        let speed: Double
+        let waitsForSilentInstall: Bool
+    }
 
     func attach(_ manager: DownloadManager, enabled: Bool) {
         guard #available(iOS 16.2, *), !LocalResources.isPreview else { return }
@@ -34,13 +45,20 @@ final class DownloadActivity {
             let existing = Activity<DownloadActivityAttributes>.activities
             activity = existing.first
             for old in existing.dropFirst() { Task { await old.end(nil, dismissalPolicy: .immediate) } }
-            subscription = manager.$jobs.map { _ in () }
-                .merge(with: manager.$autoInstalling.map { _ in () },
-                       manager.$autoInstalled.map { _ in () },
-                       manager.$autoInstallFailed.map { _ in () },
-                       manager.$autoInstallCancelled.map { _ in () },
-                       manager.$waitingForWiFi.map { _ in () },
-                       manager.$isLoaded.map { _ in () })
+            var publishers: [AnyPublisher<Void, Never>] = [
+                manager.$jobs.map { _ in () }.eraseToAnyPublisher(),
+                manager.$autoInstalling.map { _ in () }.eraseToAnyPublisher(),
+                manager.$autoInstalled.map { _ in () }.eraseToAnyPublisher(),
+                manager.$autoInstallFailed.map { _ in () }.eraseToAnyPublisher(),
+                manager.$autoInstallCancelled.map { _ in () }.eraseToAnyPublisher(),
+                manager.$waitingForWiFi.map { _ in () }.eraseToAnyPublisher(),
+                manager.$isLoaded.map { _ in () }.eraseToAnyPublisher(),
+            ]
+            #if canImport(TestFlightKit)
+            publishers.append(TFHomeModel.shared.$activeDownloads.map { _ in () }.eraseToAnyPublisher())
+            publishers.append(TFHomeModel.shared.$rows.map { _ in () }.eraseToAnyPublisher())
+            #endif
+            subscription = Publishers.MergeMany(publishers)
                 .sink { [weak self] _ in self?.scheduleRefresh() }
         }
         refresh()
@@ -81,13 +99,90 @@ final class DownloadActivity {
         }
     }
 
+    private func collectSnapshots(manager: DownloadManager, uptime: TimeInterval) -> [ActivityTaskSnapshot] {
+        var result: [ActivityTaskSnapshot] = []
+        result.reserveCapacity(manager.jobs.count + 4)
+        for job in manager.jobs {
+            let phase: ActivityTaskSnapshot.Phase
+            switch job.status {
+            case .running: phase = .running
+            case .processing: phase = .processing
+            case .queued: phase = .queued
+            case .pausing: phase = .pausing
+            case .paused: phase = .paused
+            case .completed: phase = .completed
+            case .failed: phase = .failed
+            }
+            let bytes = manager.progress(for: job.id).bytes
+            let written = bytes?.written ?? job.downloaded
+            let expected = max(bytes?.expected ?? 0, job.expected, job.app.size)
+            let speed = phase == .running ? (manager.metrics(for: job.id)?.rate(at: uptime) ?? 0) : 0
+            result.append(ActivityTaskSnapshot(
+                key: "job:" + job.id.uuidString,
+                name: job.app.name,
+                phase: phase,
+                written: written,
+                expected: expected,
+                speed: speed,
+                waitsForSilentInstall: manager.waitsForSilentInstall(job.id)
+            ))
+        }
+        #if canImport(TestFlightKit)
+        let tfModel = TFHomeModel.shared
+        var seenTF = Set<String>()
+        for item in tfModel.activeDownloads {
+            seenTF.insert(item.id)
+            let state = tfModel.rows[item.id] ?? TFRowState()
+            let phase: ActivityTaskSnapshot.Phase
+            switch state.stage {
+            case .downloading: phase = .running
+            case .verifying: phase = .processing
+            case .resolving, .installing: phase = .queued
+            case .paused: phase = .paused
+            case .done: phase = .completed
+            case .failed: phase = .failed
+            case .idle: continue
+            }
+            let speed = phase == .running ? (tfModel.metrics(for: item.id)?.rate(at: uptime) ?? 0) : 0
+            result.append(ActivityTaskSnapshot(
+                key: "tf:" + item.id,
+                name: item.displayName,
+                phase: phase,
+                written: state.received,
+                expected: state.total,
+                speed: speed,
+                waitsForSilentInstall: false
+            ))
+        }
+        for key in shownKeys where key.hasPrefix("tf:") {
+            let appID = String(key.dropFirst(3))
+            guard !seenTF.contains(appID) else { continue }
+            if let outcome = tfModel.recentTerminalOutcome(for: appID) {
+                result.append(ActivityTaskSnapshot(
+                    key: key,
+                    name: outcome.name,
+                    phase: outcome.completed ? .completed : .failed,
+                    written: outcome.bytes,
+                    expected: outcome.bytes,
+                    speed: 0,
+                    waitsForSilentInstall: outcome.fileURL.map { manager.isExternalSilentInstallPending(fileURL: $0) } ?? false
+                ))
+            }
+        }
+        #endif
+        return result
+    }
+
     private func refresh() {
         guard #available(iOS 16.2, *), let manager else { return }
-        let active = manager.jobs.filter { [.running, .pausing, .queued, .processing].contains($0.status) }
+        let now = Date()
+        let uptime = ProcessInfo.processInfo.systemUptime
+        let allSnapshots = collectSnapshots(manager: manager, uptime: uptime)
+        let active = allSnapshots.filter { [.running, .pausing, .queued, .processing].contains($0.phase) }
         if !enabled {
             stopTimer()
             endFinishingImmediately()
-            lastSent = nil; shownIDs = []
+            lastSent = nil; shownKeys = []
             if let current = activity as? Activity<DownloadActivityAttributes> {
                 activity = nil
                 Task { await current.end(nil, dismissalPolicy: .immediate) }
@@ -99,12 +194,12 @@ final class DownloadActivity {
 
         // Installing automatically after the download: the same activity follows it.
         if active.isEmpty, let install = manager.autoInstalling {
-            let state = Self.autoInstallState(for: install, now: Date())
+            let state = Self.autoInstallState(for: install, now: now)
             if let current { send(state, to: current) }
             else if UIApplication.shared.applicationState == .active, ActivityAuthorizationInfo().areActivitiesEnabled {
                 activity = try? Activity.request(attributes: DownloadActivityAttributes(),
                                                  content: ActivityContent(state: state, staleDate: Self.staleDate(state)))
-                lastSent = state; lastSentAt = Date()
+                lastSent = state; lastSentAt = now
             }
             startTimer()
             return
@@ -112,7 +207,7 @@ final class DownloadActivity {
         if active.isEmpty, let current, manager.autoInstallCancelled != nil,
            (lastSent as? DownloadActivityAttributes.ContentState)?.phase == 4 || current.content.state.phase == 4 {
             stopTimer()
-            activity = nil; lastSent = nil; shownIDs = []
+            activity = nil; lastSent = nil; shownKeys = []
             Task { await current.end(nil, dismissalPolicy: .immediate) }
             return
         }
@@ -120,18 +215,19 @@ final class DownloadActivity {
         if active.isEmpty, let current, let failed = manager.autoInstallFailed,
            (lastSent as? DownloadActivityAttributes.ContentState)?.phase == 4 || current.content.state.phase == 4 {
             stopTimer()
-            activity = nil; lastSent = nil; shownIDs = []
+            activity = nil; lastSent = nil; shownKeys = []
             finish(current, with: DownloadActivityAttributes.ContentState(phase: 6, name: failed, count: 0, written: 0, expected: 0,
-                                                                          updated: Date(), estimatedEnd: nil, speed: 0))
+                                                                          updated: now, estimatedEnd: nil, speed: 0))
             return
         }
+        let shownSnapshots = allSnapshots.filter { shownKeys.contains($0.key) }
         if active.isEmpty, let current, let installed = manager.autoInstalled,
            ((lastSent as? DownloadActivityAttributes.ContentState)?.phase == 4 || current.content.state.phase == 4
-            || shownIDs.contains(where: manager.waitsForSilentInstall)) {
+            || shownSnapshots.contains(where: \.waitsForSilentInstall)) {
             stopTimer()
-            activity = nil; lastSent = nil; shownIDs = []
+            activity = nil; lastSent = nil; shownKeys = []
             let done = DownloadActivityAttributes.ContentState(phase: 5, name: installed, count: 0, written: 1000, expected: 1000,
-                                                               updated: Date(), estimatedEnd: nil, speed: 0)
+                                                               updated: now, estimatedEnd: nil, speed: 0)
             finish(current, with: done)
             return
         }
@@ -139,62 +235,50 @@ final class DownloadActivity {
             if let current, current.content.state.phase == 4 {
                 // Clean up an orphaned phase-4 crash/termination leftover immediately on relaunch.
                 stopTimer()
-                activity = nil; lastSent = nil; shownIDs = []
+                activity = nil; lastSent = nil; shownKeys = []
                 Task { await current.end(nil, dismissalPolicy: .immediate) }
             }
             return
         }
         // Downloaded and about to install silently: keep the activity for the install.
-        if active.isEmpty, activity != nil, shownIDs.contains(where: manager.waitsForSilentInstall) {
+        if active.isEmpty, activity != nil, shownSnapshots.contains(where: \.waitsForSilentInstall) {
             stopTimer()
             return
         }
         if active.isEmpty {
             stopTimer()
-            guard let current else { shownIDs = []; return }
-            let shown = manager.jobs.filter { shownIDs.contains($0.id) }
-            let paused = shown.filter { $0.status == .paused }
+            guard let current else { shownKeys = []; return }
+            let paused = shownSnapshots.filter { $0.phase == .paused }
             if !paused.isEmpty {
                 // Keep the activity alive in paused phase so resuming (even in background) updates smoothly.
-                let pausedState = Self.computePausedState(paused: paused, progress: { id in
-                    let bytes = manager.progress(for: id).bytes
-                    let job = paused.first { $0.id == id }
-                    return (bytes?.written ?? job?.downloaded ?? 0, max(bytes?.expected ?? 0, job?.expected ?? 0, job?.app.size ?? 0))
-                }, now: Date())
+                let pausedState = Self.computePausedSnapshotState(paused: paused, now: now)
                 send(pausedState, to: current)
                 return
             }
             activity = nil
             lastSent = nil
-            shownIDs = []
-            let finished = !shown.isEmpty && shown.allSatisfy { $0.status == .completed }
+            shownKeys = []
+            let finished = !shownSnapshots.isEmpty && shownSnapshots.allSatisfy { $0.phase == .completed }
             if finished {
                 var done = current.content.state
                 done.phase = 2; done.count = 0; done.written = max(done.written, done.expected)
-                done.updated = Date(); done.estimatedEnd = nil; done.speed = 0
+                done.updated = now; done.estimatedEnd = nil; done.speed = 0
                 finish(current, with: done)
-            } else if let failedJob = shown.first(where: { $0.status == .failed }) {
+            } else if let failedItem = shownSnapshots.first(where: { $0.phase == .failed }) {
                 let failState = DownloadActivityAttributes.ContentState(
-                    phase: 8, name: failedJob.app.name, count: shown.filter { $0.status == .failed }.count,
-                    written: 0, expected: 0, updated: Date(), estimatedEnd: nil, speed: 0)
+                    phase: 8, name: failedItem.name, count: shownSnapshots.filter { $0.phase == .failed }.count,
+                    written: 0, expected: 0, updated: now, estimatedEnd: nil, speed: 0)
                 finish(current, with: failState)
             } else {
                 Task { await current.end(nil, dismissalPolicy: .immediate) }
             }
             return
         }
-        let now = Date()
-        let uptime = ProcessInfo.processInfo.systemUptime
-        let state = Self.computeState(active: active, progress: { job in
-            let bytes = manager.progress(for: job.id).bytes
-            return (bytes?.written ?? job.downloaded, max(bytes?.expected ?? 0, job.expected, job.app.size))
-        }, rate: { id in
-            manager.metrics(for: id)?.rate(at: uptime) ?? 0
-        }, now: now)
-        shownIDs = Set(active.map(\.id))
+        let state = Self.computeSnapshotState(active: active, now: now)
+        shownKeys = Set(active.map(\.key))
         if let current {
             send(state, to: current)
-        } else if manager.jobs.contains(where: { $0.status == .running }),
+        } else if active.contains(where: { $0.phase == .running }),
                   UIApplication.shared.applicationState == .active,
                   ActivityAuthorizationInfo().areActivitiesEnabled {
             // Only the app in front may start one.
@@ -206,18 +290,16 @@ final class DownloadActivity {
     }
 
     @available(iOS 16.1, *)
-    nonisolated static func computeState(
-        active: [DownloadJob],
-        progress: (DownloadJob) -> (written: Int64, expected: Int64),
-        rate: (UUID) -> Double,
+    nonisolated static func computeSnapshotState(
+        active: [ActivityTaskSnapshot],
         now: Date = Date()
     ) -> DownloadActivityAttributes.ContentState {
-        let running = active.filter { $0.status == .running }
-        let processing = active.filter { $0.status == .processing }
-        let queued = active.filter { $0.status == .queued }
-        let pausing = active.filter { $0.status == .pausing }
+        let running = active.filter { $0.phase == .running }
+        let processing = active.filter { $0.phase == .processing }
+        let queued = active.filter { $0.phase == .queued }
+        let pausing = active.filter { $0.phase == .pausing }
         let phase: Int
-        let cohort: [DownloadJob]
+        let cohort: [ActivityTaskSnapshot]
         if !running.isEmpty {
             phase = 0; cohort = running
         } else if !processing.isEmpty {
@@ -228,11 +310,10 @@ final class DownloadActivity {
             phase = 7; cohort = pausing
         }
         var written: Int64 = 0, expected: Int64 = 0, speed = 0.0
-        for job in cohort {
-            let p = progress(job)
-            written += p.written
-            expected += p.expected
-            if phase == 0 { speed += rate(job.id) }
+        for item in cohort {
+            written += item.written
+            expected += item.expected
+            if phase == 0 { speed += item.speed }
         }
         guard let lead = cohort.first else {
             return .init(phase: phase, name: "", count: active.count,
@@ -241,8 +322,53 @@ final class DownloadActivity {
         let left = Double(max(0, expected - written))
         let end = phase == 0 && speed > 1024 && left > 0 ? now.addingTimeInterval(left / speed) : nil
         let speedBytes = phase == 0 && speed > 0 ? Int64(min(speed.rounded(), Double(Int64.max / 2))) : 0
-        return .init(phase: phase, name: lead.app.name, count: active.count,
+        return .init(phase: phase, name: lead.name, count: active.count,
                      written: written, expected: expected, updated: now, estimatedEnd: end, speed: speedBytes)
+    }
+
+    @available(iOS 16.1, *)
+    nonisolated static func computePausedSnapshotState(
+        paused: [ActivityTaskSnapshot],
+        now: Date = Date()
+    ) -> DownloadActivityAttributes.ContentState {
+        var written: Int64 = 0, expected: Int64 = 0
+        for item in paused {
+            written += item.written
+            expected += item.expected
+        }
+        return .init(phase: 7, name: paused.first?.name ?? "", count: paused.count,
+                     written: written, expected: expected, updated: now, estimatedEnd: nil, speed: 0)
+    }
+
+    @available(iOS 16.1, *)
+    nonisolated static func computeState(
+        active: [DownloadJob],
+        progress: (DownloadJob) -> (written: Int64, expected: Int64),
+        rate: (UUID) -> Double,
+        now: Date = Date()
+    ) -> DownloadActivityAttributes.ContentState {
+        let snapshots = active.map { job -> ActivityTaskSnapshot in
+            let p = progress(job)
+            let phase: ActivityTaskSnapshot.Phase = switch job.status {
+            case .running: .running
+            case .processing: .processing
+            case .queued: .queued
+            case .pausing: .pausing
+            case .paused: .paused
+            case .completed: .completed
+            case .failed: .failed
+            }
+            return ActivityTaskSnapshot(
+                key: "job:" + job.id.uuidString,
+                name: job.app.name,
+                phase: phase,
+                written: p.written,
+                expected: p.expected,
+                speed: phase == .running ? rate(job.id) : 0,
+                waitsForSilentInstall: false
+            )
+        }
+        return computeSnapshotState(active: snapshots, now: now)
     }
 
     @available(iOS 16.1, *)
@@ -251,14 +377,19 @@ final class DownloadActivity {
         progress: (UUID) -> (written: Int64, expected: Int64),
         now: Date = Date()
     ) -> DownloadActivityAttributes.ContentState {
-        var written: Int64 = 0, expected: Int64 = 0
-        for job in paused {
+        let snapshots = paused.map { job -> ActivityTaskSnapshot in
             let p = progress(job.id)
-            written += p.written
-            expected += p.expected
+            return ActivityTaskSnapshot(
+                key: "job:" + job.id.uuidString,
+                name: job.app.name,
+                phase: .paused,
+                written: p.written,
+                expected: p.expected,
+                speed: 0,
+                waitsForSilentInstall: false
+            )
         }
-        return .init(phase: 7, name: paused.first?.app.name ?? "", count: paused.count,
-                     written: written, expected: expected, updated: now, estimatedEnd: nil, speed: 0)
+        return computePausedSnapshotState(paused: snapshots, now: now)
     }
 
     @available(iOS 16.1, *)

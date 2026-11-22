@@ -232,46 +232,31 @@ struct TestFlightHomeView: View {
         }
         .sheet(item: $installingApp) { app in
             if let packageURL = model.productURL(for: app) {
-                TFInstallSheet(
-                    app: app,
-                    packageURL: packageURL,
-                    iconURL: model.iconFiles[app.id],
-                    iconColors: model.iconColors[app.id],
-                    iconRevision: model.iconRevisions[app.id] ?? 0,
-                    installation: store.installation,
-                    isInstalling: model.installingAppIDs.contains(app.id),
-                    isInstalled: model.installedAppIDs.contains(app.id),
-                    installNote: model.installNotes[app.id],
-                    installFailed: model.installFailedAppIDs.contains(app.id),
-                    needsChannelGuide: model.installNeedsChannelAppIDs.contains(app.id),
-                    onInstall: { method in
-                        model.install(app, method: method, installation: store.installation)
-                    },
-                    onDelete: {
-                        store.removeTFProductWithUndo(for: app)
-                        installingApp = nil
-                    },
-                    onOpenSettings: {
-                        store.accountNav.push(.installation)
+                PackageInstallationView(
+                    job: model.makeInstallJob(for: app, packageURL: packageURL),
+                    packageFileURL: packageURL,
+                    packageIconURL: model.iconFiles[app.id],
+                    isTestFlight: true,
+                    onInstalled: {
+                        model.markInstalled(app.id)
                     }
                 )
+                .sheetNotice()
+                .environmentObject(store)
+                .environmentObject(store.downloads)
             }
         }
-        .confirmationDialog("切换账号将取消正在进行的下载？",
-                            isPresented: Binding(get: { pendingSwitchTarget != nil },
-                                                 set: { if !$0 { pendingSwitchTarget = nil } }),
-                            titleVisibility: .visible) {
-            Button("取消下载并切换", role: .destructive) {
-                if let target = pendingSwitchTarget {
-                    pendingSwitchTarget = nil
-                    applyAccountSwitch(target)
-                }
-            }
-            Button("取消", role: .cancel) {
+        .actionConfirmation(
+            isPresented: Binding(get: { pendingSwitchTarget != nil },
+                                 set: { if !$0 { pendingSwitchTarget = nil } }),
+            title: "切换账号将取消正在进行的下载？",
+            message: "当前有下载任务尚未完成，切换账号会中止任务并清理临时文件。",
+            confirmTitle: "取消下载并切换"
+        ) {
+            if let target = pendingSwitchTarget {
                 pendingSwitchTarget = nil
+                applyAccountSwitch(target)
             }
-        } message: {
-            Text("当前有下载任务尚未完成，切换账号会中止任务并清理临时文件。")
         }
         .task {
             model.bootstrapIfNeeded(using: accountStore)
@@ -713,31 +698,8 @@ struct TestFlightHomeView: View {
     private func rowSubtitleView(app: TFBetaApp, state: TFRowState, isInstalled: Bool, isInstalling: Bool) -> some View {
         let detail = model.details[app.id]
         switch state.stage {
-        case .idle:
+        case .idle, .resolving, .installing, .downloading, .paused, .verifying:
             twoLineOfficialMeta(app: app, detail: detail, isInstalled: false)
-        case .resolving:
-            Text("读取构建信息…")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        case .installing:
-            Text("准备下载…")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        case .downloading:
-            Text(verbatim: "\(byteText(state.received)) / \(byteText(state.total)) · \(Int(state.fraction * 100))%")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-        case .paused:
-            let progress = state.total > 0
-                ? "\(byteText(state.received)) / \(byteText(state.total))"
-                : (state.received > 0 ? byteText(state.received) : "")
-            Text(verbatim: [AppText.text("已暂停"), progress].filter { !$0.isEmpty }.joined(separator: " · "))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-        case .verifying:
-            Text("校验安装包…")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         case .done:
             VStack(alignment: .leading, spacing: 2) {
                 twoLineOfficialMeta(app: app, detail: detail, isInstalled: isInstalled)
@@ -854,10 +816,9 @@ struct TestFlightHomeView: View {
             }
         case .downloading:
             AppStoreActionButton(
-                phase: .downloading(state.fraction),
+                phase: .loading,
                 insideNavigationLink: true,
-                accessibilityLabelText: AppText.text("暂停"),
-                accessibilityValueText: "\(Int(state.fraction * 100))%"
+                accessibilityLabelText: AppText.text("暂停")
             ) {
                 model.pause(app)
             }
@@ -1044,11 +1005,22 @@ final class TFHomeModel: ObservableObject {
     @Published var networkMode: TFNetworkMode = TFNet.mode
     @Published private(set) var isUsingCustomSignIn = false
 
+    struct TerminalOutcome {
+        let name: String
+        let completed: Bool
+        let bytes: Int64
+        let fileURL: URL?
+        let at: Date
+    }
+
     private var runs: [String: TFTransferHandle] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
     private var downloadTokens: [String: UUID] = [:]
     private var transferMetrics: [String: TransferMetrics] = [:]
     private var lastProgressPublish: [String: TimeInterval] = [:]
+    private var recentOutcomes: [String: TerminalOutcome] = [:]
+    private var foregroundFallbackAppIDs: Set<String> = []
+    private var tfBackgroundTask: UIBackgroundTaskIdentifier = .invalid
     private var detailTask: Task<Void, Never>?
     private var hydrateTask: Task<Void, Never>?
     private var restoreTask: Task<Void, Never>?
@@ -1081,6 +1053,77 @@ final class TFHomeModel: ObservableObject {
 
     var hasActiveDownloads: Bool {
         rows.values.contains { $0.isBusy || $0.stage == .paused }
+    }
+
+    var hasBusyDownloads: Bool {
+        rows.values.contains { $0.isBusy }
+    }
+
+    var needsForegroundBackgroundKeepAlive: Bool {
+        hasBusyDownloads && (!foregroundFallbackAppIDs.isEmpty || TFNet.mode == .direct || TFTransfer.preferForegroundSession)
+    }
+
+    func recentTerminalOutcome(for appID: String) -> TerminalOutcome? {
+        guard let outcome = recentOutcomes[appID] else { return nil }
+        if Date().timeIntervalSince(outcome.at) > 30 {
+            recentOutcomes.removeValue(forKey: appID)
+            return nil
+        }
+        return outcome
+    }
+
+    func markInstalled(_ appID: String) {
+        installedAppIDs.insert(appID)
+        installFailedAppIDs.remove(appID)
+        installNeedsChannelAppIDs.remove(appID)
+        installNotes[appID] = AppText.text("已安装")
+    }
+
+    func makeInstallJob(for app: TFBetaApp, packageURL: URL) -> DownloadJob {
+        let detail = details[app.id]
+        let name = detail?.name ?? app.name
+        let bundle = products[app.id] ?? detail?.bundleID ?? app.bundleID
+        let short = (detail?.shortVersion ?? app.latestVersion ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let build = (detail?.buildVersion ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let version = !short.isEmpty ? short : (!build.isEmpty ? build : "1.0")
+        let size = Int64(packageURL.fileSizeBytes)
+        let storeApp = StoreApp(
+            id: app.id,
+            name: name,
+            bundleID: bundle,
+            version: version,
+            iconURL: iconFiles[app.id],
+            size: size,
+            bundleVersion: build.isEmpty ? nil : build
+        )
+        return DownloadJob(app: storeApp, status: .completed, downloaded: size, expected: size)
+    }
+
+    private func updateTFBackgroundExecution() {
+        let busy = hasBusyDownloads
+        if busy {
+            if tfBackgroundTask == .invalid {
+                tfBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "iPadn.tfDownload") { [weak self] in
+                    let endNow = {
+                        guard let self, self.tfBackgroundTask != .invalid else { return }
+                        let current = self.tfBackgroundTask
+                        self.tfBackgroundTask = .invalid
+                        UIApplication.shared.endBackgroundTask(current)
+                    }
+                    if Thread.isMainThread {
+                        MainActor.assumeIsolated { endNow() }
+                    } else {
+                        DispatchQueue.main.sync { MainActor.assumeIsolated { endNow() } }
+                    }
+                }
+            }
+        } else if tfBackgroundTask != .invalid {
+            let current = tfBackgroundTask
+            tfBackgroundTask = .invalid
+            UIApplication.shared.endBackgroundTask(current)
+        }
+        AppContainer.shared.downloads.syncTestFlightKeepAlive()
+        DownloadActivity.shared.sync()
     }
 
     var hasNetworkWarning: Bool {
@@ -2199,6 +2242,8 @@ final class TFHomeModel: ObservableObject {
         let startedAt = ProcessInfo.processInfo.systemUptime
         runs[app.id] = handle
         downloadTokens[app.id] = token
+        recentOutcomes.removeValue(forKey: app.id)
+        foregroundFallbackAppIDs.remove(app.id)
         transferMetrics[app.id] = TransferMetrics(bytes: 0, sampledAt: startedAt)
         lastProgressPublish[app.id] = 0
         var state = TFRowState()
@@ -2206,6 +2251,7 @@ final class TFHomeModel: ObservableObject {
         rows[app.id] = state
         installFailedAppIDs.remove(app.id)
         installNeedsChannelAppIDs.remove(app.id)
+        updateTFBackgroundExecution()
 
         let progress: @Sendable (Int64, Int64) -> Void = { received, total in
             Task { @MainActor in
@@ -2283,6 +2329,7 @@ final class TFHomeModel: ObservableObject {
                     // and the actual package transfer begins, matching App Store downloads.
                     self.registerActiveDownload(app, bundleOverride: bundle)
                     self.syncActiveBadge()
+                    self.updateTFBackgroundExecution()
                 }
                 let report = try await TFDownload.run(
                     bundle: bundle,
@@ -2301,10 +2348,19 @@ final class TFHomeModel: ObservableObject {
                             if name == "verifying" {
                                 self.mark(app.id, stage: .verifying)
                                 self.syncActiveBadge()
+                                self.updateTFBackgroundExecution()
                             } else if name == "downloading", self.rows[app.id]?.stage == .paused {
                                 self.mark(app.id, stage: .downloading)
                                 self.syncActiveBadge()
+                                self.updateTFBackgroundExecution()
                             }
+                        }
+                    },
+                    onForegroundFallback: {
+                        Task { @MainActor in
+                            guard self.downloadTokens[app.id] == token else { return }
+                            self.foregroundFallbackAppIDs.insert(app.id)
+                            self.updateTFBackgroundExecution()
                         }
                     },
                     refresh: refresh,
@@ -2338,11 +2394,31 @@ final class TFHomeModel: ObservableObject {
                         iconURL: self.iconFiles[app.id],
                         iconColors: self.iconColors[app.id] ?? detail?.iconAsset?.colors
                     )
+                    self.recentOutcomes[app.id] = TerminalOutcome(
+                        name: completedItem.displayName,
+                        completed: true,
+                        bytes: Int64(report.outputBytes),
+                        fileURL: report.output,
+                        at: Date()
+                    )
+                    self.foregroundFallbackAppIDs.remove(app.id)
                     TFProductIndex.shared.registerCompleted(completedItem)
+                    let autoTarget = DownloadManager.ExternalAutoInstallTarget(
+                        id: UUID(),
+                        job: completedItem.makeInstallJob(),
+                        fileURL: report.output,
+                        iconURL: completedItem.iconURL,
+                        isTestFlight: true,
+                        onInstalled: { [weak self] in
+                            self?.markInstalled(app.id)
+                        }
+                    )
+                    AppContainer.shared.downloads.enqueueExternalAutoInstall(autoTarget)
                     self.activeDownloads.removeAll { $0.id == app.id }
                     self.transferMetrics.removeValue(forKey: app.id)
                     self.lastProgressPublish.removeValue(forKey: app.id)
                     self.syncActiveBadge()
+                    self.updateTFBackgroundExecution()
                     FairPlayPresentation.shared.markFilesChanged()
                     UX.success()
                     self.append("完成：\(report.output.lastPathComponent) \(report.outputBytes) B，成员 \(report.finalMembers)，加密 \(report.encryptedImages)")
@@ -2354,6 +2430,7 @@ final class TFHomeModel: ObservableObject {
                     if case TFError.cancelled = error { isCancelled = true }
                     else if error is CancellationError || (error as NSError).code == NSURLErrorCancelled || handle.isCancelled { isCancelled = true }
                     else { isCancelled = false }
+                    self.foregroundFallbackAppIDs.remove(app.id)
                     self.transferMetrics.removeValue(forKey: app.id)
                     self.lastProgressPublish.removeValue(forKey: app.id)
                     if isCancelled {
@@ -2366,14 +2443,25 @@ final class TFHomeModel: ObservableObject {
                         if self.isSessionExpiredError(error) {
                             self.pageState = .sessionExpired
                         }
-                        self.rows[app.id] = self.failed(self.message(for: error))
+                        let msg = self.message(for: error)
+                        let displayName = self.details[app.id]?.name ?? app.name
+                        self.recentOutcomes[app.id] = TerminalOutcome(
+                            name: displayName,
+                            completed: false,
+                            bytes: 0,
+                            fileURL: nil,
+                            at: Date()
+                        )
+                        self.rows[app.id] = self.failed(msg)
                         if self.activeDownloads.contains(where: { $0.id == app.id }) {
                             self.registerActiveDownload(app)
                         }
+                        AppContainer.shared.downloads.notifyExternalDownloadFailed(name: displayName, message: msg)
                         UX.warning()
-                        self.append("失败：\(self.message(for: error))")
+                        self.append("失败：\(msg)")
                     }
                     self.syncActiveBadge()
+                    self.updateTFBackgroundExecution()
                 }
             }
             await MainActor.run {
@@ -2395,6 +2483,7 @@ final class TFHomeModel: ObservableObject {
         transferMetrics.removeValue(forKey: app.id)
         lastProgressPublish.removeValue(forKey: app.id)
         syncActiveBadge()
+        updateTFBackgroundExecution()
         append("已暂停：\(app.name)")
     }
 
@@ -2407,6 +2496,7 @@ final class TFHomeModel: ObservableObject {
         rows[app.id] = state
         handle.resume()
         syncActiveBadge()
+        updateTFBackgroundExecution()
         append("已继续：\(app.name)")
     }
 
@@ -2428,23 +2518,28 @@ final class TFHomeModel: ObservableObject {
         tasks[app.id]?.cancel()
         runs[app.id] = nil
         tasks[app.id] = nil
+        foregroundFallbackAppIDs.remove(app.id)
+        recentOutcomes.removeValue(forKey: app.id)
         transferMetrics.removeValue(forKey: app.id)
         lastProgressPublish.removeValue(forKey: app.id)
         activeDownloads.removeAll { $0.id == app.id }
         cleanupTemps(appID: app.id)
         rows[app.id] = TFRowState()
         syncActiveBadge()
+        updateTFBackgroundExecution()
         append("已取消：\(app.name)")
     }
 
     func dismissFailedDownload(_ appID: String) {
         activeDownloads.removeAll { $0.id == appID }
+        recentOutcomes.removeValue(forKey: appID)
         transferMetrics.removeValue(forKey: appID)
         lastProgressPublish.removeValue(forKey: appID)
         if rows[appID]?.stage == .failed {
             rows[appID] = TFRowState()
         }
         syncActiveBadge()
+        updateTFBackgroundExecution()
     }
 
     func metrics(for appID: String) -> TransferMetrics? {
@@ -2503,10 +2598,13 @@ final class TFHomeModel: ObservableObject {
         for (_, t) in tasks { t.cancel() }
         runs.removeAll()
         tasks.removeAll()
+        foregroundFallbackAppIDs.removeAll()
+        recentOutcomes.removeAll()
         transferMetrics.removeAll()
         lastProgressPublish.removeAll()
         activeDownloads.removeAll()
         syncActiveBadge()
+        updateTFBackgroundExecution()
     }
 
     func deleteLocalProduct(_ app: TFBetaApp) {

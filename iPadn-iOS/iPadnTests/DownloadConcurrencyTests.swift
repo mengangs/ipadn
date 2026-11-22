@@ -277,6 +277,44 @@ final class DownloadConcurrencyTests: XCTestCase {
         }
     }
 
+    func testDownloadActivityUnifiesRegularAndTestFlightSnapshots() {
+        if #available(iOS 16.2, *) {
+            let now = Date(timeIntervalSince1970: 1_700_000_000)
+            let tfRunning = DownloadActivity.ActivityTaskSnapshot(
+                key: "tf:12345",
+                name: "TestFlight Beta",
+                phase: .running,
+                written: 50_000_000,
+                expected: 100_000_000,
+                speed: 5_000_000,
+                waitsForSilentInstall: false
+            )
+            let single = DownloadActivity.computeSnapshotState(active: [tfRunning], now: now)
+            XCTAssertEqual(single.phase, 0)
+            XCTAssertEqual(single.name, "TestFlight Beta")
+            XCTAssertEqual(single.count, 1)
+            XCTAssertEqual(single.written, 50_000_000)
+            XCTAssertEqual(single.expected, 100_000_000)
+            XCTAssertEqual(single.speed, 5_000_000)
+            XCTAssertNotNil(single.estimatedEnd)
+
+            let tfPaused = DownloadActivity.ActivityTaskSnapshot(
+                key: "tf:12345",
+                name: "TestFlight Beta",
+                phase: .paused,
+                written: 50_000_000,
+                expected: 100_000_000,
+                speed: 0,
+                waitsForSilentInstall: false
+            )
+            let pausedState = DownloadActivity.computePausedSnapshotState(paused: [tfPaused], now: now)
+            XCTAssertEqual(pausedState.phase, 7)
+            XCTAssertEqual(pausedState.name, "TestFlight Beta")
+            XCTAssertEqual(pausedState.written, 50_000_000)
+            XCTAssertEqual(pausedState.expected, 100_000_000)
+        }
+    }
+
     @MainActor
     func testInterruptedAutoInstallRecoveryClearsInFlightAndWaitingLoop() {
         let job = DownloadJob(app: StoreApp(id: "auto-crash-1", name: "Crash Guard App", version: "2.0"), status: .completed)

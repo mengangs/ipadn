@@ -9,6 +9,15 @@ struct PackageInstallationView: View {
     let job: DownloadJob
     /// Opened because the download just finished: start installing right away.
     var startsAutomatically = false
+    /// Optional explicit IPA file URL for external packages (such as TestFlight builds)
+    /// that live outside `DownloadManager`'s managed jobs directory.
+    var packageFileURL: URL? = nil
+    /// Optional explicit icon URL for external packages.
+    var packageIconURL: URL? = nil
+    /// TestFlight IPAs carry SINF without an App Store `iTunesMetadata.plist` purchase record.
+    var isTestFlight = false
+    /// Called when native installation completes successfully.
+    var onInstalled: (() -> Void)? = nil
     @State private var busy = false
     /// The link is open and the system is loading the install details: the
     /// button keeps showing progress until its prompt actually appears.
@@ -32,6 +41,8 @@ struct PackageInstallationView: View {
     /// Native installation only: keep the App Store from offering updates.
     @State private var blockUpdates = false
     private var native: Bool { store.settings.usesNativeInstallation }
+    private var resolvedFileURL: URL? { packageFileURL ?? manager.fileURL(job) }
+    private var resolvedIconURL: URL? { packageIconURL ?? job.displayApp(packageIcon: manager.packageIconURL(job)).iconURL }
     private var isNativeCancellable: Bool { nativePhase?.isCancellable == true }
     private var isLockedInSystemInstall: Bool { nativePhase?.isCancellable == false }
     private var canCancel: Bool { autoStartPending || busy || isNativeCancellable }
@@ -40,7 +51,7 @@ struct PackageInstallationView: View {
             Form {
                 Section {
                     VStack(spacing: 14) {
-                        AppIcon(url: job.displayApp(packageIcon: manager.packageIconURL(job)).iconURL, size: 96)
+                        AppIcon(url: resolvedIconURL, size: 96)
                         VStack(spacing: 4) {
                             Text(job.app.name).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
                             Text([job.userFacingVersion.isEmpty ? "" : AppText.text("版本 \(job.userFacingVersion)"), job.app.size > 0 ? job.app.size.byteLabel : ""]
@@ -85,7 +96,7 @@ struct PackageInstallationView: View {
                             .accessibilityIdentifier("installation.browser")
                         }
                         Button {
-                            if let file = manager.fileURL(job) { sharedFile = SharedFile(url: file) }
+                            if let file = resolvedFileURL { sharedFile = SharedFile(url: file) }
                             else { issue = AppText.text("找不到安装包文件，请重新下载。") }
                         } label: { Label("导出安装包", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity) }
                         .buttonStyle(.borderless)
@@ -103,7 +114,7 @@ struct PackageInstallationView: View {
                 } else if let message {
                     Section { Label(message, systemImage: "checkmark.circle.fill").font(.subheadline).foregroundStyle(.primary) }
                 }
-                if native {
+                if native && !isTestFlight {
                     Section {
                         Toggle("阻止 App Store 更新", isOn: $blockUpdates)
                             .disabled(nativePhase != nil)
@@ -219,8 +230,8 @@ struct PackageInstallationView: View {
                 }
             }
             do {
-                guard let file = manager.fileURL(job) else { throw ToolError.message(AppText.text("找不到安装包文件，请重新下载。")) }
-                let outcome = try await NativeInstaller.install(package: file, bundleID: job.app.bundleID, blockUpdates: blockUpdates) { phase in
+                guard let file = resolvedFileURL else { throw ToolError.message(AppText.text("找不到安装包文件，请重新下载。")) }
+                let outcome = try await NativeInstaller.install(package: file, bundleID: job.app.bundleID, blockUpdates: !isTestFlight && blockUpdates) { phase in
                     Task { @MainActor in
                         guard attempt == current, nativePhase != nil else { return }
                         nativePhase = phase
@@ -232,10 +243,11 @@ struct PackageInstallationView: View {
                 }
                 guard attempt == current else { return }
                 UX.feedback()
-                message = outcome.after?.recognisedByAppStore == false
+                onInstalled?()
+                message = (!isTestFlight && outcome.after?.recognisedByAppStore == false)
                     ? AppText.text("安装完成，但系统没有保留这个安装包的购买记录，App Store 可能无法识别它。")
                     : outcome.upgraded ? AppText.text("已覆盖安装，原有数据保留。") : AppText.text("安装完成。")
-                if blockUpdates, outcome.after?.updatesBlocked == true {
+                if !isTestFlight, blockUpdates, outcome.after?.updatesBlocked == true {
                     message = (message ?? "") + "\n" + AppText.text("已阻止 App Store 更新这个应用。")
                 }
             } catch is CancellationError {
@@ -266,13 +278,13 @@ struct PackageInstallationView: View {
                 }
             }
             do {
-                guard let file = manager.fileURL(job) else { throw ToolError.message(AppText.text("找不到安装包文件，请重新下载。")) }
+                guard let file = resolvedFileURL else { throw ToolError.message(AppText.text("找不到安装包文件，请重新下载。")) }
                 let url: URL
                 if store.settings.automaticInstallation {
                     url = try await store.installation.automaticInstallURL(job: job, file: file)
                 } else if store.settings.localInstallation {
                     url = try await store.installation.localInstallURL(job: job, file: file, host: store.settings.localInstallHost,
-                        icon: job.displayApp(packageIcon: manager.packageIconURL(job)).iconURL)
+                        icon: resolvedIconURL)
                 } else {
                     url = try await store.installation.installURL(job: job, file: file, plistServer: store.settings.plistServer)
                 }

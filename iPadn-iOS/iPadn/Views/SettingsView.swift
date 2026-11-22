@@ -317,11 +317,8 @@ struct SettingsView: View {
                 NavigationLink(value: AccountRoute.storage) { Label("存储空间", systemImage: "internaldrive") }
                     .accessibilityIdentifier("settings.storage")
                 Button("清除历史版本缓存") { clearCache = true }
-                    .confirmationDialog("清除历史版本缓存？", isPresented: $clearCache, titleVisibility: .visible) {
-                        Button("清除缓存", role: .destructive) {
-                            Task { do { try await store.clearVersionCaches(); store.infoMessage = AppText.text("已清除缓存") } catch { store.errorMessage = error.localizedDescription } }
-                        }
-                        Button("取消", role: .cancel) {}
+                    .actionConfirmation(isPresented: $clearCache, title: "清除历史版本缓存？", confirmTitle: "清除缓存") {
+                        Task { do { try await store.clearVersionCaches(); store.infoMessage = AppText.text("已清除缓存") } catch { store.errorMessage = error.localizedDescription } }
                     }
                 Button("导出诊断信息") {
                     do { share = SharedFile(url: try store.exportDiagnostics()) } catch { store.errorMessage = error.localizedDescription }

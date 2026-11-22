@@ -100,8 +100,6 @@ private struct AccountsListContent: View {
                 }
             }
             Section {
-                Button { store.selectTab(.purchased) } label: { Label("已购项目", systemImage: "bag") }
-                Button { store.selectTab(.downloads) } label: { Label("下载与安装", systemImage: "arrow.down.circle") }
                 if InstalledAppsView.isSupported {
                     NavigationLink(value: AccountRoute.installedApps) { Label("本机应用", systemImage: "iphone") }
                         .accessibilityIdentifier("accounts.installed-apps")
@@ -119,11 +117,8 @@ private struct AccountsListContent: View {
                 Section {
                     Button("退出登录", role: .destructive) { signingOut = true }
                         .frame(maxWidth: .infinity)
-                        .confirmationDialog("退出当前账号？", isPresented: $signingOut, titleVisibility: .visible) {
-                            Button("退出登录", role: .destructive) { apple.select(nil) }
-                            Button("取消", role: .cancel) {}
-                        } message: {
-                            Text("账号仍会保留，可随时切换回来。")
+                        .actionConfirmation(isPresented: $signingOut, title: "退出当前账号？", message: "账号仍会保留，可随时切换回来。", confirmTitle: "退出登录") {
+                            apple.select(nil)
                         }
                 }
             }

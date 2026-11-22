@@ -54,6 +54,22 @@ struct TFProductItem: Identifiable, Equatable {
             developerName: nil
         )
     }
+
+    func makeInstallJob() -> DownloadJob {
+        let short = shortVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        let build = buildVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        let version = !short.isEmpty ? short : (!build.isEmpty ? build : "1.0")
+        let app = StoreApp(
+            id: appID,
+            name: displayName,
+            bundleID: bundleID,
+            version: version,
+            iconURL: iconURL,
+            size: fileSize,
+            bundleVersion: build.isEmpty ? nil : build
+        )
+        return DownloadJob(app: app, status: .completed, downloaded: fileSize, expected: fileSize)
+    }
 }
 
 /// Read-only index of downloaded TestFlight products on disk (`Documents/TestFlight/*/*.ipa`).
@@ -76,7 +92,7 @@ final class TFProductIndex: ObservableObject {
     @Published private(set) var recentlyRestoredBundleIDs: Set<String> = []
     private var refreshTask: Task<Void, Never>?
     private var pendingRemovals: [UUID: StagedRemoval] = [:]
-    private static let stagingPrefix = "tf-removing-"
+    nonisolated private static let stagingPrefix = "tf-removing-"
 
     private init() {
         sweepOrphanedRemovals()
