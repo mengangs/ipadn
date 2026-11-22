@@ -11,6 +11,7 @@ struct PackageLibraryRow: View {
     var trailingNote: String? = nil
     var badge: String? = nil
     var badgeTint: Color = .blue
+    var isTestFlight: Bool = false
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -24,9 +25,7 @@ struct PackageLibraryRow: View {
                                 Text(verbatim: name)
                                     .font(.body.weight(.medium))
                                     .fixedSize(horizontal: false, vertical: true)
-                                if badge == "TF" {
-                                    TestFlightBadge()
-                                } else if let badge, !badge.isEmpty {
+                                if let badge, !badge.isEmpty {
                                     TagBadge(text: LocalizedStringKey(badge), tint: badgeTint)
                                 }
                             }
@@ -44,14 +43,12 @@ struct PackageLibraryRow: View {
                 HStack(alignment: .center, spacing: 12) {
                     AppIcon(url: icon, size: iconSize).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .center, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(verbatim: name)
                                 .font(.body.weight(.medium))
                                 .lineLimit(2)
                                 .fixedSize(horizontal: false, vertical: true)
-                            if badge == "TF" {
-                                TestFlightBadge()
-                            } else if let badge, !badge.isEmpty {
+                            if let badge, !badge.isEmpty {
                                 TagBadge(text: LocalizedStringKey(badge), tint: badgeTint)
                             }
                             if let trailingNote, !trailingNote.isEmpty {
@@ -72,12 +69,20 @@ struct PackageLibraryRow: View {
     }
 
     @ViewBuilder private var rowDetails: some View {
-        if !metadata.isEmpty {
-            Text(verbatim: metadata)
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
-                .fixedSize(horizontal: false, vertical: true)
+        if isTestFlight || !metadata.isEmpty {
+            HStack(spacing: 5) {
+                if isTestFlight {
+                    TestFlightIcon(size: 14)
+                        .frame(minWidth: 15)
+                }
+                if !metadata.isEmpty {
+                    Text(verbatim: metadata)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         HStack(alignment: .firstTextBaseline, spacing: 4) {
             if let symbol {

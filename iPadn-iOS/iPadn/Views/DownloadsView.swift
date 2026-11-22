@@ -790,7 +790,7 @@ struct DownloadsView: View {
         let metaText = [item.versionLabel, sizeText].filter { !$0.isEmpty }.joined(separator: " · ")
 
         return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 TFAppIconView(
                     fileURL: item.iconURL,
                     colors: item.iconColors,
@@ -799,17 +799,18 @@ struct DownloadsView: View {
                     revision: tfModel.iconRevisions[item.id] ?? 0
                 )
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .center, spacing: 6) {
-                        Text(verbatim: item.displayName)
-                            .font(.body.weight(.medium))
-                            .lineLimit(2)
-                        TestFlightBadge()
-                    }
-                    if !metaText.isEmpty {
-                        Text(verbatim: metaText)
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                    Text(verbatim: item.displayName)
+                        .font(.body.weight(.medium))
+                        .lineLimit(2)
+                    HStack(spacing: 6) {
+                        TestFlightIcon()
+                            .frame(minWidth: 16)
+                        if !metaText.isEmpty {
+                            Text(verbatim: metaText)
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                     tfActiveStatusLine(item: item, state: state)
                 }
@@ -983,7 +984,7 @@ struct DownloadsView: View {
         let sizeText = item.fileSize > 0 ? item.fileSize.byteLabel : ""
         let metaText = [item.compactVersionLabel, sizeText].filter { !$0.isEmpty }.joined(separator: " · ")
 
-        return HStack(spacing: 12) {
+        return HStack(spacing: 14) {
             TFAppIconView(
                 fileURL: item.iconURL,
                 colors: item.iconColors,
@@ -992,17 +993,18 @@ struct DownloadsView: View {
                 revision: tfModel.iconRevisions[item.appID] ?? 0
             )
             VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .center, spacing: 6) {
-                    Text(verbatim: item.displayName)
-                        .font(.body.weight(.medium))
-                        .lineLimit(2)
-                    TestFlightBadge()
-                }
-                if !metaText.isEmpty {
-                    Text(verbatim: metaText)
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                Text(verbatim: item.displayName)
+                    .font(.body.weight(.medium))
+                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    TestFlightIcon()
+                        .frame(minWidth: 16)
+                    if !metaText.isEmpty {
+                        Text(verbatim: metaText)
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
                 HStack(spacing: 8) {
                     TaskStatusPill(status: .completed)

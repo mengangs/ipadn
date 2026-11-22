@@ -865,34 +865,60 @@ struct TagBadge: View {
     }
 }
 
-/// Refined beta-origin micro-badge inspired by iOS's iconic TestFlight amber dot,
-/// pairing a neutral frosted capsule and hairline border with a subtle warm indicator.
-struct TestFlightBadge: View {
-    var body: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [Color(red: 1.0, green: 0.67, blue: 0.14), Color(red: 1.0, green: 0.48, blue: 0.0)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .frame(width: 5.5, height: 5.5)
-                .shadow(color: Color.orange.opacity(0.35), radius: 1.5, y: 0.5)
-            Text(verbatim: "TF")
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .tracking(0.5)
-                .foregroundStyle(.primary.opacity(0.72))
+/// Monochrome 3-blade TestFlight propeller glyph matching the platform icon slot on list rows.
+private struct TestFlightPropellerShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let cx = rect.midX
+        let cy = rect.midY
+        let r = min(rect.width, rect.height) * 0.5
+        var path = Path()
+
+        let hubR = r * 0.17
+        path.addEllipse(in: CGRect(x: cx - hubR, y: cy - hubR, width: hubR * 2, height: hubR * 2))
+
+        let angles: [Double] = [-.pi / 2, .pi / 6, 5 * .pi / 6]
+        for angle in angles {
+            var blade = Path()
+            let baseW = r * 0.11
+            let midW = r * 0.21
+            let tipR = r * 0.96
+            let midR = r * 0.64
+
+            blade.move(to: CGPoint(x: -baseW, y: 0))
+            blade.addCurve(
+                to: CGPoint(x: 0, y: -tipR),
+                control1: CGPoint(x: -midW, y: -midR * 0.62),
+                control2: CGPoint(x: -midW * 0.85, y: -tipR * 0.96)
+            )
+            blade.addCurve(
+                to: CGPoint(x: baseW, y: 0),
+                control1: CGPoint(x: midW * 0.85, y: -tipR * 0.96),
+                control2: CGPoint(x: midW, y: -midR * 0.62)
+            )
+            blade.closeSubpath()
+
+            let transform = CGAffineTransform(translationX: cx, y: cy)
+                .rotated(by: CGFloat(angle + .pi / 2))
+            path.addPath(blade, transform: transform)
         }
-        .padding(.horizontal, 6.5)
-        .padding(.vertical, 2.5)
-        .background(Color(.tertiarySystemFill), in: Capsule())
-        .overlay(
-            Capsule()
-                .strokeBorder(Color.primary.opacity(0.09), lineWidth: 0.5)
-        )
-        .fixedSize()
+        return path
+    }
+}
+
+/// Compact monochrome TestFlight squircle icon aligned to the metadata platform glyph slot.
+struct TestFlightIcon: View {
+    var size: CGFloat = 15
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
+                .fill(Color.secondary.opacity(0.85))
+            TestFlightPropellerShape()
+                .fill(.black)
+                .padding(size * 0.16)
+                .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+        .frame(width: size, height: size)
         .accessibilityLabel("TestFlight")
     }
 }
