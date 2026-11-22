@@ -1,26 +1,23 @@
-## iPadn 2.3.3
+## iPadn 2.3.4
 
 **目录 / Contents**：[简体中文](#-核心修复与优化) · [TestFlight 说明与免责](#-testflight-实验性说明与免责声明) · [English](#english) · [TestFlight Notice](#testflight-experimental-notice--disclaimer)
 
-本次为 **v2.3.3** 全面加固与体验升级版：重点修复下载/领许可时偶发「Apple 暂时无法完成该操作」的协议盲区（补齐 `1008` 会话过期刷新、`-128` 地区自动纠偏、新版条款提示与 HTTP 200 诊断日志）；升级「下载」页多选与统一撤销删除，新增安装包构建 SDK / Xcode 版本速查，修复「应用包」左滑变灰遮罩，并完成一轮覆盖安全脱敏、滚动性能、深浅色对比度与 11 语言本地化的全面审计优化。安装包均未签名，请使用自用签名工具签名后安装。
+本次为 **v2.3.4** 体验打磨与一致性升级版：全面打通 **TestFlight** 与常规下载体验（后台下载保活、灵动岛百分比实时同步、取消多余分组、全应用统一极简单色 TestFlight 图标，并同步接入「已解密」「Wi‑Fi 传输」与「存储空间」）；重构下载/TestFlight 暂停、继续与全状态切换弹性形变动效；优化本机配对引导与全应用居中确认弹窗，并修复双重认证与系统兼容细节。安装包均未签名，请使用自用签名工具签名后安装。
 
 ### 🔧 核心修复与优化
 
-- **修复 Apple 下载/获取报错「暂时无法完成该操作」与诊断盲区**
-  - 补齐 `1008`（设备验证/会话过期）在下载、历史版本票据、领免费许可及 Mac 包路径中的自动刷新与重新登录处理；补充密码已更改（`Your password has changed.`）与账号停用（`Your account is disabled.`）的明确引导。
-  - 新增 `-128`（`MZCommerce.CountryMismatch`）自动纠偏：安全校验 Apple 返回的 `resetAndRedirect?dsf=` 商店代码，自动更新账号真实地区并重试，避免 `+86` 手机号或转区账号卡在地区错配。
-  - 新增 `buyProductFailure` 新版 App Store 条款（`termsPage`）检测与严格 `purchaseSuccess` 判定，并补全 `buyProduct` 请求参数与 `pod` 路由。
-  - 消除诊断盲区：Apple HTTP 200 plist 业务失败现自动写入严格脱敏的 `RequestFailureLog`（仅记录错误码、文档与弹窗标识，零隐私泄露），未知数字错误码亦会附带在提示末尾便于一眼定位。
-- **「下载」页多选体验升级与统一撤销删除**
-  - 「下载」页多选改为与「应用包」一致的就地勾选交互，同时纳入 **TestFlight** 任务支持全选与批量删除。
-  - 常规下载与 TestFlight 删除（单条左滑或批量多选）统一接入 5 秒撤销倒计时栈，点击撤销可一次性恢复全部已删任务与文件。
-- **安装包构建 SDK / Xcode 版本速查与交互修复**
-  - 下载详情、应用包与 TestFlight 详情新增构建 **SDK 与 Xcode 版本**快捷查看（自动结合 `Info.plist` 与 Mach-O `LC_BUILD_VERSION` 解析）。
-  - 修复专业模式「应用包」与「解密记录」列表左滑操作时整行变灰/出现半透明遮罩的问题。
-- **安全、性能与多语言体验全面加固**
-  - **安全性与稳定性**：加固诊断脱敏与 TestFlight 多账号 Cookie 隔离、强化 `TFSINF` `cryptid` 校验，提升已购历史同步容错并消除页面生命周期竞态。
-  - **滚动流畅度**：移除主线程同步磁盘 I/O 与文件扫描，补充图标与元数据缓存，显著提升「下载」「应用包」「已购」「TestFlight」长列表帧率与响应速度。
-  - **UI / 无障碍 / 11 语言**：补全 11 种语言本地化与阿拉伯语 RTL 适配，优化深浅色对比度、账号头像自适应灰阶与 TestFlight 统一占位图标。
+- **TestFlight 后台下载与灵动岛实时同步**
+  - 完善 TestFlight 后台下载保活、随时暂停/继续与速度/ETA 展示，进度环与常规 App Store 下载体验保持一致。
+  - 修复灵动岛与锁屏实时活动在退回后台后进度百分比停滞的问题（启用高频更新许可与后台保活同步，完成或暂停时自动收起）。
+- **全应用 TestFlight 统一列表与极简单色图标**
+  - 「下载」页与「应用包 › 原始 IPA」取消单独的 TestFlight 分组，与普通 IPA 合并排序展示；统一在版本信息行前置极简单色 TestFlight 图标，彻底移除旧蓝色 `TF` 胶囊与会话级「已安装」残留，安装行为与普通 IPA 完全一致。
+  - 补全所有关联页面的统一展示与数据联动：**「应用包 › 已解密」**、解密详情、处理记录、原始 IPA 详情、安装页、**「Wi‑Fi 传输」**以及**「设置 › 备份与维护 › 存储空间」**（支持容量统计与侧滑删除）；删除原始 TestFlight IPA 后，已解密产物与处理记录仍持久保留 TestFlight 标识。
+- **下载与 TestFlight 状态切换弹性形变动效**
+  - 修复并升级 `AppStoreActionButton` 形变动画，统一覆盖搜索、详情、下载页与 TestFlight 列表/详情页：获取 → 加载旋转弧 → 下载进度环 → 暂停/继续胶囊 → 完成打钩 → 安装全程原地弹性过渡，状态文字平滑纵滑切换，进度条在主题色与暂停灰之间柔和渐变。
+- **配对引导、居中弹窗与认证兼容修复**
+  - 优化原生安装配对向导：将「取消配对」移至导航栏左上角与「打开设置」对称，修正 6 位配对码输入与布局体验。
+  - 全应用删除、清理等二次确认统一采用原生居中弹窗，并为专业模式「应用包」补全侧滑 5 秒撤销删除。
+  - 修复双重认证（2FA）流程细节，完善 `NativeInstall` 在 iOS 17.4+ 的可用性防护与多语言/单元测试覆盖。
 
 ---
 
@@ -36,32 +33,29 @@
 
 ### 📦 安装包与签名源
 
-- `iPadn-2.3.3-unsigned.ipa`：标准版，含实时活动（灵动岛、锁屏进度）与桌面小组件扩展，签名需要 2 个 App ID。
-- `iPadn-2.3.3-lite-unsigned.ipa`：精简版，移除扩展，只需 1 个 App ID；不提供实时活动或小组件，其他功能完全一致。
+- `iPadn-2.3.4-unsigned.ipa`：标准版，含实时活动（灵动岛、锁屏进度）与桌面小组件扩展，签名需要 2 个 App ID。
+- `iPadn-2.3.4-lite-unsigned.ipa`：精简版，移除扩展，只需 1 个 App ID；不提供实时活动或小组件，其他功能完全一致。
 - SideStore、AltStore、Feather 等签名工具可添加源：`https://raw.githubusercontent.com/mengangs/ipadn/main/altstore-source.json`。
 
 ---
 
 ### English
 
-**v2.3.3** is a comprehensive reliability, performance, and UX refinement release: it fixes opaque "Apple couldn't complete the operation" download/purchase errors (`1008` session refresh, `-128` storefront auto-recovery, updated App Store terms detection, and redacted HTTP 200 plist diagnostics), upgrades **Downloads** multi-select and unified 5-second Undo across regular & TestFlight items, adds quick **SDK / Xcode build version** inspection, fixes the gray dimming mask when swiping rows in **Packages**, and ships a full security, smoothness, contrast, and 11-language localization audit. Both packages are unsigned—sign with your own tool before installing.
+**v2.3.4** delivers a major UX, motion, and consistency polish across **Downloads**, **TestFlight**, and **Packages**: it adds full TestFlight background downloads with live Dynamic Island percentage sync, merges TestFlight and regular IPAs into unified lists with a refined monochrome TestFlight icon across every screen (including Decrypted outputs, Wi‑Fi Transfer, and Storage), introduces fluid spring morph animations for pause/resume/download state transitions, refines the Native Install pairing guide and centered confirmation alerts, and fixes 2FA and iOS 17.4+ compatibility edge cases. Both packages are unsigned—sign with your own tool before installing.
 
-#### Fixes & Improvements Since v2.3.2
+#### Fixes & Improvements Since v2.3.3
 
-- **Fixed Apple Download Errors & Diagnostic Blind Spots**
-  - Handles `failureType = 1008` (device verification / session expired) consistently with `2034 / 2042` across downloads, version tickets, free license acquisition, and Mac offers, plus explicit messages for password changes and disabled accounts.
-  - Adds strict `-128` (`MZCommerce.CountryMismatch`) storefront auto-correction (`resetAndRedirect?dsf=`) that persists the account's real storefront, retries `buyProduct`, and prevents login echo headers from overwriting corrected storefronts.
-  - Detects `buyProductFailure` App Store Terms prompts (`termsPage`), enforces `purchaseSuccess` validation, adds `pod` routing and standard purchase parameters, records redacted metadata for HTTP 200 Apple plist failures into `RequestFailureLog`, and includes strictly validated numeric error codes on unmapped fallback alerts.
-- **Upgraded Downloads Multi-Select & Unified Undo**
-  - Aligns **Downloads** multi-select with **Packages** using smooth in-place row selection covering both standard and **TestFlight** items (including Select All and bulk delete).
-  - Unifies regular download and TestFlight deletions into a single 5-second Undo stack that restores both tasks and files together.
-- **Quick SDK / Xcode Build Inspection & Swipe Mask Fix**
-  - Displays compiled **SDK & Xcode versions** (from `Info.plist` and Mach-O `LC_BUILD_VERSION`) in Package & TestFlight details.
-  - Fixes the gray veil/highlight dimming mask when swiping rows left in Pro mode **Packages** and **Decryption History**.
-- **Security, Performance & Localization Hardening**
-  - **Security & Stability**: Hardened diagnostic redaction, per-account TestFlight cookie isolation, `TFSINF` `cryptid` verification, owned-history resilience, and view lifecycle races.
-  - **Scroll Smoothness**: Moved synchronous disk I/O off the main thread and improved icon/metadata caching for fluid scrolling across Downloads, Packages, Purchased, and TestFlight.
-  - **UI, Accessibility & 11 Languages**: Completed 11-language localization & Arabic RTL polish, refined Light/Dark contrast, adaptive account avatars, and unified TestFlight icon placeholders.
+- **TestFlight Background Downloads & Live Dynamic Island Sync**
+  - Adds background keep-alive, pause/resume, live speed/ETA, and App Store-style downloading rings for TestFlight downloads.
+  - Fixes Dynamic Island & Lock Screen Live Activity percentages stalling in the background by enabling frequent Live Activity updates and coordinated background sync.
+- **Unified TestFlight Lists, Monochrome Icon & Full-App Coverage**
+  - Merges TestFlight items into unified **Downloads** and **Packages › Original IPAs** lists (no separate cluttered section) with a cohesive monochrome TestFlight icon in the metadata slot, removing blue `TF` pills and session-only "Installed" badges so install behavior matches standard IPAs.
+  - Extends consistent TestFlight icon and package visibility to **Packages › Decrypted**, Decryption Detail/History, Source Detail, Install sheet, **Wi‑Fi Transfer**, and **Settings › Storage** (with size tracking & swipe-to-delete), while persisting TestFlight provenance on `DecryptRecord` even after removing the source IPA.
+- **Fluid Spring Morph Animations for Pause/Resume & State Changes**
+  - Fixes outer morph animations in `AppStoreActionButton` and unifies Downloads, TestFlight Home, and TestFlight Detail around persistent action controls so Get → Loading → Progress Ring → Pause/Resume Pill → Completion Check → Install smoothly morph in place alongside gentle status-line transitions and progress tint fades.
+- **Pairing UX, Centered Alerts & 2FA/Compatibility Fixes**
+  - Moves **Cancel Pairing** to the top-left toolbar mirroring **Open Settings** and polishes the 6-digit pairing PIN guide.
+  - Standardizes destructive confirmations on native centered alerts, adds 5-second Undo to **Packages** swipe deletion, and fixes 2FA edge cases and iOS 17.4+ `NativeInstall` guards.
 
 #### Official Telegram Channel & GitHub Issues Archive
 - **Official Telegram Channel**: [**https://t.me/ipadn_official**](https://t.me/ipadn_official) (new builds & source archives land here first).
@@ -72,8 +66,8 @@
 - Released under [GPL-2.0-or-later](LICENSE) for authorized personal testing, backups, and research; unaffiliated with Apple Inc., with all account or data risks assumed by the user.
 
 #### Packages
-- `iPadn-2.3.3-unsigned.ipa`: Standard build with Live Activities & Widgets (requires 2 App IDs).
-- `iPadn-2.3.3-lite-unsigned.ipa`: Lite build without extensions (requires 1 App ID; identical core features).
+- `iPadn-2.3.4-unsigned.ipa`: Standard build with Live Activities & Widgets (requires 2 App IDs).
+- `iPadn-2.3.4-lite-unsigned.ipa`: Lite build without extensions (requires 1 App ID; identical core features).
 - AltStore / SideStore / Feather repo: `https://raw.githubusercontent.com/mengangs/ipadn/main/altstore-source.json`.
 
 更早版本的更新内容见 [Releases](https://github.com/mengangs/ipadn/releases)。
