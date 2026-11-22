@@ -312,7 +312,9 @@ struct PackageSourceDetailView: View {
                 } else if let url {
                     #if canImport(TestFlightKit)
                     if let tfItem = TFProductIndex.shared.item(forFile: url) {
-                        try store.removeTFProductWithUndo(tfItem)
+                        TFProductIndex.shared.delete(tfItem)
+                        ui.markFilesChanged()
+                        store.infoMessage = AppText.text("已删除原始 IPA")
                     } else {
                         try FileManager.default.removeItem(at: url)
                         ui.markFilesChanged()

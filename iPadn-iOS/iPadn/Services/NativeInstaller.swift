@@ -62,6 +62,24 @@ enum NativeInstaller {
     static let deviceAddress = "10.7.0.1"
     /// Where the system listens when discovery finds nothing.
     static let fallbackPort: UInt16 = 49152
+    /// Native installation uses Apple's CoreDevice / RPPairing tunnel,
+    /// introduced in iOS / iPadOS 17.4. Earlier systems (such as iOS 16)
+    /// only expose legacy lockdownd and cannot establish an RPPairing tunnel.
+    static let minimumSystemVersion = OperatingSystemVersion(majorVersion: 17, minorVersion: 4, patchVersion: 0)
+
+    static func isSystemVersionSupported(_ version: OperatingSystemVersion) -> Bool {
+        if version.majorVersion != minimumSystemVersion.majorVersion {
+            return version.majorVersion > minimumSystemVersion.majorVersion
+        }
+        if version.minorVersion != minimumSystemVersion.minorVersion {
+            return version.minorVersion > minimumSystemVersion.minorVersion
+        }
+        return version.patchVersion >= minimumSystemVersion.patchVersion
+    }
+
+    static var isSystemVersionSupported: Bool {
+        isSystemVersionSupported(ProcessInfo.processInfo.operatingSystemVersion)
+    }
 
     private typealias ProgressFunction = @convention(c) (UnsafeMutableRawPointer?, Int32, UInt64, UInt64) -> Void
     private typealias InstallFunction = @convention(c) (UnsafePointer<CChar>, ProgressFunction?, UnsafeMutableRawPointer?) -> UnsafeMutablePointer<CChar>?
@@ -266,6 +284,7 @@ enum NativeInstaller {
 
     private static func request(bundleID: String, package: URL?, port: UInt16, metadata: Data? = nil) throws -> String {
         guard isAvailable else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
+        guard isSystemVersionSupported else { throw ToolError.message(AppText.text("原生安装需要 iOS 17.4 及以上系统。当前系统请改用「一键安装」或「本机证书」。")) }
         guard hasPairingFile else { throw ToolError.message(AppText.text("请先在安装方式中导入配对文件。")) }
         guard !bundleID.isEmpty else { throw ToolError.message(AppText.text("安装包信息不完整，无法安装。")) }
         var body: [String: Any] = ["pairing_file": pairingFileURL.path, "host": deviceAddress,
@@ -332,43 +351,61 @@ enum NativeInstaller {
     /// Reports what the system has installed for `bundleID`. Also the
     /// connection check: it goes through the VPN, the pairing and the tunnel.
     static func lookup(bundleID: String) async throws -> InstalledApp {
+        guard isAvailable else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
+        guard isSystemVersionSupported else { throw ToolError.message(AppText.text("原生安装需要 iOS 17.4 及以上系统。当前系统请改用「一键安装」或「本机证书」。")) }
         let token = try await acquireGate(waitForCancelled: true)
         defer { end(token: token) }
-        return try await runWithPortRetry { port in
-            try Task.checkCancellation()
-            let body = try request(bundleID: bundleID, package: nil, port: port)
-            InstallLog.shared.add("native lookup (port \(port))")
-            return try await withTaskCancellationHandler {
-                try await runBlocking {
-                    guard let lookupFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
-                    let reply = try decode(body.withCString { lookupFunction($0) })
-                    guard let app = reply.app else { throw Failure(stage: "reply", detail: "missing app") }
-                    return app
+        do {
+            return try await runWithPortRetry { port in
+                try Task.checkCancellation()
+                let body = try request(bundleID: bundleID, package: nil, port: port)
+                InstallLog.shared.add("native lookup (port \(port))")
+                return try await withTaskCancellationHandler {
+                    try await runBlocking {
+                        guard let lookupFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
+                        let reply = try decode(body.withCString { lookupFunction($0) })
+                        guard let app = reply.app else { throw Failure(stage: "reply", detail: "missing app") }
+                        return app
+                    }
+                } onCancel: {
+                    cancelIfActive(token)
                 }
-            } onCancel: {
-                cancelIfActive(token)
             }
+        } catch {
+            if let failure = error as? Failure {
+                InstallLog.shared.add("native lookup failed at \(failure.stage): \(failure.detail.prefix(200))")
+            }
+            throw error
         }
     }
 
     /// Every app the user installed on this device. Reads only; nothing changes.
     static func installedApps() async throws -> [InstalledApp] {
+        guard isAvailable else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
+        guard isSystemVersionSupported else { throw ToolError.message(AppText.text("原生安装需要 iOS 17.4 及以上系统。当前系统请改用「一键安装」或「本机证书」。")) }
         let token = try await acquireGate(waitForCancelled: true)
         defer { end(token: token) }
-        return try await runWithPortRetry { port in
-            try Task.checkCancellation()
-            let body = try request(bundleID: "*", package: nil, port: port)
-            InstallLog.shared.add("native list (port \(port))")
-            return try await withTaskCancellationHandler {
-                try await runBlocking {
-                    guard let listFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
-                    let reply = try decode(body.withCString { listFunction($0) })
-                    guard let apps = reply.apps else { throw Failure(stage: "reply", detail: "missing apps") }
-                    return apps
+        do {
+            return try await runWithPortRetry { port in
+                try Task.checkCancellation()
+                let body = try request(bundleID: "*", package: nil, port: port)
+                InstallLog.shared.add("native list (port \(port))")
+                return try await withTaskCancellationHandler {
+                    try await runBlocking {
+                        guard let listFunction else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
+                        let reply = try decode(body.withCString { listFunction($0) })
+                        guard let apps = reply.apps else { throw Failure(stage: "reply", detail: "missing apps") }
+                        return apps
+                    }
+                } onCancel: {
+                    cancelIfActive(token)
                 }
-            } onCancel: {
-                cancelIfActive(token)
             }
+        } catch {
+            if let failure = error as? Failure {
+                InstallLog.shared.add("native list failed at \(failure.stage): \(failure.detail.prefix(200))")
+            }
+            throw error
         }
     }
     /// The parsed result of a list reply. Internal so tests can cover it.
@@ -403,6 +440,8 @@ enum NativeInstaller {
     /// stays on this device; it is handed to the system installer directly.
     static func install(package: URL, bundleID: String, blockUpdates: Bool = false,
                         progress: @escaping @Sendable (Phase) -> Void) async throws -> Outcome {
+        guard isAvailable else { throw ToolError.message(AppText.text("当前版本不包含原生安装组件。")) }
+        guard isSystemVersionSupported else { throw ToolError.message(AppText.text("原生安装需要 iOS 17.4 及以上系统。当前系统请改用「一键安装」或「本机证书」。")) }
         let token = try await acquireGate(waitForCancelled: true)
         defer { end(token: token) }
         var metadata: Data?
@@ -675,10 +714,78 @@ enum RemotePairingPort {
 
     static func invalidateCache() { cache.invalidate() }
 
+    static func normalizedAddress(_ raw: String) -> String {
+        var candidate = raw.split(separator: "%", maxSplits: 1).first.map(String.init) ?? raw
+        candidate = candidate.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if candidate.hasPrefix("::ffff:") {
+            candidate = String(candidate.dropFirst(7))
+        }
+        var v4 = in_addr()
+        if inet_pton(AF_INET, candidate, &v4) == 1 {
+            var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            if inet_ntop(AF_INET, &v4, &buffer, socklen_t(buffer.count)) != nil {
+                return String(cString: buffer)
+            }
+        }
+        var v6 = in6_addr()
+        if inet_pton(AF_INET6, candidate, &v6) == 1 {
+            var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+            if inet_ntop(AF_INET6, &v6, &buffer, socklen_t(buffer.count)) != nil {
+                let canonical = String(cString: buffer).lowercased()
+                if canonical.hasPrefix("::ffff:") {
+                    return String(canonical.dropFirst(7))
+                }
+                return canonical
+            }
+        }
+        return candidate
+    }
+
+    static func localInterfaceAddresses() -> Set<String> {
+        var result: Set<String> = ["127.0.0.1", "::1"]
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0, let first = list else { return result }
+        defer { freeifaddrs(list) }
+        for pointer in sequence(first: first, next: { $0.pointee.ifa_next }) {
+            guard let address = pointer.pointee.ifa_addr else { continue }
+            let family = Int32(address.pointee.sa_family)
+            guard family == AF_INET || family == AF_INET6 else { continue }
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            if getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
+                let normalized = normalizedAddress(String(cString: host))
+                if !normalized.isEmpty { result.insert(normalized) }
+            }
+        }
+        return result
+    }
+
+    static func isLocalAddress(_ host: String, localAddresses: Set<String>) -> Bool {
+        let normalized = normalizedAddress(host)
+        guard !normalized.isEmpty else { return false }
+        if normalized == "127.0.0.1" || normalized == "::1" || normalized == "localhost" {
+            return true
+        }
+        if normalized.hasPrefix("127.") { return true }
+        return localAddresses.contains(normalized)
+    }
+
+    private static func hostAddress(from host: NWEndpoint.Host) -> String? {
+        switch host {
+        case .ipv4(let address): return "\(address)"
+        case .ipv6(let address): return "\(address)"
+        case .name(let name, _): return name
+        @unknown default: return nil
+        }
+    }
+
     private final class Search: @unchecked Sendable {
         private let queue = DispatchQueue(label: "app.local.iPadn.remote-pairing-port")
+        private let localAddresses = RemotePairingPort.localInterfaceAddresses()
         private var browser: NWBrowser?
         private var connection: NWConnection?
+        private var activeEndpointKey: String?
+        private var rejectedEndpoints: Set<String> = []
+        private var loggedRejectedPeer = false
         private var continuation: CheckedContinuation<UInt16?, Never>?
         private var cancelled = false
         private var finished = false
@@ -712,12 +819,16 @@ enum RemotePairingPort {
             browser.browseResultsChangedHandler = { [weak self] results, _ in
                 guard let self, self.continuation != nil else { return }
                 // Other devices on the network advertise the same service;
-                // this device's own record is the one seen on loopback.
+                // this device's own record is the one seen on loopback (or
+                // resolving to one of this device's own local addresses).
                 let services = results.filter { if case .service = $0.endpoint { return true }; return false }
                 let own = services.first { $0.interfaces.contains { $0.type == .loopback || $0.name.hasPrefix("lo") } }
-                guard let chosen = own ?? (services.count == 1 ? services.first : nil),
+                let nonRejected = services.filter { !self.rejectedEndpoints.contains(String(describing: $0.endpoint)) }
+                let fallback = nonRejected.count == 1 ? nonRejected.first : nil
+                guard let chosen = own ?? fallback,
                       self.connection == nil || (own != nil && !self.loopbackChosen) else { return }
                 self.loopbackChosen = own != nil
+                self.activeEndpointKey = String(describing: chosen.endpoint)
                 self.connection?.cancel()
                 let connection = NWConnection(to: chosen.endpoint, using: parameters)
                 self.connection = connection
@@ -725,15 +836,13 @@ enum RemotePairingPort {
                     guard let self, let connection, self.connection === connection else { return }
                     switch state {
                     case .ready, .waiting, .preparing:
-                        if case .hostPort(_, let port) = connection.currentPath?.remoteEndpoint, port.rawValue != 0 {
-                            self.finish(port.rawValue)
-                        }
+                        self.handleResolvedEndpoint(connection.currentPath?.remoteEndpoint, connection: connection)
                     default: break
                     }
                 }
                 connection.pathUpdateHandler = { [weak self, weak connection] path in
                     guard let self, let connection, self.connection === connection else { return }
-                    if case .hostPort(_, let port) = path.remoteEndpoint, port.rawValue != 0 { self.finish(port.rawValue) }
+                    self.handleResolvedEndpoint(path.remoteEndpoint, connection: connection)
                 }
                 connection.start(queue: self.queue)
             }
@@ -741,6 +850,30 @@ enum RemotePairingPort {
                 if case .failed = state { self?.finish(nil) }
             }
             browser.start(queue: queue)
+        }
+        private func handleResolvedEndpoint(_ endpoint: NWEndpoint?, connection: NWConnection) {
+            guard case .hostPort(let host, let port) = endpoint, port.rawValue != 0 else { return }
+            if loopbackChosen {
+                finish(port.rawValue)
+                return
+            }
+            if let address = RemotePairingPort.hostAddress(from: host),
+               RemotePairingPort.isLocalAddress(address, localAddresses: localAddresses) {
+                finish(port.rawValue)
+                return
+            }
+            if let key = activeEndpointKey {
+                rejectedEndpoints.insert(key)
+            }
+            activeEndpointKey = nil
+            connection.cancel()
+            if self.connection === connection {
+                self.connection = nil
+            }
+            if !loggedRejectedPeer {
+                loggedRejectedPeer = true
+                InstallLog.shared.add("remote pairing port: ignored non-local endpoint (port \(port.rawValue))")
+            }
         }
         private func finish(_ port: UInt16?) {
             guard !finished else { return }

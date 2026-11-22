@@ -128238,6 +128238,1056 @@
           }
         }
       }
+    },
+    "Apple 已向 %@ 发送 6 位短信验证码，请等待本次最新短信送达后输入。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 已向 %@ 发送 6 位短信验证码，请等待本次最新短信送达后输入。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple sent a 6-digit SMS verification code to %@. Wait for the new text message and enter it below."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 已向 %@ 傳送 6 位數簡訊驗證碼，請等待本次最新簡訊送達後輸入。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple が %@ に 6 桁の SMS 確認コードを送信しました。最新のメッセージが届いてから入力してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple이 %@(으)로 6자리 SMS 인증 코드를 보냈습니다. 새 문자가 도착하면 입력해 주세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple отправила 6-значный SMS-код на %@. Дождитесь нового сообщения и введите код."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple envió un código SMS de 6 dígitos a %@. Espera el nuevo mensaje e ingrésalo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple a envoyé un code SMS à 6 chiffres au %@. Attendez le nouveau message avant de le saisir."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple hat einen 6-stelligen SMS-Code an %@ gesendet. Warte auf die neue Nachricht und gib ihn ein."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Apple enviou um código SMS de 6 dígitos para %@. Aguarde a nova mensagem e digite-o."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أرسلت Apple رمز تحقق SMS مكوّنًا من 6 أرقام إلى %@. انتظر وصول الرسالة الجديدة ثم أدخله."
+          }
+        }
+      }
+    },
+    "Apple 已向 %@ 的受信任手机号发送 6 位短信验证码，请等待本次最新短信送达后输入。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 已向 %@ 的受信任手机号发送 6 位短信验证码，请等待本次最新短信送达后输入。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple sent a 6-digit SMS verification code to a trusted phone number for %@. Wait for the new message and enter it below."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 已向 %@ 的受信任手機號碼傳送 6 位數簡訊驗證碼，請等待本次最新簡訊送達後輸入。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple が %@ の信頼できる電話番号に 6 桁の SMS 確認コードを送信しました。最新のメッセージが届いてから入力してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple이 %@의 신뢰할 수 있는 전화번호로 6자리 SMS 인증 코드를 보냈습니다. 새 문자가 도착하면 입력해 주세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple отправила 6-значный SMS-код на доверенный номер для %@. Дождитесь нового сообщения и введите код."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple envió un código SMS de 6 dígitos al teléfono de confianza de %@. Espera el nuevo mensaje e ingrésalo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple a envoyé un code SMS à 6 chiffres au numéro de confiance de %@. Attendez le nouveau message avant de le saisir."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple hat einen 6-stelligen SMS-Code an eine vertrauenswürdige Nummer für %@ gesendet. Warte auf die neue Nachricht und gib ihn ein."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Apple enviou um código SMS de 6 dígitos para o número confiável de %@. Aguarde a nova mensagem e digite-o."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أرسلت Apple رمز تحقق SMS مكوّنًا من 6 أرقام إلى رقم الهاتف الموثوق لحساب %@. انتظر وصول الرسالة الجديدة ثم أدخله."
+          }
+        }
+      }
+    },
+    "请勿填入之前收到的旧短信验证码；如暂未收到短信，可稍候几秒或取消后重新尝试。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请勿填入之前收到的旧短信验证码；如暂未收到短信，可稍候几秒或取消后重新尝试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Do not enter an older SMS code. If the message hasn't arrived yet, wait a few seconds or cancel and try again."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請勿填入先前收到的舊簡訊驗證碼；如暫未收到簡訊，可稍候幾秒或取消後重新嘗試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以前に受信した古い SMS コードは入力しないでください。届かない場合は数秒待つか、キャンセルしてやり直してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전에 받은 오래된 SMS 코드는 입력하지 마세요. 문자가 오지 않으면 잠시 기다리거나 취소 후 다시 시도하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не вводите старый код из предыдущих SMS. Если сообщение ещё не пришло, подождите несколько секунд или отмените и повторите."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No ingreses un código SMS antiguo. Si aún no llega, espera unos segundos o cancela e inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "N'utilisez pas un ancien code SMS. Si le message n'est pas encore arrivé, patientez quelques secondes ou annulez et réessayez."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gib keinen älteren SMS-Code ein. Falls die Nachricht noch nicht angekommen ist, warte kurz oder brich ab und versuche es erneut."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não digite um código SMS antigo. Se a mensagem ainda não chegou, aguarde alguns segundos ou cancele e tente novamente."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا تُدخل رمز SMS قديمًا. إذا لم تصل الرسالة بعد، انتظر بضع ثوانٍ أو ألغِ وحاول مجددًا."
+          }
+        }
+      }
+    },
+    "若未收到受信任设备弹窗，请在已登录该账号的设备上前往「设置 › Apple 账户 › 登录与安全 › 获取验证码」，输入显示的 6 位验证码即可。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "若未收到受信任设备弹窗，请在已登录该账号的设备上前往「设置 › Apple 账户 › 登录与安全 › 获取验证码」，输入显示的 6 位验证码即可。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If no prompt appears on your trusted device, open Settings › Apple Account › Sign-In & Security › Get Verification Code on a signed-in device and enter the 6-digit code."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "若未收到受信任裝置彈窗，請在已登入該帳號的裝置上前往「設定 › Apple 帳號 › 登入與安全性 › 取得驗證碼」，輸入顯示的 6 位數驗證碼即可。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "信頼できるデバイスに通知が表示されない場合は、サインイン済みデバイスで「設定 › Apple Account › サインインとセキュリティ › 確認コードを入手」を開き、6 桁のコードを入力してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "신뢰할 수 있는 기기에 팝업이 표시되지 않으면 로그인된 기기에서 '설정 › Apple 계정 › 로그인 및 보안 › 인증 코드 받기'로 이동해 6자리 코드를 입력하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Если запрос не появился на доверенном устройстве, откройте «Настройки › Аккаунт Apple › Вход и безопасность › Получить код проверки» и введите 6-значный код."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Si no recibes el aviso en un dispositivo de confianza, ve a Ajustes › Cuenta de Apple › Inicio de sesión y seguridad › Obtener código de verificación e ingresa el código de 6 dígitos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Si aucune invite n'apparaît sur votre appareil de confiance, ouvrez Réglages › Compte Apple › Connexion et sécurité › Obtenir un code de validation et saisissez le code à 6 chiffres."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falls keine Abfrage auf deinem vertrauenswürdigen Gerät erscheint, öffne Einstellungen › Apple Account › Anmeldung & Sicherheit › Bestätigungscode erhalten und gib den 6-stelligen Code ein."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se nenhum aviso aparecer no dispositivo confiável, abra Ajustes › Conta Apple › Início de Sessão e Segurança › Obter Código de Verificação e digite o código de 6 dígitos."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إذا لم يظهر تنبيه على جهازك الموثوق، افتح الإعدادات › حساب Apple › تسجيل الدخول والأمن › الحصول على رمز تحقق وأدخل الرمز المكوّن من 6 أرقام."
+          }
+        }
+      }
+    },
+    "选择受信任手机号": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择受信任手机号"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a Trusted Phone Number"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇受信任手機號碼"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "信頼できる電話番号を選択"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "신뢰할 수 있는 전화번호 선택"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите доверенный номер"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige un número de confianza"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir un numéro de confiance"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vertrauenswürdige Nummer wählen"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha um número confiável"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "اختر رقم هاتف موثوقًا"
+          }
+        }
+      }
+    },
+    "Apple 将向所选号码为 %@ 发送 6 位短信验证码。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 将向所选号码为 %@ 发送 6 位短信验证码。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple will send a 6-digit SMS verification code for %@ to the selected number."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 將向所選號碼為 %@ 傳送 6 位數簡訊驗證碼。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple は選択した番号に %@ 用の 6 桁の SMS 確認コードを送信します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple이 선택한 번호로 %@의 6자리 SMS 인증 코드를 보냅니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple отправит 6-значный SMS-код для %@ на выбранный номер."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple enviará un código SMS de 6 dígitos para %@ al número seleccionado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple enverra un code SMS à 6 chiffres pour %@ au numéro sélectionné."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple sendet einen 6-stelligen SMS-Code für %@ an die gewählte Nummer."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Apple enviará um código SMS de 6 dígitos para %@ no número selecionado."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "سترسل Apple رمز تحقق SMS مكوّنًا من 6 أرقام لحساب %@ إلى الرقم المحدد."
+          }
+        }
+      }
+    },
+    "短信验证": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "短信验证"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SMS Verification"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "簡訊驗證"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SMS 認証"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SMS 인증"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SMS-проверка"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verificación por SMS"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérification par SMS"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SMS-Bestätigung"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verificação por SMS"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التحقق عبر SMS"
+          }
+        }
+      }
+    },
+    "该 Apple 账号当前处于安全锁定状态，请先前往 account.apple.com 解锁后再试。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该 Apple 账号当前处于安全锁定状态，请先前往 account.apple.com 解锁后再试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Apple Account is currently locked for security reasons. Unlock it at account.apple.com and try again."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Apple 帳號目前處於安全鎖定狀態，請先前往 account.apple.com 解鎖後再試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Apple Account はセキュリティ上の理由でロックされています。account.apple.com でロックを解除してからやり直してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Apple 계정은 보안상의 이유로 잠겨 있습니다. account.apple.com에서 잠금을 해제한 후 다시 시도하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Этот аккаунт Apple заблокирован по соображениям безопасности. Разблокируйте его на account.apple.com и повторите попытку."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta cuenta de Apple está bloqueada por motivos de seguridad. Desbloquéala en account.apple.com e inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce compte Apple est verrouillé pour des raisons de sécurité. Déverrouillez-le sur account.apple.com puis réessayez."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Apple Account ist aus Sicherheitsgründen gesperrt. Entsperre ihn unter account.apple.com und versuche es erneut."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta Conta Apple está bloqueada por motivos de segurança. Desbloqueie em account.apple.com e tente novamente."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حساب Apple هذا مقفل حاليًا لأسباب أمنية. افتح قفله عبر account.apple.com ثم حاول مجددًا."
+          }
+        }
+      }
+    },
+    "Apple 已暂时限制该账号的验证码请求，通常是短时间内尝试次数过多所致。请暂停重试并等待一段时间后再试，也可前往 account.apple.com 检查账号状态。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 已暂时限制该账号的验证码请求，通常是短时间内尝试次数过多所致。请暂停重试并等待一段时间后再试，也可前往 account.apple.com 检查账号状态。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple has temporarily limited verification code requests for this account, usually due to too many attempts in a short time. Pause retrying and wait before trying again, or check account status at account.apple.com."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 已暫時限制此帳號的驗證碼請求，通常是短時間內嘗試次數過多所致。請暫停重試並等待一段時間後再試，也可前往 account.apple.com 檢查帳號狀態。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "短時間に確認コードの要求が集中したため、Apple がこのアカウントの認証を一時的に制限しています。連続再試行を控えてしばらく待ってから再試行するか、account.apple.com で状態を確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "짧은 시간에 너무 많이 시도하여 Apple이 이 계정의 인증 코드 요청을 일시적으로 제한했습니다. 잠시 기다린 후 다시 시도하거나 account.apple.com에서 계정 상태를 확인하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple временно ограничила запросы кодов проверки для этого аккаунта, обычно из-за слишком частых попыток. Подождите некоторое время перед повторной попыткой или проверьте статус аккаунта на account.apple.com."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple limitó temporalmente las solicitudes de códigos de verificación de esta cuenta, normalmente por demasiados intentos seguidos. Espera un tiempo antes de reintentar o revisa el estado en account.apple.com."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple a temporairement limité les demandes de code de validation pour ce compte, généralement après trop de tentatives rapprochées. Patientez avant de réessayer ou vérifiez l'état sur account.apple.com."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple hat Bestätigungscode-Anfragen für diesen Account vorübergehend eingeschränkt, meist wegen zu vieler Versuche in kurzer Zeit. Warte bitte etwas ab oder prüfe den Status unter account.apple.com."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Apple limitou temporariamente as solicitações de código de verificação desta conta, geralmente por muitas tentativas seguidas. Aguarde antes de tentar novamente ou verifique o status em account.apple.com."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "قيّدت Apple مؤقتًا طلبات رمز التحقق لهذا الحساب، عادةً بسبب كثرة المحاولات خلال وقت قصير. توقف عن إعادة المحاولة وانتظر قليلًا، أو تحقق من حالة الحساب عبر account.apple.com."
+          }
+        }
+      }
+    },
+    "验证码未通过 Apple 验证（可能输入有误、已过期或填入了旧短信验证码）。请重试并等待最新验证码送达后再输入。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证码未通过 Apple 验证（可能输入有误、已过期或填入了旧短信验证码）。请重试并等待最新验证码送达后再输入。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple rejected the verification code (it may be incorrect, expired, or from an older SMS). Retry and wait for the latest code to arrive before entering it."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "驗證碼未通過 Apple 驗證（可能輸入有誤、已過期或填入了舊簡訊驗證碼）。請重試並等待最新驗證碼送達後再輸入。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認コードが Apple に承認されませんでした（入力ミス、有効期限切れ、または古い SMS コードの可能性があります）。再試行し、最新のコードが届いてから入力してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple이 인증 코드를 확인하지 못했습니다(오입력, 만료 또는 이전 SMS 코드일 수 있습니다). 다시 시도하고 최신 코드가 도착한 후 입력하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple не приняла код проверки (возможно, он неверен, истёк или взят из старого SMS). Повторите попытку и дождитесь нового кода."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple no aceptó el código de verificación (puede ser incorrecto, haber caducado o ser de un SMS anterior). Reintenta y espera el código más reciente."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple n'a pas validé le code (il est peut-être incorrect, expiré ou issu d'un ancien SMS). Réessayez et attendez le nouveau code."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple hat den Bestätigungscode abgelehnt (möglicherweise falsch, abgelaufen oder aus einer älteren SMS). Versuche es erneut und warte auf den neuesten Code."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Apple rejeitou o código de verificação (pode estar incorreto, expirado ou ser de um SMS anterior). Tente novamente e aguarde o código mais recente."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "رفضت Apple رمز التحقق (قد يكون غير صحيح أو منتهي الصلاحية أو من رسالة SMS سابقة). أعد المحاولة وانتظر وصول أحدث رمز قبل إدخاله."
+          }
+        }
+      }
+    },
+    "该 Apple 账号没有可用于短信验证的受信任手机号，请先前往 account.apple.com 添加受信任电话号码后重试。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该 Apple 账号没有可用于短信验证的受信任手机号，请先前往 account.apple.com 添加受信任电话号码后重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Apple Account has no trusted phone number available for SMS verification. Add a trusted phone number at account.apple.com and try again."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Apple 帳號沒有可用於簡訊驗證的受信任手機號碼，請先前往 account.apple.com 新增受信任電話號碼後重試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Apple Account には SMS 認証に使える信頼できる電話番号が登録されていません。account.apple.com で追加してから再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Apple 계정에 SMS 인증에 사용할 수 있는 신뢰할 수 있는 전화번호가 없습니다. account.apple.com에서 번호를 추가한 후 다시 시도하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "У этого аккаунта Apple нет доверенного номера для SMS-проверки. Добавьте номер на account.apple.com и повторите попытку."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta cuenta de Apple no tiene un número de teléfono de confianza disponible para SMS. Agrega uno en account.apple.com e inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce compte Apple ne dispose d'aucun numéro de confiance pour la vérification par SMS. Ajoutez-en un sur account.apple.com puis réessayez."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Apple Account hat keine vertrauenswürdige Telefonnummer für SMS-Bestätigung. Füge unter account.apple.com eine Nummer hinzu und versuche es erneut."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta Conta Apple não tem um número confiável disponível para SMS. Adicione um número em account.apple.com e tente novamente."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يحتوي حساب Apple هذا على رقم هاتف موثوق متاح للتحقق عبر SMS. أضف رقم هاتف موثوقًا عبر account.apple.com ثم أعد المحاولة."
+          }
+        }
+      }
+    },
+    "Apple 要求重新验证本次登录，请重试；若反复出现请稍等片刻再试。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 要求重新验证本次登录，请重试；若反复出现请稍等片刻再试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple requested verification again for this sign-in. Please try again, or wait a moment if it repeats."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 要求重新驗證本次登入，請重試；若反覆出現請稍等片刻再試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple が再度確認を要求しました。再試行してください。繰り返す場合は少し時間を置いてからお試しください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple이 이번 로그인에 대해 다시 인증을 요청했습니다. 다시 시도하거나 반복되면 잠시 후 시도해 주세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple повторно запросила проверку для этого входа. Повторите попытку или подождите немного, если ошибка повторяется."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple solicitó verificar este inicio de sesión nuevamente. Inténtalo de nuevo o espera un momento si se repite."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple a demandé une nouvelle validation pour cette connexion. Réessayez ou patientez un instant si cela se répète."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple hat erneut eine Bestätigung für diese Anmeldung angefordert. Bitte versuche es noch einmal oder warte kurz."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Apple solicitou uma nova verificação para este início de sessão. Tente novamente ou aguarde um momento se repetir."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "طلبت Apple التحقق مجددًا لتسجيل الدخول هذا. يرجى المحاولة مرة أخرى أو الانتظار قليلًا إذا تكرر الأمر."
+          }
+        }
+      }
+    },
+    "Apple 需要您先在系统 App Store 中完成账号确认（如同意条款、完善付款信息或首次启用检查）。请先用该账号在系统 App Store 点击一次「获取」任意免费应用，完成后再回 iPadn 下载。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 需要您先在系统 App Store 中完成账号确认（如同意条款、完善付款信息或首次启用检查）。请先用该账号在系统 App Store 点击一次「获取」任意免费应用，完成后再回 iPadn 下载。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple requires you to complete account setup in the system App Store (such as accepting terms, updating billing info, or first-time store review). Tap Get on any free app in the system App Store with this account, then return to iPadn to download."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 需要您先在系統 App Store 中完成帳號確認（如同意條款、完善付款資訊或首次啟用檢查）。請先用該帳號在系統 App Store 點選一次「取得」任意免費 App，完成後再回 iPadn 下載。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム標準の App Store でアカウントの確認（規約への同意、お支払い情報の更新、初回利用の確認など）が必要です。このアカウントで App Store の無料アプリを一度「入手」してから、iPadn に戻ってダウンロードしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템 App Store에서 계정 확인(약관 동의, 결제 정보 업데이트 또는 최초 사용 확인 등)이 필요합니다. 이 계정으로 시스템 App Store에서 무료 앱을 한 번 '받기'한 뒤 iPadn으로 돌아와 다운로드하세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple требует завершить проверку аккаунта в системном App Store (принять условия, обновить платёжные данные или пройти первичную проверку). Нажмите «Загрузить» для любого бесплатного приложения в App Store этим аккаунтом, затем вернитесь в iPadn."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple requiere completar la verificación de la cuenta en el App Store del sistema (aceptar términos, actualizar facturación o revisión inicial). Toca Obtener en cualquier app gratuita en el App Store con esta cuenta y luego vuelve a iPadn para descargar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple exige de terminer la vérification du compte dans l'App Store du système (conditions générales, facturation ou première utilisation). Touchez Obtenir sur une app gratuite dans l'App Store avec ce compte, puis revenez dans iPadn."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple erfordert eine Kontobestätigung im System-App Store (Bedingungen akzeptieren, Zahlungsdaten aktualisieren oder Erstprüfung). Tippe mit diesem Account im App Store einmal auf „Laden“ bei einer kostenlosen App und kehre dann zu iPadn zurück."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Apple exige concluir a verificação da conta na App Store do sistema (aceitar termos, atualizar cobrança ou revisão inicial). Toque em Obter em qualquer app gratuito na App Store com esta conta e volte ao iPadn para baixar."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تتطلب Apple إكمال تأكيد الحساب في App Store النظام (مثل الموافقة على الشروط أو تحديث بيانات الدفع أو المراجعة الأولى). اضغط «تنزيل» لأي تطبيق مجاني في App Store بهذا الحساب، ثم عد إلى iPadn للتنزيل."
+          }
+        }
+      }
+    },
+    "原生安装需要 iOS 17.4 及以上系统。当前系统请改用「一键安装」或「本机证书」。": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原生安装需要 iOS 17.4 及以上系统。当前系统请改用「一键安装」或「本机证书」。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原生安裝需要 iOS 17.4 及以上系統。目前系統請改用「一鍵安裝」或「本機憑證」。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Native Install requires iOS 17.4 or later. Please use One-Tap Install or Local Certificate on this system."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ネイティブインストールには iOS 17.4 以降が必要です。現在のシステムでは「ワンタップインストール」または「ローカル証明書」をご利用ください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "네이티브 설치에는 iOS 17.4 이상이 필요합니다. 현재 시스템에서는 '원탭 설치' 또는 '로컬 인증서'를 사용해 주세요."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нативная установка требует iOS 17.4 или новее. На этой системе используйте «Быстрая установка» или «Локальный сертификат»."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La instalación nativa requiere iOS 17.4 o posterior. Usa «Instalación en un toque» o «Certificado local» en este sistema."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’installation native nécessite iOS 17.4 ou version ultérieure. Utilisez « Installation en un geste » ou « Certificat local » sur ce système."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die native Installation erfordert iOS 17.4 oder neuer. Verwende auf diesem System bitte „Ein-Tipp-Installation“ oder „Lokales Zertifikat“."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A instalação nativa requer iOS 17.4 ou posterior. Use «Instalação com um toque» ou «Certificado local» neste sistema."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتطلب التثبيت الأصلي نظام iOS 17.4 أو أحدث. يُرجى استخدام «التثبيت بنقرة واحدة» أو «الشهادة المحلية» على هذا النظام."
+          }
+        }
+      }
+    },
+    "原生安装需要 iOS 17.4 及以上系统": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原生安装需要 iOS 17.4 及以上系统"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原生安裝需要 iOS 17.4 及以上系統"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Native Install requires iOS 17.4 or later"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ネイティブインストールには iOS 17.4 以降が必要です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "네이티브 설치에는 iOS 17.4 이상이 필요합니다"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Нативная установка требует iOS 17.4 или новее"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La instalación nativa requiere iOS 17.4 o posterior"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’installation native nécessite iOS 17.4 ou version ultérieure"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die native Installation erfordert iOS 17.4 oder neuer"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A instalação nativa requer iOS 17.4 ou posterior"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتطلب التثبيت الأصلي نظام iOS 17.4 أو أحدث"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -2,72 +2,60 @@ import SwiftUI
 import UniformTypeIdentifiers
 import UIKit
 
-struct ActionConfirmationView: View {
-    let title: LocalizedStringKey
-    let message: LocalizedStringKey?
-    var detail: String? = nil
-    let confirmTitle: LocalizedStringKey
-    var destructive = true
-    var showsCancel = true
-    let action: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.dynamicTypeSize) private var typeSize
-    private var compactDetentHeight: CGFloat {
-        let base: CGFloat = showsCancel ? (message != nil ? 296 : 248) : (message != nil ? 248 : 200)
-        return detail == nil ? base : min(440, base + 84)
-    }
-    var body: some View {
-        Group {
-            if typeSize.isAccessibilitySize || detail != nil {
-                ScrollView { confirmation }.compatibleScrollBounce()
-                    .accessibilityIdentifier("confirmation.scroll")
-            } else { confirmation }
-        }
-        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.height(compactDetentHeight), .large])
-        .presentationDragIndicator(.visible).compatiblePresentationCornerRadius(28)
-    }
-    private var confirmation: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(title).font(.title3.weight(.semibold)).accessibilityAddTraits(.isHeader).accessibilityIdentifier("confirmation.title")
-            if let message { Text(message).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("confirmation.message") }
-            if let detail, !detail.isEmpty {
-                Text(verbatim: detail)
-                    .font(.footnote.monospaced())
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .accessibilityIdentifier("confirmation.detail")
-            }
-            VStack(spacing: 10) {
-                Button(role: destructive ? .destructive : nil) { action(); dismiss() } label: {
-                    Text(confirmTitle).font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 24)
-                }.buttonStyle(MonochromeButtonStyle()).accessibilityIdentifier("confirmation.confirm")
-                if showsCancel {
-                    Button { dismiss() } label: { Text("取消").frame(maxWidth: .infinity, minHeight: 48).contentShape(Rectangle()) }
-                        .buttonStyle(.plain).accessibilityIdentifier("confirmation.cancel")
-                }
-            }
-        }.padding(24).frame(maxWidth: 560, alignment: .leading).frame(maxWidth: .infinity)
-    }
-}
-
 private struct ActionConfirmationModifier: ViewModifier {
     @Binding var isPresented: Bool
-    @Environment(\.dynamicTypeSize) private var typeSize
     let title: LocalizedStringKey
     let message: LocalizedStringKey?
     let detail: String?
     let confirmTitle: LocalizedStringKey
     let destructive: Bool
     let action: () -> Void
+    @State private var presentationToken = 0
+
     func body(content: Content) -> some View {
-        content.sheet(isPresented: $isPresented) {
-            ActionConfirmationView(title: title, message: message, detail: detail, confirmTitle: confirmTitle, destructive: destructive, action: action)
-                // A presented sheet can reset the parent's SwiftUI override.
-                // Keep its text size aligned with the page that opened it.
-                .environment(\.dynamicTypeSize, typeSize)
+        let alertBinding = Binding<Bool>(
+            get: { isPresented },
+            set: { newValue in
+                guard !newValue else { return }
+                let token = presentationToken
+                // Defer clearing the caller's binding by one main-actor turn so bindings backed
+                // by optional state (`deleting != nil`) stay populated while the confirm button's
+                // action closure runs, even if SwiftUI clears `isPresented` before firing it.
+                Task { @MainActor in
+                    if presentationToken == token && isPresented {
+                        isPresented = false
+                    }
+                }
+            }
+        )
+        content
+            .compatibleOnChange(of: isPresented) { shown in
+                if shown { presentationToken += 1 }
+            }
+            .alert(title, isPresented: alertBinding) {
+                Button("取消", role: .cancel) {
+                    presentationToken += 1
+                    isPresented = false
+                }
+                Button(confirmTitle, role: destructive ? .destructive : nil) {
+                    presentationToken += 1
+                    action()
+                    isPresented = false
+                }
+            } message: {
+                alertMessage
+            }
+    }
+
+    @ViewBuilder
+    private var alertMessage: some View {
+        let trimmedDetail = detail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if let message, !trimmedDetail.isEmpty {
+            Text(message) + Text(verbatim: "\n\n" + trimmedDetail)
+        } else if let message {
+            Text(message)
+        } else if !trimmedDetail.isEmpty {
+            Text(verbatim: trimmedDetail)
         }
     }
 }

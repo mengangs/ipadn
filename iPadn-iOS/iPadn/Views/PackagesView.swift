@@ -9,6 +9,7 @@ struct PackagesView: View {
     @ObservedObject private var ui = FairPlayPresentation.shared
     @ObservedObject private var service = FairPlayHub.shared.service
     @ObservedObject private var records = DecryptRecordStore.shared
+    @ObservedObject private var packageRemovals = PackageFileRemovalStore.shared
 
     @State private var products = false
     @State private var picking = false
@@ -22,6 +23,7 @@ struct PackagesView: View {
     @State private var importIssue: String?
     @State private var presentation: PackageFilePresentation?
     @State private var pendingDelete: PendingDelete?
+    @State private var swipingDeleteJobs = Set<UUID>()
     @State private var editing = false
     @State private var selection = Set<SelectionItem>()
     @State private var confirmingBatchDelete = false
@@ -547,7 +549,7 @@ struct PackagesView: View {
                                 return
                             }
                             do {
-                                try store.removeTFProductWithUndo(item)
+                                try store.removeTFProductWithUndo(item, fromPackages: true)
                             } catch {
                                 store.errorMessage = error.localizedDescription
                             }
@@ -655,9 +657,10 @@ struct PackagesView: View {
                 packageNavRow(route: .source(job.id)) { row }
                     .revealActions(
                         id: "pkg.job." + job.id.uuidString,
-                        enabled: !ui.protects(job.id),
+                        enabled: !ui.protects(job.id) && !swipingDeleteJobs.contains(job.id),
+                        restored: manager.recentlyRestoredIDs.contains(job.id),
                         [
-                            .delete(fills: false) { requestDeleteOriginalJob(job) },
+                            .delete(fills: true) { swipeDeleteOriginalJob(job) },
                             RevealAction(title: "分享", systemImage: "square.and.arrow.up", tint: .blue, role: nil) {
                                 exportFile(url, suggestedName: rowName + ".ipa", kind: .share)
                             }
@@ -712,8 +715,9 @@ struct PackagesView: View {
                 .revealActions(
                     id: "pkg.file." + PackageOutputPolicy.canonicalPath(url),
                     enabled: !ui.protects(url: url),
+                    restored: packageRemovals.recentlyRestoredPaths.contains(PackageOutputPolicy.canonicalPath(url)),
                     [
-                        .delete(fills: false) { requestDeleteStandaloneFile(url) },
+                        .delete(fills: true) { swipeDeleteStandaloneFile(url) },
                         RevealAction(title: "分享", systemImage: "square.and.arrow.up", tint: .blue, role: nil) {
                             exportFile(url, suggestedName: displayName + ".ipa", kind: .share)
                         }
@@ -793,8 +797,9 @@ struct PackagesView: View {
                                 .revealActions(
                                     id: "pkg.orphan." + url.lastPathComponent,
                                     enabled: !service.isRunning,
+                                    restored: packageRemovals.recentlyRestoredPaths.contains(PackageOutputPolicy.canonicalPath(url)),
                                     [
-                                        .delete(fills: false) { pendingDelete = .unlinkedFile(url) },
+                                        .delete(fills: true) { swipeDeleteUnlinkedFile(url) },
                                         RevealAction(title: "分享", systemImage: "square.and.arrow.up", tint: .blue, role: nil) {
                                             exportFile(url, suggestedName: url.lastPathComponent, kind: .share)
                                         }
@@ -850,10 +855,11 @@ struct PackagesView: View {
             packageNavRow(route: .record(record.id)) { row }
                 .revealActions(
                     id: "pkg.out." + record.id.uuidString,
-                    enabled: !service.isRunning,
+                    enabled: !service.isRunning && outputURL != nil,
+                    restored: packageRemovals.recentlyRestoredRecordIDs.contains(record.id),
                     [
-                        .delete(fills: false) {
-                            if let url = outputURL { pendingDelete = .outputRecord(record, url) }
+                        .delete(fills: true) {
+                            if let url = outputURL { swipeDeleteOutput(record: record, url: url) }
                         },
                         RevealAction(title: "分享", systemImage: "square.and.arrow.up", tint: .blue, role: nil) {
                             if let url = outputURL, style == .success {
@@ -925,6 +931,70 @@ struct PackagesView: View {
         }
     }
 
+    private func swipeDeleteOriginalJob(_ job: DownloadJob) {
+        guard !swipingDeleteJobs.contains(job.id) else { return }
+        guard !ui.protects(job.id) else {
+            store.errorMessage = AppText.text("安装包正在解密，请等待处理结束后再删除。")
+            return
+        }
+        withAnimation(UX.motion(reduceMotion)) { _ = swipingDeleteJobs.insert(job.id) }
+        Task { @MainActor in
+            defer { _ = withAnimation(UX.motion(reduceMotion)) { swipingDeleteJobs.remove(job.id) } }
+            do {
+                try await SAPSigner.$userInitiated.withValue(true) {
+                    try await store.removeDownloadWithUndo(job.id, fromPackages: true)
+                }
+            } catch is CancellationError {
+            } catch {
+                store.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func swipeDeleteStandaloneFile(_ url: URL) {
+        guard !ui.protects(url: url) else {
+            store.errorMessage = AppText.text("安装包正在解密，请等待处理结束后再删除。")
+            return
+        }
+        do {
+            try store.removePackageFileWithUndo(url)
+            let target = PackageOutputPolicy.canonicalPath(url)
+            withAnimation(UX.motion(reduceMotion)) {
+                standalone.removeAll { PackageOutputPolicy.canonicalPath($0) == target }
+            }
+        } catch {
+            store.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func swipeDeleteOutput(record: DecryptRecord, url: URL) {
+        guard !service.isRunning else {
+            store.errorMessage = AppText.text("安装包正在解密，请等待处理结束后再删除。")
+            return
+        }
+        do {
+            try store.removeDecryptOutputWithUndo(recordID: record.id, fileURL: url)
+        } catch {
+            store.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func swipeDeleteUnlinkedFile(_ url: URL) {
+        guard !service.isRunning else {
+            store.errorMessage = AppText.text("安装包正在解密，请等待处理结束后再删除。")
+            return
+        }
+        do {
+            try store.removePackageFileWithUndo(url)
+            let target = PackageOutputPolicy.canonicalPath(url)
+            withAnimation(UX.motion(reduceMotion)) {
+                orphanedOutputs.removeAll { PackageOutputPolicy.canonicalPath($0) == target }
+            }
+        } catch {
+            store.errorMessage = error.localizedDescription
+        }
+    }
+
     private func requestDeleteOriginalJob(_ job: DownloadJob) {
         guard !ui.protects(job.id) else {
             store.errorMessage = AppText.text("安装包正在解密，请等待处理结束后再删除。")
@@ -992,11 +1062,9 @@ struct PackagesView: View {
                 store.errorMessage = AppText.text("安装包正在解密，请等待处理结束后再删除。")
                 return
             }
-            do {
-                try store.removeTFProductWithUndo(item)
-            } catch {
-                store.errorMessage = error.localizedDescription
-            }
+            tfProducts.delete(item)
+            ui.markFilesChanged()
+            store.infoMessage = AppText.text("已删除原始 IPA")
         #endif
         }
     }

@@ -10,6 +10,69 @@ import Foundation
 /// Nothing is written to disk except AppleAuth's own device state; the password never
 /// leaves the caller, and no cookie or session id is ever logged.
 public enum TFLogin {
+    /// Masked trusted phone number offered by Apple's GSA SMS challenge.
+    public struct TrustedPhone: Identifiable, Sendable, Equatable {
+        public let id: Int64
+        public let displayNumber: String
+
+        public init(id: Int64, displayNumber: String) {
+            self.id = id
+            self.displayNumber = displayNumber
+        }
+    }
+
+    /// Which 2FA delivery channel Apple selected for the active login attempt.
+    public enum VerificationChannel: Sendable, Equatable {
+        case trustedDevice
+        case sms(phoneDisplay: String?)
+    }
+
+    /// Hands a multi-phone SMS selection prompt to the UI and waits for the chosen phone ID.
+    public actor PhoneRelay {
+        private var waiting: CheckedContinuation<Int64, Error>?
+        private var cancelled = false
+        private let onRequest: (@Sendable ([TrustedPhone]) -> Void)?
+
+        public init(onRequest: (@Sendable ([TrustedPhone]) -> Void)? = nil) {
+            self.onRequest = onRequest
+        }
+
+        public func request(_ phones: [TrustedPhone]) async throws -> Int64 {
+            if cancelled || Task.isCancelled {
+                throw TFError.cancelled
+            }
+            onRequest?(phones)
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    if cancelled || Task.isCancelled {
+                        continuation.resume(throwing: TFError.cancelled)
+                        return
+                    }
+                    if let previous = waiting {
+                        previous.resume(throwing: TFError.cancelled)
+                    }
+                    waiting = continuation
+                }
+            } onCancel: {
+                Task { await self.cancel() }
+            }
+        }
+
+        public func select(_ phoneID: Int64) {
+            guard !cancelled else { return }
+            if let waiting {
+                self.waiting = nil
+                waiting.resume(returning: phoneID)
+            }
+        }
+
+        public func cancel() {
+            cancelled = true
+            waiting?.resume(throwing: TFError.cancelled)
+            waiting = nil
+        }
+    }
+
     /// Hands a 2FA prompt to the UI and waits for the code.
     public actor CodeRelay {
         private var waiting: CheckedContinuation<String, Error>?
@@ -66,9 +129,45 @@ public enum TFLogin {
         }
     }
 
+    /// Per-sign-in capture of redacted Apple `/auth` error codes and post-2FA state (never holds secrets).
+    private final class AuthDiagnosticBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var lastSummary: String?
+        private var confirmed2FA = false
+        private var retriedPost2FA503 = false
+
+        func record(_ summary: String) {
+            lock.lock()
+            lastSummary = summary
+            lock.unlock()
+        }
+
+        func snapshot() -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+            return lastSummary
+        }
+
+        func mark2FAConfirmed() {
+            lock.lock()
+            confirmed2FA = true
+            lock.unlock()
+        }
+
+        func consumePost2FA503Retry() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            guard confirmed2FA, !retriedPost2FA503 else { return false }
+            retriedPost2FA503 = true
+            return true
+        }
+    }
+
     public static func signIn(email: String,
                               password: String,
                               relay: CodeRelay,
+                              phoneRelay: PhoneRelay? = nil,
+                              onChallenge: (@Sendable (VerificationChannel) -> Void)? = nil,
                               log: @escaping @Sendable (String) -> Void) async throws -> TFContext {
         // Four routing values first: nothing leaves the device until they match.
         try TFInvariants.check(log: log)
@@ -86,17 +185,47 @@ public enum TFLogin {
         // presenting the iPhone identity with our own TestFlight user agent makes the
         // provisioning lookup answer 404 with an empty body, which reads exactly like a
         // blocked network. Same order and headers as the working probe.
-        let mac = try makeMacDevice(root: root, log: log)
+        let diagnostics = AuthDiagnosticBox()
+        let mac = try makeMacDevice(root: root, diagnostics: diagnostics, onChallenge: onChallenge, log: log)
         try await mac.provision()
         let macHeaders = try await mac.headers()
         let userAgent = TFConstants.storeUserAgent
         let rinfo = macHeaders["X-Apple-I-MD-RINFO"] ?? "?"
         log("sign-in: mac identity ready, rinfo " + rinfo + ", user agent pinned to the Store line")
 
-        let iphone = try await makeIPhoneDevice(root: root, userAgent: userAgent, log: log)
-        let verification = Verification(code: { try await relay.request() })
+        let iphone = try await makeIPhoneDevice(root: root, userAgent: userAgent,
+                                                diagnostics: diagnostics, onChallenge: onChallenge, log: log)
+        let selectPhoneCallback: (@Sendable ([TrustedPhoneNumber]) async throws -> Int64)? = phoneRelay.map { phoneRelay in
+            { @Sendable phones in
+                let choices = phones.map { TrustedPhone(id: $0.id, displayNumber: $0.displayNumber) }
+                if choices.count == 1, let only = choices.first {
+                    log("sign-in: single trusted SMS number, auto-selecting")
+                    onChallenge?(.sms(phoneDisplay: only.displayNumber))
+                    return only.id
+                }
+                log("sign-in: SMS phone selection requested (" + String(choices.count) + " number(s))")
+                let chosen = try await phoneRelay.request(choices)
+                if let match = choices.first(where: { $0.id == chosen }) {
+                    onChallenge?(.sms(phoneDisplay: match.displayNumber))
+                }
+                return chosen
+            }
+        }
+        let verification = Verification(selectPhone: selectPhoneCallback,
+                                        code: { try await relay.request() })
         log("sign-in: GSA login (two-factor may be required)")
-        let account = try await iphone.login(email: email, password: password, verification: verification)
+        let account: AccountSession
+        do {
+            account = try await iphone.login(email: email, password: password, verification: verification)
+        } catch {
+            if case TFError.cancelled = error { throw error }
+            if error is CancellationError || (error as NSError).code == NSURLErrorCancelled { throw error }
+            if let detail = diagnostics.snapshot(), !detail.isEmpty {
+                let base = shortDescription(error)
+                throw TFError.malformed("\(base) [\(detail)]")
+            }
+            throw error
+        }
         log("sign-in: account session established, id length " + String(account.accountID.count))
         guard let accountDsid = dsid(from: account) else {
             throw TFError.malformed("PET 里没有 DsPrsId，无法确定本次登录的 dsid")
@@ -234,6 +363,8 @@ public enum TFLogin {
     /// user agent comes from the mac identity: a self-chosen pair is what turned the
     /// provisioning lookup into a bare 404.
     private static func makeIPhoneDevice(root: URL, userAgent: String?,
+                                         diagnostics: AuthDiagnosticBox,
+                                         onChallenge: (@Sendable (VerificationChannel) -> Void)?,
                                          log: @escaping @Sendable (String) -> Void) async throws -> Device {
         var lastError: Error?
         var fallbackDevice: Device?
@@ -241,7 +372,7 @@ public enum TFLogin {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             return try Device(directory: directory,
                               platform: .iphone,
-                              transport: transport(log: log),
+                              transport: transport(diagnostics: diagnostics, onChallenge: onChallenge, log: log),
                               userAgent: userAgent,
                               clientInfo: TFConstants.authClientInfo,
                               headers: ["X-Apple-Locale": "en_US",
@@ -281,7 +412,10 @@ public enum TFLogin {
         throw lastError ?? TFError.malformed("no usable iphone identity")
     }
 
-    private static func makeMacDevice(root: URL, log: @escaping @Sendable (String) -> Void) throws -> Device {
+    private static func makeMacDevice(root: URL,
+                                      diagnostics: AuthDiagnosticBox,
+                                      onChallenge: (@Sendable (VerificationChannel) -> Void)?,
+                                      log: @escaping @Sendable (String) -> Void) throws -> Device {
         let directory = root.appendingPathComponent("mac", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return try Device(directory: directory,
@@ -289,7 +423,7 @@ public enum TFLogin {
                           model: TFConstants.macModel,
                           macOSVersion: TFConstants.macOSVersion,
                           macOSBuild: TFConstants.macOSBuild,
-                          transport: transport(log: log),
+                          transport: transport(diagnostics: diagnostics, onChallenge: onChallenge, log: log),
                           userAgent: TFConstants.storeUserAgent,
                           clientInfo: TFConstants.authClientInfo)
     }
@@ -302,15 +436,22 @@ public enum TFLogin {
     /// user agent, client info, client app name, time zone, RINFO, locale — plus the
     /// body's byte count. Those are device fingerprints, never secrets; the body itself
     /// is hashed by length only, so an SRP mismatch shows up as a size delta.
-    private static func transport(log: @escaping @Sendable (String) -> Void) -> HTTPTransport {
+    private static func transport(diagnostics: AuthDiagnosticBox,
+                                  onChallenge: (@Sendable (VerificationChannel) -> Void)?,
+                                  log: @escaping @Sendable (String) -> Void) -> HTTPTransport {
         { request in
             var request = request
             request.timeoutInterval = 30
-            let (data, http) = try await TFNet.data(for: request, cookieStorage: .shared, acceptCookies: true)
-            let status = http.statusCode
+            var (data, http) = try await TFNet.data(for: request, cookieStorage: .shared, acceptCookies: true)
             let host = request.url?.host ?? "?"
             let path = request.url?.path ?? "/"
             let method = request.httpMethod ?? "GET"
+            if path.contains("/grandslam/"), http.statusCode == 503, diagnostics.consumePost2FA503Retry() {
+                log("  request " + method + " " + host + path + " -> 503 right after 2FA, waiting 1.5s and retrying once")
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                (data, http) = try await TFNet.data(for: request, cookieStorage: .shared, acceptCookies: true)
+            }
+            let status = http.statusCode
             log("  request " + method + " " + host + path
                 + " -> " + String(status) + ", " + String(data.count) + " B")
 
@@ -330,6 +471,27 @@ public enum TFLogin {
                 log("    gs ci=[" + ci + "] app=[" + app + "]")
                 log("    gs tz=[" + tz + "] rinfo=[" + rinfo + "] locale=[" + locale + "] lang=[" + lang + "]")
                 log("    gs names=" + names)
+            }
+
+            if host.lowercased().hasSuffix("apple.com") {
+                if path.contains("trustedDeviceSecondaryAuth") {
+                    onChallenge?(.trustedDevice)
+                } else if path == "/auth" || path.hasPrefix("/auth/verify/phone") {
+                    inspectGSAAuthResponse(data: data, status: status, method: method, path: path,
+                                           diagnostics: diagnostics, onChallenge: onChallenge, log: log)
+                }
+                let is2FAConfirm = status == 200
+                    && (path == "/auth/verify/phone/securitycode" || path.contains("validateCode"))
+                if is2FAConfirm {
+                    diagnostics.mark2FAConfirmed()
+                    // Drop web `/auth` cookies so the follow-up SRP handshake matches native curl
+                    // transport, and give Apple's GSA backend a brief moment to propagate 2FA trust.
+                    for cookie in HTTPCookieStorage.shared.cookies ?? []
+                    where cookie.domain.contains("gsa.apple.com") {
+                        HTTPCookieStorage.shared.deleteCookie(cookie)
+                    }
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                }
             }
 
             let headers = http.allHeaderFields.compactMap { key, value -> HTTPHeader? in
@@ -367,6 +529,80 @@ public enum TFLogin {
                 log("    cookies set: " + cookieNames.joined(separator: ","))
             }
             return HTTPResponse(status: status, body: data, headers: headers)
+        }
+    }
+
+    /// Extracts strictly non-sensitive diagnostic fields (`serviceErrors` codes, boolean rate-limit
+    /// flags, trusted phone count) from Apple's GSA `/auth` JSON responses without ever logging
+    /// phone numbers, tokens, cookies, or verification codes.
+    private static func inspectGSAAuthResponse(data: Data,
+                                               status: Int,
+                                               method: String,
+                                               path: String,
+                                               diagnostics: AuthDiagnosticBox,
+                                               onChallenge: (@Sendable (VerificationChannel) -> Void)?,
+                                               log: @escaping @Sendable (String) -> Void) {
+        guard !data.isEmpty,
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return
+        }
+        let container = (json["phoneNumberVerification"] as? [String: Any]) ?? json
+        let phones = container["trustedPhoneNumbers"] as? [[String: Any]] ?? []
+        if method == "GET", path == "/auth", status == 200 || status == 201 {
+            let singleDisplay: String? = phones.count == 1
+                ? (phones.first?["numberWithDialCode"] as? String)
+                : nil
+            onChallenge?(.sms(phoneDisplay: singleDisplay))
+        }
+
+        var parts: [String] = []
+        var summaryBits: [String] = []
+        if !phones.isEmpty {
+            parts.append("phones=\(phones.count)")
+        }
+        if let authType = json["authenticationType"] as? String, !authType.isEmpty {
+            parts.append("type=\(authType)")
+        }
+        if let noTrusted = json["noTrustedDevices"] as? Bool, noTrusted {
+            parts.append("noTrustedDevices=true")
+        }
+        if let sec = (container["securityCode"] as? [String: Any]) ?? (json["securityCode"] as? [String: Any]) {
+            for key in ["tooManyCodesSent", "tooManyCodesValidated", "securityCodeLocked", "securityCodeCooldown"] {
+                if let flag = sec[key] as? Bool, flag {
+                    parts.append("\(key)=true")
+                    summaryBits.append(key)
+                }
+            }
+        }
+        let rawErrors = (json["serviceErrors"] as? [[String: Any]])
+            ?? (container["serviceErrors"] as? [[String: Any]])
+            ?? []
+        if !rawErrors.isEmpty {
+            var errorTexts: [String] = []
+            for item in rawErrors.prefix(3) {
+                let codeStr: String
+                if let c = item["code"] as? String, !c.isEmpty {
+                    codeStr = c
+                } else if let c = item["code"] as? Int {
+                    codeStr = String(c)
+                } else {
+                    codeStr = "?"
+                }
+                let rawMsg = (item["message"] as? String) ?? (item["title"] as? String) ?? ""
+                let cleanMsg = TFRedaction.clean(rawMsg.replacingOccurrences(of: "\n", with: " "))
+                let shortMsg = String(cleanMsg.prefix(120))
+                errorTexts.append(shortMsg.isEmpty ? "code=\(codeStr)" : "code=\(codeStr) \(shortMsg)")
+                summaryBits.append("code=\(codeStr)")
+            }
+            parts.append("errors=[\(errorTexts.joined(separator: "; "))]")
+        }
+        if !parts.isEmpty {
+            log("    auth meta: " + parts.joined(separator: " "))
+        }
+        if status >= 400 || !rawErrors.isEmpty {
+            if !summaryBits.isEmpty {
+                diagnostics.record(summaryBits.joined(separator: ", "))
+            }
         }
     }
 

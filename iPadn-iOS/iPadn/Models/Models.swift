@@ -719,6 +719,15 @@ enum DownloadFilter: String, CaseIterable, Identifiable {
     var includesTestFlight: Bool {
         self == .all || self == .completed || self == .testFlight
     }
+    func includesActiveTestFlight(isBusy: Bool, isPaused: Bool = false, isFailed: Bool) -> Bool {
+        switch self {
+        case .all, .testFlight: return isBusy || isPaused || isFailed
+        case .active: return isBusy
+        case .paused: return isPaused
+        case .failed: return isFailed
+        case .completed: return false
+        }
+    }
 }
 
 extension DownloadStatus {

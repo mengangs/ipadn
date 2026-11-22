@@ -7,7 +7,7 @@
 **Search, download and install the apps you own, on iPhone and iPad.**
 Works with iPhone, iPad, Apple TV and Mac apps, including older versions and apps removed from sale.
 
-✨ **New in v2.3.3: Apple download/region error recovery & diagnostics · Downloads multi-select/Undo, SDK info & full security/performance polish** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
+✨ **New in v2.3.4: Live TestFlight sync & pause/resume in Downloads · Fixed repeated 2FA prompts · Packages swipe Undo & Native Install iOS 17.4+ guard** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
 
 [![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&logo=github&logoColor=white&labelColor=2E3136&color=3A6EA5)](https://github.com/mengangs/ipadn/releases/latest)
 [![Telegram Channel](https://img.shields.io/badge/Telegram-%40ipadn__official-2C82A9?logo=telegram&logoColor=white&labelColor=2E3136)](https://t.me/ipadn_official)
@@ -44,6 +44,13 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 </p>
 
 ---
+
+## What’s new in 2.3.4
+
+- **Real-Time TestFlight Sync in Downloads & True Pause/Resume**: Active TestFlight downloads appear in **Downloads** once transfer starts (with live tab badge counts), supporting native Pause/Resume (`resumeData` preservation + CDN URL refresh), live speed/ETA, and Pause All / Resume All.
+- **Stopped Repeated 2FA Prompts & Hardened Multi-Account TestFlight**: Background purchase-history sync and TestFlight account switching no longer trigger unexpected silent GSA 2FA pushes; adds a multi-phone SMS picker, fixes 2FA dismissal races, and caches 0-app catalogs for instant switching.
+- **Unified Packages Swipe Undo & Centered Native Alerts**: All row types in Pro mode **Packages** now feature swipe-to-delete with a 5-second atomic Undo countdown, while long-press and bulk deletions use centered native alerts and delete immediately.
+- **App Store Billing/Terms Guidance & Native Install iOS 17.4+ Guard**: Detects additional billing/terms `buyProductFailure` codes (`3038 / 5111 / 2022 / 3002 / 5062 / 5304`), adds an iOS 17.4+ requirement check and Settings notice for Native Install, rejects peer LAN `_remotepairing._tcp` Bonjour endpoints, and logs lookup failure stages. See the [release notes](RELEASE_NOTES.md).
 
 ## What’s new in 2.3.3
 

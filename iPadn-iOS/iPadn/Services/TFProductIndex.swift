@@ -99,6 +99,16 @@ final class TFProductIndex: ObservableObject {
         }
     }
 
+    /// Synchronously inserts or updates a just-completed TestFlight product so
+    /// `DownloadsView` and `PackagesView` transition from active download to completed
+    /// with zero single-frame disappearances before the disk scan finishes.
+    func registerCompleted(_ item: TFProductItem) {
+        items.removeAll { $0.bundleID.caseInsensitiveCompare(item.bundleID) == .orderedSame }
+        items.insert(item, at: 0)
+        items.sort { $0.modifiedAt > $1.modifiedAt }
+        refresh()
+    }
+
     /// Moves a TestFlight product directory aside for the undo window so the user can restore
     /// it immediately via `UndoNotice`, then permanently removes it once the window expires.
     func removeReversibly(_ item: TFProductItem) throws -> (token: UUID, created: Date)? {

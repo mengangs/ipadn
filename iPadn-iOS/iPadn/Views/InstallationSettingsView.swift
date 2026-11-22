@@ -59,6 +59,9 @@ struct InstallationSettingsView: View {
             }
             if store.settings.usesNativeInstallation {
                 Section {
+                    if !NativeInstaller.isSystemVersionSupported {
+                        InlineIssue(message: AppText.text("原生安装需要 iOS 17.4 及以上系统。当前系统请改用「一键安装」或「本机证书」。"))
+                    }
                     Label("App Store 能识别并更新安装的应用", systemImage: "checkmark.seal")
                     Label("可以直接覆盖 App Store 安装的应用，数据保留", systemImage: "arrow.triangle.2.circlepath")
                     LabeledContent("配对文件", value: hasPairingFile ? AppText.text("已导入") : AppText.text("未导入"))
@@ -69,9 +72,10 @@ struct InstallationSettingsView: View {
                         .disabled(pairing.phase.isActive).accessibilityIdentifier("installation.pair-on-device")
                     }
                     Button("导入配对文件", systemImage: "square.and.arrow.down") { importPairingFile() }
+                        .disabled(busy || !NativeInstaller.isSystemVersionSupported)
                         .accessibilityIdentifier("installation.pairing-file")
                     Button { checkConnection() } label: { actionLabel("检查连接", systemImage: "point.3.connected.trianglepath.dotted", action: .connection) }
-                        .disabled(busy || !hasPairingFile).accessibilityIdentifier("installation.native-check")
+                        .disabled(busy || !hasPairingFile || !NativeInstaller.isSystemVersionSupported).accessibilityIdentifier("installation.native-check")
                     if hasPairingFile {
                         Button("移除配对文件", systemImage: "trash", role: .destructive) { removingPairingFile = true }
                     }
@@ -131,7 +135,7 @@ struct InstallationSettingsView: View {
             }
         }.toolPage().navigationTitle("安装设置").navigationBarTitleDisplayMode(.inline)
             .task {
-                let tryImportPairing = store.settings.usesNativeInstallation && !hasPairingFile
+                let tryImportPairing = store.settings.usesNativeInstallation && NativeInstaller.isSystemVersionSupported && !hasPairingFile
                 async let certLoad = refreshCertificate()
                 async let pairingImported = Task.detached(priority: .userInitiated) { () -> Result<Bool, Error> in
                     guard tryImportPairing else { return .success(false) }

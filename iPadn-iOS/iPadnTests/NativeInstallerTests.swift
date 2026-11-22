@@ -154,6 +154,26 @@ final class NativeInstallerTests: XCTestCase {
         XCTAssertNil(cache.freshEntry(now: t0))
     }
 
+    func testNativeInstallerRequiresiOS17Point4OrLater() {
+        XCTAssertFalse(NativeInstaller.isSystemVersionSupported(OperatingSystemVersion(majorVersion: 16, minorVersion: 4, patchVersion: 0)))
+        XCTAssertFalse(NativeInstaller.isSystemVersionSupported(OperatingSystemVersion(majorVersion: 17, minorVersion: 3, patchVersion: 1)))
+        XCTAssertTrue(NativeInstaller.isSystemVersionSupported(OperatingSystemVersion(majorVersion: 17, minorVersion: 4, patchVersion: 0)))
+        XCTAssertTrue(NativeInstaller.isSystemVersionSupported(OperatingSystemVersion(majorVersion: 18, minorVersion: 0, patchVersion: 0)))
+        XCTAssertTrue(NativeInstaller.isSystemVersionSupported(OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 1)))
+    }
+
+    func testRemotePairingPortRejectsPeerLANAddresses() {
+        let local: Set<String> = ["127.0.0.1", "::1", "192.168.1.42", "10.7.0.1", "fe80::1"]
+        XCTAssertTrue(RemotePairingPort.isLocalAddress("127.0.0.1", localAddresses: local))
+        XCTAssertTrue(RemotePairingPort.isLocalAddress("::1", localAddresses: local))
+        XCTAssertTrue(RemotePairingPort.isLocalAddress("::ffff:192.168.1.42", localAddresses: local))
+        XCTAssertTrue(RemotePairingPort.isLocalAddress("fe80:0:0:0::1%en0", localAddresses: local))
+        XCTAssertTrue(RemotePairingPort.isLocalAddress("10.7.0.1", localAddresses: local))
+        XCTAssertFalse(RemotePairingPort.isLocalAddress("192.168.1.99", localAddresses: local))
+        XCTAssertFalse(RemotePairingPort.isLocalAddress("fe80::dead:beef%en0", localAddresses: local))
+        XCTAssertFalse(RemotePairingPort.isLocalAddress("", localAddresses: local))
+    }
+
     func testNativeInstallerIdleCancelAndUnavailableBlockingRunnerDoesNotDeadlock() async {
         // Calling cancel() when no native install is active must be an idempotent no-op.
         NativeInstaller.cancel()

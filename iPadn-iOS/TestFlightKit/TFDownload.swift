@@ -152,10 +152,16 @@ public enum TFDownload {
 
         // 2) CDN download: fresh, then resume, then one full retry. A rotated URL means the
         //    accessKey expired, which only a fresh download can survive.
+        if handle.isPaused {
+            try await handle.waitWhilePaused()
+            if handle.isCancelled { throw TFError.cancelled }
+            stage?("downloading")
+        }
         let transportURL = work.appendingPathComponent(bundle + "-transport.bin")
         var currentURL = url
         let transfer = try await TFTransfer.download(url: currentURL, to: transportURL,
                                                      handle: handle, progress: progress,
+                                                     onResume: { stage?("downloading") },
                                                      refresh: {
             guard let refresh else { return nil }
             guard let renewed = await refresh() else { return nil }

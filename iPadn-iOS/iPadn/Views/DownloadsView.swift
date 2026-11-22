@@ -53,17 +53,39 @@ struct DownloadsView: View {
     @ObservedObject private var tfProducts = TFProductIndex.shared
     @ObservedObject private var tfModel = TFHomeModel.shared
     @State private var installingTFItem: TFProductItem?
+    private var filteredActiveTFItems: [TFActiveDownloadItem] {
+        tfModel.activeDownloads.filter { item in
+            let state = tfModel.rows[item.id] ?? TFRowState()
+            let isBusy = state.isBusy
+            let isPaused = state.stage == .paused
+            let isFailed = state.stage == .failed
+            guard filter.includesActiveTestFlight(isBusy: isBusy, isPaused: isPaused, isFailed: isFailed) else { return false }
+            return term.isEmpty
+                || item.displayName.localizedCaseInsensitiveContains(term)
+                || item.bundleID.localizedCaseInsensitiveContains(term)
+                || item.versionLabel.localizedCaseInsensitiveContains(term)
+                || "TestFlight".localizedCaseInsensitiveContains(term)
+                || "TF".localizedCaseInsensitiveContains(term)
+        }
+    }
     private var filteredTFItems: [TFProductItem] {
         guard filter.includesTestFlight else { return [] }
+        let activeIDs = Set(tfModel.activeDownloads.filter {
+            let stage = tfModel.rows[$0.id]?.stage ?? .idle
+            return stage == .resolving || stage == .installing || stage == .downloading || stage == .paused || stage == .verifying
+        }.map(\.id))
         return tfProducts.items.filter { item in
-            term.isEmpty
+            guard !activeIDs.contains(item.appID) else { return false }
+            return term.isEmpty
                 || item.displayName.localizedCaseInsensitiveContains(term)
                 || item.bundleID.localizedCaseInsensitiveContains(term)
                 || item.shortVersion.localizedCaseInsensitiveContains(term)
                 || item.buildVersion.localizedCaseInsensitiveContains(term)
+                || "TestFlight".localizedCaseInsensitiveContains(term)
+                || "TF".localizedCaseInsensitiveContains(term)
         }
     }
-    private var hasAnyDownloads: Bool { !manager.jobs.isEmpty || !tfProducts.items.isEmpty }
+    private var hasAnyDownloads: Bool { !manager.jobs.isEmpty || !tfProducts.items.isEmpty || !tfModel.activeDownloads.isEmpty }
     private var pendingDeleteCount: Int { pendingDeleteJobs.count + pendingDeleteTF.count }
     #else
     private var hasAnyDownloads: Bool { !manager.jobs.isEmpty }
@@ -209,10 +231,20 @@ struct DownloadsView: View {
             }
         }
         .sheet(isPresented: $showingActions, onDismiss: flushPackageNavigation) {
+            #if canImport(TestFlightKit)
+            let tfCanPause = tfModel.activeDownloads.contains {
+                let stage = tfModel.rows[$0.id]?.stage ?? .idle
+                return stage == .resolving || stage == .installing || stage == .downloading
+            }
+            let tfCanResume = tfModel.activeDownloads.contains { tfModel.rows[$0.id]?.stage == .paused }
+            #else
+            let tfCanPause = false
+            let tfCanResume = false
+            #endif
             AddDownloadSheet(
-                hasActiveJobs: manager.jobs.contains { [.running, .queued, .paused].contains($0.status) },
-                canPause: manager.jobs.contains { [.running, .queued].contains($0.status) },
-                canResume: manager.jobs.contains { $0.status == .paused },
+                hasActiveJobs: manager.jobs.contains { [.running, .queued, .paused].contains($0.status) } || tfCanPause || tfCanResume,
+                canPause: manager.jobs.contains { [.running, .queued].contains($0.status) } || tfCanPause,
+                canResume: manager.jobs.contains { $0.status == .paused } || tfCanResume,
                 onImport: { urls in
                     showingActions = false
                     importPicked(urls)
@@ -229,11 +261,17 @@ struct DownloadsView: View {
                 onPauseAll: {
                     showingActions = false
                     manager.pauseAll()
+                    #if canImport(TestFlightKit)
+                    tfModel.pauseAllDownloads()
+                    #endif
                     store.infoMessage = AppText.text("已暂停下载")
                 },
                 onResumeAll: {
                     showingActions = false
                     manager.resumeAll()
+                    #if canImport(TestFlightKit)
+                    tfModel.resumeAllDownloads()
+                    #endif
                 },
                 onError: {
                     pendingActionError = $0
@@ -326,9 +364,9 @@ struct DownloadsView: View {
             }
             perform {
                 #if canImport(TestFlightKit)
-                try await store.removeDownloadsBatchWithUndo(jobIDs: jobIDs, tfItems: tfItems)
+                try await store.removeDownloadsBatchImmediately(jobIDs: jobIDs, tfItems: tfItems)
                 #else
-                try await store.removeDownloadsBatchWithUndo(jobIDs: jobIDs)
+                try await store.removeDownloadsBatchImmediately(jobIDs: jobIDs)
                 #endif
             }
         }
@@ -528,8 +566,10 @@ struct DownloadsView: View {
 
     @ViewBuilder private func downloadList(visible: [DownloadJob], updates: [UUID: StoreApp]) -> some View {
             #if canImport(TestFlightKit)
+            let visibleActiveTF = filteredActiveTFItems
             let visibleTF = filteredTFItems
             #else
+            let visibleActiveTF: [Int] = []
             let visibleTF: [Int] = []
             #endif
             List {
@@ -593,13 +633,24 @@ struct DownloadsView: View {
             }
                 if let warning = manager.discoveryWarning { Section { InlineIssue(message: warning) } }
                 if let warning = manager.saveWarning { Section { InlineIssue(message: warning) } }
-                if visible.isEmpty && visibleTF.isEmpty {
+                if visible.isEmpty && visibleActiveTF.isEmpty && visibleTF.isEmpty {
                     Section {
                         EmptyState(title: !hasAnyDownloads ? "暂无下载任务" : "没有匹配任务", message: !hasAnyDownloads ? "在搜索中获取应用，或点按右上角的 + 导入安装包。" : "试试其他筛选条件。", symbol: !hasAnyDownloads ? "tray.and.arrow.down" : "line.3.horizontal.decrease.circle", actionTitle: !hasAnyDownloads ? "搜索应用" : "显示全部", action: {
                             if !hasAnyDownloads { store.selectTab(.search) } else { term = ""; filter = .all }
                         })
                     }
                 } else {
+                    #if canImport(TestFlightKit)
+                    ForEach(visibleActiveTF) { item in
+                        Section {
+                            tfActiveDownloadRow(item)
+                        } header: {
+                            if item.id == visibleActiveTF.first?.id {
+                                Text("TestFlight")
+                            }
+                        }
+                    }
+                    #endif
                     ForEach(visible) { job in
                         let displayName = job.app.name.isEmpty ? job.app.bundleID : job.app.name
                         let blocked = packages.protects(job.id) || job.status == .processing || job.status == .pausing
@@ -705,6 +756,200 @@ struct DownloadsView: View {
     }
 
     #if canImport(TestFlightKit)
+    private func tfActiveDownloadRow(_ item: TFActiveDownloadItem) -> some View {
+        let state = tfModel.rows[item.id] ?? TFRowState()
+        let isFailed = state.stage == .failed
+        let isPaused = state.stage == .paused
+        let isDownloading = state.stage == .downloading
+        let sizeText = state.total > 0 ? state.total.byteLabel : ""
+        let metaText = [item.versionLabel, sizeText].filter { !$0.isEmpty }.joined(separator: " · ")
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                TFAppIconView(
+                    fileURL: item.iconURL,
+                    colors: item.iconColors,
+                    appName: item.displayName,
+                    size: 64,
+                    revision: tfModel.iconRevisions[item.id] ?? 0
+                )
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(verbatim: item.displayName)
+                            .font(.body.weight(.medium))
+                            .lineLimit(2)
+                        TagBadge(text: "TF", tint: .blue)
+                    }
+                    if !metaText.isEmpty {
+                        Text(verbatim: metaText)
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    tfActiveStatusLine(item: item, state: state)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if !editing {
+                    tfActiveTrailingControl(item: item, state: state)
+                        .frame(minWidth: 74, minHeight: 44, alignment: .center)
+                }
+            }
+            if (isDownloading || isPaused), state.total > 0 {
+                ProgressView(value: state.fraction)
+                    .tint(isDownloading ? UX.tint : .secondary)
+                    .animation(reduceMotion ? nil : .linear(duration: 0.25), value: state.fraction)
+                    .accessibilityLabel("下载进度")
+                    .accessibilityValue("\(Int(state.fraction * 100))%")
+            }
+            if isFailed, let error = state.message, !error.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                    Text(verbatim: error).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
+        }
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("download.tf.active." + item.id)
+        .revealActions(
+            id: "download.tf.active." + item.id,
+            enabled: !editing && state.stage != .verifying,
+            [
+                .delete(isFailed ? "移除" : "删除", fills: true) {
+                    UX.tapLight()
+                    if isFailed { tfModel.dismissFailedDownload(item.id) }
+                    else { tfModel.cancel(item.app) }
+                }
+            ]
+        )
+        .contextMenu {
+            if isFailed {
+                Button("重试", systemImage: "arrow.clockwise") {
+                    UX.tapLight()
+                    tfModel.start(item.app)
+                }
+                Button("移除", systemImage: "trash", role: .destructive) {
+                    UX.tapLight()
+                    tfModel.dismissFailedDownload(item.id)
+                }
+            } else if isPaused {
+                Button("继续", systemImage: "play.fill") {
+                    UX.tapLight()
+                    tfModel.resume(item.app)
+                }
+                Button("取消", systemImage: "xmark.circle", role: .destructive) {
+                    UX.tapLight()
+                    tfModel.cancel(item.app)
+                }
+            } else if state.stage != .verifying {
+                Button("暂停", systemImage: "pause.fill") {
+                    UX.tapLight()
+                    tfModel.pause(item.app)
+                }
+                Button("取消", systemImage: "xmark.circle", role: .destructive) {
+                    UX.tapLight()
+                    tfModel.cancel(item.app)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tfActiveStatusLine(item: TFActiveDownloadItem, state: TFRowState) -> some View {
+        switch state.stage {
+        case .resolving:
+            Text("读取构建信息…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        case .installing:
+            Text("准备下载…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        case .downloading:
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                let metric = tfModel.metrics(for: item.id)
+                let now = ProcessInfo.processInfo.systemUptime
+                let speed = metric?.rate(at: now) ?? 0
+                let progress = state.total > 0
+                    ? "\(state.received.byteLabel) / \(state.total.byteLabel)"
+                    : (state.received > 0 ? state.received.byteLabel : "")
+                let speedText = speed > 0 ? "\(Int64(min(speed, Double(Int64.max / 2))).byteLabel)/s" : ""
+                let eta: String = {
+                    guard let seconds = metric?.remaining(expected: state.total, at: now), seconds.isFinite else { return "" }
+                    return seconds < 60 ? AppText.text("剩余 \(max(1, Int(seconds))) 秒")
+                        : seconds < 3600 ? AppText.text("剩余 \(Int(ceil(seconds / 60))) 分钟")
+                        : AppText.text("剩余 \(Int(ceil(min(seconds / 3600, 999)))) 小时")
+                }()
+                Text([progress, speedText, eta].filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        case .paused:
+            let progress = state.total > 0
+                ? "\(state.received.byteLabel) / \(state.total.byteLabel)"
+                : (state.received > 0 ? state.received.byteLabel : "")
+            Text([AppText.text("已暂停"), progress].filter { !$0.isEmpty }.joined(separator: " · "))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        case .verifying:
+            Text("校验安装包…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        case .failed:
+            TaskStatusPill(status: .failed)
+        case .idle, .done:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private func tfActiveTrailingControl(item: TFActiveDownloadItem, state: TFRowState) -> some View {
+        switch state.stage {
+        case .resolving, .installing:
+            Button {
+                UX.tapLight()
+                tfModel.pause(item.app)
+            } label: {
+                ProgressRing(progress: nil)
+            }
+            .buttonStyle(RevealRowButtonStyle())
+            .accessibilityLabel("等待下载，点按暂停")
+        case .downloading:
+            Button {
+                UX.tapLight()
+                tfModel.pause(item.app)
+            } label: {
+                ProgressRing(progress: state.total > 0 ? state.fraction : nil, symbol: "pause.fill")
+            }
+            .buttonStyle(RevealRowButtonStyle())
+            .accessibilityLabel("暂停")
+            .accessibilityValue("\(Int(state.fraction * 100))%")
+        case .paused:
+            RowCapsule(title: "继续", haptic: false) {
+                UX.tapLight()
+                tfModel.resume(item.app)
+            }
+        case .verifying:
+            SpinningRing()
+                .accessibilityLabel(AppText.text("正在校验 \(item.displayName)"))
+        case .failed:
+            RowCapsule(title: "重试", haptic: false) {
+                UX.tapLight()
+                tfModel.start(item.app)
+            }
+        case .idle, .done:
+            EmptyView()
+        }
+    }
+
     private func tfRowContent(_ item: TFProductItem, editing: Bool) -> some View {
         let isInstalled = tfModel.installedAppIDs.contains(item.appID)
         let isInstalling = tfModel.installingAppIDs.contains(item.appID)

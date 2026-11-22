@@ -1,10 +1,13 @@
 import Foundation
 
-/// Cancellation handle shared between the UI and the transfer in flight.
+/// Cancellation and pause/resume handle shared between the UI and the transfer in flight.
 public final class TFTransferHandle: @unchecked Sendable {
     private let lock = NSLock()
-    private var task: URLSessionTask?
+    private var task: URLSessionDownloadTask?
     private var cancelled = false
+    private var paused = false
+    private var pauseContinuation: CheckedContinuation<Void, Error>?
+    private var pausedResumeData: Data?
 
     public init() {}
 
@@ -14,28 +17,121 @@ public final class TFTransferHandle: @unchecked Sendable {
         return cancelled
     }
 
+    public var isPaused: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return paused && !cancelled
+    }
+
+    public func pause() {
+        lock.lock()
+        guard !cancelled, !paused else {
+            lock.unlock()
+            return
+        }
+        paused = true
+        let task = self.task
+        lock.unlock()
+        task?.cancel(byProducingResumeData: { [weak self] data in
+            guard let self, let data, !data.isEmpty else { return }
+            self.storePausedResumeData(data)
+        })
+    }
+
+    public func resume() {
+        lock.lock()
+        guard !cancelled, paused else {
+            lock.unlock()
+            return
+        }
+        paused = false
+        let continuation = pauseContinuation
+        pauseContinuation = nil
+        lock.unlock()
+        continuation?.resume()
+    }
+
     public func cancel() {
         lock.lock()
         cancelled = true
+        paused = false
+        pausedResumeData = nil
         let task = self.task
+        let continuation = pauseContinuation
+        pauseContinuation = nil
         lock.unlock()
         task?.cancel()
+        continuation?.resume(throwing: TFError.cancelled)
     }
 
-    func attach(_ task: URLSessionTask) {
+    func attach(_ task: URLSessionDownloadTask) {
         lock.lock()
         self.task = task
         let cancelled = self.cancelled
+        let paused = self.paused
         lock.unlock()
-        if cancelled { task.cancel() }
+        if cancelled {
+            task.cancel()
+        } else if paused {
+            task.cancel(byProducingResumeData: { [weak self] data in
+                guard let self, let data, !data.isEmpty else { return }
+                self.storePausedResumeData(data)
+            })
+        }
+    }
+
+    func storePausedResumeData(_ data: Data) {
+        lock.lock()
+        if !cancelled {
+            pausedResumeData = data
+        }
+        lock.unlock()
+    }
+
+    func takePausedResumeData() -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        let data = pausedResumeData
+        pausedResumeData = nil
+        return data
+    }
+
+    public func waitWhilePaused() async throws {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                lock.lock()
+                if cancelled || Task.isCancelled {
+                    lock.unlock()
+                    continuation.resume(throwing: TFError.cancelled)
+                    return
+                }
+                if !paused {
+                    lock.unlock()
+                    continuation.resume()
+                    return
+                }
+                if let previous = pauseContinuation {
+                    previous.resume(throwing: TFError.cancelled)
+                }
+                pauseContinuation = continuation
+                lock.unlock()
+            }
+        } onCancel: {
+            self.cancel()
+        }
     }
 }
 
-/// CDN transfer with progress, cancellation and a bounded retry policy.
+private struct TFTransferPausedError: Error {
+    let resumeData: Data?
+}
+
+/// CDN transfer with progress, pause/resume, cancellation and a bounded retry policy.
 ///
 /// Attempt 1 is fresh. On failure the caller re-reads the install metadata: a changed URL
 /// means the `accessKey` rotated, so the file is fetched again from scratch; an unchanged
 /// URL falls back to `resumeData`. One more full retry is allowed, then the failure is final.
+/// User-initiated pauses suspend using `resumeData` without consuming retry attempts.
 public enum TFTransfer {
 
     public struct Outcome {
@@ -46,37 +142,59 @@ public enum TFTransfer {
     public static func download(url: URL, to destination: URL,
                                 handle: TFTransferHandle,
                                 progress: @escaping @Sendable (Int64, Int64) -> Void,
+                                onResume: (@Sendable () -> Void)? = nil,
                                 refresh: () async throws -> URL?,
                                 log: @escaping @Sendable (String) -> Void) async throws -> Outcome {
         var attempts: [String] = []
         var resumeData: Data?
         var current = url
+        var failureCount = 0
 
-        for index in 1...3 {
+        while failureCount < 3 {
             if handle.isCancelled { throw TFError.cancelled }
+            if handle.isPaused {
+                try await handle.waitWhilePaused()
+                if handle.isCancelled { throw TFError.cancelled }
+                onResume?()
+            }
+            let attemptIndex = failureCount + 1
             do {
                 let attempt = TFTransferAttempt(handle: handle, progress: progress)
-                let (temporary, response) = try await attempt.run(url: current,
-                                                                  resume: index == 1 ? nil : resumeData)
+                let (temporary, response) = try await attempt.run(url: current, resume: resumeData)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 defer { try? FileManager.default.removeItem(at: temporary) }
                 try? FileManager.default.removeItem(at: destination)
                 try FileManager.default.moveItem(at: temporary, to: destination)
                 let bytes = (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int) ?? -1
-                attempts.append("#\(index) ok " + String(bytes) + " B (HTTP " + String(status)
-                                + (index == 1 ? ", fresh" : ", resumed") + ")")
+                attempts.append("#\(attemptIndex) ok " + String(bytes) + " B (HTTP " + String(status)
+                                + (resumeData == nil ? ", fresh" : ", resumed") + ")")
                 log("cdn: " + attempts.joined(separator: "; "))
                 return Outcome(bytes: bytes, attempts: attempts)
+            } catch let paused as TFTransferPausedError {
+                if handle.isCancelled { throw TFError.cancelled }
+                let captured = paused.resumeData ?? handle.takePausedResumeData()
+                if let captured, !captured.isEmpty {
+                    resumeData = captured
+                }
+                log("cdn: paused (" + (resumeData == nil ? "no resume data" : "resume data \(resumeData!.count) B") + ")")
+                try await handle.waitWhilePaused()
+                if handle.isCancelled { throw TFError.cancelled }
+                if let late = handle.takePausedResumeData(), !late.isEmpty {
+                    resumeData = late
+                }
+                onResume?()
+                continue
             } catch {
                 if handle.isCancelled { throw TFError.cancelled }
                 if case TFError.cancelled = error { throw TFError.cancelled }
+                failureCount += 1
                 let failure = error as NSError
                 resumeData = failure.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
-                attempts.append("#\(index) failed " + String(failure.code)
+                attempts.append("#\(failureCount) failed " + String(failure.code)
                                 + (resumeData == nil ? ", no resume data" : ", resume data ok"))
-                log("cdn: attempt " + String(index) + " failed (" + String(failure.code) + ")"
+                log("cdn: attempt " + String(failureCount) + " failed (" + String(failure.code) + ")"
                     + (resumeData == nil ? "" : ", have resume data"))
-                if index == 3 { break }
+                if failureCount >= 3 { break }
 
                 var renewed: URL?
                 do { renewed = try await refresh() } catch { renewed = nil }
@@ -170,7 +288,10 @@ final class TFTransferAttempt: NSObject, URLSessionDownloadDelegate, @unchecked 
                 try? FileManager.default.removeItem(at: saved)
                 self.saved = nil
             }
-            if (error as NSError).code == NSURLErrorCancelled || handle.isCancelled {
+            if handle.isPaused && !handle.isCancelled {
+                let data = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data
+                finish(.failure(TFTransferPausedError(resumeData: data)))
+            } else if (error as NSError).code == NSURLErrorCancelled || handle.isCancelled {
                 finish(.failure(TFError.cancelled))
             } else {
                 finish(.failure(error))

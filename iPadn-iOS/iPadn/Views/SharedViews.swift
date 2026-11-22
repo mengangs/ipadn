@@ -273,6 +273,9 @@ struct SignerWebView: UIViewRepresentable {
 
 struct RootView: View {
     @ObservedObject private var packages = FairPlayPresentation.shared
+    #if canImport(TestFlightKit)
+    @ObservedObject private var tfBadge = TFTransferBadge.shared
+    #endif
     @State private var completedPackageIDs: Set<UUID> = []
     @State private var seededCompletedPackages = false
     @State private var handledPackageProbe = false
@@ -310,7 +313,12 @@ struct RootView: View {
     private var tabOrder: [TabID] { destinations.map(\.id) }
 
     private var downloadsBadge: Int {
-        downloads.jobs.filter { DownloadFilter.active.includes($0.status) }.count
+        let normal = downloads.jobs.filter { DownloadFilter.active.includes($0.status) }.count
+        #if canImport(TestFlightKit)
+        return normal + tfBadge.activeCount
+        #else
+        return normal
+        #endif
     }
 
     private var tabSelectionBinding: Binding<TabID> {

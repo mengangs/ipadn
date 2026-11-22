@@ -32,6 +32,7 @@ enum InstallMethod: String, CaseIterable, Identifiable {
 struct InstallCapability: Equatable {
     enum UnavailableKind: Equatable {
         case missingPackage
+        case unsupportedOS
         case needsNativeChannel
         case needsSignedPackage
         case serviceNotReady
@@ -75,6 +76,11 @@ final class InstallCoordinator {
                 return InstallCapability(available: false,
                                          reason: AppText.text("找不到安装包"),
                                          unavailableKind: .missingPackage)
+            }
+            guard NativeInstaller.isSystemVersionSupported else {
+                return InstallCapability(available: false,
+                                         reason: AppText.text("原生安装需要 iOS 17.4 及以上系统"),
+                                         unavailableKind: .unsupportedOS)
             }
             guard NativeInstaller.hasPairingFile else {
                 return InstallCapability(available: false,

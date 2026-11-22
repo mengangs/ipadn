@@ -752,8 +752,9 @@ final class AppleService: ObservableObject {
     }
 
     /// Identifies Apple's `buyProductFailure` action requesting acceptance of
-    /// updated App Store Terms & Conditions (`termsPage`).
+    /// updated App Store Terms & Conditions (`termsPage`) or failure code `3038`.
     nonisolated static func isPurchaseTermsAction(_ response: [String: Any]) -> Bool {
+        if plistString(response["failureType"]) == "3038" { return true }
         guard plistString(response["jingleDocType"]) == "buyProductFailure" else { return false }
         let action = response["action"] as? [String: Any]
         guard plistString(action?["kind"]) == "Goto" else { return false }
@@ -769,6 +770,45 @@ final class AppleService: ObservableObject {
             return false
         }
         return true
+    }
+
+    /// Identifies Apple responses requiring interactive account/billing/first-time App Store
+    /// setup in the system App Store (e.g., first-time iTunes Store review `5111`, billing/payment
+    /// verification `2022`/`3002`/`5062`/`5304`, or a `buyProductFailure` `Goto` redirect to an
+    /// Apple finance/account page other than `termsPage` and `CountryMismatch`).
+    nonisolated static func isPurchaseStoreSetupAction(_ response: [String: Any]) -> Bool {
+        let code = plistString(response["failureType"])
+        if ["5111", "2022", "3002", "5062", "5304"].contains(code) {
+            return true
+        }
+        let metrics = response["metrics"] as? [String: Any]
+        let dialogID = plistString(metrics?["dialogId"]).lowercased()
+        if !dialogID.isEmpty, dialogID != "mzcommerce.countrymismatch" {
+            for keyword in ["terms", "billing", "payment", "accountreview", "firsttime", "review"] {
+                if dialogID.contains(keyword) { return true }
+            }
+        }
+        guard plistString(response["jingleDocType"]) == "buyProductFailure" else { return false }
+        let dialog = response["dialog"] as? [String: Any]
+        let actions: [[String: Any]?] = [
+            response["action"] as? [String: Any],
+            dialog?["okButtonAction"] as? [String: Any],
+        ]
+        for case let candidate? in actions {
+            guard plistString(candidate["kind"]) == "Goto" else { continue }
+            let rawURL = plistString(candidate["url"])
+            guard let components = URLComponents(string: rawURL),
+                  components.scheme?.lowercased() == "https",
+                  let host = components.host?.lowercased(),
+                  AppleAuthentication.isBuyHost(host) || host == "itunes.apple.com" || host == "apps.apple.com" || host == "finance-app.itunes.apple.com" else {
+                continue
+            }
+            if components.percentEncodedPath == "/WebObjects/MZStore.woa/wa/resetAndRedirect" {
+                continue
+            }
+            return true
+        }
+        return false
     }
 
     private func updateAccountStorefront(id: String, dsid: String,
@@ -843,6 +883,10 @@ final class AppleService: ObservableObject {
         if Self.isPurchaseTermsAction(raw) {
             RequestFailureLog.recordAppleFailure(response.url ?? endpoint, response: raw, stage: "buy-terms")
             throw ToolError.message(AppText.text("Apple 需要您先同意最新的 App Store 条款与条件，请先在系统 App Store 中同意后再试。"))
+        }
+        if Self.isPurchaseStoreSetupAction(raw) {
+            RequestFailureLog.recordAppleFailure(response.url ?? endpoint, response: raw, stage: "buy-setup")
+            throw ToolError.message(AppText.text("Apple 需要您先在系统 App Store 中完成账号确认（如同意条款、完善付款信息或首次启用检查）。请先用该账号在系统 App Store 点击一次「获取」任意免费应用，完成后再回 iPadn 下载。"))
         }
         // A license acquisition can independently require a new trusted-device
         // approval, even when the previous download token was accepted.

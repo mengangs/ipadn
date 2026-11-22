@@ -3250,13 +3250,139 @@ final class CoreTests: XCTestCase {
         XCTAssertNotNil(CommercePurchaseHistory.parseDate("19 нояб. 2026 г."))
     }
 
+    func testDownloadFilterIncludesActiveAndFailedTestFlightItems() {
+        XCTAssertTrue(DownloadFilter.all.includesActiveTestFlight(isBusy: true, isPaused: false, isFailed: false))
+        XCTAssertTrue(DownloadFilter.all.includesActiveTestFlight(isBusy: false, isPaused: true, isFailed: false))
+        XCTAssertTrue(DownloadFilter.all.includesActiveTestFlight(isBusy: false, isPaused: false, isFailed: true))
+        XCTAssertFalse(DownloadFilter.all.includesActiveTestFlight(isBusy: false, isPaused: false, isFailed: false))
+
+        XCTAssertTrue(DownloadFilter.testFlight.includesActiveTestFlight(isBusy: true, isPaused: false, isFailed: false))
+        XCTAssertTrue(DownloadFilter.testFlight.includesActiveTestFlight(isBusy: false, isPaused: true, isFailed: false))
+        XCTAssertTrue(DownloadFilter.testFlight.includesActiveTestFlight(isBusy: false, isPaused: false, isFailed: true))
+
+        XCTAssertTrue(DownloadFilter.active.includesActiveTestFlight(isBusy: true, isPaused: false, isFailed: false))
+        XCTAssertFalse(DownloadFilter.active.includesActiveTestFlight(isBusy: false, isPaused: true, isFailed: false))
+        XCTAssertFalse(DownloadFilter.active.includesActiveTestFlight(isBusy: false, isPaused: false, isFailed: true))
+
+        XCTAssertTrue(DownloadFilter.paused.includesActiveTestFlight(isBusy: false, isPaused: true, isFailed: false))
+        XCTAssertFalse(DownloadFilter.paused.includesActiveTestFlight(isBusy: true, isPaused: false, isFailed: false))
+
+        XCTAssertFalse(DownloadFilter.failed.includesActiveTestFlight(isBusy: true, isPaused: false, isFailed: false))
+        XCTAssertTrue(DownloadFilter.failed.includesActiveTestFlight(isBusy: false, isPaused: false, isFailed: true))
+
+        XCTAssertFalse(DownloadFilter.completed.includesActiveTestFlight(isBusy: true, isPaused: true, isFailed: true))
+    }
+
+    func testPurchaseStoreSetupActionDetection() {
+        XCTAssertTrue(AppleService.isPurchaseTermsAction(["failureType": "3038"]))
+        XCTAssertTrue(AppleService.isPurchaseStoreSetupAction(["failureType": "5111"]))
+        XCTAssertTrue(AppleService.isPurchaseStoreSetupAction(["failureType": "5062"]))
+        XCTAssertTrue(AppleService.isPurchaseStoreSetupAction([
+            "jingleDocType": "buyProductFailure",
+            "action": [
+                "kind": "Goto",
+                "url": "https://buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/editBilling"
+            ]
+        ]))
+        XCTAssertTrue(AppleService.isPurchaseStoreSetupAction([
+            "metrics": ["dialogId": "MZCommerce.BillingVerification"]
+        ]))
+        XCTAssertFalse(AppleService.isPurchaseStoreSetupAction([
+            "failureType": "-128",
+            "metrics": ["dialogId": "MZCommerce.CountryMismatch"],
+            "jingleDocType": "buyProductFailure",
+            "dialog": [
+                "okButtonAction": [
+                    "kind": "Goto",
+                    "url": "https://itunes.apple.com/WebObjects/MZStore.woa/wa/resetAndRedirect?dsf=143465"
+                ]
+            ]
+        ]))
+        XCTAssertFalse(AppleService.isPurchaseStoreSetupAction(["failureType": "9610"]))
+    }
+
     #if canImport(TestFlightKit)
     func testMultiPhoneVerificationClassifierIgnoresIPhoneIdentityError() {
         XCTAssertFalse(TFHomeModel.isMultiPhoneVerificationError("返回内容无法解析：no usable iphone identity"))
         XCTAssertFalse(TFHomeModel.isMultiPhoneVerificationError("no usable iphone identity"))
+        XCTAssertFalse(TFHomeModel.isMultiPhoneVerificationError("Cannot read SMS verification configuration (HTTP 423)"))
+        XCTAssertFalse(TFHomeModel.isMultiPhoneVerificationError("Apple did not confirm the SMS code (HTTP 400)"))
+        XCTAssertFalse(TFHomeModel.isMultiPhoneVerificationError("No trusted SMS phone numbers are available"))
         XCTAssertTrue(TFHomeModel.isMultiPhoneVerificationError("Multiple trusted phone numbers require SMS selection"))
+        XCTAssertTrue(TFHomeModel.isMultiPhoneVerificationError("Multiple SMS numbers are available; provide a phone-selection callback"))
         XCTAssertTrue(TFHomeModel.isMultiPhoneVerificationError("select a trusted number for verification"))
         XCTAssertTrue(TFHomeModel.isMultiPhoneVerificationError("missing phoneId in challenge"))
+    }
+
+    func testTFSignInErrorClassificationSeparatesRateLimitBadCodeAndLocked() {
+        let rateLimited = TFHomeModel.classifySignInError(
+            "Cannot read SMS verification configuration (HTTP 423) [tooManyCodesSent, code=-28248]",
+            vpnOrProxy: false
+        )
+        XCTAssertEqual(rateLimited.kind, .rateLimited)
+        XCTAssertEqual(
+            rateLimited.message,
+            AppText.text("Apple 已暂时限制该账号的验证码请求，通常是短时间内尝试次数过多所致。请暂停重试并等待一段时间后再试，也可前往 account.apple.com 检查账号状态。")
+        )
+
+        let badCode = TFHomeModel.classifySignInError(
+            "Apple did not confirm the SMS code (HTTP 400) [code=-21669]",
+            vpnOrProxy: false
+        )
+        XCTAssertEqual(badCode.kind, .standard)
+        XCTAssertEqual(
+            badCode.message,
+            AppText.text("验证码未通过 Apple 验证（可能输入有误、已过期或填入了旧短信验证码）。请重试并等待最新验证码送达后再输入。")
+        )
+
+        let locked = TFHomeModel.classifySignInError(
+            "GrandSlam complete: Apple authentication rejected (code -20209)",
+            vpnOrProxy: false
+        )
+        XCTAssertEqual(locked.kind, .standard)
+        XCTAssertEqual(
+            locked.message,
+            AppText.text("该 Apple 账号当前处于安全锁定状态，请先前往 account.apple.com 解锁后再试。")
+        )
+
+        let noPhone = TFHomeModel.classifySignInError(
+            "No trusted SMS phone numbers are available",
+            vpnOrProxy: false
+        )
+        XCTAssertEqual(noPhone.kind, .standard)
+        XCTAssertEqual(
+            noPhone.message,
+            AppText.text("该 Apple 账号没有可用于短信验证的受信任手机号，请先前往 account.apple.com 添加受信任电话号码后重试。")
+        )
+    }
+
+    func testTFPhoneRelayReturnsSelectedPhoneID() async throws {
+        let relay = TFLogin.PhoneRelay()
+        let phones = [
+            TFLogin.TrustedPhone(id: 1, displayNumber: "+86 ••••••••11"),
+            TFLogin.TrustedPhone(id: 2, displayNumber: "+86 ••••••••22"),
+        ]
+        let task = Task { try await relay.request(phones) }
+        try await Task.sleep(nanoseconds: 30_000_000)
+        await relay.select(2)
+        let selected = try await task.value
+        XCTAssertEqual(selected, 2)
+    }
+
+    func testTFSessionStoreCachedCatalogDistinguishesMissingFromEmpty() {
+        let missingDsid = "999999999901"
+        let emptyDsid = "999999999902"
+        defer {
+            TFSessionStore.delete(dsid: missingDsid)
+            TFSessionStore.delete(dsid: emptyDsid)
+        }
+        TFSessionStore.delete(dsid: missingDsid)
+        XCTAssertNil(TFSessionStore.loadCachedCatalog(dsid: missingDsid))
+
+        TFSessionStore.saveCatalog([], dsid: emptyDsid)
+        let loaded = TFSessionStore.loadCachedCatalog(dsid: emptyDsid)
+        XCTAssertNotNil(loaded)
+        XCTAssertEqual(loaded?.count, 0)
     }
 
     func testTFRedactionScrubsSecretsAndEmails() {

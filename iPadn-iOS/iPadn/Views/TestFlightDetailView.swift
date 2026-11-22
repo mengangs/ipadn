@@ -267,9 +267,9 @@ struct TestFlightDetailView: View {
                         .padding(.horizontal, 36)
                         .padding(.top, 4)
 
-                    if rowState.stage == .downloading {
+                    if rowState.stage == .downloading || rowState.stage == .paused {
                         ProgressView(value: rowState.fraction)
-                            .tint(.white)
+                            .tint(rowState.stage == .paused ? .white.opacity(0.45) : .white)
                             .padding(.horizontal, 48)
                     }
                 }
@@ -319,6 +319,11 @@ struct TestFlightDetailView: View {
             return AppText.text("准备下载…")
         case .downloading:
             return "\(byteText(rowState.received)) / \(byteText(rowState.total)) · \(Int(rowState.fraction * 100))%"
+        case .paused:
+            let progress = rowState.total > 0
+                ? "\(byteText(rowState.received)) / \(byteText(rowState.total))"
+                : (rowState.received > 0 ? byteText(rowState.received) : "")
+            return [AppText.text("已暂停"), progress].filter { !$0.isEmpty }.joined(separator: " · ")
         case .verifying:
             return AppText.text("校验安装包…")
         case .done:
@@ -341,9 +346,17 @@ struct TestFlightDetailView: View {
             heroPillButton(title: AppText.text("获取"), busy: false, enabled: model.isSignedIn) {
                 model.start(app)
             }
-        case .resolving, .installing, .downloading:
+        case .resolving, .installing:
             heroPillButton(title: AppText.text("取消"), busy: true, enabled: true) {
                 model.cancel(app)
+            }
+        case .downloading:
+            heroPillButton(title: AppText.text("暂停"), busy: true, enabled: true) {
+                model.pause(app)
+            }
+        case .paused:
+            heroPillButton(title: AppText.text("继续"), busy: false, enabled: true) {
+                model.resume(app)
             }
         case .verifying:
             heroPillButton(title: AppText.text("校验安装包…"), busy: true, enabled: false) {}

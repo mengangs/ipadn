@@ -206,16 +206,41 @@ struct TFHeroAmbientBackground: View {
 
 struct TFVerificationSheet: View {
     let accountDisplay: String
+    let channel: TFLogin.VerificationChannel
     @Binding var code: String
     let isSubmitting: Bool
     let onSubmit: () -> Void
     let onCancel: () -> Void
 
+    private var isSMS: Bool {
+        if case .sms = channel { return true }
+        return false
+    }
+
+    private var promptText: String {
+        switch channel {
+        case .trustedDevice:
+            return AppText.text("Apple 已向 \(accountDisplay) 的受信任设备发送登录请求，请在设备上点按「允许」并输入 6 位验证码。")
+        case let .sms(phoneDisplay):
+            if let phoneDisplay, !phoneDisplay.isEmpty {
+                return AppText.text("Apple 已向 \(phoneDisplay) 发送 6 位短信验证码，请等待本次最新短信送达后输入。")
+            }
+            return AppText.text("Apple 已向 \(accountDisplay) 的受信任手机号发送 6 位短信验证码，请等待本次最新短信送达后输入。")
+        }
+    }
+
+    private var tipText: String {
+        if isSMS {
+            return AppText.text("请勿填入之前收到的旧短信验证码；如暂未收到短信，可稍候几秒或取消后重新尝试。")
+        }
+        return AppText.text("若未收到受信任设备弹窗，请在已登录该账号的设备上前往「设置 › Apple 账户 › 登录与安全 › 获取验证码」，输入显示的 6 位验证码即可。")
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
-                    Image(systemName: "lock.shield.fill")
+                    Image(systemName: isSMS ? "message.badge.filled.fill" : "lock.shield.fill")
                         .font(.system(size: 52))
                         .foregroundStyle(.tint)
                         .padding(.top, 8)
@@ -224,7 +249,7 @@ struct TFVerificationSheet: View {
                     Text("双重认证")
                         .font(.title2.weight(.bold))
 
-                    Text("Apple 已向 \(accountDisplay) 的受信任设备发送登录请求，请在设备上点按「允许」并输入 6 位验证码。")
+                    Text(verbatim: promptText)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -255,12 +280,11 @@ struct TFVerificationSheet: View {
                     .accessibilityLabel(Text("提交验证码"))
                     .accessibilityIdentifier("tf.verification.submit")
 
-                    // Multi-number / SMS selection fallback hint so users never get stuck silently.
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "info.circle")
                             .foregroundStyle(.secondary)
                             .padding(.top, 2)
-                        Text("若账号绑定了多个受信任号码或未收到弹窗，暂不支持在此选择号码；请在已登录该账号的设备上前往「设置 › Apple 账户 › 登录与安全 › 获取验证码」，输入显示的 6 位验证码即可。")
+                        Text(verbatim: tipText)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -273,6 +297,59 @@ struct TFVerificationSheet: View {
             }
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消", action: onCancel)
+                        .accessibilityLabel(Text("取消"))
+                }
+            }
+        }
+        .interactiveDismissDisabled()
+        .presentationDetents([.medium, .large])
+    }
+}
+
+// MARK: - Multi-Phone SMS Selection Sheet
+
+struct TFPhoneSelectionSheet: View {
+    let accountDisplay: String
+    let phones: [TFLogin.TrustedPhone]
+    let onSelect: (TFLogin.TrustedPhone) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(phones) { phone in
+                        Button {
+                            onSelect(phone)
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "message.fill")
+                                    .foregroundStyle(.tint)
+                                    .frame(width: 24)
+                                Text(verbatim: phone.displayNumber.isEmpty ? "#\(phone.id)" : phone.displayNumber)
+                                    .font(.body.monospacedDigit())
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Image(systemName: "chevron.forward")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } header: {
+                    Text("选择受信任手机号")
+                } footer: {
+                    Text("Apple 将向所选号码为 \(accountDisplay) 发送 6 位短信验证码。")
+                }
+            }
+            .toolPage()
+            .navigationTitle("短信验证")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

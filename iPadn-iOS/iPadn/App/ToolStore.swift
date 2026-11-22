@@ -259,6 +259,7 @@ final class ToolStore: ObservableObject {
     let metadataStore = VersionMetadataStore()
     let downloads: DownloadManager
     let installation = InstallationService()
+    let packageFileRemovals = PackageFileRemovalStore.shared
     lazy var apple = AppleService(signer: signer)
     @Published var settings: ToolSettings {
         didSet {
@@ -1168,6 +1169,11 @@ final class ToolStore: ObservableObject {
         persistHistory()
     }
 
+    private enum RemovalUndoStyle {
+        case tasks
+        case packages
+    }
+
     private struct StagedUndoItem {
         let token: UUID
         let count: Int
@@ -1176,12 +1182,16 @@ final class ToolStore: ObservableObject {
     #if canImport(TestFlightKit)
     private var tfUndoItems: [StagedUndoItem] = []
     #endif
+    private var packageFileUndoItems: [StagedUndoItem] = []
+    private var removalUndoStyle: RemovalUndoStyle = .tasks
     private var removalUndoNoticeID: UUID?
 
     private func presentRemovalUndoNotice(
         created: Date,
         addedDownloads: [StagedUndoItem] = [],
-        addedTF: [StagedUndoItem] = []
+        addedTF: [StagedUndoItem] = [],
+        addedPackageFiles: [StagedUndoItem] = [],
+        style: RemovalUndoStyle = .tasks
     ) {
         let reusingBanner = undoNotice?.id != nil
             && undoNotice?.id == removalUndoNoticeID
@@ -1191,42 +1201,59 @@ final class ToolStore: ObservableObject {
             #if canImport(TestFlightKit)
             tfUndoItems.removeAll()
             #endif
+            packageFileUndoItems.removeAll()
+            removalUndoStyle = style
+        } else if removalUndoStyle != style {
+            removalUndoStyle = .tasks
         }
         downloadUndoItems.append(contentsOf: addedDownloads)
         #if canImport(TestFlightKit)
         tfUndoItems.append(contentsOf: addedTF)
         #endif
+        packageFileUndoItems.append(contentsOf: addedPackageFiles)
 
         let dlTokens = downloadUndoItems.map(\.token)
+        let pkgTokens = packageFileUndoItems.map(\.token)
         let deadline = created.addingTimeInterval(UndoNotice.duration)
         if !dlTokens.isEmpty {
             downloads.extendRemovalUndo(dlTokens, until: deadline)
+        }
+        if !pkgTokens.isEmpty {
+            packageFileRemovals.extendRemovalUndo(pkgTokens, until: deadline)
         }
         #if canImport(TestFlightKit)
         let tfTokens = tfUndoItems.map(\.token)
         if !tfTokens.isEmpty {
             TFProductIndex.shared.extendRemovalUndo(tfTokens, until: deadline)
         }
-        let totalCount = downloadUndoItems.reduce(0) { $0 + $1.count } + tfUndoItems.reduce(0) { $0 + $1.count }
+        let totalCount = downloadUndoItems.reduce(0) { $0 + $1.count }
+            + tfUndoItems.reduce(0) { $0 + $1.count }
+            + packageFileUndoItems.reduce(0) { $0 + $1.count }
         #else
         let totalCount = downloadUndoItems.reduce(0) { $0 + $1.count }
+            + packageFileUndoItems.reduce(0) { $0 + $1.count }
         #endif
         guard totalCount > 0 else { return }
 
         let noticeID = reusingBanner ? (undoNotice?.id ?? UUID()) : UUID()
         let revision = reusingBanner ? (undoNotice?.revision ?? 0) + 1 : 1
+        let bannerText = removalUndoStyle == .packages
+            ? AppText.text("已删除 \(totalCount) 个应用包")
+            : AppText.text("已删除 \(totalCount) 项任务与文件")
         let notice = UndoNotice(
             id: noticeID,
             revision: revision,
             created: created,
-            message: AppText.text("已删除 \(totalCount) 项任务与文件")
+            message: bannerText
         ) { [weak self] notice in
             guard let self else { return }
             Task { @MainActor in
                 var firstError: Error?
                 if !dlTokens.isEmpty {
-                    do { try await self.downloads.undoRemovalGroup(dlTokens) }
-                    catch { firstError = firstError ?? error }
+                    do {
+                        try await self.downloads.undoRemovalGroup(dlTokens)
+                        FairPlayPresentation.shared.markFilesChanged()
+                    } catch { firstError = firstError ?? error }
                 }
                 #if canImport(TestFlightKit)
                 if !tfTokens.isEmpty {
@@ -1234,6 +1261,10 @@ final class ToolStore: ObservableObject {
                     catch { firstError = firstError ?? error }
                 }
                 #endif
+                if !pkgTokens.isEmpty {
+                    do { try self.packageFileRemovals.undoRemovalGroup(pkgTokens) }
+                    catch { firstError = firstError ?? error }
+                }
                 if let firstError {
                     self.errorMessage = firstError.localizedDescription
                     self.rearmUndoNotice(notice, removalNotice: true)
@@ -1247,12 +1278,34 @@ final class ToolStore: ObservableObject {
     }
 
     #if canImport(TestFlightKit)
-    func removeTFProductWithUndo(_ item: TFProductItem) throws {
+    func removeTFProductWithUndo(_ item: TFProductItem, fromPackages: Bool = false) throws {
         guard let receipt = try TFProductIndex.shared.removeReversibly(item) else {
-            infoMessage = AppText.text("已删除 1 项任务与文件")
+            infoMessage = fromPackages ? AppText.text("已删除 1 个应用包") : AppText.text("已删除 1 项任务与文件")
             return
         }
-        presentRemovalUndoNotice(created: receipt.created, addedTF: [StagedUndoItem(token: receipt.token, count: 1)])
+        presentRemovalUndoNotice(
+            created: receipt.created,
+            addedTF: [StagedUndoItem(token: receipt.token, count: 1)],
+            style: fromPackages ? .packages : .tasks
+        )
+    }
+
+    func removeDownloadsBatchImmediately(jobIDs: Set<UUID>, tfItems: [TFProductItem]) async throws {
+        var removed = 0
+        var firstError: Error?
+        if !jobIDs.isEmpty {
+            do { removed += try await downloads.removeBatch(jobIDs) }
+            catch { firstError = firstError ?? error }
+        }
+        for item in tfItems {
+            TFProductIndex.shared.delete(item)
+            removed += 1
+        }
+        if removed > 0 {
+            FairPlayPresentation.shared.markFilesChanged()
+            infoMessage = AppText.text("已删除 \(removed) 项任务与文件")
+        }
+        if let firstError { throw firstError }
     }
 
     func removeDownloadsBatchWithUndo(jobIDs: Set<UUID>, tfItems: [TFProductItem]) async throws {
@@ -1265,6 +1318,7 @@ final class ToolStore: ObservableObject {
         if !jobIDs.isEmpty {
             do {
                 if let receipt = try await downloads.removeBatchReversibly(jobIDs) {
+                    FairPlayPresentation.shared.markFilesChanged()
                     addedDownloads.append(StagedUndoItem(token: receipt.token, count: receipt.count))
                     latestCreated = max(latestCreated, receipt.created)
                 }
@@ -1334,14 +1388,53 @@ final class ToolStore: ObservableObject {
         model.deleteLocalProduct(app)
     }
     #else
+    func removeDownloadsBatchImmediately(jobIDs: Set<UUID>) async throws {
+        guard !jobIDs.isEmpty else { return }
+        let removed = try await downloads.removeBatch(jobIDs)
+        if removed > 0 {
+            FairPlayPresentation.shared.markFilesChanged()
+            infoMessage = AppText.text("已删除 \(removed) 项任务与文件")
+        }
+    }
+
     func removeDownloadsBatchWithUndo(jobIDs: Set<UUID>) async throws {
         guard let receipt = try await downloads.removeBatchReversibly(jobIDs) else { return }
+        FairPlayPresentation.shared.markFilesChanged()
         presentRemovalUndoNotice(created: receipt.created, addedDownloads: [StagedUndoItem(token: receipt.token, count: receipt.count)])
     }
     #endif
-    func removeDownloadWithUndo(_ id: UUID) async throws {
+    func removeDownloadWithUndo(_ id: UUID, fromPackages: Bool = false) async throws {
         guard let receipt = try await downloads.removeReversibly(id) else { return }
-        presentRemovalUndoNotice(created: receipt.created, addedDownloads: [StagedUndoItem(token: receipt.token, count: 1)])
+        FairPlayPresentation.shared.markFilesChanged()
+        presentRemovalUndoNotice(
+            created: receipt.created,
+            addedDownloads: [StagedUndoItem(token: receipt.token, count: 1)],
+            style: fromPackages ? .packages : .tasks
+        )
+    }
+
+    func removePackageFileWithUndo(_ url: URL) throws {
+        guard let receipt = try packageFileRemovals.removeFileReversibly(at: url) else {
+            infoMessage = AppText.text("已删除文件")
+            return
+        }
+        presentRemovalUndoNotice(
+            created: receipt.created,
+            addedPackageFiles: [StagedUndoItem(token: receipt.token, count: 1)],
+            style: .packages
+        )
+    }
+
+    func removeDecryptOutputWithUndo(recordID: UUID, fileURL: URL) throws {
+        guard let receipt = try packageFileRemovals.removeDecryptOutputReversibly(recordID: recordID, fileURL: fileURL) else {
+            infoMessage = AppText.text("已删除产物文件")
+            return
+        }
+        presentRemovalUndoNotice(
+            created: receipt.created,
+            addedPackageFiles: [StagedUndoItem(token: receipt.token, count: 1)],
+            style: .packages
+        )
     }
     func undoLastAction() {
         let notice = undoNotice; undoNotice = nil
@@ -2498,11 +2591,14 @@ final class ToolStore: ObservableObject {
             ownedHistoryProgress = (0, totalYears)
         }
         do {
+            // Never trigger silent password-only `refresh(account)` during background
+            // account switches (`fullHistory == false`): Apple's `login(code: "")` pushes
+            // repeated 2FA prompts to trusted devices whenever a web cookie expires.
             let commerceResult = try await apple.commercePurchaseHistory(
                 sinceYear: sinceYear,
                 throughYear: currentYear,
                 useCache: settings.useSignerCache,
-                allowSessionRefresh: fullHistory || priorState?.completedFullSync != true
+                allowSessionRefresh: fullHistory
             ) { [weak self] done, total in
                 await MainActor.run {
                     guard let self, self.ownedRefreshToken == token, self.apple.activeID == id else { return }
@@ -2536,6 +2632,15 @@ final class ToolStore: ObservableObject {
             ownedRevision = UUID()
         } catch is CancellationError {
             return
+        } catch AppleLoginError.verificationRequired {
+            guard ownedRefreshToken == token, apple.activeID == id else { return }
+            if fullHistory {
+                requestVerification { [weak self] in
+                    Task { await self?.refreshOwned(fullHistory: true) }
+                }
+            } else if let dmapError {
+                ownedError = dmapError.localizedDescription
+            }
         } catch {
             guard ownedRefreshToken == token, apple.activeID == id else { return }
             if let dmapError {

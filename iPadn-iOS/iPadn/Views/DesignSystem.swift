@@ -1245,8 +1245,15 @@ extension View {
         else { onChange(of: trigger) { _ in UX.feedback() } }
     }
     @ViewBuilder func compatiblePresentationCornerRadius(_ radius: CGFloat) -> some View {
-        if #available(iOS 16.4, *) { presentationCornerRadius(radius) }
-        else { self }
+        if #available(iOS 26, *) {
+            // iOS 26 Liquid Glass floating sheets automatically compute display-concentric
+            // corner radii; overriding with a small fixed radius breaks concentricity.
+            self
+        } else if #available(iOS 16.4, *) {
+            presentationCornerRadius(radius)
+        } else {
+            self
+        }
     }
     @ViewBuilder func compatibleListSectionSpacing(_ spacing: CGFloat) -> some View {
         if #available(iOS 17, *) { listSectionSpacing(spacing) }

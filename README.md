@@ -7,7 +7,7 @@
 **在 iPhone 和 iPad 上搜索、下载、安装你拥有的 App。**
 支持 iPhone、iPad、Apple TV 与 Mac 应用，包括历史版本与已下架应用。
 
-✨ **v2.3.3 Apple 下载报错修复与诊断完善 · 下载多选/统一撤销、SDK 速查与全量性能安全加固** · 📢 **反馈与新版优先前往 [官方 Telegram 频道](https://t.me/ipadn_official)**
+✨ **v2.3.4 TestFlight 下载实时同步与真暂停/续传 · 根治切号重复验证码 · 应用包左滑撤销倒计时与原生安装 iOS 17.4+ 防护** · 📢 **反馈与新版优先前往 [官方 Telegram 频道](https://t.me/ipadn_official)**
 
 [![最新版本](https://img.shields.io/github/v/release/mengangs/ipadn?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&logo=github&logoColor=white&labelColor=2E3136&color=3A6EA5)](https://github.com/mengangs/ipadn/releases/latest)
 [![Telegram 频道](https://img.shields.io/badge/Telegram-%40ipadn__official-2C82A9?logo=telegram&logoColor=white&labelColor=2E3136)](https://t.me/ipadn_official)
@@ -44,6 +44,13 @@
 </p>
 
 ---
+
+## 2.3.4 更新
+
+- **TestFlight 实时同步「下载」页与真暂停/断点续传**：开始实际下载后同步展示于「下载」页顶部并更新底部标签角标，支持与普通下载一致的暂停/继续（`resumeData` 断点续传与 CDN 链接刷新）、实时速度/ETA 及全部暂停/继续。
+- **根治多账号切换反复请求验证码**：后台静默已购同步与 TestFlight 切号不再无故触发无验证码登录刷新，优先静默恢复本地会话与 10-cookie 快照；新增多受信任手机号选择器、修复 2FA 弹窗竞态及 0 应用账号切换缓存。
+- **「应用包」左滑 5 秒撤销倒计时与居中原生弹窗**：专业模式「应用包」全量列表行左滑删除接入原子暂存与 5 秒撤销倒计时；长按确认与批量删除统一采用居中原生弹窗并立即删除。
+- **App Store 账单/条款引导与原生安装 iOS 17.4+ 门禁**：扩展付款/账单/条款报错（`3038 / 5111 / 2022 / 3002 / 5062 / 5304`）清晰指引；原生安装加入 iOS 17.4+ 系统校验与设置页提示，过滤同局域网其他设备的 Bonjour 远程配对端口，并补全连接检查失败诊断日志。详见 [更新说明](RELEASE_NOTES.md)。
 
 ## 2.3.3 更新
 

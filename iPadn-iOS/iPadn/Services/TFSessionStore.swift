@@ -202,13 +202,19 @@ enum TFSessionStore {
         try? data.write(to: file, options: .atomic)
     }
 
-    static func loadCatalog(dsid: String) -> [TFBetaApp] {
+    /// Returns `nil` when no catalog cache file exists for this DSID, or the decoded list
+    /// (which may be empty `[]` for an authenticated account that currently has 0 beta apps).
+    static func loadCachedCatalog(dsid: String) -> [TFBetaApp]? {
         guard let file = catalogFile(dsid: dsid),
               let data = try? Data(contentsOf: file),
               let apps = try? JSONDecoder().decode([TFBetaApp].self, from: data) else {
-            return []
+            return nil
         }
         return apps
+    }
+
+    static func loadCatalog(dsid: String) -> [TFBetaApp] {
+        loadCachedCatalog(dsid: dsid) ?? []
     }
 
     static func saveDetail(_ detail: TFAppDetail) {

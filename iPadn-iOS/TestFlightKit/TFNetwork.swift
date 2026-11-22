@@ -208,29 +208,57 @@ public enum TFDoh {
 
     /// Returns "DoH" when a public resolver answered, "系统 DNS" otherwise. Addresses are
     /// deliberately not returned or logged.
+    ///
+    /// Probes all resolvers concurrently with a short bounded timeout on an isolated ephemeral
+    /// session so unreachable DoH endpoints never stall sign-in or flip `TFNet.didBypassProxy`.
     public static func probe(_ host: String,
                              log: @escaping @Sendable (String) -> Void) async -> String {
         if let hit = cached(host) {
             return hit
         }
-        for server in servers {
-            guard var components = URLComponents(string: server) else { continue }
-            components.queryItems = [
-                URLQueryItem(name: "name", value: host),
-                URLQueryItem(name: "type", value: "A"),
-            ]
-            guard let url = components.url else { continue }
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 5
-            request.setValue("application/dns-json", forHTTPHeaderField: "accept")
-            if let (data, http) = try? await TFNet.data(for: request, cookieStorage: nil, acceptCookies: false),
-               http.statusCode == 200,
-               let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let answers = payload["Answer"] as? [[String: Any]], !answers.isEmpty {
-                store("DoH", for: host)
-                log("dns: " + host + " 走 DoH")
-                return "DoH"
+        let mode = TFNet.mode
+        let resolvedDoH = await withTaskGroup(of: Bool.self) { group in
+            for server in servers {
+                group.addTask {
+                    guard var components = URLComponents(string: server) else { return false }
+                    components.queryItems = [
+                        URLQueryItem(name: "name", value: host),
+                        URLQueryItem(name: "type", value: "A"),
+                    ]
+                    guard let url = components.url else { return false }
+                    let cfg = URLSessionConfiguration.ephemeral
+                    cfg.timeoutIntervalForRequest = 2.0
+                    cfg.timeoutIntervalForResource = 2.5
+                    cfg.httpCookieAcceptPolicy = .never
+                    cfg.httpShouldSetCookies = false
+                    if mode == .direct { cfg.connectionProxyDictionary = [:] }
+                    let session = URLSession(configuration: cfg)
+                    defer { session.finishTasksAndInvalidate() }
+                    var request = URLRequest(url: url)
+                    request.timeoutInterval = 2.0
+                    request.setValue("application/dns-json", forHTTPHeaderField: "accept")
+                    guard let (data, response) = try? await session.data(for: request),
+                          let http = response as? HTTPURLResponse,
+                          http.statusCode == 200,
+                          let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let answers = payload["Answer"] as? [[String: Any]], !answers.isEmpty else {
+                        return false
+                    }
+                    return true
+                }
             }
+            for await ok in group {
+                if ok {
+                    group.cancelAll()
+                    return true
+                }
+            }
+            return false
+        }
+        if resolvedDoH {
+            store("DoH", for: host)
+            log("dns: " + host + " 走 DoH")
+            return "DoH"
         }
         store("系统 DNS", for: host)
         log("dns: " + host + " 走 系统 DNS")

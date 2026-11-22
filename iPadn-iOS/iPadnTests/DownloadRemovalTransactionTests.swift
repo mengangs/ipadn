@@ -86,4 +86,100 @@ final class DownloadRemovalTransactionTests: XCTestCase {
         XCTAssertTrue(saved)
         XCTAssertThrowsError(try DownloadRemovalTransaction.perform([]) { throw CocoaError(.fileWriteOutOfSpace) })
     }
+
+    @MainActor
+    func testPackageFileRemovalStagesAndRestoresStandaloneFile() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let support = root.appendingPathComponent("Support", isDirectory: true)
+        let file = root.appendingPathComponent("Standalone.ipa")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try Data("standalone-ipa".utf8).write(to: file)
+        var changes = 0
+        let store = PackageFileRemovalStore(
+            supportDirectory: support,
+            expiryLeadSeconds: 60,
+            sweepOnInit: false,
+            onChanged: { changes += 1 }
+        )
+
+        let receipt = try XCTUnwrap(try store.removeFileReversibly(at: file))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        XCTAssertEqual(changes, 1)
+
+        try store.undoRemovalGroup([receipt.token])
+        XCTAssertEqual(try Data(contentsOf: file), Data("standalone-ipa".utf8))
+        XCTAssertTrue(store.recentlyRestoredPaths.contains(PackageOutputPolicy.canonicalPath(file)))
+        XCTAssertEqual(changes, 2)
+    }
+
+    @MainActor
+    func testPackageFileRemovalStagesAndRestoresDecryptOutputIdentity() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let support = root.appendingPathComponent("Support", isDirectory: true)
+        let output = root.appendingPathComponent("App-decrypted.ipa")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try Data("decrypted-output".utf8).write(to: output)
+        let recordID = UUID()
+        let originalIdentity = PackageOutputPolicy.identity(output)
+        var identities: [UUID: String?] = [recordID: originalIdentity]
+        var running = false
+        let store = PackageFileRemovalStore(
+            supportDirectory: support,
+            expiryLeadSeconds: 60,
+            sweepOnInit: false,
+            canRestoreOutput: { !running },
+            readOutputIdentity: { identities[$0] ?? nil },
+            writeOutputIdentity: { identities[$0] = $1 },
+            onChanged: {}
+        )
+
+        let receipt = try XCTUnwrap(try store.removeDecryptOutputReversibly(recordID: recordID, fileURL: output))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+        XCTAssertEqual(identities[recordID] ?? nil, "removed")
+
+        running = true
+        XCTAssertThrowsError(try store.undoRemovalGroup([receipt.token]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+        XCTAssertEqual(identities[recordID] ?? nil, "removed")
+
+        running = false
+        try store.undoRemovalGroup([receipt.token])
+        XCTAssertEqual(try Data(contentsOf: output), Data("decrypted-output".utf8))
+        let restoredIdentity = try XCTUnwrap(identities[recordID] ?? nil)
+        XCTAssertTrue(PackageOutputPolicy.matches(restoredIdentity, url: output))
+        XCTAssertTrue(store.recentlyRestoredRecordIDs.contains(recordID))
+    }
+
+    @MainActor
+    func testPackageFileRemovalUndoNeverOverwritesReplacementAndSweepsOrphans() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let support = root.appendingPathComponent("Support", isDirectory: true)
+        let file = root.appendingPathComponent("Orphan.ipa")
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let stale = support.appendingPathComponent("pkg-removing-stale.ipa")
+        let keep = support.appendingPathComponent("unrelated.ipa")
+        try Data("stale".utf8).write(to: stale)
+        try Data("keep".utf8).write(to: keep)
+        PackageFileRemovalStore.sweepOrphanedRemovalsSync(in: support)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: keep.path))
+
+        try Data("old-bytes".utf8).write(to: file)
+        let store = PackageFileRemovalStore(
+            supportDirectory: support,
+            expiryLeadSeconds: 60,
+            sweepOnInit: false,
+            onChanged: {}
+        )
+        let receipt = try XCTUnwrap(try store.removeFileReversibly(at: file))
+        try Data("new-bytes".utf8).write(to: file)
+        try store.undoRemovalGroup([receipt.token])
+        XCTAssertEqual(try Data(contentsOf: file), Data("new-bytes".utf8))
+    }
 }
