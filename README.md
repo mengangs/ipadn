@@ -7,7 +7,7 @@
 **在 iPhone 和 iPad 上搜索、下载、安装你拥有的 App。**
 支持 iPhone、iPad、Apple TV 与 Mac 应用，包括历史版本与已下架应用。
 
-✨ **v2.3.4 TestFlight 后台下载与灵动岛实时同步 · 全应用统一极简单色图标、状态切换弹性动效与存储/Wi‑Fi 传输补齐** · 📢 **反馈与新版优先前往 [官方 Telegram 频道](https://t.me/ipadn_official)**
+✨ **v2.3.4 TestFlight 同步下载/后台续传/灵动岛 · 统一单色图标与状态切换动效 · 2FA/切号/侧滑撤销与 iOS 17.4+ 原生安装防护** · 📢 **反馈与新版优先前往 [官方 Telegram 频道](https://t.me/ipadn_official)**
 
 [![最新版本](https://img.shields.io/github/v/release/mengangs/ipadn?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC&logo=github&logoColor=white&labelColor=2E3136&color=3A6EA5)](https://github.com/mengangs/ipadn/releases/latest)
 [![Telegram 频道](https://img.shields.io/badge/Telegram-%40ipadn__official-2C82A9?logo=telegram&logoColor=white&labelColor=2E3136)](https://t.me/ipadn_official)
@@ -47,10 +47,10 @@
 
 ## 2.3.4 更新
 
-- **TestFlight 后台下载与灵动岛实时同步**：完善 TestFlight 后台保活、暂停/继续与下载进度环体验；启用高频实时活动更新，修复下载退到后台后灵动岛百分比停滞不同步的问题。
-- **全应用统一列表与极简单色 TestFlight 图标**：取消「下载」与「应用包」多余的 TestFlight 分组，在版本信息行前置统一单色 TestFlight 图标，移除会话级「已安装」残留，并补齐「已解密」「解密详情 / 记录」「Wi‑Fi 传输」与「存储空间」的 TestFlight 覆盖与持久标识。
-- **暂停 / 继续与全状态切换弹性动效**：重构下载页、TestFlight 列表及详情页操作按钮为单一持久形变组件，获取 → 加载弧 → 进度环 → 暂停/继续胶囊 → 完成打钩 → 安装全程原地弹性过渡，进度条与状态文字柔和切换。
-- **配对引导、居中弹窗与认证修复**：配对页左上角对称放置「取消配对」并优化 6 位 PIN 引导；统一原生居中确认弹窗、补齐应用包侧滑 5 秒撤销删除，修复 2FA 细节与 iOS 17.4+ `NativeInstall` 兼容防护。详见 [更新说明](RELEASE_NOTES.md)。
+- **TestFlight 同步下载、后台续传、自动安装与灵动岛实时同步**：TestFlight 实际开始下载后实时同步到「下载」页顶部与底部角标，接入后台传输、`resumeData` 真暂停/断点续传、CDN 链接过期自动刷新、全部暂停/继续及「下载完成后自动安装」；同步接入灵动岛与锁屏实时活动并修复后台百分比停滞问题，移除会话级「已安装」残留。
+- **全应用统一列表/极简单色 TestFlight 图标与状态切换动效**：「下载」与「应用包」取消多余的 TestFlight 分组并统一前置单色 TestFlight 图标，全面补齐「已解密」「解密详情/记录」「Wi‑Fi 传输」与「存储空间」的覆盖与持久标识；重构 `AppStoreActionButton` 与下载页/TestFlight 列表详情页按钮，实现获取 → 加载弧 → 进度环 → 暂停/继续胶囊 → 完成打钩 → 安装全链路弹性形变动效。
+- **根治切号反复弹验证码、多手机号 2FA 与 0 应用账号卡顿**：切号与启动优先静默恢复本地会话与 Cookie 快照不再误触发系统验证码；新增多受信任手机号选择器、修复 2FA 弹窗竞态与瞬时 `503` 重试，优化 0 应用缓存 0ms 切换与 `TFDoh` 2 秒并发探测。
+- **应用包侧滑撤销、居中弹窗、配对优化与 iOS 17.4+ 防护**：专业模式「应用包」5 类列表项左滑删除统一接入 5 秒原子撤销，长按/批量删除与全应用二次确认升级为原生居中 Alert，精简「账号」页冗余入口；本机配对左上角对称放置「取消配对」并修复 6 位配对码提醒与换行；新增 App Store 账单/条款报错引导（`3038 / 5111 / 2022 / 3002 / 5062 / 5304`）、原生安装 iOS 17.4+ 前置校验与 Bonjour 跨设备端口隔离。详见 [更新说明](RELEASE_NOTES.md)。
 
 ## 2.3.3 更新
 

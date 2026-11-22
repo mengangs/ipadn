@@ -7,7 +7,7 @@
 **Search, download and install the apps you own, on iPhone and iPad.**
 Works with iPhone, iPad, Apple TV and Mac apps, including older versions and apps removed from sale.
 
-✨ **New in v2.3.4: TestFlight background downloads & live Dynamic Island sync · Unified lists/monochrome icon, fluid pause/resume morphs & Storage/Wi‑Fi transfer coverage** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
+✨ **New in v2.3.4: TestFlight Downloads sync, background resume & Live Island · Unified monochrome icon & fluid morphs · 2FA/0-app fixes, Packages Undo & iOS 17.4+ guards** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
 
 [![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&logo=github&logoColor=white&labelColor=2E3136&color=3A6EA5)](https://github.com/mengangs/ipadn/releases/latest)
 [![Telegram Channel](https://img.shields.io/badge/Telegram-%40ipadn__official-2C82A9?logo=telegram&logoColor=white&labelColor=2E3136)](https://t.me/ipadn_official)
@@ -47,10 +47,10 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 
 ## What’s new in 2.3.4
 
-- **TestFlight Background Downloads & Live Dynamic Island Sync**: Adds background keep-alive, pause/resume, and unified downloading rings for TestFlight, and fixes Dynamic Island / Lock Screen Live Activity percentages stalling in the background.
-- **Unified Lists, Monochrome TestFlight Icon & Full-App Coverage**: Merges TestFlight into unified **Downloads** and **Packages** lists with a cohesive monochrome TestFlight icon in the metadata slot, removes session-only "Installed" badges, extends coverage to **Decrypted**, **Wi‑Fi Transfer**, and **Settings › Storage**, and persists TestFlight provenance on `DecryptRecord`.
-- **Fluid Spring Morph Animations**: Upgrades `AppStoreActionButton` and unifies Downloads, TestFlight Home, and TestFlight Detail action controls so Get → Loading → Ring → Pause/Resume Pill → Checkmark → Install morph smoothly in place.
-- **Pairing UX, Centered Alerts & 2FA Fixes**: Places **Cancel Pairing** symmetrically in the top-left toolbar, standardizes centered confirmation alerts, adds 5-second Undo to **Packages** swipe deletion, and fixes 2FA & iOS 17.4+ `NativeInstall` edge cases. See the [release notes](RELEASE_NOTES.md).
+- **TestFlight Sync, Background Resume, Auto-Install & Live Island**: Syncs active TestFlight downloads into **Downloads** with tab badges, background transfer + `resumeData` pause/resume, automatic CDN URL refresh, Pause All / Resume All, unified **Auto-Install**, and live Dynamic Island / Lock Screen percentages (fixing background stalls), while removing session-only "Installed" badges.
+- **Unified Lists, Monochrome TF Icon & Fluid Morph Animations**: Merges TestFlight into unified **Downloads** and **Packages** lists with a cohesive monochrome icon across **Decrypted**, **Wi‑Fi Transfer**, and **Settings › Storage** (persisted on `DecryptRecord`); upgrades `AppStoreActionButton` and Downloads/TestFlight controls for fluid spring morphing across Get → Loading → Ring → Pause/Resume Pill → Checkmark → Install.
+- **Fixed Repeated 2FA Prompts, Multi-Phone 2FA & 0-App Stalls**: Silently restores local TestFlight sessions & cookie jars on launch/switch without unexpected GSA 2FA pushes, adds a multi-phone SMS 2FA picker, fixes 2FA sheet races and transient `503` retries, caches 0-app catalogs for instant switching, and caps `TFDoh` probes to 2s in parallel.
+- **Packages Undo, Centered Alerts, Pairing UX & iOS 17.4+ Guards**: Adds 5-second atomic swipe Undo across all five **Packages** row types, migrates all destructive confirmations to centered native `.alert`, cleans up redundant Account entries, puts **Cancel Pairing** in the top-left toolbar with fixed 6-digit PIN notifications/layout, expands App Store billing/terms error guidance (`3038 / 5111 / 2022 / 3002 / 5062 / 5304`), and adds iOS 17.4+ guards and peer-LAN Bonjour isolation for Native Install. See the [release notes](RELEASE_NOTES.md).
 
 ## What’s new in 2.3.3
 
