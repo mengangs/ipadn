@@ -7,7 +7,7 @@
 **Search, download and install the apps you own, on iPhone and iPad.**
 Works with iPhone, iPad, Apple TV and Mac apps, including older versions and apps removed from sale.
 
-✨ **New in v2.3.4: TestFlight Downloads sync, background resume & Live Island · Unified monochrome icon & fluid morphs · 2FA/0-app fixes, Packages Undo & iOS 17.4+ guards** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
+✨ **New in v2.3.5: iOS 16/27 & iPadOS fixes · TestFlight Apple TV support & validation fixes · Customizable 177 Storefront regions · FairPlay/license/batch import fixes** · 📢 **Prefer [Official Telegram Channel](https://t.me/ipadn_official) for first releases & feedback**
 
 [![Latest release](https://img.shields.io/github/v/release/mengangs/ipadn?label=latest&logo=github&logoColor=white&labelColor=2E3136&color=3A6EA5)](https://github.com/mengangs/ipadn/releases/latest)
 [![Telegram Channel](https://img.shields.io/badge/Telegram-%40ipadn__official-2C82A9?logo=telegram&logoColor=white&labelColor=2E3136)](https://t.me/ipadn_official)
@@ -44,6 +44,13 @@ Works with iPhone, iPad, Apple TV and Mac apps, including older versions and app
 </p>
 
 ---
+
+## What’s new in 2.3.5
+
+- **Fix iOS 16/27 Crashes & iPadOS Pro Mode Navigation**: Removes strong-linked `UnevenRoundedRectangle` and all `.onGeometryChange` calls to eliminate iOS 16.0–16.2 crashes, resolves an iOS 27.2 beta 2 App Detail version-history crash, and isolates active `NavigationStack`s in iPadOS full-screen & Pro mode to stop missing titles and leaked toolbars.
+- **TestFlight Apple TV Support, Validation & Hero Blur Fix**: Adds multi-platform switching (including Apple TV / tvOS) on TestFlight detail pages with per-platform indexing; displays monochrome client icons alongside the TestFlight icon across all lists/details and hides Install / skips Auto-Install for Apple TV IPAs; fixes false validation rejections on large/multi-variant games with streaming Mach-O prefix & FAT 32/64-bit `cryptid` inspection; eliminates the light top-edge blur artifact on TestFlight detail headers.
+- **Customizable 177 Storefront Regions**: Adds **Settings › Appearance & icon › Storefront Regions** covering all 177 Apple App Store regions with instant localized/English/ISO‑2 search, tap-to-toggle, drag-to-reorder, flag display, and Reset to Defaults.
+- **FairPlay, Login/License Retry & Batch Import Fixes**: Accepts instruction-verified high-entropy FairPlay plugin binaries (such as `_codecs_cn`), improves login `5020`/2FA messaging & `SAPSigner` diagnostics, auto-invalidates caches with short backoff retries after free-app license acquisition, and fixes multi-IPA batch import interruptions in **Packages** with live progress counts. See the [release notes](RELEASE_NOTES.md).
 
 ## What’s new in 2.3.4
 
@@ -211,7 +218,7 @@ The first Mac download fetches about 47 MB of extra components, which are reused
 **Quick start:**
 
 1. Open **Account › TestFlight** and sign in or switch accounts via the top-right avatar (TestFlight sessions are stored per DSID and intentionally isolated from iOS App Store sessions, so TF may ask for its own initial sign-in).
-2. Apps are grouped into three buckets: **Testing** (active iOS builds eligible for this device), **Incompatible** (macOS / tvOS / visionOS / iPad-only builds), and **Previously Tested** (expired or retired builds shown read-only).
+2. Apps are grouped into three buckets: **Testing** (active downloadable builds; apps offering multiple platforms such as iOS and Apple TV can be switched and downloaded directly on the detail page), **Incompatible** (macOS / visionOS / iPad-only builds), and **Previously Tested** (expired or retired builds shown read-only).
 3. Tap download for live speed/ETA progress. Downloaded builds include injected SINF bound to your `ApplicationDSID` and run directly via **Native Install** (with device pairing + LocalDevVPN) **without needing decryption or re-signing**, or can be exported/shared and inspected/decrypted under Pro mode › **Packages** when App Group access is available.
 4. If catalog loading stalls or fails with network/401 errors, open **Network & Diagnostics** inside TestFlight to switch between **Follow System / Force Direct / Force Proxy**, check DNS/fake-IP preflight results, and copy strictly redacted logs when reporting under the release post in [Official Telegram](https://t.me/ipadn_official).
 
