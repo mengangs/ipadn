@@ -63,6 +63,77 @@ struct ZipReader {
         entries[name]?.size
     }
 
+    /// Reads at most `maxBytes` uncompressed bytes from the start of a member without
+    /// inflating multi-hundred-MB game executables into memory.
+    func prefix(named name: String, maxBytes: Int) -> Data? {
+        guard maxBytes > 0, let entry = entries[name], entry.size > 0, entry.compressed >= 0 else { return nil }
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard (try? handle.seek(toOffset: UInt64(entry.offset))) != nil,
+              let header = try? handle.read(upToCount: 30), header.count == 30 else { return nil }
+        let nameLength = Int(header[26]) | Int(header[27]) << 8
+        let extraLength = Int(header[28]) | Int(header[29]) << 8
+        guard (try? handle.seek(toOffset: UInt64(entry.offset + 30 + nameLength + extraLength))) != nil else { return nil }
+        let wanted = min(maxBytes, entry.size)
+        if entry.method == 0 {
+            return try? handle.read(upToCount: min(wanted, entry.compressed))
+        }
+        guard entry.method == 8 else { return nil }
+        var stream = compression_stream(dst_ptr: UnsafeMutablePointer<UInt8>.allocate(capacity: 1),
+                                        dst_size: 0,
+                                        src_ptr: UnsafePointer<UInt8>(UnsafeMutablePointer<UInt8>.allocate(capacity: 1)),
+                                        src_size: 0,
+                                        state: nil)
+        let dummyDst = stream.dst_ptr
+        let dummySrc = UnsafeMutablePointer(mutating: stream.src_ptr)
+        defer {
+            dummyDst.deallocate()
+            dummySrc.deallocate()
+        }
+        guard compression_stream_init(&stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB) == COMPRESSION_STATUS_OK else {
+            return nil
+        }
+        defer { compression_stream_destroy(&stream) }
+        var result = Data()
+        result.reserveCapacity(wanted)
+        var remainingCompressed = entry.compressed
+        let inChunkSize = 32_768
+        let outChunkSize = min(wanted, 32_768)
+        let outBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: outChunkSize)
+        defer { outBuffer.deallocate() }
+        var inputChunk = Data()
+        var inputOffset = 0
+        while result.count < wanted {
+            if inputOffset >= inputChunk.count {
+                guard remainingCompressed > 0 else { break }
+                let toRead = min(inChunkSize, remainingCompressed)
+                guard let next = try? handle.read(upToCount: toRead), !next.isEmpty else { break }
+                inputChunk = next
+                inputOffset = 0
+                remainingCompressed -= next.count
+            }
+            let space = min(outChunkSize, wanted - result.count)
+            let status: compression_status = inputChunk.withUnsafeBytes { raw in
+                guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return COMPRESSION_STATUS_ERROR }
+                stream.src_ptr = base.advanced(by: inputOffset)
+                stream.src_size = inputChunk.count - inputOffset
+                stream.dst_ptr = outBuffer
+                stream.dst_size = space
+                let st = compression_stream_process(&stream, remainingCompressed == 0 ? Int32(COMPRESSION_STREAM_FINALIZE.rawValue) : 0)
+                inputOffset = inputChunk.count - stream.src_size
+                return st
+            }
+            let produced = space - stream.dst_size
+            if produced > 0 {
+                result.append(outBuffer, count: produced)
+            }
+            if status == COMPRESSION_STATUS_END { break }
+            if status == COMPRESSION_STATUS_ERROR { return result.isEmpty ? nil : result }
+            if produced == 0 && remainingCompressed == 0 && inputOffset >= inputChunk.count { break }
+        }
+        return result.isEmpty ? nil : result
+    }
+
     func data(named name: String) -> Data? {
         guard let entry = entries[name] else { return nil }
         let maxBytes = 8 << 20

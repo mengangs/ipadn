@@ -7,9 +7,10 @@ import TestFlightKit
 /// One locally downloaded TestFlight IPA indexed directly from `Documents/TestFlight/<bundle>/<bundle>.ipa`.
 /// Read-only projection for DownloadsView & PackagesView — never creates a `DownloadJob` or duplicates files.
 struct TFProductItem: Identifiable, Equatable {
-    var id: String { bundleID }
+    var id: String { buildID.isEmpty ? bundleID : "\(bundleID):\(buildID)" }
     let appID: String
     let bundleID: String
+    let buildID: String
     let displayName: String
     let shortVersion: String
     let buildVersion: String
@@ -18,6 +19,57 @@ struct TFProductItem: Identifiable, Equatable {
     let modifiedAt: Date
     let iconURL: URL?
     let iconColors: TFIconColors?
+    let platform: String?
+
+    init(appID: String, bundleID: String, buildID: String = "", displayName: String,
+         shortVersion: String, buildVersion: String, fileURL: URL, fileSize: Int64,
+         modifiedAt: Date, iconURL: URL?, iconColors: TFIconColors?, platform: String? = nil) {
+        self.appID = appID
+        self.bundleID = bundleID
+        self.buildID = buildID
+        self.displayName = displayName
+        self.shortVersion = shortVersion
+        self.buildVersion = buildVersion
+        self.fileURL = fileURL
+        self.fileSize = fileSize
+        self.modifiedAt = modifiedAt
+        self.iconURL = iconURL
+        self.iconColors = iconColors
+        self.platform = platform
+    }
+
+    var normalizedPlatform: String {
+        let raw = (platform ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return raw.isEmpty ? "ios" : raw
+    }
+
+    var isAppleTV: Bool {
+        normalizedPlatform == "appletvos" || normalizedPlatform == "tvos"
+    }
+
+    var isVisionOS: Bool {
+        normalizedPlatform == "xros" || normalizedPlatform == "visionos"
+    }
+
+    /// True when the TestFlight IPA can be installed on this iOS/iPadOS device.
+    var canInstallOnCurrentDevice: Bool {
+        !isAppleTV && !isVisionOS
+    }
+
+    /// Canonical client platform key for detail views (`"appletvos"`, `"xros"`, `"ipad"`, `"ios"`).
+    var clientPlatformKey: String {
+        normalizedPlatform
+    }
+
+    /// Non-iPhone platform badge shown beside `TestFlightIcon` in list rows so Apple TV / visionOS / iPad builds stand out.
+    var nonPhonePlatformBadge: String? {
+        switch normalizedPlatform {
+        case "appletvos", "tvos": return "appletvos"
+        case "xros", "visionos": return "xros"
+        case "ipad": return "ipad"
+        default: return nil
+        }
+    }
 
     var versionBuildLabel: String {
         let short = shortVersion.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -119,13 +171,16 @@ final class TFProductIndex: ObservableObject {
     /// `DownloadsView` and `PackagesView` transition from active download to completed
     /// with zero single-frame disappearances before the disk scan finishes.
     func registerCompleted(_ item: TFProductItem) {
-        items.removeAll { $0.bundleID.caseInsensitiveCompare(item.bundleID) == .orderedSame }
+        items.removeAll {
+            $0.bundleID.caseInsensitiveCompare(item.bundleID) == .orderedSame
+                && $0.normalizedPlatform == item.normalizedPlatform
+        }
         items.insert(item, at: 0)
         items.sort { $0.modifiedAt > $1.modifiedAt }
         refresh()
     }
 
-    /// Moves a TestFlight product directory aside for the undo window so the user can restore
+    /// Moves a TestFlight build directory aside for the undo window so the user can restore
     /// it immediately via `UndoNotice`, then permanently removes it once the window expires.
     func removeReversibly(_ item: TFProductItem) throws -> (token: UUID, created: Date)? {
         guard let bundleRoot = TFDownload.directoryURL(bundle: item.bundleID) else {
@@ -133,15 +188,16 @@ final class TFProductIndex: ObservableObject {
             return nil
         }
         let fm = FileManager.default
-        guard fm.fileExists(atPath: bundleRoot.path) else {
+        let buildDir = item.fileURL.deletingLastPathComponent()
+        let isBuildSubdir = buildDir.standardizedFileURL != bundleRoot.standardizedFileURL
+            && buildDir.deletingLastPathComponent().standardizedFileURL == bundleRoot.standardizedFileURL
+        let targetDir = isBuildSubdir ? buildDir : bundleRoot
+        guard fm.fileExists(atPath: targetDir.path) else {
             delete(item)
             return nil
         }
-        // Clean transient scratch files inside the bundle folder before staging.
-        try? fm.removeItem(at: bundleRoot.appendingPathComponent(".work", isDirectory: true))
-        for suffix in ["-transport.bin", "-base.ipa", "-applezip.ipa"] {
-            try? fm.removeItem(at: bundleRoot.appendingPathComponent(item.bundleID + suffix))
-        }
+        // Clean transient scratch files inside the target folder before staging.
+        try? fm.removeItem(at: targetDir.appendingPathComponent(".work", isDirectory: true))
         LocalResources.ensureDirectoriesExist()
         let token = UUID()
         let created = Date()
@@ -149,17 +205,17 @@ final class TFProductIndex: ObservableObject {
         if fm.fileExists(atPath: stagedDir.path) {
             try? fm.removeItem(at: stagedDir)
         }
-        try fm.moveItem(at: bundleRoot, to: stagedDir)
+        try fm.moveItem(at: targetDir, to: stagedDir)
 
-        items.removeAll { $0.bundleID == item.bundleID }
-        recentlyRestoredBundleIDs.remove(item.bundleID)
+        items.removeAll { $0.id == item.id }
+        recentlyRestoredBundleIDs.remove(item.id)
         TFHomeModel.shared.didDeleteProduct(appID: item.appID, bundleID: item.bundleID)
         FairPlayPresentation.shared.markFilesChanged()
 
         var entry = StagedRemoval(
             token: token,
             item: item,
-            originalDir: bundleRoot,
+            originalDir: targetDir,
             stagedDir: stagedDir,
             created: created,
             timer: nil
@@ -195,14 +251,14 @@ final class TFProductIndex: ObservableObject {
                 continue
             }
             try fm.moveItem(at: entry.stagedDir, to: entry.originalDir)
-            if !items.contains(where: { $0.bundleID == entry.item.bundleID }) {
+            if !items.contains(where: { $0.id == entry.item.id }) {
                 items.append(entry.item)
             }
-            let bundleID = entry.item.bundleID
-            recentlyRestoredBundleIDs.insert(bundleID)
+            let restoredID = entry.item.id
+            recentlyRestoredBundleIDs.insert(restoredID)
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .milliseconds(1600))
-                self?.recentlyRestoredBundleIDs.remove(bundleID)
+                self?.recentlyRestoredBundleIDs.remove(restoredID)
             }
             restoredAny = true
         }
@@ -237,26 +293,24 @@ final class TFProductIndex: ObservableObject {
         }
     }
 
-    /// Permanently deletes a TestFlight IPA on disk and synchronizes `TestFlightHomeView`,
-    /// `DownloadsView`, and `PackagesView` immediately.
+    /// Permanently deletes a single TestFlight IPA build on disk and synchronizes
+    /// `TestFlightHomeView`, `DownloadsView`, and `PackagesView` immediately.
     func delete(_ item: TFProductItem) {
         try? FileManager.default.removeItem(at: item.fileURL)
         let buildDir = item.fileURL.deletingLastPathComponent()
         if buildDir.lastPathComponent != item.bundleID {
             try? FileManager.default.removeItem(at: buildDir)
         }
-        // Also remove any other remaining build directories for this bundle so deletion is complete.
-        for product in TFProducts.all(bundle: item.bundleID) {
-            try? FileManager.default.removeItem(at: product.ipa)
-            try? FileManager.default.removeItem(at: product.directory)
-        }
-        if let bundleRoot = try? TFDownload.directory(bundle: item.bundleID) {
-            try? FileManager.default.removeItem(at: bundleRoot.appendingPathComponent(".work", isDirectory: true))
-            for suffix in [".ipa", "-transport.bin", "-base.ipa", "-applezip.ipa"] {
-                try? FileManager.default.removeItem(at: bundleRoot.appendingPathComponent(item.bundleID + suffix))
+        if let bundleRoot = TFDownload.directoryURL(bundle: item.bundleID) {
+            let remaining = TFProducts.all(bundle: item.bundleID)
+            if remaining.isEmpty {
+                try? FileManager.default.removeItem(at: bundleRoot.appendingPathComponent(".work", isDirectory: true))
+                for suffix in [".ipa", "-transport.bin", "-base.ipa", "-applezip.ipa"] {
+                    try? FileManager.default.removeItem(at: bundleRoot.appendingPathComponent(item.bundleID + suffix))
+                }
             }
         }
-        items.removeAll { $0.bundleID == item.bundleID }
+        items.removeAll { $0.id == item.id }
         TFHomeModel.shared.didDeleteProduct(appID: item.appID, bundleID: item.bundleID)
         FairPlayPresentation.shared.markFilesChanged()
         refresh()
@@ -301,53 +355,81 @@ final class TFProductIndex: ObservableObject {
             let bundle = folder.lastPathComponent
             if skipDirs.contains(bundle.lowercased()) { continue }
             guard (try? folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+            let allProducts = TFProducts.all(bundle: bundle)
             let flatIPA = folder.appendingPathComponent(bundle + ".ipa")
-            guard let ipa = TFProducts.newest(bundle: bundle)?.ipa
-                ?? (fm.fileExists(atPath: flatIPA.path) ? flatIPA : nil) else { continue }
-
-            let attrs = try? fm.attributesOfItem(atPath: ipa.path)
-            let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
-            let modified = (attrs?[.modificationDate] as? Date) ?? .distantPast
+            let candidates: [(buildID: String, ipa: URL, recordedPlatform: String?)]
+            if !allProducts.isEmpty {
+                candidates = allProducts.map { ($0.buildID, $0.ipa, $0.platform) }
+            } else if fm.fileExists(atPath: flatIPA.path) {
+                candidates = [("", flatIPA, nil)]
+            } else {
+                continue
+            }
 
             let key = bundle.lowercased()
             let detail = detailsByBundle[key]
             let appID = bundleToAppID[key] ?? detail?.appID ?? bundle
             let installMeta = TFAPI.cachedInstallMetadata(bundle: bundle)
-            let inspected = try? PackageService.inspect(ipa)
-
-            // Priority: installMetadata framework.displayName -> IPA localized CFBundleDisplayName -> v3 detail.name -> bundle
-            let displayName: String = {
-                if let fwName = installMeta?.displayName, !fwName.isEmpty { return fwName }
-                if let ipaName = inspected?.name, !ipaName.isEmpty, ipaName != bundle { return ipaName }
-                if let detailName = detail?.name, !detailName.isEmpty { return detailName }
-                return inspected?.name ?? bundle
-            }()
-
-            let shortVersion = installMeta?.shortVersion
-                ?? (inspected?.version.isEmpty == false ? inspected?.version : nil)
-                ?? (detail?.shortVersion.isEmpty == false ? detail?.shortVersion : nil)
-                ?? ""
-
-            let buildVersion = installMeta?.buildVersion
-                ?? (inspected?.bundleVersion?.isEmpty == false ? inspected?.bundleVersion : nil)
-                ?? (detail?.buildVersion.isEmpty == false ? detail?.buildVersion : nil)
-                ?? ""
-
             let iconURL = TFIcon.cached(appID: appID)
             let iconColors = detail?.iconAsset?.colors ?? TFIcon.cachedAsset(appID: appID)?.colors
 
-            found.append(TFProductItem(
-                appID: appID,
-                bundleID: bundle,
-                displayName: displayName,
-                shortVersion: shortVersion,
-                buildVersion: buildVersion,
-                fileURL: ipa,
-                fileSize: size,
-                modifiedAt: modified,
-                iconURL: iconURL,
-                iconColors: iconColors
-            ))
+            var seenPlatforms = Set<String>()
+            for candidate in candidates {
+                let ipa = candidate.ipa
+                let quick = PackageInfoService.quickBuildInfo(ipa)
+                let resolvedPlatform: String = {
+                    if let p = candidate.recordedPlatform?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !p.isEmpty {
+                        return p
+                    }
+                    return quick?.platformKey ?? "ios"
+                }()
+                guard seenPlatforms.insert(resolvedPlatform).inserted else { continue }
+
+                let attrs = try? fm.attributesOfItem(atPath: ipa.path)
+                let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+                let modified = (attrs?[.modificationDate] as? Date) ?? .distantPast
+                let inspected = try? PackageService.inspect(ipa)
+                let isNativeIOS = resolvedPlatform == "ios"
+
+                // Priority: installMetadata framework.displayName -> IPA localized CFBundleDisplayName -> v3 detail.name -> bundle
+                let displayName: String = {
+                    if let fwName = installMeta?.displayName, !fwName.isEmpty { return fwName }
+                    if let ipaName = inspected?.name, !ipaName.isEmpty, ipaName != bundle { return ipaName }
+                    if let detailName = detail?.name, !detailName.isEmpty { return detailName }
+                    return inspected?.name ?? bundle
+                }()
+
+                let shortVersion: String = {
+                    if !isNativeIOS, let v = inspected?.version, !v.isEmpty { return v }
+                    return installMeta?.shortVersion
+                        ?? (inspected?.version.isEmpty == false ? inspected?.version : nil)
+                        ?? (detail?.shortVersion.isEmpty == false ? detail?.shortVersion : nil)
+                        ?? ""
+                }()
+
+                let buildVersion: String = {
+                    if !isNativeIOS, let b = inspected?.bundleVersion, !b.isEmpty { return b }
+                    return installMeta?.buildVersion
+                        ?? (inspected?.bundleVersion?.isEmpty == false ? inspected?.bundleVersion : nil)
+                        ?? (detail?.buildVersion.isEmpty == false ? detail?.buildVersion : nil)
+                        ?? ""
+                }()
+
+                found.append(TFProductItem(
+                    appID: appID,
+                    bundleID: bundle,
+                    buildID: candidate.buildID,
+                    displayName: displayName,
+                    shortVersion: shortVersion,
+                    buildVersion: buildVersion,
+                    fileURL: ipa,
+                    fileSize: size,
+                    modifiedAt: modified,
+                    iconURL: iconURL,
+                    iconColors: iconColors,
+                    platform: resolvedPlatform
+                ))
+            }
         }
 
         return found.sorted { $0.modifiedAt > $1.modifiedAt }

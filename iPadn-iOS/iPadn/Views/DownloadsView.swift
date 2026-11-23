@@ -53,6 +53,7 @@ struct DownloadsView: View {
     @ObservedObject private var tfProducts = TFProductIndex.shared
     @ObservedObject private var tfModel = TFHomeModel.shared
     @State private var installingTFItem: TFProductItem?
+    @State private var inspectingTFItem: TFProductItem?
     private var filteredActiveTFItems: [TFActiveDownloadItem] {
         tfModel.activeDownloads.filter { item in
             let state = tfModel.rows[item.id] ?? TFRowState()
@@ -70,17 +71,20 @@ struct DownloadsView: View {
     }
     private var filteredTFItems: [TFProductItem] {
         guard filter.includesTestFlight else { return [] }
-        let activeIDs = Set(tfModel.activeDownloads.filter {
-            let stage = tfModel.rows[$0.id]?.stage ?? .idle
-            return stage == .resolving || stage == .installing || stage == .downloading || stage == .paused || stage == .verifying
-        }.map(\.id))
+        let activePairs: Set<String> = Set(tfModel.activeDownloads.compactMap { active -> String? in
+            let stage = tfModel.rows[active.id]?.stage ?? .idle
+            guard stage == .resolving || stage == .installing || stage == .downloading || stage == .paused || stage == .verifying else { return nil }
+            let p = (active.platform ?? "ios").lowercased()
+            return "\(active.id)|\(p)"
+        })
         return tfProducts.items.filter { item in
-            guard !activeIDs.contains(item.appID) else { return false }
+            guard !activePairs.contains("\(item.appID)|\(item.normalizedPlatform)") else { return false }
             return term.isEmpty
                 || item.displayName.localizedCaseInsensitiveContains(term)
                 || item.bundleID.localizedCaseInsensitiveContains(term)
                 || item.shortVersion.localizedCaseInsensitiveContains(term)
                 || item.buildVersion.localizedCaseInsensitiveContains(term)
+                || PlatformGlyph.displayName(for: item.clientPlatformKey).localizedCaseInsensitiveContains(term)
                 || "TestFlight".localizedCaseInsensitiveContains(term)
                 || "TF".localizedCaseInsensitiveContains(term)
         }
@@ -101,7 +105,7 @@ struct DownloadsView: View {
         }
         #if canImport(TestFlightKit)
         items.append(contentsOf: filteredTFItems.compactMap { item in
-            packages.protects(url: item.fileURL) ? nil : .tf(item.bundleID)
+            packages.protects(url: item.fileURL) ? nil : .tf(item.id)
         })
         #endif
         return items
@@ -109,7 +113,7 @@ struct DownloadsView: View {
     private var selectionPruneKey: [String] {
         var keys = filteredJobs.map { "\($0.id.uuidString):\($0.status.rawValue)" }
         #if canImport(TestFlightKit)
-        keys.append(contentsOf: filteredTFItems.map { "tf:\($0.bundleID)" })
+        keys.append(contentsOf: filteredTFItems.map { "tf:\($0.id)" })
         #endif
         return keys
     }
@@ -294,6 +298,13 @@ struct DownloadsView: View {
                     Form {
                         Section { AppRow(app: packageDisplayApp(job)); TaskStatusPill(status: job.status) }
                         Section("任务信息") {
+                            LabeledContent("客户端") {
+                                HStack(spacing: 6) {
+                                    PlatformGlyph(platform: job.platformLabel, size: 14)
+                                    Text(verbatim: PlatformGlyph.displayName(for: job.platformLabel))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                             LabeledContent("添加时间", value: job.createdAt.formatted(date: .abbreviated, time: .shortened))
                             TaskSizeRows(job: job, progress: manager.progress(for: job.id))
                             if let marketing = job.resolvedMarketingVersion {
@@ -382,6 +393,11 @@ struct DownloadsView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        #if canImport(TestFlightKit)
+        .sheet(item: $inspectingTFItem, onDismiss: flushPackageNavigation) { item in
+            tfTaskDetailSheet(item)
+        }
+        #endif
         .sheet(item: $installing) { job in
             PackageInstallationView(job: job).sheetNotice().environmentObject(store).environmentObject(manager)
         }
@@ -737,7 +753,7 @@ struct DownloadsView: View {
                                         }
                                         if let file = manager.fileURL(job) {
                                             Button("导出文件", systemImage: "square.and.arrow.up") { share = SharedFile(url: manager.exportURL(job) ?? file) }
-                                            if job.rawFormat == nil {
+                                            if job.canInstallOnCurrentDevice {
                                                 Button("安装", systemImage: "square.and.arrow.down") { installing = job }
                                             }
                                             Button("复制本机链接", systemImage: "link") {
@@ -805,6 +821,10 @@ struct DownloadsView: View {
                     HStack(spacing: 6) {
                         TestFlightIcon()
                             .frame(minWidth: 16)
+                        if let badge = item.nonPhonePlatformBadge {
+                            PlatformGlyph(platform: badge, size: 13)
+                                .frame(minWidth: 16)
+                        }
                         if !metaText.isEmpty {
                             Text(verbatim: metaText)
                                 .font(.subheadline.monospacedDigit())
@@ -1008,7 +1028,7 @@ struct DownloadsView: View {
         let sizeText = item.fileSize > 0 ? item.fileSize.byteLabel : ""
         let metaText = [item.compactVersionLabel, sizeText].filter { !$0.isEmpty }.joined(separator: " · ")
 
-        return HStack(spacing: 14) {
+        let heading = HStack(spacing: 14) {
             TFAppIconView(
                 fileURL: item.iconURL,
                 colors: item.iconColors,
@@ -1023,6 +1043,10 @@ struct DownloadsView: View {
                 HStack(spacing: 6) {
                     TestFlightIcon()
                         .frame(minWidth: 16)
+                    if let badge = item.nonPhonePlatformBadge {
+                        PlatformGlyph(platform: badge, size: 13)
+                            .frame(minWidth: 16)
+                    }
                     if !metaText.isEmpty {
                         Text(verbatim: metaText)
                             .font(.subheadline.monospacedDigit())
@@ -1043,36 +1067,187 @@ struct DownloadsView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .contentShape(Rectangle())
 
-            if !editing {
+        return HStack(spacing: 10) {
+            if editing {
+                heading
+            } else {
+                Button {
+                    inspectingTFItem = item
+                } label: {
+                    heading
+                }
+                .buttonStyle(RevealRowButtonStyle())
+            }
+
+            if !editing && item.canInstallOnCurrentDevice {
                 Button(isInstalling ? "正在处理…" : "安装") {
                     UX.tapLight()
                     installingTFItem = item
                 }
                 .buttonStyle(CapsuleButtonStyle(filled: true))
                 .disabled(isInstalling)
-                .accessibilityIdentifier("download.tf.install." + item.bundleID)
+                .accessibilityIdentifier("download.tf.install." + item.id)
             }
         }
         .padding(.vertical, 8)
     }
 
+    private func tfTaskDetailSheet(_ item: TFProductItem) -> some View {
+        let record = packages.attempts(url: item.fileURL).first
+        return NavigationStack {
+            Form {
+                Section {
+                    HStack(spacing: 14) {
+                        TFAppIconView(
+                            fileURL: item.iconURL,
+                            colors: item.iconColors,
+                            appName: item.displayName,
+                            size: 64,
+                            revision: tfModel.iconRevisions[item.appID] ?? 0
+                        )
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(verbatim: item.displayName)
+                                .font(.body.weight(.medium))
+                                .lineLimit(2)
+                            HStack(spacing: 6) {
+                                TestFlightIcon(size: 14)
+                                PlatformGlyph(platform: item.clientPlatformKey, size: 13)
+                                Text(verbatim: PlatformGlyph.displayName(for: item.clientPlatformKey))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if !item.versionBuildLabel.isEmpty {
+                                Text(verbatim: item.versionBuildLabel)
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    TaskStatusPill(status: .completed)
+                }
+
+                Section("任务信息") {
+                    LabeledContent("来源") {
+                        HStack(spacing: 6) {
+                            TestFlightIcon(size: 14)
+                            Text(verbatim: "TestFlight")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    LabeledContent("客户端") {
+                        HStack(spacing: 6) {
+                            PlatformGlyph(platform: item.clientPlatformKey, size: 14)
+                            Text(verbatim: PlatformGlyph.displayName(for: item.clientPlatformKey))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    LabeledContent("下载时间", value: item.modifiedAt.formatted(date: .abbreviated, time: .shortened))
+                    if item.fileSize > 0 {
+                        LabeledContent("大小", value: item.fileSize.byteLabel)
+                    }
+                    if !item.shortVersion.isEmpty {
+                        LabeledContent("包内版本", value: item.shortVersion)
+                    }
+                    if !item.buildVersion.isEmpty {
+                        LabeledContent("构建号", value: item.buildVersion)
+                    }
+                    if !item.bundleID.isEmpty {
+                        LabeledContent("Bundle ID") {
+                            Text(verbatim: item.bundleID)
+                                .font(.footnote.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+
+                Section {
+                    PackagePlatformRow(file: item.fileURL)
+                    PackageBuildInfoRows(file: item.fileURL)
+                    NavigationLink { PackageInfoView(file: item.fileURL, isTestFlight: true) } label: {
+                        Label("安装包信息", systemImage: "info.circle")
+                    }
+                    if store.settings.proMode {
+                        NavigationLink { PackageContentsView(file: item.fileURL) } label: {
+                            Label("浏览安装包内容", systemImage: "folder")
+                        }
+                    }
+                }
+
+                Section {
+                    ShareLink(item: item.fileURL) {
+                        Label("导出文件", systemImage: "square.and.arrow.up")
+                    }
+                }
+
+                if store.settings.proMode {
+                    Section("解密") {
+                        if let record {
+                            let style = DecryptOutcomeStyle(record)
+                            if style == .running {
+                                Button("查看解密进度", systemImage: "circle.dotted") {
+                                    inspectingTFItem = nil
+                                    openPackage(.record(record.id))
+                                }
+                            } else if style == .success && packages.currentOutput(record) != nil {
+                                Button("查看解密结果", systemImage: "lock.open") {
+                                    inspectingTFItem = nil
+                                    openPackage(.record(record.id))
+                                }
+                            } else {
+                                Button("解密 IPA", systemImage: "lock.open") {
+                                    inspectingTFItem = nil
+                                    openPackage(.file(item.fileURL))
+                                    packages.requestStart(url: item.fileURL)
+                                }
+                            }
+                        } else {
+                            Button("解密 IPA", systemImage: "lock.open") {
+                                inspectingTFItem = nil
+                                openPackage(.file(item.fileURL))
+                                packages.requestStart(url: item.fileURL)
+                            }
+                        }
+                        Button("查看原始 IPA", systemImage: "shippingbox") {
+                            inspectingTFItem = nil
+                            openPackage(.file(item.fileURL))
+                        }
+                    }
+                }
+            }
+            .toolPage()
+            .navigationTitle("任务详情")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { inspectingTFItem = nil }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
     private func tfProductRow(_ item: TFProductItem) -> some View {
         let record = packages.attempts(url: item.fileURL).first
         return selectableRow(
-            .tf(item.bundleID),
+            .tf(item.id),
             disabled: packages.protects(url: item.fileURL),
-            identifier: "download.select.tf." + item.bundleID,
+            identifier: "download.select.tf." + item.id,
             accessibilityName: item.displayName,
             content: { tfRowContent(item, editing: true) }
         ) {
             tfRowContent(item, editing: false)
                 .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("download.tf." + item.bundleID)
+                .accessibilityIdentifier("download.tf." + item.id)
                 .revealActions(
-                    id: "download.tf." + item.bundleID,
+                    id: "download.tf." + item.id,
                     enabled: !actionBusy && !packages.protects(url: item.fileURL),
-                    restored: tfProducts.recentlyRestoredBundleIDs.contains(item.bundleID),
+                    restored: tfProducts.recentlyRestoredBundleIDs.contains(item.id),
                     [
                         .delete(fills: true) { removeTFWithUndo(item) },
                         RevealAction(title: "分享", systemImage: "square.and.arrow.up", tint: .blue, role: nil) {
@@ -1081,10 +1256,15 @@ struct DownloadsView: View {
                     ]
                 )
                 .contextMenu {
-                    Button("安装", systemImage: "square.and.arrow.down") {
-                        installingTFItem = item
+                    Button("任务详情", systemImage: "info.circle") {
+                        inspectingTFItem = item
                     }
-                    Button("安装包信息", systemImage: "info.circle") {
+                    if item.canInstallOnCurrentDevice {
+                        Button("安装", systemImage: "square.and.arrow.down") {
+                            installingTFItem = item
+                        }
+                    }
+                    Button("安装包信息", systemImage: "doc.text.magnifyingglass") {
                         inspectingPackage = PackageInspectTarget(file: item.fileURL, job: nil)
                     }
                     if store.settings.proMode {
@@ -1114,7 +1294,7 @@ struct DownloadsView: View {
                         share = SharedFile(url: item.fileURL)
                     }
                     Button("删除任务及文件", systemImage: "trash", role: .destructive) {
-                        askDelete([.tf(item.bundleID)])
+                        askDelete([.tf(item.id)])
                     }
                     .disabled(packages.protects(url: item.fileURL))
                 }
@@ -1217,7 +1397,8 @@ struct DownloadsView: View {
         )
         #if canImport(TestFlightKit)
         pendingDeleteTF = tfProducts.items.filter {
-            requestedTFBundles.contains($0.bundleID) && !packages.protects(url: $0.fileURL)
+            (requestedTFBundles.contains($0.id) || requestedTFBundles.contains($0.bundleID))
+                && !packages.protects(url: $0.fileURL)
         }
         #endif
         if pendingDeleteCount == 0 { store.infoMessage = AppText.text("任务处理完成后才能删除") }
@@ -1400,7 +1581,7 @@ struct DownloadTaskRow: View {
         case .completed where celebrating:
             return .completedCheck
         case .completed:
-            return job.rawFormat == nil ? .capsule(title: "安装", filled: true, enabled: true) : nil
+            return job.canInstallOnCurrentDevice ? .capsule(title: "安装", filled: true, enabled: true) : nil
         }
     }
     private var trailingAccessibilityLabel: String {
@@ -1451,7 +1632,7 @@ struct DownloadTaskRow: View {
                 action: handleTrailingTap
             )
             .accessibilityIdentifier(
-                job.status == .completed && !celebrating && job.rawFormat == nil
+                job.status == .completed && !celebrating && job.canInstallOnCurrentDevice
                     ? "download.install." + job.app.id
                     : "download.action." + job.app.id
             )

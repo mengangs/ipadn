@@ -28,6 +28,8 @@ struct PackageInfo: Equatable {
     var xcodeVersion = ""
     var xcodeBuild = ""
     var devices = ""
+    var supportedPlatforms: [String] = []
+    var deviceFamilies: [Int] = []
     var languages: [String] = []
     var permissions: [Permission] = []
     var extensions: [Extension] = []
@@ -40,6 +42,38 @@ struct PackageInfo: Equatable {
     /// The package file's size on disk.
     var packageSize: Int64 = 0
 
+    /// Canonical client platform key (`"appletvos"`, `"xros"`, `"macosx"`, `"ipad"`, `"ios"`).
+    var platformKey: String {
+        let lowerSDK = sdkName.lowercased()
+        let lowerPlatforms = Set(supportedPlatforms.map { $0.lowercased() })
+        if lowerSDK.hasPrefix("appletvos") || lowerPlatforms.contains("appletvos") || deviceFamilies == [3] {
+            return "appletvos"
+        }
+        if lowerSDK.hasPrefix("xros") || lowerPlatforms.contains("xros") || deviceFamilies == [7] {
+            return "xros"
+        }
+        if lowerSDK.hasPrefix("macosx") || lowerPlatforms.contains("macosx") {
+            return "macosx"
+        }
+        if deviceFamilies == [2] {
+            return "ipad"
+        }
+        return "ios"
+    }
+
+    var osDisplayName: String {
+        switch platformKey {
+        case "appletvos": return "tvOS"
+        case "xros": return "visionOS"
+        case "macosx": return "macOS"
+        default: return "iOS"
+        }
+    }
+
+    var formattedMinimumOS: String {
+        minimumOS.isEmpty ? "" : "\(osDisplayName) \(minimumOS)"
+    }
+
     var formattedSDK: String {
         let lower = sdkName.lowercased()
         let platform: String
@@ -47,7 +81,7 @@ struct PackageInfo: Equatable {
         else if lower.hasPrefix("macosx") { platform = "macOS" }
         else if lower.hasPrefix("xros") { platform = "visionOS" }
         else if lower.hasPrefix("watchos") { platform = "watchOS" }
-        else { platform = "iOS" }
+        else { platform = osDisplayName }
         let version = !machOSDKVersion.isEmpty ? machOSDKVersion : sdkVersion
         if version.isEmpty { return sdkName }
         return sdkBuild.isEmpty ? "\(platform) \(version)" : "\(platform) \(version) (\(sdkBuild))"
@@ -66,6 +100,7 @@ struct QuickBuildInfo: Equatable, Sendable {
     let sdk: String
     let xcode: String
     let minimumOS: String
+    var platformKey: String = "ios"
 
     var isEmpty: Bool { sdk.isEmpty && xcode.isEmpty }
     var compactLabel: String {
@@ -151,7 +186,8 @@ enum PackageInfoService {
         return QuickBuildInfo(
             sdk: info.formattedSDK,
             xcode: info.formattedXcode,
-            minimumOS: info.minimumOS.isEmpty ? "" : "iOS " + info.minimumOS
+            minimumOS: info.formattedMinimumOS,
+            platformKey: info.platformKey
         )
     }
 
@@ -164,6 +200,8 @@ enum PackageInfoService {
         info.build = plistString(plist["CFBundleVersion"])
         info.minimumOS = plistString(plist["MinimumOSVersion"])
         info.sdkName = plistString(plist["DTSDKName"])
+        info.supportedPlatforms = (plist["CFBundleSupportedPlatforms"] as? [String]) ?? []
+        info.deviceFamilies = (plist["UIDeviceFamily"] as? [Int]) ?? []
         info.sdkVersion = extractSDKVersion(from: info.sdkName, platformVersion: plistString(plist["DTPlatformVersion"]))
         info.sdkBuild = plistString(plist["DTSDKBuild"])
         info.xcodeVersion = formatDTXcode(plistString(plist["DTXcode"]))

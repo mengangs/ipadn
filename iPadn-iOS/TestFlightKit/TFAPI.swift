@@ -399,8 +399,43 @@ public enum TFAPI {
 
         var activeIOSBuild: [String: Any]?
         var otherActiveBuilds: [(platform: String, build: [String: Any])] = []
+        var activePlatformBuilds: [TFPlatformBuild] = []
         var iosFallbackBuild: [String: Any]?
         var anyFallbackBuild: [String: Any]?
+
+        func makePlatformBuild(rawPlatform: String, build: [String: Any], ipadOnly: Bool, watchOnly: Bool) -> TFPlatformBuild? {
+            let bID = firstString(in: build, keys: ["id"]) ?? ""
+            guard !bID.isEmpty else { return nil }
+            let bFramework = (build["framework"] as? [String: Any]) ?? (payload["framework"] as? [String: Any])
+            let bNotes = localizedValue(from: bFramework?["testNotes"])
+                ?? (build["whatsNew"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let bSize = (build["fileSize"] as? NSNumber)?.int64Value
+            let bUncomp = (build["fileSizeUncompressed"] as? NSNumber)?.int64Value
+            return TFPlatformBuild(
+                platform: rawPlatform,
+                buildID: bID,
+                shortVersion: firstString(in: build, keys: ["cfBundleShortVersion", "shortVersion"]) ?? "",
+                buildVersion: firstString(in: build, keys: ["cfBundleVersion", "version"]) ?? "",
+                expirationISO: firstString(in: build, keys: ["expiration", "expirationDate"]),
+                releaseDateISO: firstString(in: build, keys: ["releaseDate", "lastModified"]),
+                fileSizeBytes: bSize ?? bUncomp,
+                fileSizeUncompressedBytes: bUncomp,
+                compatibilityStatement: firstString(in: build, keys: ["compatibilityMessage", "compatibilityStatement"]),
+                whatsNew: bNotes?.isEmpty == true ? nil : bNotes,
+                isIPadOnly: ipadOnly,
+                isWatchOnly: watchOnly
+            )
+        }
+
+        func platformSortRank(_ b: TFPlatformBuild) -> Int {
+            switch b.platform.lowercased() {
+            case "ios": return b.isWatchOnly ? 5 : (b.isIPadOnly ? 1 : 0)
+            case "appletvos", "tvos": return 2
+            case "xros", "visionos": return 3
+            case "osx", "macos": return 4
+            default: return 6
+            }
+        }
 
         for platform in platforms {
             let pname = (platform["name"] as? String)?.lowercased() ?? ""
@@ -409,15 +444,26 @@ public enum TFAPI {
             if anyFallbackBuild == nil { anyFallbackBuild = build }
             guard isActiveBuild(build) else { continue }
             let watchOnly = (build["watchOnly"] as? Bool) ?? false
-            if pname == "ios" && !watchOnly && !isIPadOnlyBuild(build) {
+            let ipadOnly = pname == "ios" && isIPadOnlyBuild(build)
+            if !previouslyTestedFlag,
+               let entry = makePlatformBuild(rawPlatform: pname, build: build, ipadOnly: ipadOnly, watchOnly: watchOnly) {
+                activePlatformBuilds.append(entry)
+            }
+            if pname == "ios" && !watchOnly && !ipadOnly {
                 activeIOSBuild = build
             } else if pname == "ios" && watchOnly {
                 otherActiveBuilds.append(("Apple Watch", build))
-            } else if pname == "ios" && isIPadOnlyBuild(build) {
+            } else if ipadOnly {
                 otherActiveBuilds.append(("iPad", build))
             } else {
                 otherActiveBuilds.append((platformDisplayName(pname), build))
             }
+        }
+        activePlatformBuilds.sort { lhs, rhs in
+            let lRank = platformSortRank(lhs)
+            let rRank = platformSortRank(rhs)
+            if lRank != rRank { return lRank < rRank }
+            return (Int64(lhs.buildID) ?? 0) > (Int64(rhs.buildID) ?? 0)
         }
 
         let availability: TFAppAvailability
@@ -548,6 +594,7 @@ public enum TFAPI {
             termsOfService: resolvedTerms,
             availability: availability,
             incompatiblePlatforms: incompatiblePlatforms,
+            platformBuilds: activePlatformBuilds.isEmpty ? nil : activePlatformBuilds,
             iconAsset: iconAsset
         )
     }
@@ -677,10 +724,10 @@ public enum TFAPI {
     /// Writes a response into `Documents/TestFlight/debug` for offline shape analysis.
 // MARK: - build selection / install
 
-    /// Picks the build the same way the probe does: non-expired iOS builds only, then the
-    /// largest numeric id. A mismatch between appId and buildId is what makes install
+    /// Picks the build the same way the probe does: non-expired builds for `platform` (default `"ios"`),
+    /// then the largest numeric id. A mismatch between appId and buildId is what makes install
     /// answer `500 {"data":null,"error":null}`.
-    public static func buildID(appID: String, session: TFSession,
+    public static func buildID(appID: String, platform targetPlatform: String = "ios", session: TFSession,
                                log: @escaping @Sendable (String) -> Void) async throws -> String {
         let account = session.account.isEmpty ? session.dsid : session.account
         let path = "/v3/accounts/\(account)/apps/\(appID)"
@@ -690,13 +737,15 @@ public enum TFAPI {
             throw TFError.malformed("builds: response is not a JSON object")
         }
         let payload = (root["data"] as? [String: Any]) ?? root
-        // Builds live under `platforms[].build`, one entry per platform (appletvos / ios / osx).
+        // Builds live under `platforms[].build`, one entry per platform (appletvos / ios / osx / xros).
         let platforms = (payload["platforms"] as? [[String: Any]]) ?? []
+        let target = targetPlatform.lowercased()
         var best = 0
         var chosen = ""
         for platform in platforms {
             let name = (platform["name"] as? String)?.lowercased() ?? ""
-            guard name.contains("ios") else { continue }
+            let matched = (name == target) || (target == "ios" && name.contains("ios"))
+            guard matched else { continue }
             guard let build = platform["build"] as? [String: Any] else { continue }
             if let expired = build["expired"] as? Bool, expired { continue }
             let raw = (build["id"] as? NSNumber)?.stringValue ?? (build["id"] as? String) ?? ""
@@ -706,8 +755,11 @@ public enum TFAPI {
                 + "/" + ((build["cfBundleVersion"] as? String) ?? "?") + ")")
             if value > best { best = value; chosen = String(value) }
         }
-        log("builds: " + String(platforms.count) + " platform(s), picked " + (chosen.isEmpty ? "-" : chosen))
-        guard !chosen.isEmpty else { throw TFError.malformed("builds: 没有可用的 iOS build") }
+        log("builds: " + String(platforms.count) + " platform(s), target " + target + ", picked " + (chosen.isEmpty ? "-" : chosen))
+        guard !chosen.isEmpty else {
+            let label = target == "ios" ? "iOS" : target
+            throw TFError.malformed("builds: 没有可用的 \(label) build")
+        }
         return chosen
     }
 

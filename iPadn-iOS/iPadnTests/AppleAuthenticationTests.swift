@@ -391,4 +391,33 @@ final class AppleAuthenticationTests: XCTestCase {
         XCTAssertTrue(emptyChallengeDict.isEmpty)
         XCTAssertEqual(AppleAuthentication.storeMachineAction(raw: emptyChallengeDict, response: challengeHTTPResp), .provision(spChallenge))
     }
+
+    func testAppleFailure5020AndSAPRuntimeErrorDiagnostics() throws {
+        let failure5020 = try XCTUnwrap(HTTPClient.appleFailure([
+            "failureType": "5020",
+            "customerMessage": "Your Apple ID or password is incorrect."
+        ]))
+        let text5020 = failure5020.localizedDescription
+        XCTAssertTrue(text5020.contains("密码或验证码"))
+        XCTAssertFalse(text5020.contains("代码 5020"))
+        XCTAssertFalse(text5020.contains("Your Apple ID"))
+
+        let secret = "user@example.com secretPassword123"
+        let jsCertErr = NSError(
+            domain: "WKErrorDomain", code: 5,
+            userInfo: ["WKJavaScriptExceptionMessage": "fetch SAP setup certificate failed: 503 \(secret)"]
+        )
+        let classified = SAPRuntimeError.classify(jsCertErr, stage: 1)
+        let diag = AppleAuthentication.errorCode(classified)
+        XCTAssertEqual(diag, "error=sap-cert-fetch; sap_stage=1")
+        XCTAssertFalse(diag.contains(secret))
+
+        let oomErr = NSError(
+            domain: "WKErrorDomain", code: 5,
+            userInfo: ["WKJavaScriptExceptionMessage": "RangeError: Out of memory \(secret)"]
+        )
+        XCTAssertEqual(AppleAuthentication.errorCode(SAPRuntimeError.classify(oomErr, stage: 2)), "error=sap-oom; sap_stage=2")
+        XCTAssertEqual(AppleAuthentication.errorCode(SAPRuntimeError.webProcessTerminated), "error=sap-web-terminated")
+        XCTAssertEqual(AppleAuthentication.errorCode(SAPRuntimeError.loadTimeout), "error=sap-load-timeout")
+    }
 }

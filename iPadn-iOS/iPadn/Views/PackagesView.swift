@@ -19,6 +19,10 @@ struct PackagesView: View {
     @State private var standalone: [URL] = []
     @State private var orphanedOutputs: [URL] = []
     @State private var importedIDs: Set<UUID> = []
+    @State private var importTotal = 0
+    @State private var importProcessed = 0
+    @State private var importSucceeded = 0
+    @State private var importAllowsAutoOpen = false
     @State private var pendingImport: [URL] = []
     @State private var importIssue: String?
     @State private var presentation: PackageFilePresentation?
@@ -160,7 +164,7 @@ struct PackagesView: View {
         var items: [SelectionItem] = originals.compactMap { !ui.protects($0.id) ? .job($0.id) : nil }
             + filteredStandalone.compactMap { !ui.protects(url: $0) ? .standalone($0) : nil }
         #if canImport(TestFlightKit)
-        items.append(contentsOf: filteredTFItems.compactMap { !ui.protects(url: $0.fileURL) ? .tf($0.bundleID) : nil })
+        items.append(contentsOf: filteredTFItems.compactMap { !ui.protects(url: $0.fileURL) ? .tf($0.id) : nil })
         #endif
         return items
     }
@@ -272,7 +276,21 @@ struct PackagesView: View {
             if importing || !importedIDs.isEmpty { importProgress }
             if let importIssue {
                 Section {
-                    InlineIssue(message: importIssue)
+                    HStack(alignment: .top, spacing: 8) {
+                        InlineIssue(message: importIssue)
+                        Spacer(minLength: 4)
+                        Button {
+                            withAnimation(UX.motion(reduceMotion)) {
+                                self.importIssue = nil
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.tertiary)
+                                .frame(minWidth: 32, minHeight: 32)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("关闭错误提示")
+                    }
                 }
             }
             if allEmpty && term.isEmpty {
@@ -330,7 +348,12 @@ struct PackagesView: View {
         Section {
             HStack(spacing: 10) {
                 ProgressView()
-                Text("正在添加安装包…")
+                if importTotal > 1 {
+                    Text("正在添加安装包（\(min(importProcessed, importTotal))/\(importTotal)）…")
+                        .monospacedDigit()
+                } else {
+                    Text("正在添加安装包…")
+                }
             }
             ForEach(importFailures) { job in
                 Text(verbatim: job.error ?? AppText.text("安装包未能添加"))
@@ -420,19 +443,41 @@ struct PackagesView: View {
         let existingIDs = Set(manager.jobs.map(\.id))
         importedIDs.formIntersection(existingIDs)
         var finished = Set<UUID>()
+        var singleCompletedID: UUID?
         for job in manager.jobs {
             guard importedIDs.contains(job.id) else { continue }
             if job.status == .completed {
-                if importedIDs.count == 1, store.tabs.id == .packages, ui.path.isEmpty {
-                    ui.navigate(.source(job.id))
+                importSucceeded += 1
+                if !importing && importAllowsAutoOpen && importedIDs.count == 1,
+                   store.tabs.id == .packages, ui.path.isEmpty {
+                    singleCompletedID = job.id
                 }
                 finished.insert(job.id)
             } else if job.status == .failed {
-                importIssue = job.error ?? AppText.text("安装包未能添加")
+                importIssue = (importIssue.map { $0 + "\n" } ?? "") + (job.error ?? AppText.text("安装包未能添加"))
                 finished.insert(job.id)
             }
         }
         importedIDs.subtract(finished)
+        if let singleCompletedID {
+            importAllowsAutoOpen = false
+            importTotal = 0
+            importProcessed = 0
+            importSucceeded = 0
+            ui.navigate(.source(singleCompletedID))
+            return
+        }
+        if !importing && importedIDs.isEmpty && importTotal > 0 {
+            let total = importTotal
+            let succeeded = importSucceeded
+            importTotal = 0
+            importProcessed = 0
+            importSucceeded = 0
+            importAllowsAutoOpen = false
+            if total > 1 && succeeded > 0 {
+                store.infoMessage = AppText.text("已添加 \(succeeded) 个安装包")
+            }
+        }
     }
 
     private enum UnifiedOriginalEntry: Identifiable {
@@ -445,7 +490,7 @@ struct PackagesView: View {
             switch self {
             case .job(let job): return "job:" + job.id.uuidString
             #if canImport(TestFlightKit)
-            case .tf(let item): return "tf:" + item.bundleID
+            case .tf(let item): return "tf:" + item.id
             #endif
             }
         }
@@ -566,16 +611,17 @@ struct PackagesView: View {
             status: status.text,
             symbol: status.symbol,
             color: status.color,
-            isTestFlight: true
+            isTestFlight: true,
+            platform: item.nonPhonePlatformBadge
         )
 
-        return selectableRow(.tf(item.bundleID), disabled: ui.protects(url: item.fileURL), content: { row }) {
+        return selectableRow(.tf(item.id), disabled: ui.protects(url: item.fileURL), content: { row }) {
             packageNavRow(route: .file(item.fileURL)) { row }
-                .accessibilityIdentifier("packages.tf." + item.bundleID)
+                .accessibilityIdentifier("packages.tf." + item.id)
                 .revealActions(
-                    id: "pkg.tf." + item.bundleID,
+                    id: "pkg.tf." + item.id,
                     enabled: !ui.protects(url: item.fileURL),
-                    restored: tfProducts.recentlyRestoredBundleIDs.contains(item.bundleID),
+                    restored: tfProducts.recentlyRestoredBundleIDs.contains(item.id),
                     [
                         .delete(fills: true) {
                             guard !ui.protects(url: item.fileURL) else {
@@ -594,8 +640,10 @@ struct PackagesView: View {
                     ]
                 )
                 .contextMenu {
-                    Button("安装", systemImage: "square.and.arrow.down") {
-                        installingTFItem = item
+                    if item.canInstallOnCurrentDevice {
+                        Button("安装", systemImage: "square.and.arrow.down") {
+                            installingTFItem = item
+                        }
                     }
                     if let output = result, DecryptOutcomeStyle(output) == .success, ui.currentOutput(output) != nil {
                         Button("查看解密结果", systemImage: "checkmark.circle") { ui.navigate(.record(output.id)) }
@@ -679,13 +727,15 @@ struct PackagesView: View {
             let metadata = [job.conciseVersionLabel, job.app.size > 0 ? job.app.size.byteLabel : ""]
                 .filter { !$0.isEmpty }.joined(separator: " · ")
             let rowName = PackageStage.displayName(job.app.name)
+            let jobPlatform: String? = (job.platformLabel == "tvOS" || job.platformLabel == "iPad") ? job.platformLabel : nil
             let row = PackageLibraryRow(
                 name: rowName,
                 icon: manager.packageIconURL(job) ?? job.app.iconURL,
                 metadata: metadata,
                 status: status.text,
                 symbol: status.symbol,
-                color: status.color
+                color: status.color,
+                platform: jobPlatform
             )
             selectableRow(.job(job.id), disabled: ui.protects(job.id), content: { row }) {
                 packageNavRow(route: .source(job.id)) { row }
@@ -874,6 +924,13 @@ struct PackagesView: View {
         let outputURL = ui.currentOutput(record)
         let suggestedName = [cleanName, record.version].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "_")
             + (record.verification == .clean ? "_decrypted.ipa" : "_PARTIAL.ipa")
+        let productPlatform: String? = {
+            #if canImport(TestFlightKit)
+            if let badge = tfItem?.nonPhonePlatformBadge { return badge }
+            #endif
+            if let label = job?.platformLabel, label == "tvOS" || label == "iPad" { return label }
+            return nil
+        }()
         let row = PackageLibraryRow(
             name: cleanName,
             icon: ui.iconURL(for: record, manager: manager),
@@ -882,7 +939,8 @@ struct PackagesView: View {
             symbol: style.symbol,
             color: style.color,
             trailingNote: record.finishedAt?.formatted(date: .omitted, time: .shortened),
-            isTestFlight: isTF
+            isTestFlight: isTF,
+            platform: productPlatform
         )
 
         return selectableRow(.output(record.id), disabled: service.isRunning, content: { row }) {
@@ -1140,8 +1198,8 @@ struct PackagesView: View {
                 catch { firstError = firstError ?? error }
             }
             #if canImport(TestFlightKit)
-            for bundle in tfBundles {
-                if let item = tfProducts.items.first(where: { $0.bundleID == bundle }),
+            for tfID in tfBundles {
+                if let item = tfProducts.items.first(where: { $0.id == tfID || $0.bundleID == tfID }),
                    !ui.protects(url: item.fileURL) {
                     tfProducts.delete(item)
                     removed += 1
@@ -1222,13 +1280,17 @@ struct PackagesView: View {
     }
 
     private func importFiles(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
         importing = true
+        importTotal = urls.count
+        importProcessed = 0
+        importSucceeded = 0
+        importAllowsAutoOpen = urls.count == 1
         products = false
         term = ""
         importIssue = nil
         let temporary = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().path
         Task { @MainActor in
-            defer { importing = false }
             for url in urls {
                 let before = Set(manager.jobs.map(\.id))
                 do {
@@ -1237,10 +1299,12 @@ struct PackagesView: View {
                 } catch {
                     importIssue = (importIssue.map { $0 + "\n" } ?? "") + url.lastPathComponent + ": " + error.localizedDescription
                 }
+                importProcessed += 1
                 if url.resolvingSymlinksInPath().path.hasPrefix(temporary) {
                     try? FileManager.default.removeItem(at: url)
                 }
             }
+            importing = false
             finishImports()
             await refreshFiles()
         }

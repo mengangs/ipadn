@@ -240,7 +240,7 @@ struct VerificationStep: View {
             Image(systemName: "lock.shield.fill").font(.system(size: 56)).foregroundStyle(.tint)
                 .padding(.top, 12).accessibilityHidden(true)
             Text("双重认证").font(.title.weight(.bold))
-            Text(sent ? "Apple 已向“\(account)”的受信任设备发送登录请求。在设备上点按「允许」后会显示 6 位验证码，请输入以继续。"
+            Text(sent ? "如“\(account)”的账号和密码正确，受信任设备会收到登录请求；在设备上点按「允许」后请输入显示的 6 位验证码。若未收到提示，请核对账号密码或在系统设置中手动获取验证码。"
                  : "正在请求 Apple 向“\(account)”的受信任设备发送验证码…")
                 .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)

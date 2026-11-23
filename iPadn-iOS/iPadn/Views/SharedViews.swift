@@ -213,7 +213,7 @@ private struct StoreActionPhaseHost: View {
         case .failed:
             return .capsule(title: "重试", filled: false, enabled: true)
         case .completed:
-            if job.rawFormat == nil {
+            if job.canInstallOnCurrentDevice {
                 return .capsule(title: "安装", filled: filled, enabled: true)
             }
             return .capsule(title: "已完成", filled: false, enabled: true)
@@ -232,7 +232,7 @@ private struct StoreActionPhaseHost: View {
         case .pausing, .processing: return AppText.text("正在处理")
         case .paused: return AppText.text("继续")
         case .failed: return AppText.text("重试")
-        case .completed: return job.rawFormat == nil ? AppText.text("安装") : AppText.text("已完成")
+        case .completed: return job.canInstallOnCurrentDevice ? AppText.text("安装") : AppText.text("已完成")
         }
     }
 
@@ -353,18 +353,23 @@ struct RootView: View {
 
                     }.navigationTitle("iPadn").navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
                 } detail: {
-                    // Keep every section alive, like the iPhone tab bar does, so
-                    // switching sections keeps navigation, filters and scroll position.
-                    ZStack {
-                        ForEach(destinations, id: \.id) { item in
-                            pageStack(item.id)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .background(Color(.systemGroupedBackground))
-                                .opacity(tabs.id == item.id ? 1 : 0)
-                                .allowsHitTesting(tabs.id == item.id)
-                                .accessibilityHidden(tabs.id != item.id)
+                    // Mount only the active section's NavigationStack inside NavigationSplitView's
+                    // detail column. Stacking sibling NavigationStacks in a ZStack causes SwiftUI
+                    // to coalesce their navigation bars and path bindings—leaking hidden-tab toolbar
+                    // buttons and blocking Account sub-page pushes when Pro Mode adds PackagesView.
+                    let activeTab: TabID = (tabs.id == .packages && !store.settings.proMode) ? .search : tabs.id
+                    Group {
+                        switch activeTab {
+                        case .search: pageStack(.search)
+                        case .downloads: pageStack(.downloads)
+                        case .packages: pageStack(.packages)
+                        case .purchased: pageStack(.purchased)
+                        case .accounts: pageStack(.accounts)
                         }
                     }
+                    .id(activeTab)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(.systemGroupedBackground))
                 }
             } else {
                 TabView(selection: tabSelectionBinding) {
@@ -629,6 +634,8 @@ private struct AccountNavigationDestinationsModifier: ViewModifier {
                     TestFlightRouteDestination()
                 case .settings(let page):
                     SettingsView(page: page)
+                case .searchRegions:
+                    SearchRegionsView()
                 case .installation:
                     InstallationSettingsView()
                 case .credentials:

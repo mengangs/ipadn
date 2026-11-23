@@ -42,6 +42,8 @@ public enum TFSINF {
         public var paths: [String] = []
         public var sizes: [Int] = []
         public var members: Int = 0
+        /// Number of SINF entries newly added (not replacing an existing member of the same path).
+        public var addedCount: Int = 0
     }
 
     public static func install(metadata: Data, ipa: URL) throws -> Report {
@@ -53,6 +55,7 @@ public enum TFSINF {
             throw TFError.malformed("SINF: cannot open \(ipa.lastPathComponent): \(lastError())")
         }
         let names = names(of: handle)
+        let existingNames = Set(names)
         tf_zip_close_read_c(handle)
         guard let root = appRoot(in: names) else {
             throw TFError.malformed("SINF: no Payload/<App>.app/Info.plist in IPA")
@@ -61,6 +64,7 @@ public enum TFSINF {
         guard paths.count == records.count else {
             throw TFError.malformed("SINF: \(records.count) records but \(paths.count) manifest paths")
         }
+        var seenAdded = Set<String>()
         for (index, record) in records.enumerated() {
             let entry = root + paths[index]
             try validate(entry: entry)
@@ -75,6 +79,9 @@ public enum TFSINF {
             }
             guard ok == 1 else {
                 throw TFError.malformed("SINF: add \(entry) failed: \(lastError())")
+            }
+            if !existingNames.contains(entry) && seenAdded.insert(entry).inserted {
+                report.addedCount += 1
             }
             report.paths.append(entry)
             report.sizes.append(record.count)
@@ -121,33 +128,61 @@ public enum TFSINF {
         return names(of: handle)
     }
 
-    /// `CFBundleIdentifier` of the single `Payload/<App>.app` in the archive.
+    /// `CFBundleIdentifier` of the single top-level `Payload/<App>.app` in the archive.
     public static func bundleID(ipa: URL) -> String? {
-        for name in members(ipa: ipa) where name.hasPrefix("Payload/") && name.hasSuffix(".app/Info.plist") {
-            guard let data = read(ipa: ipa, entry: name),
-                  let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
-                  let value = plist["CFBundleIdentifier"] as? String else { continue }
-            return value
+        guard let root = appRoot(in: members(ipa: ipa)),
+              let data = read(ipa: ipa, entry: root + "Info.plist"),
+              let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+              let value = plist["CFBundleIdentifier"] as? String else {
+            return nil
         }
-        return nil
+        return value
+    }
+
+    private static func mainExecutablePath(in names: [String], ipa: URL) -> String? {
+        guard let root = appRoot(in: names),
+              let data = read(ipa: ipa, entry: root + "Info.plist"),
+              let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+              let exe = plist["CFBundleExecutable"] as? String, !exe.isEmpty else {
+            return nil
+        }
+        return root + exe
     }
 
     /// Counts Mach-O images whose `LC_ENCRYPTION_INFO*` still says encrypted (cryptid != 0).
-    /// Only plausible executable members are read; a member larger than `limit` is skipped
-    /// and reported, because libzip exposes whole entries only.
+    /// Reads only a 256 KiB header prefix via streaming decompression first so multi-hundred-MB
+    /// game binaries (Unity/Unreal) are inspected without hitting RAM limits; falls back to full
+    /// member reads up to `limit` only for FAT binaries whose slices start past the prefix.
     public static func encryptedMachOCount(ipa: URL, limit: Int = 96 << 20,
                                           skipped: inout [String]) -> Int {
         var count = 0
+        let allNames = members(ipa: ipa)
+        let mainExe = mainExecutablePath(in: allNames, ipa: ipa)
         let directory = try? ZipReader(url: ipa)
-        for name in members(ipa: ipa) where isExecutableCandidate(name) {
+        let headerBytes = 256 << 10
+        for name in allNames where isExecutableCandidate(name, mainExecutable: mainExe) {
+            if let prefix = directory?.prefix(named: name, maxBytes: headerBytes) {
+                switch inspectCryptid(of: prefix) {
+                case .found(let cid):
+                    if cid != 0 {
+                        count += 1
+                        skipped.append("enc:" + name)
+                    }
+                    continue
+                case .notMachO:
+                    continue
+                case .needsFullSlice:
+                    break
+                }
+            }
             if let declared = directory?.uncompressedSize(named: name), declared > limit {
                 skipped.append(name)
                 continue
             }
             guard let data = read(ipa: ipa, entry: name) else { continue }
             guard data.count <= limit else { skipped.append(name); continue }
-            guard let cryptid = cryptid(of: data) else { continue }
-            if cryptid != 0 {
+            guard let cid = cryptid(of: data) else { continue }
+            if cid != 0 {
                 count += 1
                 skipped.append("enc:" + name)
             }
@@ -155,21 +190,110 @@ public enum TFSINF {
         return count
     }
 
-    static func isExecutableCandidate(_ name: String) -> Bool {
-        guard name.hasPrefix("Payload/") else { return false }
-        guard !name.hasSuffix(".plist"), !name.hasSuffix(".nib"), !name.hasSuffix(".car"),
-              !name.hasSuffix(".png"), !name.hasSuffix(".json"), !name.hasSuffix(".strings") else { return false }
+    private static let nonExecutableExtensions: Set<String> = [
+        "plist", "nib", "car", "png", "jpg", "jpeg", "gif", "webp", "svg", "pdf",
+        "json", "strings", "stringsdict", "xcstrings", "xml", "html", "css", "js",
+        "txt", "md", "rtf", "csv", "yaml", "yml", "toml", "ini", "cfg", "conf",
+        "ttf", "otf", "ttc", "woff", "woff2", "wav", "mp3", "m4a", "aac", "ogg",
+        "mp4", "mov", "m4v", "webm", "avi", "metallib", "momd", "mom", "omo",
+        "storyboardc", "bundle", "lproj", "scn", "usdz", "dae", "obj", "mtl",
+        "assets", "asset", "ress", "resource", "unity3d", "pak", "bin", "dat",
+        "db", "sqlite", "sqlite3", "realm", "sinf", "supf", "supp", "supx",
+        "mobileprovision", "cer", "crt", "der", "pem", "p12", "xcent", "entitlements",
+        "zip", "gz", "bz2", "xz", "lz4", "zst", "tar", "7z", "rar",
+        "h", "m", "mm", "c", "cc", "cpp", "swift", "modulemap", "swiftmodule", "swiftdoc",
+    ]
+
+    static func isExecutableCandidate(_ name: String, mainExecutable: String? = nil) -> Bool {
+        if let mainExecutable, name == mainExecutable { return true }
+        guard name.hasPrefix("Payload/"), !name.hasSuffix("/") else { return false }
         let parts = name.split(separator: "/", omittingEmptySubsequences: false)
-        guard let last = parts.last, !last.contains(".") else { return false }
+        guard let lastSub = parts.last, !lastSub.isEmpty else { return false }
+        let last = String(lastSub)
+        if last.hasPrefix(".") { return false }
+        // Payload/<App>.app/Frameworks/<lib>.dylib
+        if parts.count == 4, parts[2] == "Frameworks", last.lowercased().hasSuffix(".dylib") {
+            return true
+        }
         // Payload/<App>.app/<exe>, Payload/<App>.app/PlugIns/<X>.appex/<exe>,
         // Payload/<App>.app/Frameworks/<Y>.framework/<binary>
-        return parts.count == 3 || parts.count == 5
+        guard parts.count == 3 || parts.count == 5 else { return false }
+        if parts.count == 5 {
+            let parent = parts[2]
+            guard parent == "Frameworks" || parent == "PlugIns" else { return false }
+        }
+        if let dot = last.lastIndex(of: ".") {
+            let ext = last[last.index(after: dot)...].lowercased()
+            if nonExecutableExtensions.contains(ext) { return false }
+        }
+        return true
     }
 
-    /// Minimal Mach-O reader: returns the cryptid of the first LC_ENCRYPTION_INFO* command.
+    private enum CryptidInspection {
+        case found(Int32)
+        case notMachO
+        case needsFullSlice
+    }
+
+    /// Reads the `LC_ENCRYPTION_INFO*` cryptid of a thin or FAT Mach-O binary.
+    /// Returns a non-zero cryptid if any slice is encrypted, 0 if slices have cryptid == 0,
+    /// or `nil` if the bytes are not a Mach-O with encryption info.
     static func cryptid(of data: Data) -> Int32? {
-        guard data.count > 32 else { return nil }
+        switch inspectCryptid(of: data) {
+        case .found(let cid): return cid
+        case .notMachO, .needsFullSlice: return nil
+        }
+    }
+
+    private static func inspectCryptid(of data: Data) -> CryptidInspection {
+        guard data.count >= 32 else { return .notMachO }
         let magic = data.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
+        switch magic {
+        case 0xFEEDFACF, 0xFEEDFACE:
+            if let cid = thinCryptid(of: data, at: 0) { return .found(cid) }
+            return .notMachO
+        case 0xBEBAFECA, 0xCAFEBABE, 0xBFBAFECA, 0xCAFEBABF:
+            // FAT Mach-O (32-bit or 64-bit, big-endian on disk -> 0xBEBAFECA / 0xBFBAFECA in LE).
+            let isBigEndian = (magic == 0xBEBAFECA || magic == 0xBFBAFECA)
+            let isFat64 = (magic == 0xBFBAFECA || magic == 0xCAFEBABF)
+            let rawCount = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self) }
+            let nfat = Int(isBigEndian ? UInt32(bigEndian: rawCount) : rawCount)
+            guard nfat > 0, nfat <= 16 else { return .notMachO }
+            let entrySize = isFat64 ? 32 : 20
+            guard 8 + nfat * entrySize <= data.count else { return .needsFullSlice }
+            var sawZero = false
+            var needsFull = false
+            for idx in 0..<nfat {
+                let entryOff = 8 + idx * entrySize
+                let sliceOffset: Int
+                if isFat64 {
+                    let rawOff = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: entryOff + 8, as: UInt64.self) }
+                    let val = isBigEndian ? UInt64(bigEndian: rawOff) : rawOff
+                    guard val <= UInt64(Int.max) else { continue }
+                    sliceOffset = Int(val)
+                } else {
+                    let rawOff = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: entryOff + 8, as: UInt32.self) }
+                    sliceOffset = Int(isBigEndian ? UInt32(bigEndian: rawOff) : rawOff)
+                }
+                if sliceOffset + 32 > data.count {
+                    needsFull = true
+                    continue
+                }
+                if let cid = thinCryptid(of: data, at: sliceOffset) {
+                    if cid != 0 { return .found(cid) }
+                    sawZero = true
+                }
+            }
+            if needsFull { return .needsFullSlice }
+            return sawZero ? .found(0) : .notMachO
+        default:
+            return .notMachO
+        }
+    }
+
+    private static func thinCryptid(of data: Data, at sliceOffset: Int) -> Int32? {
+        guard sliceOffset >= 0, sliceOffset + 32 <= data.count else { return nil }
+        let magic = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: sliceOffset, as: UInt32.self) }
         let is64: Bool
         switch magic {
         case 0xFEEDFACF: is64 = true
@@ -177,9 +301,8 @@ public enum TFSINF {
         default: return nil
         }
         let headerSize = is64 ? 32 : 28
-        guard data.count >= headerSize else { return nil }
-        let ncmds: UInt32 = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 16, as: UInt32.self) }
-        var offset = headerSize
+        let ncmds: UInt32 = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: sliceOffset + 16, as: UInt32.self) }
+        var offset = sliceOffset + headerSize
         for _ in 0..<ncmds {
             guard offset + 8 <= data.count else { return nil }
             let cmd: UInt32 = data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt32.self) }

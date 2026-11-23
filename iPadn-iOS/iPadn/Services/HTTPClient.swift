@@ -451,6 +451,7 @@ final class HTTPClient: Sendable {
             "1008": AppText.text("Apple 登录已过期，请重新登录。"),
             "2002": AppText.text("Apple 账号需要重新登录，请检查当前密码。"),
             "5002": AppText.text("Apple 服务暂时不可用，请稍后再试。"),
+            "5020": AppText.text("Apple 账号、密码或验证码有误；若确认无误，请先在系统 App Store 检查账号状态后重试。"),
             "2040": AppText.text("该应用目前无法从 Apple 下载。"),
             "-5000": AppText.text("Apple 账号或密码不正确。"),
             "2059": AppText.text("该应用暂时无法下载，请稍后再试。"),

@@ -54,7 +54,7 @@ struct WiFiTransferView: View {
             guard FileManager.default.fileExists(atPath: item.fileURL.path) else { continue }
             let version = item.shortVersion.isEmpty ? item.buildVersion : item.shortVersion
             result.append(TransferEntry(
-                id: "tf-" + item.bundleID,
+                id: "tf-" + item.id,
                 name: item.displayName,
                 version: version,
                 filename: item.fileURL.lastPathComponent,

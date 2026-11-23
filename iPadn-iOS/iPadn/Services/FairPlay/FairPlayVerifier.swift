@@ -11,15 +11,16 @@ struct FairPlayFileReport: Sendable {
     /// True when the slice was encrypted before this run.
     let wasEncrypted: Bool
 
-    /// `codeWords` stays in the report as a diagnostic, but it no longer decides
-    /// the verdict: heavily obfuscated or data-only payloads decrypt correctly
-    /// with zero ARM64 landmarks (measured on device 2026-11-19: 14 files landed
-    /// at 0.53–6.19 bits/byte with `code 0->0`, while every accepted file sat at
-    /// or below 7.06). The gate is therefore "the ciphertext really collapsed".
+    /// `codeWords` stays in the report as a diagnostic, and also confirms
+    /// high-entropy constant-table binaries (such as CJK codec tables like
+    /// `_codecs_cn`, whose plaintext entropy lands around 7.50–7.70 while
+    /// ARM64 code landmarks surge 0→23). Heavily obfuscated or data-only
+    /// payloads with zero landmarks continue to pass whenever entropy < 7.5.
     var ok: Bool {
         guard cryptid == 0 else { return false }
         guard wasEncrypted else { return true }
-        return entropy < 7.5
+        if entropy < 7.5 { return true }
+        return entropy < 7.8 && codeWords >= 8
     }
 }
 

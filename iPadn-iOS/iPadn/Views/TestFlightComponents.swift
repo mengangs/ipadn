@@ -175,14 +175,14 @@ struct TFHeroAmbientBackground: View {
                             .scaledToFill()
                             .scaleEffect(1.35)
                             .saturation(1.25)
-                            .blur(radius: 44)
+                            .blur(radius: 44, opaque: true)
                             .opacity(0.75)
                     }
                     LinearGradient(
                         colors: [
-                            Color.black.opacity(0.36),
-                            Color.black.opacity(0.48),
-                            Color.black.opacity(0.64),
+                            Color.black.opacity(0.42),
+                            Color.black.opacity(0.50),
+                            Color.black.opacity(0.66),
                         ],
                         startPoint: .top,
                         endPoint: .bottom

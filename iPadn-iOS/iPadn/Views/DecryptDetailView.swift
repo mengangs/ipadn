@@ -127,6 +127,13 @@ struct DecryptDetailView: View {
         let versionText = !tfVersion.isEmpty ? tfVersion : (version.isEmpty ? "" : "v\(version)")
         let sizeText = (ui.currentOutput(record) != nil ? record.outputBytes : record.sourceBytes)
             .flatMap { $0 > 0 ? Int64($0).byteLabel : nil } ?? ""
+        let detailPlatform: String? = {
+            #if canImport(TestFlightKit)
+            if let badge = tfItem?.nonPhonePlatformBadge { return badge }
+            #endif
+            if let label = job?.platformLabel, label == "tvOS" || label == "iPad" { return label }
+            return nil
+        }()
         let subtitle = [versionText, sizeText].filter { !$0.isEmpty }.joined(separator: " · ")
 
         return Section {
@@ -136,10 +143,13 @@ struct DecryptDetailView: View {
                     Text(verbatim: title)
                         .font(.title3.weight(.semibold))
                         .multilineTextAlignment(.center)
-                    if isTF || !subtitle.isEmpty {
+                    if isTF || detailPlatform != nil || !subtitle.isEmpty {
                         HStack(spacing: 5) {
                             if isTF {
                                 TestFlightIcon(size: 14)
+                            }
+                            if let detailPlatform {
+                                PlatformGlyph(platform: detailPlatform, size: 13)
                             }
                             if !subtitle.isEmpty {
                                 Text(verbatim: subtitle)

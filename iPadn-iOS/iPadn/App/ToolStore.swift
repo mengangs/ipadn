@@ -156,6 +156,7 @@ enum AccountRoute: Hashable, Codable {
     case wifiTransfer
     case testFlight
     case settings(SettingsView.Page)
+    case searchRegions
     case installation
     case credentials
     case storage
@@ -1574,6 +1575,11 @@ final class ToolStore: ObservableObject {
         officialVersionCache.removeAll()
     }
 
+    func invalidateOfficialVersionCache(for appID: String) {
+        let suffix = "|\(appID)"
+        officialVersionCache = officialVersionCache.filter { !$0.key.hasSuffix(suffix) }
+    }
+
     /// Every version Apple lists for the active account. Never claims a license.
     private func appleVersions(for app: StoreApp, context: StoreContext, force: Bool) async throws -> [AppVersion] {
         var seen = Set<String>()
@@ -2067,6 +2073,7 @@ final class ToolStore: ObservableObject {
                     }
                     try Task.checkCancellation()
                     try self.downloads.enqueueOfficialMacPackage(offer, for: app)
+                    self.invalidateOfficialVersionCache(for: app.id)
                 }
                 onEnqueued?()
             }
@@ -2154,6 +2161,7 @@ final class ToolStore: ObservableObject {
             }
         }
         try downloads.enqueue(asset)
+        invalidateOfficialVersionCache(for: app.id)
         if versionID == nil,
            let extID = asset.app.externalVersionID?.trimmingCharacters(in: .whitespacesAndNewlines),
            !extID.isEmpty {
@@ -2412,6 +2420,7 @@ final class ToolStore: ObservableObject {
                 store: StoreContext(country: settings.store.country, platform: platform), useCache: settings.useSignerCache)
             if asset.app.iconURL == nil { asset.app.iconURL = app.iconURL }
             try downloads.enqueue(asset)
+            invalidateOfficialVersionCache(for: app.id)
         }
         return true
     }
@@ -2433,6 +2442,7 @@ final class ToolStore: ObservableObject {
                                                       useCache: settings.useSignerCache)
                     if asset.app.iconURL == nil { asset.app.iconURL = app.iconURL }
                     try downloads.enqueue(asset)
+                    invalidateOfficialVersionCache(for: app.id)
                 }
                 added += 1
             } catch AppleLoginError.verificationRequired {

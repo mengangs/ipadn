@@ -4,6 +4,64 @@ import Combine
 import CryptoKit
 import UIKit
 
+/// Redacted local signing runtime failure. Carries only fixed safe ASCII tokens
+/// and integer stage/status codes—never raw URLs, credentials, or arbitrary JS strings.
+enum SAPRuntimeError: Error, LocalizedError, Equatable {
+    case jsFailure(stage: Int, token: String)
+    case emptyResult
+    case webProcessTerminated
+    case loadTimeout
+    case executionTimeout
+
+    var diagnosticCode: String {
+        switch self {
+        case .jsFailure(let stage, let token): return "error=sap-\(token); sap_stage=\(stage)"
+        case .emptyResult: return "error=sap-empty-result"
+        case .webProcessTerminated: return "error=sap-web-terminated"
+        case .loadTimeout: return "error=sap-load-timeout"
+        case .executionTimeout: return "error=sap-exec-timeout"
+        }
+    }
+
+    var errorDescription: String? {
+        switch self {
+        case .jsFailure: return AppText.text("验证未完成，请检查网络后重试")
+        case .emptyResult: return AppText.text("验证结果为空，请重试")
+        case .webProcessTerminated: return AppText.text("验证意外中断，请重试")
+        case .loadTimeout: return AppText.text("本地验证环境加载超时，请重试。")
+        case .executionTimeout: return AppText.text("验证已超过 3 分钟，已停止本次操作。请保持应用在前台后重试。")
+        }
+    }
+
+    static func classify(_ error: Error, stage: Int) -> SAPRuntimeError {
+        if let existing = error as? SAPRuntimeError { return existing }
+        let ns = error as NSError
+        let raw = [
+            ns.userInfo["WKJavaScriptExceptionMessage"] as? String,
+            ns.localizedDescription
+        ].compactMap { $0 }.joined(separator: " ").lowercased()
+        let token: String
+        if raw.contains("setup certificate") { token = "cert-fetch" }
+        else if raw.contains("sap setup request failed") { token = "setup-http" }
+        else if raw.contains("load sap wasm failed") { token = "wasm-fetch" }
+        else if raw.contains("sap wasm initialization timed out") { token = "wasm-timeout" }
+        else if raw.contains("unicorn") { token = "unicorn" }
+        else if raw.contains("go wasm runtime") { token = "go-runtime" }
+        else if raw.contains("load script failed") { token = "script-load" }
+        else if raw.contains("out of memory") || raw.contains("wasm memory") || raw.contains("heap") { token = "oom" }
+        else if raw.contains("compileerror") || raw.contains("linkerror") || raw.contains("webassembly") { token = "wasm-runtime" }
+        else if raw.contains("typeerror") { token = "js-type" }
+        else if raw.contains("rangeerror") { token = "js-range" }
+        else if raw.contains("syntaxerror") { token = "js-syntax" }
+        else if raw.contains("referenceerror") { token = "js-ref" }
+        else if raw.contains("failed to fetch") || raw.contains("load failed") || raw.contains("networkerror") { token = "fetch" }
+        else if ns.domain == "WKErrorDomain" || ns.domain == "WebKitErrorDomain" { token = "wk-\(ns.code)" }
+        else if ns.domain == NSURLErrorDomain { token = "url-\(ns.code)" }
+        else { token = "js-\(ns.code)" }
+        return .jsFailure(stage: stage, token: token)
+    }
+}
+
 @MainActor
 final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMessageHandler {
     @Published private(set) var isPresented = false
@@ -271,7 +329,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
             webView = web; isPresented = true
             if !warm {
                 let loadTimeout = max(45, min(timeoutSeconds, 90))
-                armTimeout(id: id, seconds: loadTimeout, message: AppText.text("本地验证环境加载超时，请重试。"))
+                armTimeout(id: id, seconds: loadTimeout, error: SAPRuntimeError.loadTimeout)
                 try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                     navigation = continuation
                     web.load(URLRequest(url: base.appendingPathComponent("runtime/index.html")))
@@ -280,7 +338,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
                 stage = AppText.text("复用本机验证组件")
             }
             try checkActive(id)
-            armTimeout(id: id, seconds: timeoutSeconds, message: AppText.text("验证已超过 3 分钟，已停止本次操作。请保持应用在前台后重试。"))
+            armTimeout(id: id, seconds: timeoutSeconds, error: SAPRuntimeError.executionTimeout)
             var values = arguments
             values["proxy"] = base.appendingPathComponent("proxy").absoluteString
             let result: String
@@ -294,7 +352,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
                             switch result {
                             case .success(let value):
                                 if let text = value as? String, !text.isEmpty { continuation.resume(returning: text) }
-                                else { continuation.resume(throwing: ToolError.message(AppText.text("验证结果为空，请重试"))) }
+                                else { continuation.resume(throwing: SAPRuntimeError.emptyResult) }
                             case .failure(let err):
                                 continuation.resume(throwing: err)
                             }
@@ -309,7 +367,9 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
                     discardIdleRuntime()
                     throw RuntimeRetry.coldStart
                 }
-                throw ToolError.message(AppText.text("验证未完成，请检查网络后重试"))
+                let classified = SAPRuntimeError.classify(error, stage: stageIndex)
+                InstallLog.shared.add("sap: " + classified.diagnosticCode)
+                throw classified
             }
             try checkActive(id)
             succeeded = true
@@ -352,11 +412,12 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
         if let terminalError { throw terminalError }
         guard operationID == id else { throw CancellationError() }
     }
-    private func armTimeout(id: UUID, seconds: UInt64, message: String) {
+    private func armTimeout(id: UUID, seconds: UInt64, error: SAPRuntimeError) {
         timeout?.cancel()
         timeout = Task { @MainActor [weak self] in
             do { try await Task.sleep(nanoseconds: seconds * 1_000_000_000) } catch { return }
-            self?.stop(id: id, error: ToolError.message(message))
+            InstallLog.shared.add("sap: " + error.diagnosticCode)
+            self?.stop(id: id, error: error)
         }
     }
     private func finishNavigation(_ result: Result<Void, Error>) {
@@ -428,6 +489,7 @@ final class SAPSigner: NSObject, ObservableObject, WKNavigationDelegate, WKScrip
     }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         guard webView === self.webView, let id = operationID else { return }
-        stop(id: id, error: ToolError.message(AppText.text("验证意外中断，请重试")))
+        InstallLog.shared.add("sap: " + SAPRuntimeError.webProcessTerminated.diagnosticCode)
+        stop(id: id, error: SAPRuntimeError.webProcessTerminated)
     }
 }

@@ -129288,6 +129288,1196 @@
           }
         }
       }
+    },
+    "Apple 账号、密码或验证码有误；若确认无误，请先在系统 App Store 检查账号状态后重试。": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "معرّف Apple أو كلمة السر أو رمز التحقق غير صحيح. إذا كانت صحيحة، فتحقّق من حالة حسابك في App Store على النظام ثم حاول مرة أخرى."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple Account, Passwort oder Bestätigungscode sind falsch. Falls sie stimmen, prüfe deinen Account-Status in der App Store-App und versuche es erneut."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Incorrect Apple Account, password, or verification code. If they are correct, check your account status in the system App Store app and try again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La cuenta de Apple, la contraseña o el código de verificación son incorrectos. Si son correctos, revisa el estado de tu cuenta en la app App Store del sistema y vuelve a intentarlo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compte Apple, mot de passe ou code de validation incorrect. S’ils sont exacts, vérifiez l’état de votre compte dans l’App Store du système, puis réessayez."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple Account、パスワード、または確認コードが正しくありません。正しい場合は、システムの App Store でアカウントの状態を確認してからやり直してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 계정, 암호 또는 확인 코드가 올바르지 않습니다. 정보가 맞다면 시스템 App Store에서 계정 상태를 확인한 후 다시 시도하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conta Apple, senha ou código de verificação incorreto. Se estiverem corretos, verifique o status da conta na App Store do sistema e tente novamente."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Неверный Аккаунт Apple, пароль или код проверки. Если данные верны, проверьте статус аккаунта в системном App Store и повторите попытку."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 账号、密码或验证码有误；若确认无误，请先在系统 App Store 检查账号状态后重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 帳號、密碼或驗證碼有誤；若確認無誤，請先在系統 App Store 檢查帳號狀態後重試。"
+          }
+        }
+      }
+    },
+    "如“%@”的账号和密码正确，受信任设备会收到登录请求；在设备上点按「允许」后请输入显示的 6 位验证码。若未收到提示，请核对账号密码或在系统设置中手动获取验证码。": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إذا كان حساب «%@» وكلمة السر صحيحين، فسيتلقّى جهازك الموثوق طلب تسجيل دخول؛ اضغط على «السماح» ثم أدخل رمز التحقق المكوّن من 6 أرقام. إذا لم يصلك إشعار، فتحقّق من الحساب وكلمة السر أو احصل على الرمز يدويًا من الإعدادات."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wenn Account und Passwort für „%@“ stimmen, erhält dein vertrauenswürdiges Gerät eine Anmeldeanfrage. Tippe auf „Erlauben“ und gib den 6-stelligen Code ein. Falls nichts erscheint, prüfe deine Zugangsdaten oder hole dir einen Code in den Einstellungen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If the account and password for “%@” are correct, your trusted device will receive a sign-in request. Tap Allow, then enter the 6-digit code. If no prompt appears, double-check your credentials or get a verification code manually in Settings."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Si la cuenta y la contraseña de «%@» son correctas, tu dispositivo de confianza recibirá una solicitud de inicio de sesión; pulsa Permitir e introduce el código de 6 dígitos. Si no aparece ningún aviso, revisa tus datos u obtén un código manualmente en Ajustes."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Si l’identifiant et le mot de passe de « %@ » sont corrects, votre appareil de confiance recevra une demande de connexion ; touchez Autoriser puis saisissez le code à 6 chiffres. Si aucune alerte n’apparaît, vérifiez vos identifiants ou obtenez un code dans Réglages."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」のアカウントとパスワードが正しければ、信頼できるデバイスにサインイン要求が届きます。「許可」をタップして表示された 6 桁の確認コードを入力してください。表示されない場合は、入力内容を確認するか「設定」から手動でコードを取得してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’의 계정과 암호가 맞으면 신뢰할 수 있는 기기에 로그인 요청이 전송됩니다. ‘허용’을 탭한 뒤 표시되는 6자리 코드를 입력하세요. 알림이 오지 않으면 계정·암호를 다시 확인하거나 설정에서 직접 코드를 받으세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se a conta e a senha de “%@” estiverem corretas, seu dispositivo confiável receberá um pedido de início de sessão; toque em Permitir e digite o código de 6 dígitos. Se nenhum aviso aparecer, confira seus dados ou gere um código nos Ajustes."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Если аккаунт и пароль для «%@» верны, на доверенное устройство придет запрос на вход; нажмите «Разрешить» и введите 6-значный код. Если запрос не пришел, проверьте данные или получите код вручную в «Настройках»."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如“%@”的账号和密码正确，受信任设备会收到登录请求；在设备上点按「允许」后请输入显示的 6 位验证码。若未收到提示，请核对账号密码或在系统设置中手动获取验证码。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如「%@」的帳號和密碼正確，受信任裝置會收到登入請求；在裝置上點一下「允許」後請輸入顯示的 6 位數驗證碼。若未收到提示，請核對帳號密碼或在系統設定中手動取得驗證碼。"
+          }
+        }
+      }
+    },
+    "已显示 %lld 个地区": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "معروض %lld منطقة"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld angezeigte Regionen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Showing %lld regions"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrando %lld regiones"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld régions affichées"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示中（%lld 件）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표시 중인 지역 %lld개"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exibindo %lld regiões"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показано регионов: %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已显示 %lld 个地区"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已顯示 %lld 個地區"
+          }
+        }
+      }
+    },
+    "勾选后将在搜索页的商店地区菜单中显示，至少保留 1 个地区。": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ستظهر المناطق المحددة في قائمة منطقة المتجر بصفحة البحث. يجب الاحتفاظ بمنطقة واحدة على الأقل."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ausgewählte Regionen erscheinen im Regionsmenü der Suche. Mindestens 1 Region muss ausgewählt bleiben."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected regions appear in the Search storefront menu. Keep at least 1 region selected."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las regiones seleccionadas aparecerán en el menú de tienda de Búsqueda. Mantén al menos 1 región."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les régions sélectionnées s'affichent dans le menu Store de la recherche. Gardez au moins 1 région."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択した地域が検索ページのストア地域メニューに表示されます。少なくとも 1 つ残してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 지역이 검색 페이지의 스토어 지역 메뉴에 표시됩니다. 최소 1개 지역을 유지하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As regiões selecionadas aparecem no menu de loja da Busca. Mantenha pelo menos 1 região."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выбранные регионы отображаются в меню магазина на вкладке поиска. Оставьте хотя бы 1 регион."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "勾选后将在搜索页的商店地区菜单中显示，至少保留 1 个地区。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "勾選後將在搜尋頁的商店地區選單中顯示，至少保留 1 個地區。"
+          }
+        }
+      }
+    },
+    "全部地区（%lld）": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جميع المناطق (%lld)"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Regionen (%lld)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All Regions (%lld)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas las regiones (%lld)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toutes les régions (%lld)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての地域（%lld）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체 지역(%lld)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas as regiões (%lld)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Все регионы (%lld)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部地区（%lld）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部地區（%lld）"
+          }
+        }
+      }
+    },
+    "搜索结果（%lld）": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "نتائج البحث (%lld)"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suchergebnisse (%lld)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search Results (%lld)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resultados (%lld)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Résultats (%lld)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索結果（%lld）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검색 결과(%lld)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resultados (%lld)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Результаты поиска (%lld)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索结果（%lld）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜尋結果（%lld）"
+          }
+        }
+      }
+    },
+    "无匹配地区": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا توجد مناطق مطابقة"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine passenden Regionen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Matching Regions"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin regiones coincidentes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune région correspondante"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一致する地域がありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일치하는 지역 없음"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhuma região encontrada"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Регионы не найдены"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无匹配地区"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無符合的地區"
+          }
+        }
+      }
+    },
+    "搜索地区名称或代码": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ابحث باسم المنطقة أو الرمز"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Region oder Code suchen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search region name or code"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar nombre o código de región"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher une région ou un code"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地域名またはコードを検索"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지역 이름 또는 코드 검색"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar nome ou código da região"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поиск по названию или коду"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索地区名称或代码"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜尋地區名稱或代碼"
+          }
+        }
+      }
+    },
+    "关闭错误提示": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إغلاق تنبيه الخطأ"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fehlermeldung schließen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dismiss error"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrar aviso de error"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fermer l'alerte d'erreur"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エラー表示を閉じる"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오류 알림 닫기"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fechar aviso de erro"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Скрыть ошибку"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭错误提示"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "關閉錯誤提示"
+          }
+        }
+      }
+    },
+    "正在添加安装包（%lld/%lld）…": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ إضافة الحزم (%lld/%lld)…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pakete werden hinzugefügt (%lld/%lld)…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adding packages (%lld/%lld)…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadiendo paquetes (%lld/%lld)…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajout des paquets (%lld/%lld)…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パッケージを追加中（%lld/%lld）…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "패키지 추가 중(%lld/%lld)…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionando pacotes (%lld/%lld)…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавление пакетов (%lld/%lld)…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在添加安装包（%lld/%lld）…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加入安裝包（%lld/%lld）…"
+          }
+        }
+      }
+    },
+    "已添加 %lld 个安装包": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تمت إضافة %lld حزمة"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Pakete hinzugefügt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Added %lld packages"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se añadieron %lld paquetes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld paquets ajoutés"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件のパッケージを追加しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "패키지 %lld개를 추가했습니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld pacotes adicionados"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавлено пакетов: %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已添加 %lld 个安装包"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已加入 %lld 個安裝包"
+          }
+        }
+      }
+    },
+    "“%@”的 %@ 测试版可下载 IPA 后分享、导出或解密，无法在当前设备上直接安装。": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” (%@ تجريبي) يمكن تنزيله كملف IPA للمشاركة أو التصدير أو فك التشفير، ولكن لا يمكن تثبيته مباشرة على هذا الجهاز."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "„%@“ (%@-Beta) kann als IPA geladen, geteilt, exportiert oder entschlüsselt, aber nicht direkt auf diesem Gerät installiert werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” (%@ beta) can be downloaded as an IPA to share, export, or decrypt, but cannot be installed directly on this device."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” (beta de %@) se puede descargar como IPA para compartir, exportar o descifrar, pero no se puede instalar directamente en este dispositivo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "« %@ » (bêta %@) peut être téléchargé en IPA pour être partagé, exporté ou déchiffré, mais ne peut pas être installé directement sur cet appareil."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」の %@ ベータ版は IPA をダウンロードして共有・書き出し・復号できますが、このデバイスへ直接インストールはできません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@”의 %@ 베타 버전은 IPA를 다운로드해 공유, 내보내기 또는 복호화할 수 있지만 이 기기에 직접 설치할 수는 없습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” (beta de %@) pode ser baixado como IPA para compartilhar, exportar ou descriptografar, mas não pode ser instalado diretamente neste dispositivo."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«%@» (бета для %@) можно скачать как IPA для экспорта, отправки или расшифровки, но нельзя установить напрямую на это устройство."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@”的 %@ 测试版可下载 IPA 后分享、导出或解密，无法在当前设备上直接安装。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」的 %@ 測試版可下載 IPA 後分享、匯出或解密，無法在目前裝置上直接安裝。"
+          }
+        }
+      }
+    },
+    "获取 %@ 版": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تنزيل إصدار %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@-Version laden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get %@ Build"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obtener versión %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obtenir (%@)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 版を入手"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 버전 받기"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obter versão %@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загрузить для %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "获取 %@ 版"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取得 %@ 版"
+          }
+        }
+      }
+    },
+    "客户端": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "النظام الأساسي"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plattform"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Platform"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plataforma"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plateforme"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プラットフォーム"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "플랫폼"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plataforma"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Платформа"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "客户端"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用戶端"
+          }
+        }
+      }
+    },
+    "来源": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "المصدر"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quelle"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Origen"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ソース"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "출처"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Origem"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Источник"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来源"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "來源"
+          }
+        }
+      }
+    },
+    "下载时间": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "وقت التنزيل"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geladen am"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloaded"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descargado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Téléchargé le"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダウンロード日時"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다운로드 시간"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baixado em"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Загружено"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载时间"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下載時間"
+          }
+        }
+      }
+    },
+    "解密": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فك التشفير"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entschlüsseln"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Decrypt"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descifrar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déchiffrer"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復号"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복호화"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descriptografar"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Расшифровка"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解密"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解密"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

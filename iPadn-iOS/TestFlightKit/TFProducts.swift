@@ -9,12 +9,31 @@ public enum TFProducts {
         public let ipa: URL
         public let directory: URL
         public let version: String?
+        public let platform: String?
         public let downloadedAt: Date?
     }
 
     /// Newest product for a bundle: numeric buildId first, `legacy` last.
     public static func newest(bundle: String) -> Product? {
         all(bundle: bundle).first
+    }
+
+    /// Newest product matching a specific platform (for `"ios"`, also accepts legacy products
+    /// whose `product.json` predates the `platform` field).
+    public static func newest(bundle: String, matchingPlatform platform: String) -> Product? {
+        let target = platform.lowercased()
+        return all(bundle: bundle).first { product in
+            guard let recorded = product.platform?.lowercased(), !recorded.isEmpty else {
+                return target == "ios"
+            }
+            return recorded == target
+        }
+    }
+
+    /// Product for a specific `buildID` inside `<bundle>/<buildID>/`.
+    public static func product(bundle: String, buildID: String) -> Product? {
+        guard !buildID.isEmpty else { return newest(bundle: bundle) }
+        return all(bundle: bundle).first { $0.buildID == buildID }
     }
 
     public static func all(bundle: String) -> [Product] {
@@ -30,6 +49,7 @@ public enum TFProducts {
                                  ipa: ipa,
                                  directory: directory,
                                  version: meta?["version"] as? String,
+                                 platform: meta?["platform"] as? String,
                                  downloadedAt: (meta?["downloadedAt"] as? String).flatMap { TFAppDetail.parseISO8601($0) }))
         }
         return found.sorted { lhs, rhs in

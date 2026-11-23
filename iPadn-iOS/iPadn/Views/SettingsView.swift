@@ -160,6 +160,15 @@ struct SettingsView: View {
             }
             if page == .appearance {
             Section {
+                NavigationLink(value: AccountRoute.searchRegions) {
+                    HStack {
+                        Text("商店地区")
+                        Spacer()
+                        Text("\(store.settings.searchRegions.count) 个地区")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("settings.search-regions")
                 Picker("搜索结果数量", selection: $store.settings.searchLimit) {
                     ForEach([10, 30, 50, 100, 200], id: \.self) { Text("\($0)").tag($0) }
                 }

@@ -506,9 +506,11 @@ struct AppStoreActionButton: View {
                 .frame(minWidth: 74, minHeight: 30)
                 .hidden()
                 .accessibilityHidden(true)
-                .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
-                    if size.width > 0 { pillWidth = max(74, size.width) }
-                    if size.height > 0 { pillHeight = max(30, size.height) }
+                .compatibleOnGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                    let nextWidth = max(74, size.width.rounded(.up))
+                    let nextHeight = max(30, size.height.rounded(.up))
+                    if size.width > 0, abs(nextWidth - pillWidth) > 0.5 { pillWidth = nextWidth }
+                    if size.height > 0, abs(nextHeight - pillHeight) > 0.5 { pillHeight = nextHeight }
                 }
         }
         .frame(minWidth: slotMinWidth, minHeight: 36, alignment: alignment)
@@ -811,7 +813,7 @@ private struct ScrolledUnderBarModifier: ViewModifier {
     let action: (Bool) -> Void
     func body(content: Content) -> some View {
         let threshold: CGFloat = verticalSizeClass == .compact ? 52 : 104
-        content.onGeometryChange(for: Bool.self) { proxy in
+        content.compatibleOnGeometryChange(for: Bool.self) { proxy in
             proxy.frame(in: .global).maxY < threshold
         } action: { action($0) }
     }
@@ -956,6 +958,41 @@ struct TestFlightIcon: View {
     }
 }
 
+/// Compact monochrome client-platform icon paired beside `TestFlightIcon` or package metadata.
+struct PlatformGlyph: View {
+    let platform: String
+    var size: CGFloat = 14
+
+    static func symbol(for platform: String) -> String {
+        switch platform.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "appletvos", "tvos", "atv9", "apple tv": return "appletv"
+        case "xros", "visionos", "apple vision": return "visionpro"
+        case "ipad", "ipados": return "ipad"
+        case "osx", "macos", "mac": return "macbook"
+        case "ios", "iphoneos", "iphone": return "iphone"
+        default: return "shippingbox"
+        }
+    }
+
+    static func displayName(for platform: String) -> String {
+        switch platform.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "appletvos", "tvos", "atv9", "apple tv": return "Apple TV"
+        case "xros", "visionos", "apple vision": return "visionOS"
+        case "ipad", "ipados": return "iPad"
+        case "osx", "macos", "mac": return "Mac"
+        case "ios", "iphoneos", "iphone": return "iOS"
+        default: return platform
+        }
+    }
+
+    var body: some View {
+        Image(systemName: Self.symbol(for: platform))
+            .font(.system(size: size, weight: .medium))
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(Self.displayName(for: platform))
+    }
+}
+
 /// Pure-Swift coordinate & phase math for window-synchronized skeleton shimmer.
 enum ShimmerLayoutMath {
     static let period: CFTimeInterval = 1.45
@@ -1024,7 +1061,22 @@ private final class ShimmerTrackUIView: UIView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        syncAnimation(force: true)
+        if window == nil {
+            teardown()
+        } else {
+            syncAnimation(force: true)
+        }
+    }
+
+    func teardown() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientLayer.removeAnimation(forKey: Self.animationKey)
+        gradientLayer.opacity = 0
+        CATransaction.commit()
+        lastAnimatedWidth = -1
+        lastAnimatedHeight = -1
+        lastWindowMinX = .nan
     }
 
     override func layoutSubviews() {
@@ -1049,15 +1101,17 @@ private final class ShimmerTrackUIView: UIView {
 
     private func syncAnimation(force: Bool) {
         guard let window, !isReduceMotionEnabled, !UIAccessibility.isReduceMotionEnabled,
-              bounds.width > 1, bounds.height > 1 else {
-            gradientLayer.removeAnimation(forKey: Self.animationKey)
-            gradientLayer.opacity = 0
-            lastAnimatedWidth = -1
-            lastAnimatedHeight = -1
-            lastWindowMinX = .nan
+              bounds.width.isFinite, bounds.height.isFinite,
+              bounds.width > 1, bounds.height > 1,
+              window.bounds.width.isFinite, window.bounds.width > 1 else {
+            teardown()
             return
         }
         let frameInWindow = convert(bounds, to: window)
+        guard frameInWindow.minX.isFinite, frameInWindow.width.isFinite else {
+            teardown()
+            return
+        }
         let roundedX = frameInWindow.minX.rounded()
         if !force,
            abs(bounds.width - lastAnimatedWidth) < 0.5,
@@ -1126,6 +1180,9 @@ private struct MonochromeShimmerOverlay: UIViewRepresentable {
     func updateUIView(_ view: ShimmerTrackUIView, context: Context) {
         view.isReduceMotionEnabled = reduceMotion
         view.isDarkAppearance = isDark
+    }
+    static func dismantleUIView(_ view: ShimmerTrackUIView, coordinator: ()) {
+        view.teardown()
     }
 }
 
@@ -1271,9 +1328,13 @@ struct MarqueeText: View {
             .overlay(alignment: .leading) {
                 Text(text).font(font).lineLimit(1).fixedSize()
                     .offset(x: offset)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { textWidth = $0 }
+                    .compatibleOnGeometryChange(for: CGFloat.self) { $0.size.width } action: { nextWidth in
+                        if abs(textWidth - nextWidth) > 0.5 { textWidth = nextWidth }
+                    }
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { boxWidth = $0 }
+            .compatibleOnGeometryChange(for: CGFloat.self) { $0.size.width } action: { nextWidth in
+                if abs(boxWidth - nextWidth) > 0.5 { boxWidth = nextWidth }
+            }
             .clipped()
             .mask {
                 HStack(spacing: 0) {
@@ -1368,7 +1429,9 @@ extension View {
 }
 
 /// The reveal animation needs independently animated top and bottom radii.
-/// Native continuous corners are retained on iOS 17; iOS 16 uses circular arcs.
+/// Uses UIKit continuous-corner paths directly instead of `UnevenRoundedRectangle`
+/// so builds compiled with newer iOS SDKs never emit strong `UnevenRoundedRectangle`
+/// fixups that break early iOS 16 launches.
 struct CompatibleCardShape: Shape {
     var top: CGFloat
     var bottom: CGFloat
@@ -1377,12 +1440,26 @@ struct CompatibleCardShape: Shape {
         set { top = newValue.first; bottom = newValue.second }
     }
     func path(in rect: CGRect) -> Path {
-        if #available(iOS 17, *) {
-            return UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: bottom,
-                bottomTrailingRadius: bottom, topTrailingRadius: top, style: .continuous).path(in: rect)
-        }
+        guard rect.width > 0, rect.height > 0 else { return Path() }
         let limit = max(0, min(rect.width, rect.height) / 2)
         let t = min(max(0, top), limit), b = min(max(0, bottom), limit)
+        if abs(t - b) < 0.01 {
+            return Path(UIBezierPath(roundedRect: rect, cornerRadius: t).cgPath)
+        }
+        if b < 0.01 {
+            return Path(UIBezierPath(
+                roundedRect: rect,
+                byRoundingCorners: [.topLeft, .topRight],
+                cornerRadii: CGSize(width: t, height: t)
+            ).cgPath)
+        }
+        if t < 0.01 {
+            return Path(UIBezierPath(
+                roundedRect: rect,
+                byRoundingCorners: [.bottomLeft, .bottomRight],
+                cornerRadii: CGSize(width: b, height: b)
+            ).cgPath)
+        }
         var path = Path()
         path.move(to: CGPoint(x: rect.minX + t, y: rect.minY))
         path.addLine(to: CGPoint(x: rect.maxX - t, y: rect.minY))
@@ -1402,6 +1479,16 @@ struct CompatibleCardShape: Shape {
     }
 }
 
+private struct GeometryObserver<Value: Equatable>: View {
+    let value: Value
+    let action: (Value) -> Void
+    var body: some View {
+        Color.clear
+            .onAppear { action(value) }
+            .compatibleOnChange(of: value) { next in action(next) }
+    }
+}
+
 extension ToolbarItemPlacement {
     static var compatibleTopBarLeading: Self {
         if #available(iOS 17, *) { return .topBarLeading }
@@ -1415,6 +1502,22 @@ extension ToolbarItemPlacement {
 }
 
 extension View {
+    /// Observes a derived geometry value using `GeometryReader` + `onChange`, avoiding
+    /// SwiftUI's backported `_GeometryActionModifier` strong link symbols on iOS 16
+    /// and nonisolated layout-pass callbacks on Swift 6 / iOS 27.2 beta.
+    func compatibleOnGeometryChange<T: Equatable>(
+        for type: T.Type,
+        of transform: @escaping (GeometryProxy) -> T,
+        action: @escaping (T) -> Void
+    ) -> some View {
+        background(
+            GeometryReader { proxy in
+                GeometryObserver(value: transform(proxy), action: action)
+            }
+            .allowsHitTesting(false)
+        )
+    }
+
     @ViewBuilder func compatibleOnChange<Value: Equatable>(of value: Value, perform action: @escaping (Value) -> Void) -> some View {
         if #available(iOS 17, *) { onChange(of: value) { _, newValue in action(newValue) } }
         else { onChange(of: value, perform: action) }

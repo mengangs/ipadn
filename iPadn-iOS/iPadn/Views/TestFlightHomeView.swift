@@ -927,6 +927,16 @@ struct TFActiveDownloadItem: Identifiable, Equatable {
     let iconURL: URL?
     let iconColors: TFIconColors?
     let startedAt: Date
+    let platform: String?
+
+    var nonPhonePlatformBadge: String? {
+        switch (platform ?? "").lowercased() {
+        case "appletvos", "tvos": return "appletvos"
+        case "xros", "visionos": return "xros"
+        case "ipad": return "ipad"
+        default: return nil
+        }
+    }
 }
 
 // MARK: - Shared Process-Wide ViewModel (Zero-Reload Navigation + L3 -> L2 -> Controlled L1)
@@ -973,6 +983,7 @@ final class TFHomeModel: ObservableObject {
     @Published var probe: TFGSAProbe?
     @Published var dsidTail = ""
     @Published var rows: [String: TFRowState] = [:]
+    @Published var activeDownloadBuilds: [String: TFPlatformBuild] = [:]
     @Published private(set) var activeDownloads: [TFActiveDownloadItem] = []
     @Published var networkDiagnosis: TFNetDiagnosis?
     @Published var proxyBypassed = false
@@ -1719,8 +1730,9 @@ final class TFHomeModel: ObservableObject {
 
     nonisolated private static func detailNeedsUpgrade(_ detail: TFAppDetail?) -> Bool {
         guard let detail else { return true }
-        // Refresh cached details created before 3-bucket availability classification or missing developer fallback.
+        // Refresh cached details created before 3-bucket availability classification, multi-platform builds, or developer fallback.
         if detail.availability == nil { return true }
+        if detail.availability != .previouslyTested && detail.platformBuilds == nil { return true }
         if detail.availability == .previouslyTested && detail.developerName.isEmpty { return true }
         if detail.compatibilityStatement == "iPAD ONLY" { return true }
         // If a multi-platform removed app previously cached its macOS icon instead of its iOS icon, refresh once.
@@ -2171,14 +2183,48 @@ final class TFHomeModel: ObservableObject {
     // MARK: - Row Actions (Download / Cancel / Install / Delete)
 
     func rowState(_ app: TFBetaApp) -> TFRowState {
-        if let state = rows[app.id], state.stage != .idle { return state }
+        if let state = rows[app.id], state.stage != .idle {
+            let activeBuild = activeDownloadBuilds[app.id]
+            if activeBuild == nil || activeBuild?.isNativeToPhone == true {
+                return state
+            }
+            // A non-iOS build (e.g. Apple TV) finished downloading; do not mark the iPhone list row as ready to install.
+            if state.stage != .done {
+                return state
+            }
+        }
         if let url = productURL(for: app) {
             var state = TFRowState()
             state.stage = .done
             state.output = url
             return state
         }
-        return rows[app.id] ?? TFRowState()
+        return TFRowState()
+    }
+
+    func rowState(_ app: TFBetaApp, build: TFPlatformBuild?) -> TFRowState {
+        guard let build else { return rowState(app) }
+        if let state = rows[app.id], state.stage != .idle {
+            if let active = activeDownloadBuilds[app.id] {
+                if active.id == build.id { return state }
+            } else if build.isNativeToPhone {
+                return state
+            }
+        }
+        if let url = productURL(for: app, buildID: build.buildID) {
+            var state = TFRowState()
+            state.stage = .done
+            state.output = url
+            return state
+        }
+        return TFRowState()
+    }
+
+    func productURL(for app: TFBetaApp, buildID: String?) -> URL? {
+        guard let buildID, !buildID.isEmpty else { return productURL(for: app) }
+        let bundle = products[app.id] ?? details[app.id]?.bundleID ?? app.bundleID
+        guard !bundle.isEmpty else { return nil }
+        return TFProducts.product(bundle: bundle, buildID: buildID)?.ipa
     }
 
     func productURL(for app: TFBetaApp) -> URL? {
@@ -2193,7 +2239,7 @@ final class TFHomeModel: ObservableObject {
         return nil
     }
 
-    func start(_ app: TFBetaApp) {
+    func start(_ app: TFBetaApp, build targetBuild: TFPlatformBuild? = nil) {
         guard !(rows[app.id]?.isBusy ?? false) else { return }
         guard let session else {
             rows[app.id] = failed(AppText.text("请先登录后再下载"))
@@ -2227,6 +2273,11 @@ final class TFHomeModel: ObservableObject {
         let startedAt = ProcessInfo.processInfo.systemUptime
         runs[app.id] = handle
         downloadTokens[app.id] = token
+        if let targetBuild {
+            activeDownloadBuilds[app.id] = targetBuild
+        } else {
+            activeDownloadBuilds.removeValue(forKey: app.id)
+        }
         recentOutcomes.removeValue(forKey: app.id)
         foregroundFallbackAppIDs.remove(app.id)
         transferMetrics[app.id] = TransferMetrics(bytes: 0, sampledAt: startedAt)
@@ -2293,7 +2344,13 @@ final class TFHomeModel: ObservableObject {
                 let udid = hardware.map { String(format: "%02x", $0) }.joined()
                 let envelope = try TFDownload.envelope(dsid: resolvedContext.dsid, headers: resolvedContext.headers,
                                                        storeCookies: resolvedContext.storeCookies, udid: udid)
-                let buildID = try await TFAPI.buildID(appID: app.id, session: session, log: append)
+                let targetPlatform = targetBuild?.platform ?? "ios"
+                let buildID: String
+                if let explicitID = targetBuild?.buildID, !explicitID.isEmpty {
+                    buildID = (try? await TFAPI.buildID(appID: app.id, platform: targetPlatform, session: session, log: append)) ?? explicitID
+                } else {
+                    buildID = try await TFAPI.buildID(appID: app.id, platform: targetPlatform, session: session, log: append)
+                }
                 let metadata = try await TFAPI.installMetadata(appID: app.id, buildID: buildID,
                                                                session: session, headers: resolvedContext.headers,
                                                                dsid: resolvedContext.dsid, hardware20: hardware,
@@ -2326,7 +2383,8 @@ final class TFHomeModel: ObservableObject {
                     metadata: metadata,
                     expect: self.expectation,
                     buildID: buildID,
-                    versionLabel: app.latestVersion,
+                    versionLabel: targetBuild?.shortVersion.isEmpty == false ? targetBuild?.shortVersion : app.latestVersion,
+                    platform: targetPlatform,
                     handle: handle,
                     progress: progress,
                     stage: { name in
@@ -2361,9 +2419,15 @@ final class TFHomeModel: ObservableObject {
                     done.total = Int64(report.outputBytes)
                     done.received = Int64(report.outputBytes)
                     self.rows[app.id] = done
+                    let isNativePlatform = targetBuild?.isNativeToPhone ?? true
                     let key = bundle.lowercased()
-                    self.checkedProductBundles.insert(key)
-                    self.resolvedProductURLs[key] = report.output
+                    if isNativePlatform {
+                        self.checkedProductBundles.insert(key)
+                        self.resolvedProductURLs[key] = report.output
+                    } else {
+                        self.checkedProductBundles.remove(key)
+                        self.resolvedProductURLs.removeValue(forKey: key)
+                    }
                     if var detail = self.details[app.id], self.applyLocalDisplayOverrides(to: &detail, app: app) {
                         TFSessionStore.saveDetail(detail)
                         self.details[app.id] = detail
@@ -2372,14 +2436,16 @@ final class TFHomeModel: ObservableObject {
                     let completedItem = TFProductItem(
                         appID: app.id,
                         bundleID: bundle,
+                        buildID: buildID,
                         displayName: detail?.name ?? app.name,
-                        shortVersion: detail?.shortVersion ?? app.latestVersion ?? "",
-                        buildVersion: detail?.buildVersion ?? "",
+                        shortVersion: targetBuild?.shortVersion.isEmpty == false ? (targetBuild?.shortVersion ?? "") : (detail?.shortVersion ?? app.latestVersion ?? ""),
+                        buildVersion: targetBuild?.buildVersion.isEmpty == false ? (targetBuild?.buildVersion ?? "") : (detail?.buildVersion ?? ""),
                         fileURL: report.output,
                         fileSize: Int64(report.outputBytes),
                         modifiedAt: Date(),
                         iconURL: self.iconFiles[app.id],
-                        iconColors: self.iconColors[app.id] ?? detail?.iconAsset?.colors
+                        iconColors: self.iconColors[app.id] ?? detail?.iconAsset?.colors,
+                        platform: targetPlatform
                     )
                     self.recentOutcomes[app.id] = TerminalOutcome(
                         name: completedItem.displayName,
@@ -2390,15 +2456,17 @@ final class TFHomeModel: ObservableObject {
                     )
                     self.foregroundFallbackAppIDs.remove(app.id)
                     TFProductIndex.shared.registerCompleted(completedItem)
-                    let autoTarget = DownloadManager.ExternalAutoInstallTarget(
-                        id: UUID(),
-                        job: completedItem.makeInstallJob(),
-                        fileURL: report.output,
-                        iconURL: completedItem.iconURL,
-                        isTestFlight: true,
-                        onInstalled: nil
-                    )
-                    AppContainer.shared.downloads.enqueueExternalAutoInstall(autoTarget)
+                    if isNativePlatform {
+                        let autoTarget = DownloadManager.ExternalAutoInstallTarget(
+                            id: UUID(),
+                            job: completedItem.makeInstallJob(),
+                            fileURL: report.output,
+                            iconURL: completedItem.iconURL,
+                            isTestFlight: true,
+                            onInstalled: nil
+                        )
+                        AppContainer.shared.downloads.enqueueExternalAutoInstall(autoTarget)
+                    }
                     self.activeDownloads.removeAll { $0.id == app.id }
                     self.transferMetrics.removeValue(forKey: app.id)
                     self.lastProgressPublish.removeValue(forKey: app.id)
@@ -2421,6 +2489,7 @@ final class TFHomeModel: ObservableObject {
                     if isCancelled {
                         self.cleanupTemps(appID: app.id)
                         self.rows[app.id] = TFRowState()
+                        self.activeDownloadBuilds.removeValue(forKey: app.id)
                         self.activeDownloads.removeAll { $0.id == app.id }
                         self.append("已取消：\(app.name)")
                     } else {
@@ -2510,6 +2579,7 @@ final class TFHomeModel: ObservableObject {
         activeDownloads.removeAll { $0.id == app.id }
         cleanupTemps(appID: app.id)
         rows[app.id] = TFRowState()
+        activeDownloadBuilds.removeValue(forKey: app.id)
         syncActiveBadge()
         updateTFBackgroundExecution()
         append("已取消：\(app.name)")
@@ -2534,7 +2604,12 @@ final class TFHomeModel: ObservableObject {
     private func registerActiveDownload(_ app: TFBetaApp, bundleOverride: String? = nil) {
         let detail = details[app.id]
         let name = detail?.name ?? app.name
+        let activeBuild = activeDownloadBuilds[app.id]
         let version: String = {
+            if let activeBuild, !activeBuild.versionSummary.isEmpty {
+                let full = "v\(activeBuild.versionSummary)"
+                return full.count <= 10 ? full : (activeBuild.shortVersion.isEmpty ? full : "v\(activeBuild.shortVersion)")
+            }
             if let detail, !detail.versionSummary.isEmpty {
                 let full = "v\(detail.versionSummary)"
                 return full.count <= 10 ? full : (detail.shortVersion.isEmpty ? full : "v\(detail.shortVersion)")
@@ -2557,7 +2632,8 @@ final class TFHomeModel: ObservableObject {
             bundleID: bundle,
             iconURL: iconFiles[app.id],
             iconColors: iconColors[app.id] ?? detail?.iconAsset?.colors,
-            startedAt: startedAt
+            startedAt: startedAt,
+            platform: activeBuild?.platform
         )
         if let idx = existingIndex {
             activeDownloads[idx] = entry
@@ -2732,7 +2808,7 @@ final class TFHomeModel: ObservableObject {
         }
         let text = TFLogin.shortDescription(error)
         TFLog.append("row-error: " + text)
-        if text.contains("没有可用的 iOS build") {
+        if text.contains("没有可用的 ") && text.contains(" build") {
             return AppText.text("此版本暂不支持当前设备")
         }
         if text.contains("解析不到") && text.contains("bundleId") {
@@ -2782,7 +2858,7 @@ final class TFHomeModel: ObservableObject {
         if checkedProductBundles.contains(key) {
             return resolvedProductURLs[key]
         }
-        let url = TFProducts.newest(bundle: bundle)?.ipa
+        let url = TFProducts.newest(bundle: bundle, matchingPlatform: "ios")?.ipa
         checkedProductBundles.insert(key)
         if let url { resolvedProductURLs[key] = url }
         return url

@@ -270,8 +270,7 @@ struct RegionSelectionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
     private var others: [String] {
-        StoreRegions.byName().filter { !selection.contains($0) }
-            .filter { search.isEmpty || StoreRegions.name($0).localizedCaseInsensitiveContains(search) || $0.localizedCaseInsensitiveContains(search) }
+        StoreRegions.byName().filter { !selection.contains($0) && StoreRegions.matches($0, query: search) }
     }
     var body: some View {
         List {
@@ -284,7 +283,7 @@ struct RegionSelectionView: View {
                 }
             }
             Section(search.isEmpty ? "其他地区" : "搜索结果") {
-                ForEach(search.isEmpty ? others : selection.filter { StoreRegions.name($0).localizedCaseInsensitiveContains(search) } + others,
+                ForEach(search.isEmpty ? others : selection.filter { StoreRegions.matches($0, query: search) } + others,
                         id: \.self) { code in row(code, selected: selection.contains(code)) }
             }
         }
@@ -312,5 +311,134 @@ struct RegionSelectionView: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// Manages which App Store regions appear in the Search page's storefront picker.
+struct SearchRegionsView: View {
+    @EnvironmentObject private var store: ToolStore
+    @State private var search = ""
+
+    private var selection: [String] { store.settings.searchRegions }
+    private var selectedMatches: [String] {
+        selection.filter { StoreRegions.matches($0, query: search) }
+    }
+    private var otherMatches: [String] {
+        let chosen = Set(selection)
+        return StoreRegions.byName().filter { !chosen.contains($0) && StoreRegions.matches($0, query: search) }
+    }
+    private var searchMatches: [String] {
+        let chosen = Set(selection)
+        let ranked: [(code: String, rank: Int, isSelected: Bool, name: String)] = StoreRegions.codes.compactMap { code in
+            guard let rank = StoreRegions.matchRank(code, query: search) else { return nil }
+            return (code, rank, chosen.contains(code), StoreRegions.name(code))
+        }
+        return ranked.sorted { lhs, rhs in
+            if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
+            if lhs.isSelected != rhs.isSelected { return lhs.isSelected && !rhs.isSelected }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }.map(\.code)
+    }
+    private var isDefault: Bool { selection == StoreRegions.defaultSearchRegions }
+
+    var body: some View {
+        List {
+            if search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Section {
+                    ForEach(selection, id: \.self) { code in
+                        regionRow(code, selected: true)
+                    }
+                    .onMove { offsets, destination in
+                        store.settings.searchRegions.move(fromOffsets: offsets, toOffset: destination)
+                    }
+                } header: {
+                    Text("已显示 \(selection.count) 个地区")
+                } footer: {
+                    Text("勾选后将在搜索页的商店地区菜单中显示，至少保留 1 个地区。")
+                }
+
+                Section("全部地区（\(otherMatches.count)）") {
+                    ForEach(otherMatches, id: \.self) { code in
+                        regionRow(code, selected: false)
+                    }
+                }
+            } else {
+                Section("搜索结果（\(searchMatches.count)）") {
+                    if searchMatches.isEmpty {
+                        Text("无匹配地区")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(searchMatches, id: \.self) { code in
+                            regionRow(code, selected: selection.contains(code))
+                        }
+                    }
+                }
+            }
+        }
+        .toolPage()
+        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索地区名称或代码")
+        .navigationTitle("商店地区")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .compatibleTopBarTrailing) {
+                Button("恢复默认") {
+                    store.settings.searchRegions = StoreRegions.defaultSearchRegions
+                    if !store.settings.searchRegions.contains(store.settings.store.country.uppercased()),
+                       let first = store.settings.searchRegions.first {
+                        store.settings.store.country = first
+                    }
+                    UX.feedback()
+                }
+                .disabled(isDefault)
+                .accessibilityIdentifier("settings.search-regions.reset")
+            }
+        }
+    }
+
+    private func regionRow(_ code: String, selected: Bool) -> some View {
+        Button {
+            toggle(code, currentlySelected: selected)
+        } label: {
+            HStack(spacing: 12) {
+                Text(StoreRegions.flag(code))
+                    .accessibilityHidden(true)
+                Text(StoreRegions.name(code))
+                    .foregroundStyle(.primary)
+                Text(verbatim: code)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.tint)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("settings.search-region." + code)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityRemoveTraits(selected ? [] : .isSelected)
+    }
+
+    private func toggle(_ code: String, currentlySelected: Bool) {
+        if currentlySelected {
+            guard store.settings.searchRegions.count > 1 else {
+                UX.warning()
+                return
+            }
+            store.settings.searchRegions.removeAll { $0 == code }
+            if store.settings.store.country.uppercased() == code,
+               let fallback = store.settings.searchRegions.first {
+                store.settings.store.country = fallback
+            }
+            UX.feedback()
+        } else {
+            if !store.settings.searchRegions.contains(code) {
+                store.settings.searchRegions.append(code)
+            }
+            UX.feedback()
+        }
     }
 }

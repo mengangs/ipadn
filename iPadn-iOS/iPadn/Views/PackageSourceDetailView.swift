@@ -11,6 +11,7 @@ struct PackageSourceDetailView: View {
     @State private var presentation: PackageFilePresentation?
     @State private var confirmingDelete = false
     @State private var deleting = false
+    @State private var quickBuildInfo: QuickBuildInfo?
     @Environment(\.dismiss) private var dismiss
 
     private var job: DownloadJob? { manager.jobs.first { $0.id == jobID } }
@@ -136,7 +137,10 @@ struct PackageSourceDetailView: View {
         .task(id: url) {
             if let url, exists {
                 if job == nil { await ui.loadMetadata(for: url) }
+                quickBuildInfo = await Task.detached(priority: .utility) { PackageInfoService.quickBuildInfo(url) }.value
                 await ui.detect(url)
+            } else {
+                quickBuildInfo = nil
             }
         }
         .packageFilePresenter($presentation)
@@ -171,10 +175,21 @@ struct PackageSourceDetailView: View {
                         return false
                         #endif
                     }()
-                    if isTF || !subtitleText.isEmpty {
+                    let clientPlatform: String? = {
+                        #if canImport(TestFlightKit)
+                        if let p = tfItem?.clientPlatformKey { return p }
+                        #endif
+                        if let p = quickBuildInfo?.platformKey { return p }
+                        if let label = job?.platformLabel, label != "IPA" { return label }
+                        return nil
+                    }()
+                    if isTF || clientPlatform != nil || !subtitleText.isEmpty {
                         HStack(spacing: 5) {
                             if isTF {
                                 TestFlightIcon(size: 14)
+                            }
+                            if let clientPlatform {
+                                PlatformGlyph(platform: clientPlatform, size: 14)
                             }
                             if !subtitleText.isEmpty {
                                 Text(verbatim: subtitleText)
@@ -269,6 +284,15 @@ struct PackageSourceDetailView: View {
             if let checked = ui.detections[url]?.checkedAt {
                 LabeledContent("检测时间", value: checked.formatted(date: .abbreviated, time: .shortened))
             }
+            if let platformKey = resolvedDetailPlatform {
+                LabeledContent("客户端") {
+                    HStack(spacing: 6) {
+                        PlatformGlyph(platform: platformKey, size: 14)
+                        Text(verbatim: PlatformGlyph.displayName(for: platformKey))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             PackageBuildInfoRows(file: url)
             if let detection = ui.detections[url] {
                 DisclosureGroup("检测详情") {
@@ -296,6 +320,15 @@ struct PackageSourceDetailView: View {
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
         }
+    }
+
+    private var resolvedDetailPlatform: String? {
+        #if canImport(TestFlightKit)
+        if let p = tfItem?.clientPlatformKey { return p }
+        #endif
+        if let p = quickBuildInfo?.platformKey { return p }
+        if let label = job?.platformLabel, label != "IPA" { return label }
+        return nil
     }
 
     private var exportSection: some View {

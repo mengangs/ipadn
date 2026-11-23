@@ -13,8 +13,14 @@ struct SearchView: View {
     @State private var searchCardWidth: CGFloat = 0
     @State private var recentHeaderWidth: CGFloat = 0
     @State private var recentFooterWidth: CGFloat = 0
-    /// The common storefronts, in this order; names follow the interface language.
-    private static let regions = ["CN", "US", "HK", "TW", "JP", "GB", "SG", "CA", "AU", "KR", "DE", "FR"]
+    private var displayedRegions: [String] {
+        var list = store.settings.searchRegions
+        let active = store.settings.store.country.uppercased()
+        if !active.isEmpty && !list.contains(active) {
+            list.insert(active, at: 0)
+        }
+        return list.isEmpty ? StoreRegions.defaultSearchRegions : list
+    }
     var body: some View {
         List {
             Section {
@@ -23,7 +29,9 @@ struct SearchView: View {
                     .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 2, trailing: 12))
                 SearchInput(text: $store.searchText, placeholder: "应用名称、App ID 或链接", capsule: true,
                             submit: { store.search() }, clear: { store.clearSearch() })
-                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { searchCardWidth = $0 }
+                    .compatibleOnGeometryChange(for: CGFloat.self) { $0.size.width } action: { nextWidth in
+                        if abs(searchCardWidth - nextWidth) > 0.5 { searchCardWidth = nextWidth }
+                    }
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) { regionPicker; platformPicker }
@@ -135,7 +143,9 @@ struct SearchView: View {
             } header: {
                 VStack(spacing: 0) {
                     Color.clear.frame(height: 0)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { recentHeaderWidth = $0 }
+                        .compatibleOnGeometryChange(for: CGFloat.self) { $0.size.width } action: { nextWidth in
+                            if abs(recentHeaderWidth - nextWidth) > 0.5 { recentHeaderWidth = nextWidth }
+                        }
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Text("最近搜索").font(.title3.weight(.bold)).foregroundStyle(.primary).textCase(nil)
                             .fixedSize(horizontal: false, vertical: true)
@@ -153,7 +163,9 @@ struct SearchView: View {
             } footer: {
                 VStack(alignment: .leading, spacing: 0) {
                     Color.clear.frame(height: 0)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { recentFooterWidth = $0 }
+                        .compatibleOnGeometryChange(for: CGFloat.self) { $0.size.width } action: { nextWidth in
+                            if abs(recentFooterWidth - nextWidth) > 0.5 { recentFooterWidth = nextWidth }
+                        }
                     Text("长按可删除单条记录。")
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -200,7 +212,7 @@ struct SearchView: View {
     private var regionPicker: some View {
         Menu {
             Picker("商店地区", selection: $store.settings.store.country) {
-                ForEach(Self.regions, id: \.self) { code in Text(StoreRegions.name(code)).tag(code) }
+                ForEach(displayedRegions, id: \.self) { code in Text(StoreRegions.name(code)).tag(code) }
             }
         } label: { chip(StoreRegions.name(store.settings.store.country), symbol: "globe") }
         .accessibilityLabel("商店地区")

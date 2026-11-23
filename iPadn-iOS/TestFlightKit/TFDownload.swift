@@ -84,14 +84,17 @@ public enum TFDownload {
 
     /// Small sidecar so a directory can be identified without unpacking the IPA.
     static func writeProductMeta(directory: URL, bundle: String, buildID: String,
-                                 versionLabel: String?, bytes: Int) {
-        let payload: [String: Any] = [
+                                 versionLabel: String?, bytes: Int, platform: String? = nil) {
+        var payload: [String: Any] = [
             "bundleId": bundle,
             "buildId": buildID.isEmpty ? "unknown" : buildID,
             "version": versionLabel ?? "",
             "bytes": bytes,
             "downloadedAt": ISO8601DateFormatter().string(from: Date()),
         ]
+        if let platform, !platform.isEmpty {
+            payload["platform"] = platform
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: payload,
                                                      options: [.prettyPrinted, .sortedKeys]) else { return }
         try? data.write(to: directory.appendingPathComponent("product.json"), options: .atomic)
@@ -102,6 +105,7 @@ public enum TFDownload {
                            expect: (members: Int, encrypted: Int)? = nil,
                            buildID: String = "",
                            versionLabel: String? = nil,
+                           platform: String? = nil,
                            handle: TFTransferHandle = TFTransferHandle(),
                            progress: @escaping @Sendable (Int64, Int64) -> Void = { _, _ in },
                            stage: (@Sendable (String) -> Void)? = nil,
@@ -228,16 +232,16 @@ public enum TFDownload {
 
         // 5) SINF splice
         let sinf = try TFSINF.install(metadata: metadataData, ipa: base)
-        log("sinf: " + String(sinf.paths.count) + " member(s) "
+        log("sinf: " + String(sinf.paths.count) + " member(s) (added " + String(sinf.addedCount) + ") "
             + sinf.paths.joined(separator: ",") + " sizes "
             + sinf.sizes.map(String.init).joined(separator: ","))
         // Recount instead of trusting the installer's own tally.
         let finalMembers = TFSINF.memberCount(ipa: base)
         log("sinf: after install members " + String(finalMembers)
-            + " (base " + String(baseMembers) + " + " + String(sinf.paths.count) + ")")
-        guard finalMembers == baseMembers + sinf.paths.count else {
+            + " (base " + String(baseMembers) + " + " + String(sinf.addedCount) + ")")
+        guard finalMembers == baseMembers + sinf.addedCount else {
             throw TFError.malformed("成员数不符：" + String(finalMembers) + " != "
-                                    + String(baseMembers) + " + " + String(sinf.paths.count))
+                                    + String(baseMembers) + " + " + String(sinf.addedCount))
         }
         let tested = try TFSINF.verifyArchive(ipa: base)
         log("testzip: " + String(tested) + " 成员全部解压通过")
@@ -254,17 +258,18 @@ public enum TFDownload {
         do {
             try validate(output: output, bundle: bundle, transportBytes: transportBytes,
                          declaredSize: declaredSize, baseMembers: baseMembers,
-                         sinfCount: sinf.paths.count, expect: expect,
-                         metadata: metadataData, log: log)
+                         addedSinfCount: sinf.addedCount,
+                         normalizedEncryptedImages: encryptedImages,
+                         expect: expect, metadata: metadataData, log: log)
         } catch {
             try? FileManager.default.removeItem(at: output)
-            log("validate: 产物已删除，原因见上")
+            log("validate: 产物已删除，原因：" + error.localizedDescription)
             throw error
         }
         try? FileManager.default.removeItem(at: work)
         let outputBytes = fileSize(output)
         writeProductMeta(directory: root, bundle: bundle, buildID: buildID,
-                         versionLabel: versionLabel, bytes: outputBytes)
+                         versionLabel: versionLabel, bytes: outputBytes, platform: platform)
         log("done: " + output.lastPathComponent + " " + String(outputBytes) + " B, members "
             + String(finalMembers) + " (encrypted IPA, kept out of the decrypt pipeline)")
 
@@ -279,7 +284,9 @@ public enum TFDownload {
     /// Hard checks after assembly. Any mismatch deletes the product: a file on disk is not
     /// evidence that the right archive came down.
     static func validate(output: URL, bundle: String, transportBytes: Int, declaredSize: Int?,
-                         baseMembers: Int, sinfCount: Int, expect: (members: Int, encrypted: Int)?,
+                         baseMembers: Int, addedSinfCount: Int,
+                         normalizedEncryptedImages: Int = 0,
+                         expect: (members: Int, encrypted: Int)?,
                          metadata: Data, log: @escaping @Sendable (String) -> Void) throws {
         if let declaredSize, declaredSize > 0, transportBytes != declaredSize {
             log("validate: 下载 " + String(transportBytes) + " B != packageSizeBytes " + String(declaredSize))
@@ -293,11 +300,11 @@ public enum TFDownload {
             throw TFError.malformed("产物 bundle 与请求不一致")
         }
         let members = TFSINF.memberCount(ipa: output)
-        // Relative assertion: the archive grew by exactly the SINF members we wrote.
-        guard members == baseMembers + sinfCount else {
+        // Relative assertion: the archive grew by exactly the newly added SINF members.
+        guard members == baseMembers + addedSinfCount else {
             dumpPackages(metadata: metadata, log: log)
             throw TFError.malformed("成员数 " + String(members) + " != base " + String(baseMembers)
-                                    + " + sinf " + String(sinfCount))
+                                    + " + sinf " + String(addedSinfCount))
         }
         if let expect, members != expect.members {
             dumpPackages(metadata: metadata, log: log)
@@ -305,13 +312,18 @@ public enum TFDownload {
             throw TFError.malformed("产物成员数与 --tf-expect 不符")
         }
         var skipped: [String] = []
-        let encrypted = TFSINF.encryptedMachOCount(ipa: output, skipped: &skipped)
+        let scannedEncrypted = TFSINF.encryptedMachOCount(ipa: output, skipped: &skipped)
         let encryptedNames = skipped.filter { $0.hasPrefix("enc:") }.map { String($0.dropFirst(4)) }
+        let oversizedSkipped = skipped.filter { !$0.hasPrefix("enc:") }
+        let encrypted = (scannedEncrypted == 0 && !oversizedSkipped.isEmpty && normalizedEncryptedImages > 0)
+            ? normalizedEncryptedImages
+            : max(scannedEncrypted, normalizedEncryptedImages)
         log("validate: bundle ok, members " + String(members) + " (base " + String(baseMembers)
-            + " + sinf " + String(sinfCount) + "), encrypted Mach-O " + String(encrypted)
-            + " [" + encryptedNames.joined(separator: ",") + "]")
-        if !skipped.filter({ !$0.hasPrefix("enc:") }).isEmpty {
-            log("validate: 跳过大文件 " + skipped.filter { !$0.hasPrefix("enc:") }.joined(separator: ","))
+            + " + sinf " + String(addedSinfCount) + "), encrypted Mach-O " + String(encrypted)
+            + " (scanned " + String(scannedEncrypted) + ", normalized " + String(normalizedEncryptedImages)
+            + ") [" + encryptedNames.joined(separator: ",") + "]")
+        if !oversizedSkipped.isEmpty {
+            log("validate: 跳过大文件 " + oversizedSkipped.joined(separator: ","))
         }
         if let expect, encrypted != expect.encrypted {
             dumpPackages(metadata: metadata, log: log)
@@ -422,27 +434,82 @@ public enum TFDownload {
         }
     }
 
-    /// Finds the CDN url, the 88-byte `dpInfo` and the declared size anywhere in the
-    /// metadata tree; `dpInfo` sits under `packages.*`, the url can be a sibling.
+    /// Deterministically extracts a coherent `(url, dpInfo, packageSize)` tuple from install
+    /// metadata. When `packages` contains multiple variants (e.g. `full` and thinned builds),
+    /// reads all three fields from the same chosen package dictionary instead of mixing fields
+    /// across arbitrary dictionary iteration order.
     static func walkMetadata(_ data: Data, url: inout String?, dpInfo: inout Data?, size: inout Int?,
                              log: (@Sendable (String) -> Void)? = nil) {
         guard let root = try? JSONSerialization.jsonObject(with: data) else { return }
+
+        func decodeDPInfo(_ value: Any?, trail: String) -> Data? {
+            guard let text = value as? String else { return nil }
+            let decoded = Data(base64Encoded: text)
+            log?("  dpInfo at " + trail + ": string " + String(text.count)
+                 + ", base64 -> " + String(decoded?.count ?? -1))
+            guard let decoded, decoded.count == 88 else { return nil }
+            return decoded
+        }
+
+        func decodePackageSize(_ dictionary: [String: Any], allowGenericSize: Bool) -> Int? {
+            let keys = allowGenericSize ? ["packageSizeBytes", "packageSize", "size"] : ["packageSizeBytes", "packageSize"]
+            for key in keys {
+                if let number = dictionary[key] as? NSNumber, number.intValue > 0 {
+                    return number.intValue
+                }
+            }
+            return nil
+        }
+
+        // 1) Prefer coherent extraction from `data.packages.<variant>` (choosing `full` first).
+        if let rootDict = root as? [String: Any] {
+            let payload = (rootDict["data"] as? [String: Any]) ?? rootDict
+            let payloadTrail = (rootDict["data"] as? [String: Any]) != nil ? "/data" : ""
+            if let packages = payload["packages"] as? [String: Any] {
+                let orderedKeys = ["full"] + packages.keys.filter { $0 != "full" }.sorted()
+                for variant in orderedKeys {
+                    guard let pkg = packages[variant] as? [String: Any],
+                          let candidateURL = pkg["url"] as? String,
+                          candidateURL.hasPrefix("https://") else { continue }
+                    let baseTrail = payloadTrail + "/packages/" + variant
+                    url = candidateURL
+                    log?("  url at " + baseTrail + "/url")
+                    if let decoded = decodeDPInfo(pkg["dpInfo"], trail: baseTrail + "/dpInfo") {
+                        dpInfo = decoded
+                    } else if let sibling = decodeDPInfo(payload["dpInfo"], trail: payloadTrail + "/dpInfo") {
+                        dpInfo = sibling
+                    }
+                    if let pkgSize = decodePackageSize(pkg, allowGenericSize: true) {
+                        size = pkgSize
+                    }
+                    return
+                }
+            }
+        }
+
+        // 2) Fallback: deterministic sorted-key walk for flat or non-standard metadata layouts.
         func walk(_ node: Any, _ trail: String) {
             if let dictionary = node as? [String: Any] {
-                for (key, value) in dictionary {
+                let hasURLHere: Bool = {
+                    guard let text = dictionary["url"] as? String else { return false }
+                    return text.hasPrefix("https://")
+                }()
+                if hasURLHere, url == nil, let text = dictionary["url"] as? String {
+                    url = text
+                    log?("  url at " + trail + "/url")
+                    if dpInfo == nil, let decoded = decodeDPInfo(dictionary["dpInfo"], trail: trail + "/dpInfo") {
+                        dpInfo = decoded
+                    }
+                    if size == nil, let pkgSize = decodePackageSize(dictionary, allowGenericSize: true) {
+                        size = pkgSize
+                    }
+                }
+                for key in dictionary.keys.sorted() {
+                    guard let value = dictionary[key] else { continue }
                     let here = trail + "/" + key
-                    if let text = value as? String {
-                        if key == "url", text.hasPrefix("https://"), url == nil {
-                            url = text
-                            log?("  url at " + here)
-                        }
-                        if key == "dpInfo" {
-                            let decoded = Data(base64Encoded: text)
-                            log?("  dpInfo at " + here + ": string " + String(text.count)
-                                 + ", base64 -> " + String(decoded?.count ?? -1))
-                            if dpInfo == nil, let decoded, decoded.count == 88 { dpInfo = decoded }
-                        }
-                    } else if ["packageSizeBytes", "packageSize", "size"].contains(key),
+                    if key == "dpInfo", dpInfo == nil, let decoded = decodeDPInfo(value, trail: here) {
+                        dpInfo = decoded
+                    } else if ["packageSizeBytes", "packageSize"].contains(key),
                               let number = value as? NSNumber, number.intValue > 0, size == nil {
                         size = number.intValue
                     }

@@ -115,4 +115,34 @@ final class FairPlayTests: XCTestCase {
         XCTAssertEqual(out, log)
         XCTAssertFalse(DiagnosticRedactor.sanitize("sinf=AAAABBBBCCCC").contains("AAAABBBBCCCC"))
     }
+
+    func testFileReportAcceptsCodeConfirmedHighEntropyTablesAndRejectsHalfDecrypted() {
+        // Pure-entropy pass even with zero landmarks (data-only/obfuscated).
+        let dataOnly = FairPlayFileReport(
+            path: "Demo.app/Frameworks/Data.framework/Data",
+            cryptsize: 16384, entropy: 6.19, codeWords: 0, cryptid: 0, wasEncrypted: true
+        )
+        XCTAssertTrue(dataOnly.ok)
+
+        // Constant-table heavy binary like Python `_codecs_cn`: entropy 7.57 with strong ARM64 landmarks.
+        let cjkCodec = FairPlayFileReport(
+            path: "APTV.app/Frameworks/_codecs_cn.framework/_codecs_cn",
+            cryptsize: 28672, entropy: 7.57, codeWords: 23, cryptid: 0, wasEncrypted: true
+        )
+        XCTAssertTrue(cjkCodec.ok)
+
+        // High entropy without sufficient code landmarks must still be rejected.
+        let highNoCode = FairPlayFileReport(
+            path: "Demo.app/Demo",
+            cryptsize: 16384, entropy: 7.57, codeWords: 2, cryptid: 0, wasEncrypted: true
+        )
+        XCTAssertFalse(highNoCode.ok)
+
+        // Half-decrypted ciphertext (>= 7.8) must still be rejected even with landmarks.
+        let halfDecrypted = FairPlayFileReport(
+            path: "Demo.app/Demo",
+            cryptsize: 16384, entropy: 7.85, codeWords: 25, cryptid: 0, wasEncrypted: true
+        )
+        XCTAssertFalse(halfDecrypted.ok)
+    }
 }

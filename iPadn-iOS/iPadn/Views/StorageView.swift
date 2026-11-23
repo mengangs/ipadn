@@ -26,7 +26,7 @@ struct StorageView: View {
             switch self {
             case .job(let job): return "job:" + job.id.uuidString
             #if canImport(TestFlightKit)
-            case .tf(let item): return "tf:" + item.bundleID
+            case .tf(let item): return "tf:" + item.id
             #endif
             }
         }
@@ -149,6 +149,9 @@ struct StorageView: View {
                     Text(verbatim: item.displayName).font(.subheadline.weight(.medium)).lineLimit(1)
                     HStack(spacing: 4) {
                         TestFlightIcon(size: 13)
+                        if let badge = item.nonPhonePlatformBadge {
+                            PlatformGlyph(platform: badge, size: 12)
+                        }
                         if !item.versionBuildLabel.isEmpty {
                             Text(verbatim: item.versionBuildLabel)
                                 .font(.caption).foregroundStyle(.secondary)

@@ -875,8 +875,10 @@ private struct RevealDeleteModifier: ViewModifier {
                 bottom: grouping == .standalone ? 24 : 14 * driver.rounding,
                 verticalInset: grouping == .standalone ? verticalPadding : 0
             ))
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-            .onGeometryChange(for: CGFloat?.self) { geometry in
+            .compatibleOnGeometryChange(for: CGFloat.self) { $0.size.width } action: { nextWidth in
+                if abs(width - nextWidth) > 0.5 { width = nextWidth }
+            }
+            .compatibleOnGeometryChange(for: CGFloat?.self) { geometry in
                 isRevealing ? geometry.frame(in: .global).minY : nil
             } action: { y in
                 if let y, let previous = lastVisibleY, abs(y - previous) > 1 { RevealCoordinator.shared.clear(id, immediately: false) }

@@ -871,8 +871,72 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(settings.maxConcurrentDownloads, 6)
         XCTAssertEqual(settings.maxQueuedDownloads, 1)
         XCTAssertEqual(settings.versionSources.map(\.name), ["Timbrd", "Bilin", "iosdump"])
+        XCTAssertEqual(settings.searchRegions, StoreRegions.defaultSearchRegions)
         XCTAssertEqual(try JSONDecoder().decode(ToolSettings.self, from: JSONEncoder().encode(settings)), settings)
         XCTAssertEqual(DownloadJob(app: StoreApp(id: "1", name: "Test"), downloaded: -1, expected: 100).progress, 0)
+    }
+
+    func testSearchRegionsCoverAllAppleStorefrontsAndPersistCleanly() throws {
+        // StoreRegions covers every official Apple storefront (including ES, AF, LI, XK).
+        XCTAssertGreaterThanOrEqual(StoreRegions.codes.count, 175)
+        for code in ["CN", "US", "ES", "AF", "LI", "XK", "JP", "GB"] {
+            XCTAssertTrue(StoreRegions.codes.contains(code), "Missing storefront code \(code)")
+        }
+        // Matches across ISO-2 code, English name, and localized Chinese name.
+        XCTAssertTrue(StoreRegions.matches("ES", query: "es", locale: Locale(identifier: "zh_CN")))
+        XCTAssertTrue(StoreRegions.matches("ES", query: "Spain", locale: Locale(identifier: "zh_CN")))
+        XCTAssertTrue(StoreRegions.matches("ES", query: "西班牙", locale: Locale(identifier: "zh_CN")))
+        XCTAssertFalse(StoreRegions.matches("ES", query: "Japan", locale: Locale(identifier: "zh_CN")))
+        XCTAssertEqual(StoreRegions.matchRank("ES", query: "ES", locale: Locale(identifier: "zh_CN")), 0)
+        XCTAssertGreaterThan(StoreRegions.matchRank("US", query: "ES", locale: Locale(identifier: "zh_CN")) ?? 0, 0)
+
+        // Custom searchRegions deduplicate, filter invalid codes, and preserve user order.
+        let customJSON = Data(#"{"searchRegions":["es","cn","INVALID","ES","jp"]}"#.utf8)
+        let decoded = try JSONDecoder().decode(ToolSettings.self, from: customJSON)
+        XCTAssertEqual(decoded.searchRegions, ["ES", "CN", "JP"])
+
+        // Empty or all-invalid searchRegions fall back safely to defaults.
+        let invalidJSON = Data(#"{"searchRegions":["ZZ",""]}"#.utf8)
+        let fallback = try JSONDecoder().decode(ToolSettings.self, from: invalidJSON)
+        XCTAssertEqual(fallback.searchRegions, StoreRegions.defaultSearchRegions)
+    }
+
+    func testPostPurchaseTransient9610RetryPolicy() {
+        XCTAssertTrue(AppleService.shouldRetryPostPurchase(failure: "9610", purchased: true, retriesRemaining: 3))
+        XCTAssertFalse(AppleService.shouldRetryPostPurchase(failure: "9610", purchased: false, retriesRemaining: 3))
+        XCTAssertFalse(AppleService.shouldRetryPostPurchase(failure: "9610", purchased: true, retriesRemaining: 0))
+        XCTAssertFalse(AppleService.shouldRetryPostPurchase(failure: "2059", purchased: true, retriesRemaining: 3))
+        XCTAssertLessThan(
+            AppleService.postPurchaseRetryDelayNanoseconds(retriesRemaining: 3),
+            AppleService.postPurchaseRetryDelayNanoseconds(retriesRemaining: 1)
+        )
+    }
+
+    func testAppleTVPackagesAreNotInstallableOnPhoneAndReportTvOSMetadata() {
+        let iosJob = DownloadJob(
+            app: StoreApp(id: "1", name: "App"),
+            asset: DownloadAsset(app: StoreApp(id: "1", name: "App"), url: URL(string: "https://example.com/a.ipa")!,
+                                 sinfs: [], metadata: Data(), platform: "ios")
+        )
+        let tvJob = DownloadJob(
+            app: StoreApp(id: "2", name: "TV App"),
+            asset: DownloadAsset(app: StoreApp(id: "2", name: "TV App"), url: URL(string: "https://example.com/tv.ipa")!,
+                                 sinfs: [], metadata: Data(), platform: "appletvos")
+        )
+        let macJob = DownloadJob(app: StoreApp(id: "3", name: "Mac App"), rawFormat: "pkg")
+        XCTAssertTrue(iosJob.canInstallOnCurrentDevice)
+        XCTAssertFalse(tvJob.canInstallOnCurrentDevice)
+        XCTAssertFalse(macJob.canInstallOnCurrentDevice)
+
+        let tvInfo = PackageInfoService.describe([
+            "CFBundleIdentifier": "com.example.tv",
+            "MinimumOSVersion": "17.0",
+            "DTSDKName": "appletvos18.2",
+            "CFBundleSupportedPlatforms": ["AppleTVOS"],
+            "UIDeviceFamily": [3]
+        ])
+        XCTAssertEqual(tvInfo.platformKey, "appletvos")
+        XCTAssertEqual(tvInfo.formattedMinimumOS, "tvOS 17.0")
     }
 
     func testAppleCookiesAreMergedByNameAndExpiredOnesDropped() throws {

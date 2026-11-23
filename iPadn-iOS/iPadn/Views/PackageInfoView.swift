@@ -8,13 +8,28 @@ struct PackageInfoView: View {
     /// The download it belongs to; other downloads of the same app can then
     /// be compared with it in Pro mode.
     var job: DownloadJob? = nil
+    var isTestFlight: Bool = false
     @State private var info: PackageInfo?
     @State private var issue: String?
+
+    private var detectedTestFlight: Bool {
+        isTestFlight || file.path.contains("/TestFlight/")
+    }
 
     var body: some View {
         Form {
             if let info {
                 Section("概览") {
+                    LabeledContent("客户端") {
+                        HStack(spacing: 6) {
+                            if detectedTestFlight {
+                                TestFlightIcon(size: 14)
+                            }
+                            PlatformGlyph(platform: info.platformKey, size: 14)
+                            Text(verbatim: PlatformGlyph.displayName(for: info.platformKey))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     row("Bundle ID", info.bundleID, monospaced: true)
                     if let marketing = job?.resolvedMarketingVersion, !marketing.isEmpty, marketing != info.version {
                         row("商店版本", marketing)
@@ -26,7 +41,7 @@ struct PackageInfoView: View {
                     if let extID = job?.resolvedExternalVersionID {
                         row("商店版本 ID", extID, monospaced: true)
                     }
-                    row("最低系统", info.minimumOS.isEmpty ? "" : "iOS " + info.minimumOS)
+                    row("最低系统", info.formattedMinimumOS)
                     row("编译 SDK", info.formattedSDK)
                     row("Xcode 版本", info.formattedXcode)
                     row("适用设备", info.devices)

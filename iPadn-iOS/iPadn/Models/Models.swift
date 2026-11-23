@@ -378,6 +378,11 @@ struct DownloadJob: Codable, Identifiable {
         default: return "IPA"
         }
     }
+    /// True when the downloaded package can be installed on this iOS/iPadOS device.
+    /// Excludes macOS packages and Apple TV (tvOS) IPAs.
+    var canInstallOnCurrentDevice: Bool {
+        rawFormat == nil && platformLabel != "tvOS"
+    }
 }
 
 struct ToolSettings: Codable, Equatable {
@@ -394,6 +399,8 @@ struct ToolSettings: Codable, Equatable {
     var targetPrices = true
     /// Checks GitHub for new iPadn releases, with a notification.
     var appUpdateCheck = true
+    /// Storefronts shown in the search page region picker.
+    var searchRegions = StoreRegions.defaultSearchRegions
     /// Storefronts compared on the price page and tracked for followed apps.
     var priceRegions = StoreRegions.defaultComparison
     /// Currency prices are converted to for comparison.
@@ -448,7 +455,7 @@ struct ToolSettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case store, maxConcurrentDownloads, maxQueuedDownloads, searchLimit, notifications
         case useSignerCache, appearance, plistServer, versionSources, localInstallation, localInstallHost
-        case automaticInstallation, updateNotifications, proMode, watchNotifications, priceRegions, baseCurrency, appUpdateCheck, targetPrices
+        case automaticInstallation, updateNotifications, proMode, watchNotifications, searchRegions, priceRegions, baseCurrency, appUpdateCheck, targetPrices
         case appearanceSchema, compatibleDownloadMode, nativeInstallation, versionSourcesSchema, appLock, appLockDelay, showDiscover, showAppScreenshots, showAppReviews
         case wifiOnlyDownloads, autoInstall
         case downloadLiveActivity, showHistoryIcons, prioritizeDelistedSearchResults, directTranslation
@@ -476,6 +483,11 @@ struct ToolSettings: Codable, Equatable {
         directTranslation = try values.decodeIfPresent(Bool.self, forKey: .directTranslation) ?? directTranslation
         watchNotifications = try values.decodeIfPresent(Bool.self, forKey: .watchNotifications) ?? watchNotifications
         targetPrices = try values.decodeIfPresent(Bool.self, forKey: .targetPrices) ?? targetPrices
+        var seenSearchRegions = Set<String>()
+        let decodedSearchRegions = (try values.decodeIfPresent([String].self, forKey: .searchRegions) ?? searchRegions)
+            .map { $0.uppercased() }
+            .filter { StoreRegions.codes.contains($0) && seenSearchRegions.insert($0).inserted }
+        searchRegions = decodedSearchRegions.isEmpty ? searchRegions : decodedSearchRegions
         var seenRegions = Set<String>()
         let regions = (try values.decodeIfPresent([String].self, forKey: .priceRegions) ?? priceRegions)
             .map { $0.uppercased() }

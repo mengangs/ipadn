@@ -54,6 +54,7 @@ struct AppDetailView: View {
     @State private var collapsedDescriptionHeight: CGFloat = 0
     @State private var fullDescriptionHeight: CGFloat = 0
     @State private var reloadID = 0
+    @State private var retryOfficialAfterLicense = false
     @State private var loadedVersionsKey: String?
     @State private var loadedReloadID = 0
     private var versionsKey: String {
@@ -305,16 +306,20 @@ struct AppDetailView: View {
                     CardSection {
                         Text(displayed).font(.subheadline)
                             .lineLimit(showDescription ? nil : 4).textSelection(.enabled)
-                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
-                                collapsedDescriptionHeight = $0
+                            .compatibleOnGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                                if abs(collapsedDescriptionHeight - height) > 0.5 {
+                                    collapsedDescriptionHeight = height
+                                }
                             }
                             .background {
                                 Text(displayed).font(.subheadline)
                                     .fixedSize(horizontal: false, vertical: true)
                                     .hidden()
                                     .accessibilityHidden(true)
-                                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
-                                        fullDescriptionHeight = $0
+                                    .compatibleOnGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                                        if abs(fullDescriptionHeight - height) > 0.5 {
+                                            fullDescriptionHeight = height
+                                        }
                                     }
                             }
                         let translates = TranslateButton.offered(for: app.description, translation: translatedDescription)
@@ -1007,7 +1012,16 @@ struct AppDetailView: View {
         do {
             var result: [AppVersion]
             do {
-                result = try await store.loadVersions(for: app, force: force, official: usesApple)
+                let hadLicenseRetry = retryOfficialAfterLicense
+                retryOfficialAfterLicense = false
+                do {
+                    result = try await store.loadVersions(for: app, force: force || hadLicenseRetry, official: usesApple)
+                } catch is AppleLicenseError where hadLicenseRetry && usesApple {
+                    // Entitlement propagation can briefly lag behind free-app acquisition; retry once.
+                    try await Task.sleep(nanoseconds: 1_200_000_000)
+                    try Task.checkCancellation()
+                    result = try await store.loadVersions(for: app, force: true, official: usesApple)
+                }
                 versionNote = nil
             } catch is AppleLicenseError {
                 // Not got by this account yet: show what is public, and say why.
@@ -1101,7 +1115,11 @@ struct AppDetailView: View {
     /// A download claims a free app's license, so a list that failed for
     /// lack of one can load now.
     private func reloadIfLicenseWasMissing() {
-        if versionNote != nil || versionError == AppleLicenseError.notOwned.errorDescription { reloadID += 1 }
+        if versionNote != nil || versionError == AppleLicenseError.notOwned.errorDescription {
+            store.invalidateOfficialVersionCache(for: app.id)
+            retryOfficialAfterLicense = true
+            reloadID += 1
+        }
     }
 
     private func enqueueMacInstaller(_ installer: MacInstallerService.Installer) {
@@ -1519,7 +1537,11 @@ private struct DeveloperAppsStrip: View {
 private extension View {
     @ViewBuilder func measureLegacyWidth(_ width: Binding<CGFloat>) -> some View {
         if #available(iOS 17, *) { self }
-        else { onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width.wrappedValue = $0 } }
+        else {
+            compatibleOnGeometryChange(for: CGFloat.self) { $0.size.width } action: { nextWidth in
+                if abs(width.wrappedValue - nextWidth) > 0.5 { width.wrappedValue = nextWidth }
+            }
+        }
     }
 }
 
@@ -1695,7 +1717,10 @@ private struct VersionRowView: View {
                 if dynamicTypeSize.isAccessibilitySize {
                     VStack(alignment: .leading, spacing: 8) { headerContent(name: name, known: known, reading: reading) }
                 } else {
-                    HStack(alignment: .firstTextBaseline, spacing: 12) { headerContent(name: name, known: known, reading: reading) }
+                    // Use .center alignment instead of .firstTextBaseline: aligning a morphing
+                    // capsule/ring button by text baseline inside a LazyVStack forces baseline
+                    // resolution through the action button's internal layout and trips iOS 27.2 beta.
+                    HStack(alignment: .center, spacing: 12) { headerContent(name: name, known: known, reading: reading) }
                 }
                 if let bundleNote = AppDetailView.bundleVersionSubtitle(version, displayed: name, info: info) {
                     Text(verbatim: bundleNote)
@@ -1758,7 +1783,7 @@ private struct VersionRowView: View {
             idleAccessibilityLabel: known ? AppText.text("下载版本 \(name)") : AppText.text("下载版本 ID \(version.id)"),
             onEnqueued: onEnqueued
         )
-        .fixedSize()
+        .layoutPriority(1)
     }
 
     @ViewBuilder

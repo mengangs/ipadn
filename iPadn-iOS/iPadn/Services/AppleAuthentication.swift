@@ -227,6 +227,7 @@ enum AppleAuthentication {
     }
 
     static func errorCode(_ error: Error) -> String {
+        if let error = error as? SAPRuntimeError { return error.diagnosticCode }
         if let error = error as? ApplePropertyListError { return "error=plist-" + error.rawValue }
         if let error = error as? ConfigurationError { return "error=configuration-" + error.rawValue }
         if let error = error as? HTTPStatusError { return "http=\(error.code)" }

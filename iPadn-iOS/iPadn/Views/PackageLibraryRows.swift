@@ -12,6 +12,7 @@ struct PackageLibraryRow: View {
     var badge: String? = nil
     var badgeTint: Color = .blue
     var isTestFlight: Bool = false
+    var platform: String? = nil
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -69,10 +70,14 @@ struct PackageLibraryRow: View {
     }
 
     @ViewBuilder private var rowDetails: some View {
-        if isTestFlight || !metadata.isEmpty {
+        if isTestFlight || platform != nil || !metadata.isEmpty {
             HStack(spacing: 5) {
                 if isTestFlight {
                     TestFlightIcon(size: 14)
+                        .frame(minWidth: 15)
+                }
+                if let platform, !platform.isEmpty {
+                    PlatformGlyph(platform: platform, size: 13)
                         .frame(minWidth: 15)
                 }
                 if !metadata.isEmpty {

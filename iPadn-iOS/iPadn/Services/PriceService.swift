@@ -8,16 +8,17 @@ final class NSLockedValue<Value>: @unchecked Sendable {
     func withLock<T>(_ body: (inout Value) -> T) -> T { lock.lock(); defer { lock.unlock() }; return body(&value) }
 }
 
-/// App Store storefronts, for price comparison.
+/// App Store storefronts, for search region customization and price comparison.
 enum StoreRegions {
     static let codes = """
-    AE AG AI AL AM AO AR AT AU AZ BA BB BD BE BF BG BH BJ BM BN BO BR BS BT BW BY BZ CA CD CG CH CI CL CM CN CO \
+    AE AF AG AI AL AM AO AR AT AU AZ BA BB BD BE BF BG BH BJ BM BN BO BR BS BT BW BY BZ CA CD CG CH CI CL CM CN CO \
     CR CV CY CZ DE DK DM DO DZ EC EE EG ES FI FJ FM FR GA GB GD GE GH GM GR GT GW GY HK HN HR HU ID IE IL IN IQ \
-    IS IT JM JO JP KE KG KH KN KR KW KY KZ LA LB LC LK LR LT LU LV LY MA MD ME MG MK ML MM MN MO MR MS MT MU MV \
+    IS IT JM JO JP KE KG KH KN KR KW KY KZ LA LB LC LI LK LR LT LU LV LY MA MD ME MG MK ML MM MN MO MR MS MT MU MV \
     MW MX MY MZ NA NE NG NI NL NO NP NR NZ OM PA PE PG PH PK PL PT PW PY QA RO RS RU RW SA SB SC SE SG SI SK SL \
     SN SR ST SV SZ TC TD TH TJ TM TN TO TR TT TW TZ UA UG US UY UZ VC VE VG VN VU XK YE ZA ZM ZW
     """.split(separator: " ").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
     static let defaultComparison = ["CN", "HK", "US", "JP", "KR", "TR", "NG"]
+    static let defaultSearchRegions = ["CN", "US", "HK", "TW", "JP", "GB", "SG", "CA", "AU", "KR", "DE", "FR"]
 
     /// A storefront's name in the interface language, cached per language.
     static func name(_ code: String, locale: Locale = AppText.locale) -> String { names(locale)[code] ?? code }
@@ -25,6 +26,35 @@ enum StoreRegions {
     static func byName(_ locale: Locale = AppText.locale) -> [String] {
         codes.sorted { name($0, locale: locale).localizedStandardCompare(name($1, locale: locale)) == .orderedAscending }
     }
+    /// Matches a region against a user query across its localized name, English name, and ISO-2 code.
+    static func matches(_ code: String, query: String, locale: Locale = AppText.locale) -> Bool {
+        matchRank(code, query: query, locale: locale) != nil
+    }
+    /// Lower rank sorts earlier: 0 = exact ISO-2 code match, 1 = localized/English prefix, 2 = substring.
+    static func matchRank(_ code: String, query: String, locale: Locale = AppText.locale) -> Int? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return 0 }
+        let upper = trimmed.uppercased()
+        if code.uppercased() == upper { return 0 }
+        let localName = name(code, locale: locale)
+        let enName = name(code, locale: englishLocale)
+        if localName.localizedCaseInsensitiveCompare(trimmed) == .orderedSame
+            || enName.localizedCaseInsensitiveCompare(trimmed) == .orderedSame {
+            return 0
+        }
+        if localName.lowercased().hasPrefix(trimmed.lowercased())
+            || enName.lowercased().hasPrefix(trimmed.lowercased())
+            || code.uppercased().hasPrefix(upper) {
+            return 1
+        }
+        if localName.localizedStandardContains(trimmed)
+            || enName.localizedStandardContains(trimmed)
+            || code.localizedCaseInsensitiveContains(trimmed) {
+            return 2
+        }
+        return nil
+    }
+    private static let englishLocale = Locale(identifier: "en_US")
     private static func names(_ locale: Locale) -> [String: String] {
         let key = locale.identifier
         return cachedNames.withLock { cache in

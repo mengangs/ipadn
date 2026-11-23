@@ -130,6 +130,84 @@ public enum TFAppAvailability: String, Codable, Equatable, Sendable {
     case previouslyTested
 }
 
+/// Active per-platform build returned inside `/v3/accounts/{account}/apps/{appID}` `platforms[]`.
+public struct TFPlatformBuild: Codable, Equatable, Hashable, Sendable, Identifiable {
+    /// Canonical platform key from Apple TestFlight API: `"ios"`, `"appletvos"`, `"xros"`, `"osx"`, `"watchos"`.
+    public let platform: String
+    public let buildID: String
+    public let shortVersion: String
+    public let buildVersion: String
+    public let expirationISO: String?
+    public let releaseDateISO: String?
+    public let fileSizeBytes: Int64?
+    public let fileSizeUncompressedBytes: Int64?
+    public let compatibilityStatement: String?
+    public let whatsNew: String?
+    public let isIPadOnly: Bool
+    public let isWatchOnly: Bool
+
+    public init(platform: String, buildID: String, shortVersion: String, buildVersion: String,
+                expirationISO: String? = nil, releaseDateISO: String? = nil,
+                fileSizeBytes: Int64? = nil, fileSizeUncompressedBytes: Int64? = nil,
+                compatibilityStatement: String? = nil, whatsNew: String? = nil,
+                isIPadOnly: Bool = false, isWatchOnly: Bool = false) {
+        self.platform = platform
+        self.buildID = buildID
+        self.shortVersion = shortVersion
+        self.buildVersion = buildVersion
+        self.expirationISO = expirationISO
+        self.releaseDateISO = releaseDateISO
+        self.fileSizeBytes = fileSizeBytes
+        self.fileSizeUncompressedBytes = fileSizeUncompressedBytes
+        self.compatibilityStatement = compatibilityStatement
+        self.whatsNew = whatsNew
+        self.isIPadOnly = isIPadOnly
+        self.isWatchOnly = isWatchOnly
+    }
+
+    public var id: String { "\(platform):\(buildID)" }
+
+    /// Platforms whose TestFlight package is an IPA (`Payload/<App>.app`).
+    public var supportsIPADownload: Bool {
+        let p = platform.lowercased()
+        return (p == "ios" && !isWatchOnly) || p == "appletvos" || p == "xros"
+    }
+
+    /// True when the build can run natively on iPhone (not Apple TV, visionOS, macOS, watchOS, or iPad-only).
+    public var isNativeToPhone: Bool {
+        platform.lowercased() == "ios" && !isIPadOnly && !isWatchOnly
+    }
+
+    public var displayName: String {
+        switch platform.lowercased() {
+        case "ios": return isWatchOnly ? "Apple Watch" : (isIPadOnly ? "iPad" : "iOS")
+        case "appletvos", "tvos": return "Apple TV"
+        case "xros", "visionos": return "visionOS"
+        case "osx", "macos": return "macOS"
+        case "watchos": return "Apple Watch"
+        default: return platform.uppercased()
+        }
+    }
+
+    public var versionSummary: String {
+        if !shortVersion.isEmpty && !buildVersion.isEmpty {
+            return "\(shortVersion) (\(buildVersion))"
+        }
+        return !shortVersion.isEmpty ? shortVersion : buildVersion
+    }
+
+    public func daysRemaining(from now: Date = Date()) -> Int? {
+        guard let expiration = TFAppDetail.parseISO8601(expirationISO) else { return nil }
+        let seconds = expiration.timeIntervalSince(now)
+        if seconds <= 0 { return 0 }
+        return max(1, Int(ceil(seconds / 86_400)))
+    }
+
+    public var releaseDate: Date? {
+        TFAppDetail.parseISO8601(releaseDateISO)
+    }
+}
+
 /// Rich per-app metadata from `/v3/accounts/{account}/apps/{appID}`, matching the official
 /// TestFlight list subtitle (`1.1.0 (931) · 90 天`) and detail page fields.
 public struct TFAppDetail: Codable, Equatable, Sendable {
@@ -155,6 +233,8 @@ public struct TFAppDetail: Codable, Equatable, Sendable {
     public let availability: TFAppAvailability?
     /// Human platform names when `availability == .incompatible` (e.g. `["macOS"]`, `["Apple TV"]`).
     public let incompatiblePlatforms: [String]?
+    /// All active platform builds advertised for this app (e.g. iOS + Apple TV + visionOS + macOS).
+    public let platformBuilds: [TFPlatformBuild]?
     public let iconAsset: TFIconAsset?
     public let cachedAt: Date
 
@@ -168,6 +248,7 @@ public struct TFAppDetail: Codable, Equatable, Sendable {
                 supportedDevices: [String]? = nil, termsOfService: String? = nil,
                 availability: TFAppAvailability? = nil,
                 incompatiblePlatforms: [String]? = nil,
+                platformBuilds: [TFPlatformBuild]? = nil,
                 iconAsset: TFIconAsset?, cachedAt: Date = Date()) {
         self.appID = appID
         self.name = name
@@ -190,8 +271,14 @@ public struct TFAppDetail: Codable, Equatable, Sendable {
         self.termsOfService = termsOfService
         self.availability = availability
         self.incompatiblePlatforms = incompatiblePlatforms
+        self.platformBuilds = platformBuilds
         self.iconAsset = iconAsset
         self.cachedAt = cachedAt
+    }
+
+    /// Downloadable IPA platform builds (native iOS first, then iPad, Apple TV, visionOS).
+    public var downloadablePlatformBuilds: [TFPlatformBuild] {
+        (platformBuilds ?? []).filter(\.supportsIPADownload)
     }
 
     /// Strips Apple's internal `|<teamId>|<flag>` suffix from developer names when present.

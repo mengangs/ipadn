@@ -27,9 +27,30 @@ struct TestFlightDetailView: View {
     @State private var copiedBundleID = false
     @State private var cachedPackageBytes: Int64 = 0
     @State private var quickBuildInfo: QuickBuildInfo?
+    @State private var selectedPlatformID: String?
 
     private var detail: TFAppDetail? { model.details[app.id] }
-    private var rowState: TFRowState { model.rowState(app) }
+    private var downloadableBuilds: [TFPlatformBuild] {
+        detail?.downloadablePlatformBuilds ?? []
+    }
+    private var selectedBuild: TFPlatformBuild? {
+        if let id = selectedPlatformID,
+           let match = downloadableBuilds.first(where: { $0.id == id }) {
+            return match
+        }
+        return downloadableBuilds.first
+    }
+    private var isSelectedBuildNative: Bool {
+        selectedBuild?.isNativeToPhone ?? (availability == .testing)
+    }
+    private var canDownloadSelected: Bool {
+        if let selectedBuild { return selectedBuild.supportsIPADownload }
+        return availability == .testing
+    }
+    private var rowState: TFRowState { model.rowState(app, build: selectedBuild) }
+    private var activePackageURL: URL? {
+        rowState.output ?? model.productURL(for: app, buildID: selectedBuild?.buildID)
+    }
     private var isInstalling: Bool { model.installingAppIDs.contains(app.id) }
     private var iconColors: TFIconColors? { model.iconColors[app.id] ?? detail?.iconAsset?.colors }
 
@@ -49,6 +70,7 @@ struct TestFlightDetailView: View {
     }
 
     private var shortVersion: String {
+        if let v = selectedBuild?.shortVersion, !v.isEmpty { return v }
         if let v = detail?.shortVersion, !v.isEmpty { return v }
         if let v = app.latestVersion, !v.isEmpty { return v }
         return "—"
@@ -59,6 +81,9 @@ struct TestFlightDetailView: View {
     }
 
     private var incompatibleNoticeText: String {
+        if let build = selectedBuild, !build.isNativeToPhone {
+            return AppText.text("“\(displayName)”的 \(build.displayName) 测试版可下载 IPA 后分享、导出或解密，无法在当前设备上直接安装。")
+        }
         let platforms = (detail?.incompatiblePlatforms ?? []).joined(separator: " / ")
         if platforms.isEmpty {
             return AppText.text("“\(displayName)”暂不支持在当前设备上测试。")
@@ -67,13 +92,36 @@ struct TestFlightDetailView: View {
     }
 
     private var buildSubtitle: String {
+        if let b = selectedBuild?.buildVersion, !b.isEmpty { return "Build \(b)" }
+        if let id = selectedBuild?.buildID, !id.isEmpty { return "Build \(id)" }
         if let b = detail?.buildVersion, !b.isEmpty { return "Build \(b)" }
         if let id = detail?.buildID, !id.isEmpty { return "Build \(id)" }
         return "TestFlight"
     }
 
     private var daysRemaining: Int? {
-        detail?.daysRemaining()
+        selectedBuild?.daysRemaining() ?? detail?.daysRemaining()
+    }
+
+    private var effectiveWhatsNew: String? {
+        if let notes = selectedBuild?.whatsNew, !notes.isEmpty { return notes }
+        return detail?.whatsNew
+    }
+
+    private var effectiveFileSizeBytes: Int64? {
+        selectedBuild?.fileSizeBytes ?? detail?.fileSizeBytes
+    }
+
+    private var effectiveUncompressedBytes: Int64? {
+        selectedBuild?.fileSizeUncompressedBytes ?? detail?.fileSizeUncompressedBytes
+    }
+
+    private var effectiveCompatibility: String? {
+        selectedBuild?.compatibilityStatement ?? detail?.compatibilityStatement
+    }
+
+    private var effectiveReleaseDate: Date? {
+        selectedBuild?.releaseDate ?? detail?.releaseDate
     }
 
     private var inviteLinkURL: URL? {
@@ -92,7 +140,7 @@ struct TestFlightDetailView: View {
                 heroHeader
 
                 VStack(alignment: .leading, spacing: 20) {
-                    if availability == .incompatible {
+                    if availability == .incompatible || (!isSelectedBuildNative && canDownloadSelected) {
                         availabilityNoticeCard(incompatibleNoticeText)
                     } else if availability == .previouslyTested {
                         availabilityNoticeCard(AppText.text("开发者已移除你所测试的 Build。"))
@@ -102,7 +150,7 @@ struct TestFlightDetailView: View {
                         infoStripCard
                     }
 
-                    if let whatsNew = detail?.whatsNew, !whatsNew.isEmpty {
+                    if let whatsNew = effectiveWhatsNew, !whatsNew.isEmpty {
                         expandableTextCard(
                             sectionTitle: "测试内容",
                             text: whatsNew,
@@ -120,7 +168,7 @@ struct TestFlightDetailView: View {
                         )
                     }
 
-                    if rowState.stage == .done, let packageURL = model.productURL(for: app) {
+                    if rowState.stage == .done, let packageURL = activePackageURL {
                         localPackageCard(packageURL: packageURL)
                     }
 
@@ -137,34 +185,25 @@ struct TestFlightDetailView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 96)
             }
+            #if canImport(UIKit)
+            .background(TFHeroChromeConfigurator(heroCollapsed: heroCollapsed))
+            #endif
         }
         .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
-        .overlay(alignment: .top) {
-            VStack(spacing: 0) {
-                Color.clear
-                    .frame(height: Self.topSafeAreaInset)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(heroCollapsed ? .automatic : .hidden, for: .navigationBar)
+        .toolbarColorScheme(heroCollapsed ? nil : .dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
                 Text(verbatim: displayName)
                     .font(.headline)
                     .lineLimit(1)
-                    .padding(.horizontal, 72)
-                    .frame(height: 44)
+                    .opacity(heroCollapsed ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.18), value: heroCollapsed)
+                    .accessibilityHidden(!heroCollapsed)
             }
-            .frame(maxWidth: .infinity)
-            .background(.bar)
-            .overlay(alignment: .bottom) {
-                Divider()
-            }
-            .ignoresSafeArea(edges: .top)
-            .opacity(heroCollapsed ? 1 : 0)
-            .animation(.easeInOut(duration: 0.18), value: heroCollapsed)
-            .allowsHitTesting(false)
-        }
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarColorScheme(heroCollapsed ? nil : .dark, for: .navigationBar)
-        .toolbar {
             if let inviteLinkURL {
                 ToolbarItem(placement: .compatibleTopBarTrailing) {
                     ShareLink(item: inviteLinkURL) {
@@ -192,7 +231,7 @@ struct TestFlightDetailView: View {
             }
         }
         .sheet(isPresented: $showingInstallSheet) {
-            if let packageURL = model.productURL(for: app) {
+            if let packageURL = activePackageURL {
                 PackageInstallationView(
                     job: model.makeInstallJob(for: app, packageURL: packageURL),
                     packageFileURL: packageURL,
@@ -239,7 +278,7 @@ struct TestFlightDetailView: View {
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
 
-                    if availability == .testing, let statusLine = heroStatusLine {
+                    if canDownloadSelected, let statusLine = heroStatusLine {
                         Text(verbatim: statusLine)
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.white.opacity(0.82))
@@ -251,7 +290,11 @@ struct TestFlightDetailView: View {
                 .padding(.horizontal, 24)
                 .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.86), value: heroStatusLine)
 
-                if availability == .testing {
+                if downloadableBuilds.count > 1 {
+                    heroPlatformPicker
+                }
+
+                if canDownloadSelected {
                     heroPrimaryAction
                         .padding(.horizontal, 36)
                         .padding(.top, 4)
@@ -261,16 +304,41 @@ struct TestFlightDetailView: View {
             .padding(.bottom, 28)
         }
         .frame(maxWidth: .infinity)
-        .background(
-            GeometryReader { geo in
-                let collapsed = geo.frame(in: .global).maxY < (Self.topSafeAreaInset + 52)
-                Color.clear
-                    .onAppear { heroCollapsed = collapsed }
-                    .compatibleOnChange(of: collapsed) { value in
-                        heroCollapsed = value
-                    }
+        .compatibleOnGeometryChange(for: Bool.self) { geo in
+            geo.frame(in: .global).maxY < (Self.topSafeAreaInset + 52)
+        } action: { collapsed in
+            if heroCollapsed != collapsed {
+                heroCollapsed = collapsed
             }
-        )
+        }
+    }
+
+    private var heroPlatformPicker: some View {
+        HStack(spacing: 6) {
+            ForEach(downloadableBuilds) { build in
+                let active = (selectedBuild?.id == build.id)
+                Button {
+                    guard selectedPlatformID != build.id else { return }
+                    UX.feedback()
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                        selectedPlatformID = build.id
+                    }
+                } label: {
+                    Text(verbatim: build.displayName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(active ? Color.black : Color.white.opacity(0.88))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(active ? Color.white.opacity(0.92) : Color.white.opacity(0.16))
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(active ? .isSelected : [])
+            }
+        }
+        .padding(.horizontal, 24)
     }
 
     private func availabilityNoticeCard(_ text: String) -> some View {
@@ -300,7 +368,7 @@ struct TestFlightDetailView: View {
             return AppText.text("已暂停")
         case .done:
             if isInstalling, let note = model.installNotes[app.id] { return note }
-            let size = cachedPackageBytes > 0 ? cachedPackageBytes : (detail?.fileSizeBytes ?? 0)
+            let size = cachedPackageBytes > 0 ? cachedPackageBytes : (effectiveFileSizeBytes ?? 0)
             if size > 0 {
                 return "\(byteText(size)) · \(AppText.text("已下载"))"
             }
@@ -312,10 +380,22 @@ struct TestFlightDetailView: View {
 
     @ViewBuilder
     private var heroPrimaryAction: some View {
+        let idleTitle: String = {
+            if let build = selectedBuild, !build.isNativeToPhone {
+                return AppText.text("获取 \(build.displayName) 版")
+            }
+            return AppText.text("获取")
+        }()
+        let doneTitle: String = {
+            if !isSelectedBuildNative {
+                return AppText.text("分享安装包")
+            }
+            return isInstalling ? AppText.text("正在处理…") : AppText.text("安装")
+        }()
         let config: (title: String, busy: Bool, progress: Double?, enabled: Bool) = {
             switch rowState.stage {
             case .idle:
-                return (AppText.text("获取"), false, nil, model.isSignedIn)
+                return (idleTitle, false, nil, model.isSignedIn)
             case .resolving, .installing:
                 return (AppText.text("取消"), true, nil, true)
             case .downloading:
@@ -330,7 +410,7 @@ struct TestFlightDetailView: View {
             case .verifying:
                 return (AppText.text("校验安装包…"), true, nil, false)
             case .done:
-                return (isInstalling ? AppText.text("正在处理…") : AppText.text("安装"), isInstalling, nil, true)
+                return (doneTitle, isSelectedBuildNative && isInstalling, nil, true)
             case .failed:
                 return (AppText.text("重试"), false, nil, model.isSignedIn)
             }
@@ -343,7 +423,7 @@ struct TestFlightDetailView: View {
         ) {
             switch rowState.stage {
             case .idle, .failed:
-                model.start(app)
+                model.start(app, build: selectedBuild)
             case .resolving, .installing:
                 model.cancel(app)
             case .downloading:
@@ -353,7 +433,11 @@ struct TestFlightDetailView: View {
             case .verifying:
                 break
             case .done:
-                showingInstallSheet = true
+                if isSelectedBuildNative {
+                    showingInstallSheet = true
+                } else if let packageURL = activePackageURL {
+                    sharedFile = SharedFile(url: packageURL)
+                }
             }
         }
     }
@@ -494,26 +578,28 @@ struct TestFlightDetailView: View {
                 .padding(.horizontal, 4)
 
             VStack(spacing: 0) {
-                Button {
-                    showingInstallSheet = true
-                } label: {
-                    HStack {
-                        Label("安装与导出", systemImage: "square.and.arrow.down")
-                        Spacer()
-                        Text(verbatim: byteText(cachedPackageBytes > 0 ? cachedPackageBytes : (detail?.fileSizeBytes ?? 0)))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Image(systemName: "chevron.forward")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
+                if isSelectedBuildNative {
+                    Button {
+                        showingInstallSheet = true
+                    } label: {
+                        HStack {
+                            Label("安装与导出", systemImage: "square.and.arrow.down")
+                            Spacer()
+                            Text(verbatim: byteText(cachedPackageBytes > 0 ? cachedPackageBytes : (effectiveFileSizeBytes ?? 0)))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.forward")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 48)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 48)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                    .buttonStyle(.plain)
 
-                Divider().padding(.leading, 16)
+                    Divider().padding(.leading, 16)
+                }
 
                 NavigationLink {
                     PackageInfoView(file: packageURL)
@@ -632,21 +718,21 @@ struct TestFlightDetailView: View {
                     Divider().padding(.leading, 16)
                     infoRow("支持设备", ListFormatter.localizedString(byJoining: devices))
                 }
-                if let size = detail?.fileSizeBytes, size > 0 {
+                if let size = effectiveFileSizeBytes, size > 0 {
                     Divider().padding(.leading, 16)
                     infoRow("下载大小", byteText(size))
                 }
-                if let uncompressed = detail?.fileSizeUncompressedBytes,
-                   uncompressed > 0, uncompressed != detail?.fileSizeBytes {
+                if let uncompressed = effectiveUncompressedBytes,
+                   uncompressed > 0, uncompressed != effectiveFileSizeBytes {
                     Divider().padding(.leading, 16)
                     infoRow("安装大小", byteText(uncompressed))
                 }
                 if availability != .previouslyTested,
-                   let compat = detail?.compatibilityStatement, !compat.isEmpty {
+                   let compat = effectiveCompatibility, !compat.isEmpty {
                     Divider().padding(.leading, 16)
                     infoRow("兼容性", compat)
                 }
-                if let date = detail?.releaseDate {
+                if let date = effectiveReleaseDate {
                     Divider().padding(.leading, 16)
                     infoRow("发布日期", Self.dateFormatter.string(from: date))
                 }
@@ -731,5 +817,111 @@ struct TestFlightDetailView: View {
         return f
     }()
 }
+
+#if canImport(UIKit)
+/// Suppresses iOS 26's light-tinted top `UIScrollEdgeEffect` over the full-bleed dark
+/// TestFlight hero header and switches `UINavigationBar.barStyle` so status bar text
+/// stays crisp white over the dark hero, restoring defaults on scroll or dismissal.
+private struct TFHeroChromeConfigurator: UIViewRepresentable {
+    let heroCollapsed: Bool
+
+    final class Coordinator {
+        weak var scrollView: UIScrollView?
+        weak var navBar: UINavigationBar?
+        weak var navController: UINavigationController?
+        var savedBarStyle: UIBarStyle?
+
+        func apply(collapsed: Bool, from view: UIView) {
+            if scrollView == nil {
+                var current: UIView? = view.superview
+                while let node = current {
+                    if let sv = node as? UIScrollView {
+                        scrollView = sv
+                        break
+                    }
+                    current = node.superview
+                }
+            }
+            if navController == nil {
+                var responder: UIResponder? = view.next
+                while let next = responder {
+                    if let vc = next as? UIViewController {
+                        navController = (vc as? UINavigationController) ?? vc.navigationController
+                        navBar = navController?.navigationBar
+                        break
+                    }
+                    responder = next.next
+                }
+            }
+            if #available(iOS 26.0, *), let sv = scrollView {
+                let edgeSelector = NSSelectorFromString("topEdgeEffect")
+                if sv.responds(to: edgeSelector),
+                   let effect = sv.value(forKey: "topEdgeEffect") as? NSObject,
+                   effect.responds(to: NSSelectorFromString("setHidden:")) {
+                    effect.setValue(!collapsed, forKey: "hidden")
+                }
+            }
+            if let navBar {
+                if savedBarStyle == nil { savedBarStyle = navBar.barStyle }
+                let target: UIBarStyle = collapsed ? (savedBarStyle ?? .default) : .black
+                if navBar.barStyle != target {
+                    navBar.barStyle = target
+                    navController?.setNeedsStatusBarAppearanceUpdate()
+                }
+            }
+        }
+
+        func restore() {
+            if #available(iOS 26.0, *), let sv = scrollView {
+                let edgeSelector = NSSelectorFromString("topEdgeEffect")
+                if sv.responds(to: edgeSelector),
+                   let effect = sv.value(forKey: "topEdgeEffect") as? NSObject,
+                   effect.responds(to: NSSelectorFromString("setHidden:")) {
+                    effect.setValue(false, forKey: "hidden")
+                }
+            }
+            if let navBar, let saved = savedBarStyle, navBar.barStyle != saved {
+                navBar.barStyle = saved
+                navController?.setNeedsStatusBarAppearanceUpdate()
+            }
+        }
+    }
+
+    final class AnchorView: UIView {
+        var onWindowChange: (() -> Void)?
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window != nil { onWindowChange?() }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> AnchorView {
+        let view = AnchorView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ uiView: AnchorView, context: Context) {
+        let collapsed = heroCollapsed
+        uiView.onWindowChange = { [weak coordinator = context.coordinator, weak uiView] in
+            guard let coordinator, let uiView else { return }
+            DispatchQueue.main.async {
+                coordinator.apply(collapsed: collapsed, from: uiView)
+            }
+        }
+        DispatchQueue.main.async {
+            context.coordinator.apply(collapsed: collapsed, from: uiView)
+        }
+    }
+
+    static func dismantleUIView(_ uiView: AnchorView, coordinator: Coordinator) {
+        uiView.onWindowChange = nil
+        coordinator.restore()
+    }
+}
+#endif
 
 #endif
