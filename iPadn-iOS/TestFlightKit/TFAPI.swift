@@ -364,7 +364,7 @@ public enum TFAPI {
             if let removed = build["buildRemoved"] as? Bool, removed { return false }
             if let removalType = build["buildRemovalType"] as? String, !removalType.isEmpty { return false }
             if let expStr = firstString(in: build, keys: ["expiration", "expirationDate"]),
-               let expDate = TFAppDetail.parseISO8601(expStr), expDate <= Date() {
+               let expDate = TFAppDetail.parseISO8601(expStr), expDate.timeIntervalSinceReferenceDate <= Date().timeIntervalSinceReferenceDate {
                 return false
             }
             let size = (build["fileSize"] as? NSNumber)?.int64Value ?? -1
