@@ -1618,7 +1618,7 @@ final class AppleService: ObservableObject {
             values[name] = String(pair[pair.index(after: equals)...])
         }
         for cookie in received {
-            if cookie.value.isEmpty || (cookie.expiresDate.map { $0 <= now } ?? false) {
+            if cookie.value.isEmpty || (cookie.expiresDate.map { $0.timeIntervalSinceReferenceDate <= now.timeIntervalSinceReferenceDate } ?? false) {
                 values[cookie.name] = nil
                 names.removeAll { $0 == cookie.name }
             } else {
