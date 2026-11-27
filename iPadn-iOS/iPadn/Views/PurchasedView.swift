@@ -23,7 +23,7 @@ struct PurchasedView: View {
         if term.isEmpty && months == 0 && !delistedOnly { return store.owned }
         return store.owned.filter {
             (!delistedOnly || store.ownedListed[$0.id] == false) &&
-            (months == 0 || ($0.purchaseDate ?? .distantPast) >= cutoff) &&
+            (months == 0 || ($0.purchaseDate ?? .distantPast).timeIntervalSinceReferenceDate >= cutoff.timeIntervalSinceReferenceDate) &&
             (term.isEmpty || $0.id.contains(term) || $0.name.localizedCaseInsensitiveContains(term) || $0.bundleID.localizedCaseInsensitiveContains(term))
         }
     }
