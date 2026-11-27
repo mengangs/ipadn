@@ -38,7 +38,7 @@ enum TemporaryExportSweeper {
             func isStale(_ url: URL) -> Bool {
                 guard maxAge > 0 else { return true }
                 let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-                return (modified ?? .distantPast) <= cutoff
+                return (modified ?? .distantPast).timeIntervalSinceReferenceDate <= cutoff.timeIntervalSinceReferenceDate
             }
 
             for subfolder in ["Share", "PackageExports", "PackageContents"] {
