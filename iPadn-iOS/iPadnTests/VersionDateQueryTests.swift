@@ -20,6 +20,20 @@ final class VersionDateQueryTests: XCTestCase {
         XCTAssertNil(VersionDateRange(from: range.endExclusive, through: start, calendar: calendar))
     }
 
+    func testDateRangeAcrossReferenceDatePreservesInclusiveBounds() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let start = day("2000-12-31", calendar: calendar)
+        let last = day("2001-01-01", calendar: calendar)
+        let range = try XCTUnwrap(VersionDateRange(from: start, through: last, calendar: calendar))
+        XCTAssertTrue(range.contains(start))
+        XCTAssertTrue(range.contains(last))
+        XCTAssertTrue(range.contains(range.endExclusive.addingTimeInterval(-0.001)))
+        XCTAssertFalse(range.contains(start.addingTimeInterval(-0.001)))
+        XCTAssertFalse(range.contains(range.endExclusive))
+        XCTAssertNil(VersionDateRange(from: last, through: start, calendar: calendar))
+    }
+
     @MainActor private func waitUntilFinished(_ query: VersionDateQuery) async throws {
         let deadline = Date().addingTimeInterval(3)
         while query.running && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }

@@ -9,12 +9,16 @@ struct VersionDateRange: Equatable {
     init?(from: Date, through: Date, calendar: Calendar = .current) {
         let start = calendar.startOfDay(for: from)
         let last = calendar.startOfDay(for: through)
-        guard start <= last, let end = calendar.date(byAdding: .day, value: 1, to: last) else { return nil }
+        // Use scalar timestamps to avoid the weak-linked Date <= and >= operators.
+        guard start.timeIntervalSinceReferenceDate <= last.timeIntervalSinceReferenceDate,
+              let end = calendar.date(byAdding: .day, value: 1, to: last) else { return nil }
         self.start = start
         self.endExclusive = end
     }
 
-    func contains(_ date: Date) -> Bool { date >= start && date < endExclusive }
+    func contains(_ date: Date) -> Bool {
+        date.timeIntervalSinceReferenceDate >= start.timeIntervalSinceReferenceDate && date < endExclusive
+    }
 }
 
 /// An explicit, cancellable scan: IDs are not chronological date boundaries.
